@@ -45,12 +45,10 @@ class ExportController extends Controller
         // #13: Reuse MapaPoliticoController logic for mapa-politico exports
         if ($source === 'mapa-politico') {
             $controller = app(MapaPoliticoController::class);
-            // Create a fake Inertia-less request that returns the data
             $response = $controller->index($request);
-            $props = $response->toResponse($request)->getData();
-            // Extract data from Inertia response props
-            $pageData = json_decode(json_encode($props), true);
-            return $pageData['props']['data'] ?? [];
+            $httpResponse = $response->toResponse($request);
+            $content = json_decode($httpResponse->getContent(), true);
+            return $content['props']['data'] ?? [];
         }
 
         $munId = $request->input('municipio');
