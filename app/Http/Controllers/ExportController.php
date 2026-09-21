@@ -41,17 +41,16 @@ class ExportController extends Controller
     private function getData(Request $request): array
     {
         $source = $request->input('source', 'mapa-politico');
-
-        // #13: Reuse MapaPoliticoController logic for mapa-politico exports
-        if ($source === 'mapa-politico') {
-            $controller = app(MapaPoliticoController::class);
-            $response = $controller->index($request);
-            $httpResponse = $response->toResponse($request);
-            $content = json_decode($httpResponse->getContent(), true);
-            return $content['props']['data'] ?? [];
-        }
-
         $munId = $request->input('municipio');
+        $tipo = $request->input('tipo', 'todos');
+        $cargo = $request->input('cargo');
+        $search = $request->input('search');
+        $partido = $request->input('partido');
+        $barrio = $request->input('barrio');
+
+        if ($source === 'mapa-politico') {
+            return $this->getMapaPoliticoData($munId, $tipo, $cargo, $search, $partido, $barrio);
+        }
 
         if ($source === 'senado' || $source === 'camara') {
             $corpName = $source === 'senado' ? 'Senado' : 'Cámara de Representantes';
@@ -69,6 +68,86 @@ class ExportController extends Controller
         return [];
     }
 
+    private function getMapaPoliticoData(?string $munId, string $tipo, ?string $cargo, ?string $search, ?string $partido, ?string $barrio): array
+    {
+        $cargos = $cargo ? explode(',', $cargo) : [];
+        $data = [];
+
+        $votesSubQuery = DB::table('electoral_results')
+            ->whereIn('metric_type', ['votes', 'nominal_votes'])
+            ->select('candidacy_id', DB::raw('SUM(value) as votos'))
+            ->groupBy('candidacy_id');
+
+        // Alcaldía
+        if ($tipo === 'todos' || $tipo === 'alcaldia') {
+            $officeId = DB::table('offices')->where('name', 'Alcaldía')->value('id');
+            $query = DB::table('candidacies as c')
+                ->join('contests as con', 'c.contest_id', '=', 'con.id')
+                ->join('persons as p', 'c.person_id', '=', 'p.id')
+                ->where('con.office_id', $officeId)
+                ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
+                ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
+                ->leftJoin('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
+                ->leftJoinSub(clone $votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
+                ->select('p.full_name as nombre', 'g.canonical_name as municipio',
+                    DB::raw("'Alcaldía' as tipo"),
+                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato' END as cargo"),
+                    'po.canonical_name as partido', DB::raw('NULL as telefono'),
+                    DB::raw('COALESCE(res.votos, 0) as votos'));
+            if ($munId) $query->where('con.geographic_unit_id', $munId);
+            if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
+            $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // Concejo
+        if ($tipo === 'todos' || $tipo === 'concejo') {
+            $corpId = DB::table('corporations')->where('name', 'Concejo')->value('id');
+            $query = DB::table('candidacies as c')
+                ->join('contests as con', 'c.contest_id', '=', 'con.id')
+                ->join('persons as p', 'c.person_id', '=', 'p.id')
+                ->where('con.corporation_id', $corpId)
+                ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
+                ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
+                ->leftJoin('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
+                ->leftJoinSub(clone $votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
+                ->select('p.full_name as nombre', 'g.canonical_name as municipio',
+                    DB::raw("'Concejo' as tipo"),
+                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END as cargo"),
+                    'po.canonical_name as partido', DB::raw('NULL as telefono'),
+                    DB::raw('COALESCE(res.votos, 0) as votos'));
+            if ($munId) $query->where('con.geographic_unit_id', $munId);
+            if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
+            if (!empty($cargos)) $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END"), $cargos);
+            $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // Líderes
+        if ($tipo === 'todos' || $tipo === 'lideres') {
+            $query = DB::table('lideres')
+                ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', DB::raw('0 as votos'));
+            if ($munId) $query->where('geographic_unit_id', $munId);
+            if ($search) $query->where('nombre', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
+            if (!empty($cargos)) $query->whereIn('cargo', $cargos);
+            if ($barrio) $query->where('barrio', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $barrio) . '%');
+            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // Senado / Cámara / Asamblea
+        $corpMap = ['senado' => 'Senado', 'camara' => 'Cámara de Representantes', 'asamblea' => 'Asamblea'];
+        foreach ($corpMap as $tipoKey => $corpName) {
+            if ($tipo === $tipoKey || $tipo === 'todos') {
+                $data = array_merge($data, $this->getCorporacionData($corpName, $munId));
+            }
+        }
+
+        // Filtrar por partido
+        if ($partido) {
+            $data = array_values(array_filter($data, fn ($row) => ($row['partido'] ?? '') === $partido));
+        }
+
+        return $data;
+    }
+
     private function getCorporacionData(string $corpName, ?string $munId): array
     {
         $corpId = DB::table('corporations')->where('name', $corpName)->value('id');
@@ -77,7 +156,6 @@ class ExportController extends Controller
         $resQuery = DB::table('electoral_results')->whereIn('metric_type', ['votes', 'nominal_votes'])->where('value', '>', 0);
         if ($munId) $resQuery->where('geographic_unit_id', $munId);
 
-        // Use selectRaw with bindings instead of interpolation (#1)
         return DB::table('candidacies as c')
             ->join('persons as p', 'c.person_id', '=', 'p.id')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')
