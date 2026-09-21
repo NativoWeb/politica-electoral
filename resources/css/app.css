@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+@source '../**/*.blade.php';
+@source '../**/*.jsx';
+
+/* ============ DESIGN TOKENS — Estilo Registraduría ============ */
+@theme {
+    --color-bg: #F5F5F5;
+    --color-panel: #FFFFFF;
+    --color-ink: #1A1A2E;
+    --color-ink-soft: #4A4A68;
+    --color-ink-faint: #8E8EA0;
+    --color-line: #E8E8EE;
+    --color-line-strong: #D0D0DC;
+    --color-primary: #003B71;
+    --color-primary-light: #0056A6;
+    --color-primary-dark: #002B54;
+    --color-accent: #FFD100;
+    --color-good: #28A745;
+    --color-good-light: #D4EDDA;
+    --color-danger: #DC3545;
+    --color-danger-light: #F8D7DA;
+
+    --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-heading: 'Archivo', 'IBM Plex Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+    body {
+        font-family: var(--font-sans);
+        background: var(--color-bg);
+        color: var(--color-ink);
+        -webkit-font-smoothing: antialiased;
+    }
+}
