@@ -2,6 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { Bars3Icon, XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
+import { OfflineIndicator, OfflinePanel } from '@/Components/OfflineManager';
 
 const TYPE_LABELS = { persona: 'Persona', municipio: 'Municipio', partido: 'Partido' };
 const TYPE_COLORS = {
@@ -222,6 +223,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const auth = props.auth?.user;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [navigating, setNavigating] = useState(false);
+    const [offlinePanelOpen, setOfflinePanelOpen] = useState(false);
 
     useEffect(() => {
         const removeStart = router.on('start', () => setNavigating(true));
@@ -259,6 +261,21 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     </div>
 
                     <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Offline indicator */}
+                        <OfflineIndicator />
+
+                        {/* Offline panel button */}
+                        <button
+                            onClick={() => setOfflinePanelOpen(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white/70 hover:text-white transition-colors"
+                            title="Datos offline"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span className="text-[11px] font-semibold hidden sm:inline">Offline</span>
+                        </button>
+
                         {/* Export buttons */}
                         <ExportButtons url={url} />
 
@@ -367,6 +384,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
             {/* Spinner global de navegación */}
             {navigating && <FullScreenSpinner message="Cargando..." />}
+
+            {/* Offline panel */}
+            <OfflinePanel open={offlinePanelOpen} onClose={() => setOfflinePanelOpen(false)} />
         </div>
     );
 }

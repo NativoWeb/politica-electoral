@@ -15,6 +15,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LiderController;
 use App\Http\Controllers\MapaPoliticoController;
+use App\Http\Controllers\OfflineController;
 use App\Http\Controllers\SearchController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +27,9 @@ Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->midd
 // Public API (no auth required)
 Route::get('/api/search', [SearchController::class, 'search'])->name('search');
 Route::get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
+
+// Offline API (auth required)
+Route::middleware('auth')->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
 
 // Protected routes
 Route::middleware('auth')->group(function () {

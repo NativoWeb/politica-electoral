@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/react';
 import { useState, useMemo, useEffect } from 'react';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { FullScreenSpinner } from '@/Components/Spinner';
+import { DownloadRegionButton } from '@/Components/OfflineManager';
 
 const TIPO_COLORS = {
     'Alcaldía': 'bg-blue-100 text-blue-700',
@@ -878,6 +879,9 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                 <div className="flex items-center gap-4 text-[11px] text-[var(--color-ink-faint)]">
                     <span className="font-bold text-[var(--color-ink)]">{data.length} registros</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
+                    {municipioInfo && (
+                        <DownloadRegionButton municipioId={municipioInfo.id} municipioName={municipioInfo.name} />
+                    )}
                 </div>
             </div>
 

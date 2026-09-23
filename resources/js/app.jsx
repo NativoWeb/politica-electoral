@@ -3,6 +3,13 @@ import 'leaflet/dist/leaflet.css';
 import { createInertiaApp } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
 
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+}
+
 createInertiaApp({
     title: (title) => title ? `${title} — Inteligencia Electoral` : 'Inteligencia Electoral Santander',
     resolve: (name) => {
