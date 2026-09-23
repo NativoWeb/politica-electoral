@@ -1,5 +1,5 @@
-// Service Worker — Inteligencia Electoral PWA
-const CACHE_NAME = 'electoral-v3';
+// Service Worker — Inteligencia Electoral PWA — Build 20260923
+const CACHE_NAME = 'electoral-v4';
 const APP_SHELL = [
     '/',
     '/mapa-politico',
