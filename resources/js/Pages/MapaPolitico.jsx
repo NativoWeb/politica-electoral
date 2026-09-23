@@ -612,13 +612,59 @@ function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
 }
 
 /* ── Sección colapsable (Alcaldía, Concejo, etc.) ── */
+/* ── Flat person row — used on mobile for all types ── */
+function PersonRow({ row, onSelectPerson, color }) {
+    const isElecto = row.outcome === 'elected' || (row.cargo && row.cargo.includes('Electo'));
+    const initials = (row.nombre || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+    return (
+        <div
+            onClick={() => onSelectPerson(row.id)}
+            className={`flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 active:bg-blue-50 cursor-pointer transition-colors ${isElecto ? 'bg-emerald-50/40' : ''}`}
+        >
+            {/* Avatar */}
+            <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0 text-white"
+                style={{ backgroundColor: color || 'var(--color-primary)' }}
+            >
+                {initials}
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-bold text-[var(--color-ink)] uppercase truncate">{row.nombre}</span>
+                    {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[9px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
+                </div>
+                <p className="text-[12px] text-[var(--color-ink-faint)] truncate">
+                    {row.municipio ?? ''}
+                    {row.partido && <> · <span className="font-semibold">{row.partido}</span></>}
+                </p>
+            </div>
+
+            {/* Right: votos or phone + chevron */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+                {row.votos > 0 && <span className="text-[12px] font-bold text-[var(--color-ink-soft)]">{fmt(row.votos)}</span>}
+                <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+            </div>
+        </div>
+    );
+}
+
 function CollapsibleSection({ tipo, rows, onSelectPerson }) {
     const [open, setOpen] = useState(false);
     const colorCls = TIPO_COLORS[tipo] ?? 'bg-gray-100 text-gray-600';
     const icon = TIPO_ICONS[tipo];
     const totalVotos = rows.reduce((sum, r) => sum + (r.votos || 0), 0);
+    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 1024);
 
-    // Agrupar por partido para acordeones internos
+    useEffect(() => {
+        function handleResize() { setIsMobile(window.innerWidth < 1024); }
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Agrupar por partido para acordeones internos (desktop only)
     const byParty = useMemo(() => {
         const groups = {};
         rows.forEach(r => {
@@ -626,7 +672,6 @@ function CollapsibleSection({ tipo, rows, onSelectPerson }) {
             if (!groups[key]) groups[key] = [];
             groups[key].push(r);
         });
-        // Ordenar partidos por total de votos descendente
         return Object.entries(groups).sort((a, b) => {
             const votosA = a[1].reduce((s, r) => s + (r.votos || 0), 0);
             const votosB = b[1].reduce((s, r) => s + (r.votos || 0), 0);
@@ -634,18 +679,20 @@ function CollapsibleSection({ tipo, rows, onSelectPerson }) {
         });
     }, [rows]);
 
+    // Sort rows by votos desc for mobile flat list
+    const sortedRows = useMemo(() =>
+        [...rows].sort((a, b) => (b.votos || 0) - (a.votos || 0)),
+    [rows]);
+
     return (
         <div className="border border-[var(--color-line)] rounded-xl overflow-hidden bg-white">
             <button
                 onClick={() => setOpen(!open)}
                 className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors"
             >
-                {/* Icono */}
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${colorCls}`}>
                     {icon}
                 </div>
-
-                {/* Título */}
                 <div className="flex-1 text-left">
                     <h3 className="text-[16px] font-extrabold text-[var(--color-ink)] uppercase">{tipo}</h3>
                     <p className="text-[12px] text-[var(--color-ink-faint)]">
@@ -654,47 +701,50 @@ function CollapsibleSection({ tipo, rows, onSelectPerson }) {
                         {totalVotos > 0 && ` · ${fmt(totalVotos)} votos`}
                     </p>
                 </div>
-
-                {/* Badge count */}
                 <span className={`px-3 py-1 rounded-full text-[13px] font-bold ${colorCls}`}>{rows.length}</span>
-
-                {/* Arrow */}
                 <svg className={`w-5 h-5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
             </button>
 
             {open && (
-                <div className="border-t border-[var(--color-line)] px-4 py-3 space-y-1">
-                    {tipo === 'Líderes' ? (
-                        // Líderes: lista directa (sin agrupar por partido)
-                        <div className="space-y-1">
-                            {rows.map((row, i) => (
-                                <div
+                <div className="border-t border-[var(--color-line)]">
+                    {isMobile ? (
+                        /* ── Mobile: flat list, no party nesting ── */
+                        <div>
+                            {sortedRows.map((row, i) => (
+                                <PersonRow
                                     key={`${row.id}-${i}`}
-                                    onClick={() => onSelectPerson(row.id)}
-                                    className="flex items-center gap-3 px-4 py-2.5 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
-                                >
-                                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold flex-shrink-0">
-                                        {(row.nombre || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <span className="text-[13px] font-bold text-[var(--color-primary)] uppercase truncate block">{row.nombre}</span>
-                                        <p className="text-[11px] text-[var(--color-ink-faint)]">{row.municipio ?? ''} · {row.cargo ?? ''}</p>
-                                    </div>
-                                    {row.telefono && <span className="text-[11px] text-[var(--color-primary)] font-semibold flex-shrink-0">{row.telefono}</span>}
-                                </div>
+                                    row={row}
+                                    onSelectPerson={onSelectPerson}
+                                    color={partyColor(row.partido, i)}
+                                />
                             ))}
                         </div>
                     ) : (
-                        // Electoral: acordeones por partido
-                        byParty.map(([party, partyRows], idx) => (
-                            <PartyAccordion
-                                key={party}
-                                partyName={party}
-                                rows={partyRows}
-                                index={idx}
-                                onSelectPerson={onSelectPerson}
-                            />
-                        ))
+                        /* ── Desktop: party accordions ── */
+                        <div className="px-4 py-3 space-y-1">
+                            {tipo === 'Líderes' ? (
+                                <div className="space-y-1">
+                                    {rows.map((row, i) => (
+                                        <PersonRow
+                                            key={`${row.id}-${i}`}
+                                            row={row}
+                                            onSelectPerson={onSelectPerson}
+                                            color={partyColor(row.partido, i)}
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                byParty.map(([party, partyRows], idx) => (
+                                    <PartyAccordion
+                                        key={party}
+                                        partyName={party}
+                                        rows={partyRows}
+                                        index={idx}
+                                        onSelectPerson={onSelectPerson}
+                                    />
+                                ))
+                            )}
+                        </div>
                     )}
                 </div>
             )}
