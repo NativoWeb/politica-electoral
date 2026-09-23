@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\CachedQueries;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -45,6 +46,7 @@ class HandleInertiaRequests extends Middleware
                     'role' => $request->user()->role?->name,
                 ] : null,
             ],
+            'municipiosForOffline' => fn () => CachedQueries::allMunicipios(),
         ];
     }
 }

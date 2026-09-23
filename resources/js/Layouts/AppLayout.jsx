@@ -452,26 +452,26 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         );
                     })}
 
-                    {/* Descargar */}
+                    {/* Exportar Excel/PDF */}
                     <button
                         onClick={() => setExportSheetOpen(true)}
                         className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
                     >
                         <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <span className="text-[12px] font-bold leading-tight">Descargar</span>
+                        <span className="text-[12px] font-bold leading-tight">Exportar</span>
                     </button>
 
-                    {/* Offline */}
+                    {/* Guardar para usar sin internet */}
                     <button
                         onClick={() => setOfflinePanelOpen(true)}
                         className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
                     >
                         <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01M4.929 11.222a10 10 0 0114.142 0M1.394 7.636a15 15 0 0121.213 0" />
                         </svg>
-                        <span className="text-[12px] font-bold leading-tight">Guardar</span>
+                        <span className="text-[12px] font-bold leading-tight text-center">Sin Internet</span>
                     </button>
                 </div>
             </nav>
