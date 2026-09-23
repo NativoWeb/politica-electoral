@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { downloadMunicipio, isDownloaded } from '@/lib/offlineDb';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { FullScreenSpinner } from '@/Components/Spinner';
 
@@ -785,6 +786,25 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
     const [selectedCargos, setSelectedCargos] = useState(filters.cargo ? filters.cargo.split(',') : []);
     const [showCargoDropdown, setShowCargoDropdown] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
+    const [offlineStatus, setOfflineStatus] = useState('idle'); // idle | downloading | saved | already
+
+    // Check if current municipio is already downloaded
+    useEffect(() => {
+        if (!municipioInfo?.id) { setOfflineStatus('idle'); return; }
+        isDownloaded(municipioInfo.id).then(yes => setOfflineStatus(yes ? 'already' : 'idle'));
+    }, [municipioInfo?.id]);
+
+    const handleOfflineDownload = useCallback(async () => {
+        if (!municipioInfo?.id) return;
+        setOfflineStatus('downloading');
+        try {
+            await downloadMunicipio(municipioInfo.id);
+            setOfflineStatus('saved');
+        } catch {
+            setOfflineStatus('idle');
+            alert('No se pudo guardar. Revisa tu conexion.');
+        }
+    }, [municipioInfo?.id]);
 
     // Sync local state when Inertia props change (e.g. after redirect)
     useEffect(() => {
@@ -973,9 +993,32 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-[11px] text-[var(--color-ink-faint)]">
+                <div className="flex items-center gap-3 text-[11px] text-[var(--color-ink-faint)] flex-wrap">
                     <span className="font-bold text-[var(--color-ink)]">{data.length} registros</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
+
+                    {/* Offline download button — only when a municipio is selected */}
+                    {municipioInfo && offlineStatus === 'idle' && (
+                        <button
+                            onClick={handleOfflineDownload}
+                            className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)] text-white text-[12px] font-bold rounded-lg active:bg-[var(--color-primary-dark)] transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            Guardar sin internet
+                        </button>
+                    )}
+                    {municipioInfo && offlineStatus === 'downloading' && (
+                        <span className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-[var(--color-primary)] text-[12px] font-bold rounded-lg">
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            Guardando...
+                        </span>
+                    )}
+                    {municipioInfo && (offlineStatus === 'saved' || offlineStatus === 'already') && (
+                        <span className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 text-[12px] font-bold rounded-lg">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            Guardado
+                        </span>
+                    )}
                 </div>
             </div>
 
