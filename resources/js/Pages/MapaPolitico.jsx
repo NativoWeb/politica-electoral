@@ -1,9 +1,9 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { FullScreenSpinner } from '@/Components/Spinner';
-import { DownloadRegionButton } from '@/Components/OfflineManager';
+import { downloadMunicipio } from '@/lib/offlineDb';
 
 const TIPO_COLORS = {
     'Alcaldía': 'bg-blue-100 text-blue-700',
@@ -711,6 +711,20 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
     const [selectedCargos, setSelectedCargos] = useState(filters.cargo ? filters.cargo.split(',') : []);
     const [showCargoDropdown, setShowCargoDropdown] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
+    const [offlineToast, setOfflineToast] = useState('');
+    const lastAutoSaved = useRef(null);
+
+    // Auto-save offline: when user views a municipio, save its data silently
+    useEffect(() => {
+        if (!municipioInfo?.id || municipioInfo.id === lastAutoSaved.current) return;
+        lastAutoSaved.current = municipioInfo.id;
+        downloadMunicipio(municipioInfo.id)
+            .then(() => {
+                setOfflineToast(`${municipioInfo.name} guardado para usar sin internet`);
+                setTimeout(() => setOfflineToast(''), 4000);
+            })
+            .catch(() => {}); // silent fail
+    }, [municipioInfo?.id]);
 
     // Sync local state when Inertia props change (e.g. after redirect)
     useEffect(() => {
@@ -902,9 +916,6 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                 <div className="flex items-center gap-4 text-[11px] text-[var(--color-ink-faint)]">
                     <span className="font-bold text-[var(--color-ink)]">{data.length} registros</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
-                    {municipioInfo && (
-                        <DownloadRegionButton municipioId={municipioInfo.id} municipioName={municipioInfo.name} />
-                    )}
                 </div>
             </div>
 
@@ -1000,6 +1011,14 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
 
             {/* Modal crear líder */}
             <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} />
+
+            {/* Toast auto-guardado offline */}
+            {offlineToast && (
+                <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 bg-emerald-600 text-white text-[14px] font-semibold rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    {offlineToast}
+                </div>
+            )}
         </AppLayout>
     );
 }

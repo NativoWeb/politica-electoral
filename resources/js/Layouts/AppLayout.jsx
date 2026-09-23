@@ -2,7 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
-import { OfflineIndicator, OfflinePanel } from '@/Components/OfflineManager';
+import { OfflineIndicator } from '@/Components/OfflineManager';
 
 const TYPE_LABELS = { persona: 'Persona', municipio: 'Municipio', partido: 'Partido' };
 const TYPE_COLORS = {
@@ -294,7 +294,6 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const { url, props } = usePage();
     const auth = props.auth?.user;
     const [navigating, setNavigating] = useState(false);
-    const [offlinePanelOpen, setOfflinePanelOpen] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
     useEffect(() => {
@@ -332,16 +331,6 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     {/* Desktop header actions */}
                     <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
                         <OfflineIndicator />
-                        <button
-                            onClick={() => setOfflinePanelOpen(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white/70 hover:text-white transition-colors"
-                            title="Datos offline"
-                        >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            <span className="text-[11px] font-semibold">Offline</span>
-                        </button>
                         <ExportButtons url={url} />
                         <div className="relative group">
                             <button className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1.5 transition-colors">
@@ -462,25 +451,11 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         </svg>
                         <span className="text-[12px] font-bold leading-tight">Exportar</span>
                     </button>
-
-                    {/* Guardar para usar sin internet */}
-                    <button
-                        onClick={() => setOfflinePanelOpen(true)}
-                        className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
-                    >
-                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01M4.929 11.222a10 10 0 0114.142 0M1.394 7.636a15 15 0 0121.213 0" />
-                        </svg>
-                        <span className="text-[12px] font-bold leading-tight text-center">Sin Internet</span>
-                    </button>
                 </div>
             </nav>
 
             {/* Spinner global de navegación */}
             {navigating && <FullScreenSpinner message="Cargando..." />}
-
-            {/* Offline panel */}
-            <OfflinePanel open={offlinePanelOpen} onClose={() => setOfflinePanelOpen(false)} />
 
             {/* Mobile export bottom sheet */}
             <MobileExportSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} url={url} />
