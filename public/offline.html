@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#003B71">
+    <title>Sin conexion — Electoral</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #f5f5f5;
+            color: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding: 2rem;
+            text-align: center;
+        }
+        .icon {
+            width: 80px; height: 80px;
+            background: #003B71;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        .icon svg { width: 40px; height: 40px; color: white; }
+        h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+        p { font-size: 0.9rem; color: #8e8ea0; line-height: 1.5; max-width: 320px; }
+        button {
+            margin-top: 1.5rem;
+            padding: 0.75rem 2rem;
+            background: #003B71;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        button:active { background: #002B54; }
+    </style>
+</head>
+<body>
+    <div class="icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728M8.464 15.536a5 5 0 010-7.072M15.536 8.464a5 5 0 010 7.072M12 12h.01" />
+        </svg>
+    </div>
+    <h1>Sin conexion</h1>
+    <p>No tienes conexion a internet. Si ya descargaste datos de un municipio, estaran disponibles cuando vuelvas a conectarte.</p>
+    <button onclick="location.reload()">Reintentar</button>
+</body>
+</html>

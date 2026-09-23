@@ -1,6 +1,6 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
-import { Bars3Icon, XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
 import { OfflineIndicator, OfflinePanel } from '@/Components/OfflineManager';
 
@@ -218,6 +218,9 @@ const SIDEBAR_ITEMS = [
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
 ];
 
+/* ── Bottom Tab Bar for mobile ── */
+const TAB_ITEMS = SIDEBAR_ITEMS.map(item => ({ ...item, icon: ICONS[item.name] }));
+
 export default function AppLayout({ children, title, breadcrumb }) {
     const { url, props } = usePage();
     const auth = props.auth?.user;
@@ -240,9 +243,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
             <header className="bg-[var(--color-primary)] text-white relative z-40">
                 <div className="flex items-center justify-between px-4 lg:px-6 h-14">
                     <div className="flex items-center gap-4">
-                        <button className="lg:hidden text-white/70 hover:text-white" onClick={() => setSidebarOpen(!sidebarOpen)}>
-                            <Bars3Icon className="w-6 h-6" />
-                        </button>
+                        {/* Hamburger hidden — mobile uses bottom tab bar */}
                         <Link href="/" className="flex items-center gap-3">
                             <div className="w-7 h-5 rounded-[3px] overflow-hidden flex flex-col flex-shrink-0 shadow-sm">
                                 <span className="flex-[2] bg-[#FCD116]" />
@@ -324,25 +325,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
             </header>
 
             <div className="flex">
-                {/* Sidebar — azul oscuro, abierto con iconos + labels */}
-                <aside className={`
-                    ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-                    lg:translate-x-0 fixed lg:sticky top-0 lg:top-0 left-0 z-30 lg:z-0
-                    w-[200px] bg-[#002244]
-                    h-screen lg:h-screen overflow-y-auto overflow-x-hidden
-                    transition-transform lg:transition-none shadow-lg lg:shadow-none
-                    flex flex-col
-                `}>
-                    {/* Mobile close */}
-                    <div className="lg:hidden flex justify-end p-2">
-                        <button onClick={() => setSidebarOpen(false)} className="text-white/50 hover:text-white">
-                            <XMarkIcon className="w-5 h-5" />
-                        </button>
-                    </div>
-
-                    {/* Spacer for header on desktop */}
-                    <div className="hidden lg:block h-14 flex-shrink-0" />
-
+                {/* Sidebar — desktop only */}
+                <aside className="hidden lg:flex fixed lg:sticky top-0 left-0 z-30 lg:z-0 w-[200px] bg-[#002244] h-screen overflow-y-auto overflow-x-hidden flex-col">
+                    <div className="h-14 flex-shrink-0" />
                     <nav className="flex flex-col py-3 gap-0.5 px-2">
                         {SIDEBAR_ITEMS.map((item) => {
                             const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
@@ -351,7 +336,6 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     key={item.name}
                                     href={item.href}
                                     prefetch="hover"
-                                    onClick={() => setSidebarOpen(false)}
                                     className={`
                                         relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-[13px] font-semibold tracking-wide
                                         ${isActive
@@ -371,16 +355,40 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     </nav>
                 </aside>
 
-                {/* Mobile overlay */}
-                {sidebarOpen && (
-                    <div className="lg:hidden fixed inset-0 bg-black/30 z-20" onClick={() => setSidebarOpen(false)} />
-                )}
-
-                {/* Main content */}
-                <main className="flex-1 min-w-0">
+                {/* Main content — pb-16 on mobile for tab bar */}
+                <main className="flex-1 min-w-0 pb-16 lg:pb-0">
                     {children}
                 </main>
             </div>
+
+            {/* Bottom Tab Bar — mobile only */}
+            <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] border-t border-white/10 safe-bottom">
+                <div className="flex items-stretch justify-around h-14">
+                    {TAB_ITEMS.map((item) => {
+                        const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
+                        return (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                prefetch="hover"
+                                className={`flex flex-col items-center justify-center flex-1 gap-0.5 transition-colors ${
+                                    isActive
+                                        ? 'text-white'
+                                        : 'text-white/40 active:text-white/70'
+                                }`}
+                            >
+                                <span className={`relative ${isActive ? 'scale-110' : ''} transition-transform`}>
+                                    {item.icon}
+                                    {isActive && (
+                                        <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[var(--color-accent)] rounded-full" />
+                                    )}
+                                </span>
+                                <span className="text-[10px] font-semibold leading-tight">{item.label}</span>
+                            </Link>
+                        );
+                    })}
+                </div>
+            </nav>
 
             {/* Spinner global de navegación */}
             {navigating && <FullScreenSpinner message="Cargando..." />}

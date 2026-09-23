@@ -710,6 +710,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
     const [showCrearLider, setShowCrearLider] = useState(false);
     const [selectedCargos, setSelectedCargos] = useState(filters.cargo ? filters.cargo.split(',') : []);
     const [showCargoDropdown, setShowCargoDropdown] = useState(false);
+    const [filtersOpen, setFiltersOpen] = useState(false);
 
     // Sync local state when Inertia props change (e.g. after redirect)
     useEffect(() => {
@@ -769,113 +770,135 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
         <AppLayout title="Mapa Político" breadcrumb={[{ label: 'SANTANDER', href: '/' }, { label: 'MAPA POLITICO' }]}>
             <Head title="Mapa Politico — Inteligencia Electoral" />
 
-            <div className="bg-[var(--color-primary)] text-white px-6 py-4 flex items-center justify-between">
-                <div>
-                    <h1 className="text-[22px] font-extrabold">MAPA POLITICO</h1>
-                    <p className="text-[11px] text-white/40 mt-0.5">Directorio unificado · Alcaldías, Concejos, Líderes, Senado, Cámara y Asamblea</p>
+            <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <h1 className="text-[18px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
+                    <p className="text-[10px] lg:text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Senado, Cámara y Asamblea</p>
                 </div>
-                <button onClick={() => setShowCrearLider(true)} className="px-5 py-3 bg-white/15 hover:bg-white/25 text-white text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2">
+                <button onClick={() => setShowCrearLider(true)} className="px-3 lg:px-5 py-2.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                    Crear Líder
+                    <span className="hidden sm:inline">Crear Líder</span>
                 </button>
             </div>
 
             {/* Filtros */}
-            <div className="bg-white border-b border-[var(--color-line)] px-5 py-3 space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                    <div>
-                        <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Provincia</label>
-                        <select value={selectedProv} onChange={e => { setSelectedProv(e.target.value); applyFilters({ provincia: e.target.value || undefined, municipio: undefined }); }} className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                            <option value="">Todas</option>
-                            {provincias.map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Municipio</label>
-                        <select value={filters.municipio ?? ''} onChange={e => applyFilters({ municipio: e.target.value || undefined })} className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[240px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                            <option value="">Todos</option>
-                            {filteredMunicipios.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Tipo</label>
-                        <select value={filters.tipo ?? 'todos'} onChange={e => { setSelectedCargos([]); applyFilters({ tipo: e.target.value, cargo: undefined }); }} className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[180px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                            {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                    </div>
-                    <div className="relative">
-                        <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Cargo</label>
-                        <button
-                            type="button"
-                            onClick={() => setShowCargoDropdown(!showCargoDropdown)}
-                            className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[250px] focus:outline-none focus:border-[var(--color-primary)] font-semibold text-left flex items-center justify-between bg-white"
-                        >
-                            <span className={selectedCargos.length > 0 ? 'text-[var(--color-ink)]' : 'text-gray-400'}>
-                                {selectedCargos.length > 0 ? `${selectedCargos.length} seleccionado${selectedCargos.length > 1 ? 's' : ''}` : 'Todos los cargos'}
-                            </span>
-                            <svg className={`w-4 h-4 text-gray-400 transition-transform ${showCargoDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                        </button>
-                        {showCargoDropdown && (
-                            <>
-                                <div className="fixed inset-0 z-30" onClick={() => setShowCargoDropdown(false)} />
-                                <div className="absolute top-full left-0 mt-1 w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] overflow-y-auto">
-                                    {/* Limpiar */}
-                                    <button
-                                        onClick={() => { setSelectedCargos([]); applyFilters({ cargo: undefined }); setShowCargoDropdown(false); }}
-                                        className="w-full text-left px-4 py-2.5 text-[14px] text-[var(--color-primary)] font-semibold border-b border-[var(--color-line)] hover:bg-blue-50"
-                                    >
-                                        Limpiar seleccion
-                                    </button>
-                                    {(cargosPorTipo[filters.tipo ?? 'todos'] ?? cargosDisponibles).map(c => {
-                                        const checked = selectedCargos.includes(c);
-                                        return (
-                                            <label key={c} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-[var(--color-line)] last:border-0 ${checked ? 'bg-blue-50' : ''}`}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={checked}
-                                                    onChange={() => {
-                                                        const next = checked ? selectedCargos.filter(x => x !== c) : [...selectedCargos, c];
-                                                        setSelectedCargos(next);
-                                                        applyFilters({ cargo: next.length > 0 ? next.join(',') : undefined });
-                                                        setShowCargoDropdown(false);
-                                                    }}
-                                                    className="w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                                                />
-                                                <span className={`text-[14px] ${checked ? 'font-bold text-[var(--color-primary)]' : 'text-[var(--color-ink-soft)]'}`}>{c}</span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </>
+            <div className="bg-white border-b border-[var(--color-line)] px-4 lg:px-5 py-3 space-y-3">
+                {/* Mobile: toggle + search inline */}
+                <div className="flex items-center gap-2 lg:hidden">
+                    <button
+                        onClick={() => setFiltersOpen(!filtersOpen)}
+                        className="flex items-center gap-2 px-3 py-2.5 border border-[var(--color-line)] rounded-lg text-[13px] font-semibold text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors flex-shrink-0"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+                        Filtros
+                        {(filters.provincia || filters.municipio || filters.tipo !== 'todos' || filters.cargo || filters.partido || filters.barrio) && (
+                            <span className="w-2 h-2 bg-[var(--color-primary)] rounded-full" />
                         )}
-                    </div>
-                    <div>
-                        <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Partido</label>
-                        <select value={filters.partido ?? ''} onChange={e => applyFilters({ partido: e.target.value || undefined })} className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                            <option value="">Todos</option>
-                            {(data.length > 0 ? [...new Set(data.map(d => d.partido).filter(Boolean))].sort() : []).map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                    </div>
-                    {/* Barrio */}
-                    {barrios.length > 0 && (
-                        <div>
-                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Barrio</label>
-                            <select value={filters.barrio ?? ''} onChange={e => applyFilters({ barrio: e.target.value || undefined })} className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[200px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                                <option value="">Todos</option>
-                                {barrios.map(b => <option key={b} value={b}>{b}</option>)}
+                    </button>
+                    <input type="text" value={localSearch} onChange={e => setLocalSearch(e.target.value)} onKeyDown={handleSearch} placeholder="Buscar nombre..."
+                        className="flex-1 min-w-0 text-[14px] border border-[var(--color-line)] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)]" />
+                    <button onClick={() => applyFilters({ search: localSearch || undefined })} className="px-3 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg flex-shrink-0">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    </button>
+                </div>
+
+                {/* Filter grid — always visible on desktop, collapsible on mobile */}
+                <div className={`${filtersOpen ? 'block' : 'hidden'} lg:block`}>
+                    <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-end gap-2 lg:gap-3">
+                        <div className="col-span-1">
+                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Provincia</label>
+                            <select value={selectedProv} onChange={e => { setSelectedProv(e.target.value); applyFilters({ provincia: e.target.value || undefined, municipio: undefined }); }} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
+                                <option value="">Todas</option>
+                                {provincias.map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
                         </div>
-                    )}
-                    <div>
-                        <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5">Buscar</label>
-                        <input type="text" value={localSearch} onChange={e => setLocalSearch(e.target.value)} onKeyDown={handleSearch} placeholder="Nombre..."
-                            className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[240px] focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)]" />
-                    </div>
-                    <div className="pt-4 flex gap-2">
-                        <button onClick={() => applyFilters({ search: localSearch || undefined })} className="px-6 py-3 bg-[var(--color-primary)] text-white text-[15px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">Filtrar</button>
-                        <button onClick={() => { setLocalSearch(''); setSelectedProv(''); setSelectedCargos([]); router.get('/mapa-politico', {}, { preserveState: false }); }} className="px-5 py-3 border border-[var(--color-line)] text-[15px] font-semibold text-[var(--color-ink-soft)] rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
+                        <div className="col-span-1">
+                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Municipio</label>
+                            <select value={filters.municipio ?? ''} onChange={e => applyFilters({ municipio: e.target.value || undefined })} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[240px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
+                                <option value="">Todos</option>
+                                {filteredMunicipios.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="col-span-1">
+                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Tipo</label>
+                            <select value={filters.tipo ?? 'todos'} onChange={e => { setSelectedCargos([]); applyFilters({ tipo: e.target.value, cargo: undefined }); }} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[180px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
+                                {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                        </div>
+                        <div className="relative col-span-1">
+                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Cargo</label>
+                            <button
+                                type="button"
+                                onClick={() => setShowCargoDropdown(!showCargoDropdown)}
+                                className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[250px] focus:outline-none focus:border-[var(--color-primary)] font-semibold text-left flex items-center justify-between bg-white"
+                            >
+                                <span className={`truncate ${selectedCargos.length > 0 ? 'text-[var(--color-ink)]' : 'text-gray-400'}`}>
+                                    {selectedCargos.length > 0 ? `${selectedCargos.length} sel.` : 'Todos'}
+                                </span>
+                                <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${showCargoDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                            {showCargoDropdown && (
+                                <>
+                                    <div className="fixed inset-0 z-30" onClick={() => setShowCargoDropdown(false)} />
+                                    <div className="absolute top-full left-0 mt-1 w-[280px] lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] overflow-y-auto">
+                                        <button
+                                            onClick={() => { setSelectedCargos([]); applyFilters({ cargo: undefined }); setShowCargoDropdown(false); }}
+                                            className="w-full text-left px-4 py-2.5 text-[14px] text-[var(--color-primary)] font-semibold border-b border-[var(--color-line)] hover:bg-blue-50"
+                                        >
+                                            Limpiar seleccion
+                                        </button>
+                                        {(cargosPorTipo[filters.tipo ?? 'todos'] ?? cargosDisponibles).map(c => {
+                                            const checked = selectedCargos.includes(c);
+                                            return (
+                                                <label key={c} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-[var(--color-line)] last:border-0 ${checked ? 'bg-blue-50' : ''}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => {
+                                                            const next = checked ? selectedCargos.filter(x => x !== c) : [...selectedCargos, c];
+                                                            setSelectedCargos(next);
+                                                            applyFilters({ cargo: next.length > 0 ? next.join(',') : undefined });
+                                                            setShowCargoDropdown(false);
+                                                        }}
+                                                        className="w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                                    />
+                                                    <span className={`text-[14px] ${checked ? 'font-bold text-[var(--color-primary)]' : 'text-[var(--color-ink-soft)]'}`}>{c}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <div className="col-span-1">
+                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Partido</label>
+                            <select value={filters.partido ?? ''} onChange={e => applyFilters({ partido: e.target.value || undefined })} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
+                                <option value="">Todos</option>
+                                {(data.length > 0 ? [...new Set(data.map(d => d.partido).filter(Boolean))].sort() : []).map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                        </div>
+                        {barrios.length > 0 && (
+                            <div className="col-span-1">
+                                <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Barrio</label>
+                                <select value={filters.barrio ?? ''} onChange={e => applyFilters({ barrio: e.target.value || undefined })} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[200px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
+                                    <option value="">Todos</option>
+                                    {barrios.map(b => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                            </div>
+                        )}
+                        {/* Search visible only on desktop (mobile has it above) */}
+                        <div className="hidden lg:block">
+                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Buscar</label>
+                            <input type="text" value={localSearch} onChange={e => setLocalSearch(e.target.value)} onKeyDown={handleSearch} placeholder="Nombre..."
+                                className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[240px] focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)]" />
+                        </div>
+                        <div className="col-span-2 lg:col-span-1 flex gap-2 pt-1 lg:pt-4">
+                            <button onClick={() => { applyFilters({ search: localSearch || undefined }); setFiltersOpen(false); }} className="flex-1 lg:flex-initial px-4 lg:px-6 py-2.5 lg:py-3 bg-[var(--color-primary)] text-white text-[13px] lg:text-[15px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">Filtrar</button>
+                            <button onClick={() => { setLocalSearch(''); setSelectedProv(''); setSelectedCargos([]); setFiltersOpen(false); router.get('/mapa-politico', {}, { preserveState: false }); }} className="flex-1 lg:flex-initial px-3 lg:px-5 py-2.5 lg:py-3 border border-[var(--color-line)] text-[13px] lg:text-[15px] font-semibold text-[var(--color-ink-soft)] rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
+                        </div>
                     </div>
                 </div>
+
                 <div className="flex items-center gap-4 text-[11px] text-[var(--color-ink-faint)]">
                     <span className="font-bold text-[var(--color-ink)]">{data.length} registros</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}

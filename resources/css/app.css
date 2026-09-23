@@ -34,3 +34,8 @@
         -webkit-font-smoothing: antialiased;
     }
 }
+
+/* Safe area for iOS home indicator on bottom tab bar */
+.safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
