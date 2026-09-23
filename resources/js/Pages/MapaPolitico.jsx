@@ -1,7 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { downloadMunicipio, isDownloaded, getOfflinePersona } from '@/lib/offlineDb';
+import { downloadMunicipio, isDownloaded, getOfflinePersona, offlineUpdatePersona, offlineCreateNexo, offlineDeleteNexo, offlineCreateLider } from '@/lib/offlineDb';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { FullScreenSpinner } from '@/Components/Spinner';
 
@@ -138,13 +138,23 @@ function PersonaPanel({ personId, onClose }) {
                 setMessage(res.message || 'Guardado');
                 setEditMode(false);
                 loadData();
-                // Reload page data if partido was changed so the listing reflects it
                 if (form.partido) {
                     setTimeout(() => router.reload({ only: ['data'] }), 500);
                 }
                 setTimeout(() => setMessage(''), 3000);
             })
-            .catch(() => setMessage('Error al guardar'))
+            .catch(async () => {
+                // Offline fallback: save locally
+                try {
+                    await offlineUpdatePersona(personId, form);
+                    setMessage('Guardado localmente. Se enviara cuando haya internet.');
+                    setEditMode(false);
+                    setData(prev => ({ ...prev, ...form }));
+                } catch {
+                    setMessage('Error al guardar');
+                }
+                setTimeout(() => setMessage(''), 5000);
+            })
             .finally(() => setSaving(false));
     }
 
@@ -161,13 +171,32 @@ function PersonaPanel({ personId, onClose }) {
                 setMessage('Nexo agregado');
                 loadData();
                 setTimeout(() => setMessage(''), 3000);
+            })
+            .catch(async () => {
+                // Offline fallback
+                try {
+                    const newNexo = await offlineCreateNexo(personId, nexoForm);
+                    setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '' });
+                    setShowNexoForm(false);
+                    setMessage('Nexo guardado localmente. Se enviara con internet.');
+                    setData(prev => ({ ...prev, nexos: [...(prev.nexos || []), { ...nexoForm, id: newNexo.id }] }));
+                    setTimeout(() => setMessage(''), 5000);
+                } catch {
+                    setMessage('Error al guardar nexo');
+                }
             });
     }
 
     function deleteNexo(nexoId) {
         if (!confirm('Eliminar este nexo familiar?')) return;
         apiFetch(`/mapa-politico/nexos/${nexoId}`, { method: 'DELETE' })
-            .then(() => loadData());
+            .then(() => loadData())
+            .catch(async () => {
+                await offlineDeleteNexo(nexoId).catch(() => {});
+                setData(prev => ({ ...prev, nexos: (prev.nexos || []).filter(n => n.id !== nexoId) }));
+                setMessage('Eliminado localmente. Se sincronizara con internet.');
+                setTimeout(() => setMessage(''), 5000);
+            });
     }
 
     if (loading) return <FullScreenSpinner message="Cargando ficha..." />;
@@ -201,7 +230,10 @@ function PersonaPanel({ personId, onClose }) {
                     {/* Header */}
                     <div className="bg-[var(--color-primary)] text-white px-8 py-6 rounded-t-2xl flex items-center justify-between">
                         <div>
-                            <p className="text-[12px] text-white/50 uppercase tracking-widest">Ficha personal</p>
+                            <p className="text-[12px] text-white/50 uppercase tracking-widest">
+                                Ficha personal
+                                {data._offline && <span className="ml-2 px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded normal-case">Datos guardados</span>}
+                            </p>
                             <h2 className="text-[24px] font-extrabold uppercase mt-1">{data.nombre}</h2>
                             <p className="text-[14px] text-white/60 mt-1">{data.municipio ?? '—'} · {data.cargo ?? '—'}</p>
                         </div>
@@ -443,9 +475,26 @@ function CrearLiderModal({ open, onClose, municipios }) {
 
     function submit(e) {
         e.preventDefault();
+        if (!form.nombre.trim()) { setErrors({ nombre: 'El nombre es obligatorio' }); return; }
+        if (!form.municipio_id) { setErrors({ municipio_id: 'Selecciona un municipio' }); return; }
+
         setSaving(true);
         setErrors({});
         setSuccessMsg('');
+
+        if (!navigator.onLine) {
+            // Offline: save locally
+            offlineCreateLider({ ...form, municipio: municipios.find(m => m.id === form.municipio_id)?.name || '' })
+                .then(() => {
+                    setSuccessMsg('Lider guardado localmente. Se enviara cuando haya internet.');
+                    setForm(emptyForm);
+                    setTimeout(() => { setSuccessMsg(''); onClose(); }, 2500);
+                })
+                .catch(() => setErrors({ general: 'Error al guardar localmente' }))
+                .finally(() => setSaving(false));
+            return;
+        }
+
         router.post('/mapa-politico/crear-lider', form, {
             preserveScroll: true,
             onSuccess: () => {
