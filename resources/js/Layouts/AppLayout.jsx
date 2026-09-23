@@ -298,37 +298,33 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const [offlineAlert, setOfflineAlert] = useState(false);
 
     useEffect(() => {
-        const removeStart = router.on('start', (e) => {
+        const removeStart = router.on('start', () => setNavigating(true));
+        const removeFinish = router.on('finish', () => setNavigating(false));
+        const removeError = router.on('error', () => {
+            setNavigating(false);
             if (!navigator.onLine) {
-                e.detail.visit.cancel();
                 setOfflineAlert(true);
                 setTimeout(() => setOfflineAlert(false), 4000);
-                return;
             }
-            setNavigating(true);
         });
-        const removeFinish = router.on('finish', () => setNavigating(false));
-        return () => {
-            removeStart();
-            removeFinish();
-        };
+        return () => { removeStart(); removeFinish(); removeError(); };
     }, []);
 
     return (
         <div className="min-h-screen bg-[var(--color-bg)]">
             {/* Header */}
             <header className="bg-[var(--color-primary)] text-white relative z-40">
-                <div className="flex items-center justify-between px-4 lg:px-6 h-14">
-                    <div className="flex items-center gap-4">
-                        <Link href="/" className="flex items-center gap-3">
-                            <div className="w-7 h-5 rounded-[3px] overflow-hidden flex flex-col flex-shrink-0 shadow-sm">
+                <div className="flex items-center justify-between px-3 lg:px-6 h-11 lg:h-14">
+                    <div className="flex items-center gap-3">
+                        <Link href="/" className="flex items-center gap-2 lg:gap-3">
+                            <div className="w-6 h-4 lg:w-7 lg:h-5 rounded-[3px] overflow-hidden flex flex-col flex-shrink-0 shadow-sm">
                                 <span className="flex-[2] bg-[#FCD116]" />
                                 <span className="flex-1 bg-[#003893]" />
                                 <span className="flex-1 bg-[#CE1126]" />
                             </div>
                             <div>
-                                <p className="text-[13px] font-bold tracking-wide leading-tight">INTELIGENCIA ELECTORAL</p>
-                                <p className="text-[9px] text-white/50 tracking-[0.2em]">SANTANDER</p>
+                                <p className="text-[11px] lg:text-[13px] font-bold tracking-wide leading-tight">ELECTORAL</p>
+                                <p className="text-[8px] lg:text-[9px] text-white/50 tracking-[0.2em] hidden lg:block">SANTANDER</p>
                             </div>
                         </Link>
                     </div>
