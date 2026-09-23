@@ -218,15 +218,84 @@ const SIDEBAR_ITEMS = [
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
 ];
 
-/* ── Bottom Tab Bar for mobile ── */
-const TAB_ITEMS = SIDEBAR_ITEMS.map(item => ({ ...item, icon: ICONS[item.name] }));
+/* ── Mobile Export Sheet ── */
+function MobileExportSheet({ open, onClose, url }) {
+    if (!open) return null;
+
+    function getExportUrl(format) {
+        const currentUrl = new URL(window.location.href);
+        const params = new URLSearchParams(currentUrl.search);
+        const inertiaUrl = url.includes('?') ? url : '';
+        if (inertiaUrl) {
+            const inertiaParams = new URLSearchParams(inertiaUrl.split('?')[1] || '');
+            for (const [k, v] of inertiaParams) {
+                if (!params.has(k)) params.set(k, v);
+            }
+        }
+        const path = currentUrl.pathname;
+        let source = 'mapa-politico', title = 'Mapa Politico';
+        if (path.startsWith('/senado')) { source = 'senado'; title = 'Senado'; }
+        else if (path.startsWith('/camara')) { source = 'camara'; title = 'Camara'; }
+        else if (path.startsWith('/gobernador')) { source = 'gobernador'; title = 'Gobernador'; }
+        else if (path.startsWith('/asamblea')) { source = 'asamblea'; title = 'Asamblea'; }
+        const pathParts = path.split('/').filter(Boolean);
+        if (pathParts.length >= 2 && pathParts[1].length > 10) params.set('municipio', pathParts[1]);
+        params.set('source', source);
+        params.set('title', title);
+        return `/exportar/${format}?${params.toString()}`;
+    }
+
+    return (
+        <>
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+            <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl safe-bottom animate-slide-up">
+                <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-3" />
+                <div className="px-6 pt-5 pb-3">
+                    <h3 className="text-[18px] font-extrabold text-[var(--color-ink)]">Descargar datos</h3>
+                    <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">Elige el formato para exportar</p>
+                </div>
+                <div className="px-4 pb-6 space-y-3">
+                    <a
+                        href={getExportUrl('excel')}
+                        onClick={onClose}
+                        className="flex items-center gap-4 px-5 py-5 bg-emerald-50 border-2 border-emerald-200 rounded-2xl active:bg-emerald-100 transition-colors"
+                    >
+                        <div className="w-14 h-14 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        </div>
+                        <div>
+                            <p className="text-[17px] font-bold text-emerald-800">Excel</p>
+                            <p className="text-[13px] text-emerald-600">Archivo .xlsx para abrir en Excel</p>
+                        </div>
+                    </a>
+                    <a
+                        href={getExportUrl('pdf')}
+                        onClick={onClose}
+                        className="flex items-center gap-4 px-5 py-5 bg-red-50 border-2 border-red-200 rounded-2xl active:bg-red-100 transition-colors"
+                    >
+                        <div className="w-14 h-14 rounded-xl bg-red-500 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                        </div>
+                        <div>
+                            <p className="text-[17px] font-bold text-red-800">PDF</p>
+                            <p className="text-[13px] text-red-600">Documento para imprimir o compartir</p>
+                        </div>
+                    </a>
+                    <button onClick={onClose} className="w-full py-4 text-[16px] font-bold text-[var(--color-ink-faint)] rounded-2xl border-2 border-gray-200 active:bg-gray-100 mt-2">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </>
+    );
+}
 
 export default function AppLayout({ children, title, breadcrumb }) {
     const { url, props } = usePage();
     const auth = props.auth?.user;
-    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [navigating, setNavigating] = useState(false);
     const [offlinePanelOpen, setOfflinePanelOpen] = useState(false);
+    const [exportSheetOpen, setExportSheetOpen] = useState(false);
 
     useEffect(() => {
         const removeStart = router.on('start', () => setNavigating(true));
@@ -243,7 +312,6 @@ export default function AppLayout({ children, title, breadcrumb }) {
             <header className="bg-[var(--color-primary)] text-white relative z-40">
                 <div className="flex items-center justify-between px-4 lg:px-6 h-14">
                     <div className="flex items-center gap-4">
-                        {/* Hamburger hidden — mobile uses bottom tab bar */}
                         <Link href="/" className="flex items-center gap-3">
                             <div className="w-7 h-5 rounded-[3px] overflow-hidden flex flex-col flex-shrink-0 shadow-sm">
                                 <span className="flex-[2] bg-[#FCD116]" />
@@ -261,11 +329,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         <GlobalSearch />
                     </div>
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* Offline indicator */}
+                    {/* Desktop header actions */}
+                    <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
                         <OfflineIndicator />
-
-                        {/* Offline panel button */}
                         <button
                             onClick={() => setOfflinePanelOpen(true)}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white/70 hover:text-white transition-colors"
@@ -274,23 +340,19 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
-                            <span className="text-[11px] font-semibold hidden sm:inline">Offline</span>
+                            <span className="text-[11px] font-semibold">Offline</span>
                         </button>
-
-                        {/* Export buttons */}
                         <ExportButtons url={url} />
-
                         <div className="relative group">
                             <button className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1.5 transition-colors">
                                 <div className="w-8 h-8 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-[12px] font-bold flex-shrink-0">
                                     {auth?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'U'}
                                 </div>
-                                <div className="text-right hidden sm:block">
+                                <div className="text-right">
                                     <p className="text-[11px] font-semibold text-white/90 leading-tight">{auth?.name || 'Usuario'}</p>
                                     <p className="text-[9px] text-white/40">{auth?.role || auth?.email || ''}</p>
                                 </div>
                             </button>
-                            {/* Dropdown */}
                             <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                                 <div className="px-4 py-3 border-b border-gray-100">
                                     <p className="text-[12px] font-semibold text-[var(--color-ink)] truncate">{auth?.name}</p>
@@ -305,11 +367,16 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             </div>
                         </div>
                     </div>
+
+                    {/* Mobile: just offline indicator */}
+                    <div className="lg:hidden flex items-center">
+                        <OfflineIndicator />
+                    </div>
                 </div>
 
-                {/* Breadcrumb */}
+                {/* Breadcrumb — desktop only */}
                 {breadcrumb && (
-                    <div className="bg-black/15 px-4 lg:pl-[calc(200px+1.5rem)] py-1.5 text-[11px] flex items-center gap-1.5 text-white/60">
+                    <div className="hidden lg:flex bg-black/15 px-4 lg:pl-[calc(200px+1.5rem)] py-1.5 text-[11px] items-center gap-1.5 text-white/60">
                         {breadcrumb.map((item, i) => (
                             <span key={i} className="flex items-center gap-1.5">
                                 {i > 0 && <span className="text-white/25">/</span>}
@@ -355,38 +422,57 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     </nav>
                 </aside>
 
-                {/* Main content — pb-16 on mobile for tab bar */}
-                <main className="flex-1 min-w-0 pb-16 lg:pb-0">
+                {/* Main content — pb-24 on mobile for tab bar */}
+                <main className="flex-1 min-w-0 pb-24 lg:pb-0">
                     {children}
                 </main>
             </div>
 
-            {/* Bottom Tab Bar — mobile only */}
-            <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] border-t border-white/10 safe-bottom">
-                <div className="flex items-stretch justify-around h-14">
-                    {TAB_ITEMS.map((item) => {
+            {/* ══ Bottom Tab Bar — mobile only, BIG for elderly users ══ */}
+            <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
+                <div className="flex items-stretch h-[72px]">
+                    {/* Gobernador */}
+                    {SIDEBAR_ITEMS.map((item) => {
                         const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
                         return (
                             <Link
                                 key={item.name}
                                 href={item.href}
                                 prefetch="hover"
-                                className={`flex flex-col items-center justify-center flex-1 gap-0.5 transition-colors ${
-                                    isActive
-                                        ? 'text-white'
-                                        : 'text-white/40 active:text-white/70'
+                                className={`flex flex-col items-center justify-center flex-1 gap-1 transition-colors active:bg-white/10 ${
+                                    isActive ? 'text-[var(--color-accent)]' : 'text-white/50'
                                 }`}
                             >
-                                <span className={`relative ${isActive ? 'scale-110' : ''} transition-transform`}>
-                                    {item.icon}
-                                    {isActive && (
-                                        <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[var(--color-accent)] rounded-full" />
-                                    )}
+                                <span className="w-7 h-7 flex items-center justify-center [&>svg]:w-7 [&>svg]:h-7">
+                                    {ICONS[item.name]}
                                 </span>
-                                <span className="text-[10px] font-semibold leading-tight">{item.label}</span>
+                                <span className="text-[12px] font-bold leading-tight">{item.label}</span>
+                                {isActive && <span className="w-6 h-[3px] bg-[var(--color-accent)] rounded-full" />}
                             </Link>
                         );
                     })}
+
+                    {/* Descargar */}
+                    <button
+                        onClick={() => setExportSheetOpen(true)}
+                        className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
+                    >
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="text-[12px] font-bold leading-tight">Descargar</span>
+                    </button>
+
+                    {/* Offline */}
+                    <button
+                        onClick={() => setOfflinePanelOpen(true)}
+                        className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
+                    >
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        <span className="text-[12px] font-bold leading-tight">Guardar</span>
+                    </button>
                 </div>
             </nav>
 
@@ -395,6 +481,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
             {/* Offline panel */}
             <OfflinePanel open={offlinePanelOpen} onClose={() => setOfflinePanelOpen(false)} />
+
+            {/* Mobile export bottom sheet */}
+            <MobileExportSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} url={url} />
         </div>
     );
 }
