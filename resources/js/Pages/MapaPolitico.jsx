@@ -85,6 +85,7 @@ function apiFetch(url, options = {}) {
 function PersonaPanel({ personId, onClose }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [form, setForm] = useState({});
     const [nexoForm, setNexoForm] = useState({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '' });
@@ -94,15 +95,23 @@ function PersonaPanel({ personId, onClose }) {
 
     function loadData() {
         return apiFetch(`/mapa-politico/persona/${personId}`, { method: 'GET' })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const ct = r.headers.get('content-type') || '';
+                if (!ct.includes('json')) throw new Error('Respuesta no es JSON');
+                return r.json();
+            })
             .then(d => {
                 setData(d);
+                setLoadError(false);
                 setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '' });
-            });
+            })
+            .catch(() => setLoadError(true));
     }
 
     useEffect(() => {
         setLoading(true);
+        setLoadError(false);
         loadData().finally(() => setLoading(false));
     }, [personId]);
 
@@ -152,7 +161,22 @@ function PersonaPanel({ personId, onClose }) {
 
     if (loading) return <FullScreenSpinner message="Cargando ficha..." />;
 
-    if (!data) return null;
+    if (loadError || !data) return (
+        <>
+            <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[400px] p-8 text-center">
+                    <svg className="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+                    <p className="text-[16px] font-bold text-[var(--color-ink)] mb-2">No se pudo cargar la ficha</p>
+                    <p className="text-[14px] text-[var(--color-ink-faint)] mb-6">Revisa tu conexion a internet e intenta de nuevo.</p>
+                    <div className="flex gap-3 justify-center">
+                        <button onClick={() => { setLoading(true); setLoadError(false); loadData().finally(() => setLoading(false)); }} className="px-6 py-3 bg-[var(--color-primary)] text-white text-[15px] font-bold rounded-xl">Reintentar</button>
+                        <button onClick={onClose} className="px-6 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
 
     return (
         <>

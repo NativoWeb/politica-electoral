@@ -1,5 +1,5 @@
 // Service Worker — Inteligencia Electoral PWA
-const CACHE_NAME = 'electoral-v2';
+const CACHE_NAME = 'electoral-v3';
 const APP_SHELL = [
     '/',
     '/mapa-politico',
@@ -119,8 +119,8 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // For API calls — network only (offline data handled by IndexedDB)
-    if (request.url.includes('/api/')) {
+    // For API calls and data endpoints — network only (bypass SW)
+    if (request.url.includes('/api/') || request.url.includes('/persona/') || request.url.includes('/nexos/') || request.url.includes('/crear-lider')) {
         return;
     }
 
