@@ -787,6 +787,16 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
     const [showCargoDropdown, setShowCargoDropdown] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [offlineStatus, setOfflineStatus] = useState('idle'); // idle | downloading | saved | already
+    const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+    // Detect online/offline
+    useEffect(() => {
+        const goOnline = () => setIsOnline(true);
+        const goOffline = () => setIsOnline(false);
+        window.addEventListener('online', goOnline);
+        window.addEventListener('offline', goOffline);
+        return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+    }, []);
 
     // Check if current municipio is already downloaded
     useEffect(() => {
@@ -874,6 +884,20 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                     <span className="hidden sm:inline">Crear Líder</span>
                 </button>
             </div>
+
+            {/* Banner sin conexión */}
+            {!isOnline && (
+                <div className="bg-red-500 text-white px-4 py-3 flex items-center gap-3">
+                    <svg className="w-6 h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728" />
+                        <line x1="4" y1="4" x2="20" y2="20" strokeLinecap="round" strokeWidth={2.5} />
+                    </svg>
+                    <div>
+                        <p className="text-[15px] font-bold">Sin conexion a internet</p>
+                        <p className="text-[13px] text-white/80">Solo puedes ver los datos que hayas guardado antes. Conectate a internet para buscar o filtrar.</p>
+                    </div>
+                </div>
+            )}
 
             {/* Filtros */}
             <div className="bg-white border-b border-[var(--color-line)] px-4 lg:px-5 py-3 space-y-3">
