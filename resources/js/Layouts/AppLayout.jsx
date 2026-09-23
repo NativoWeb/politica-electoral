@@ -295,9 +295,18 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const auth = props.auth?.user;
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
+    const [offlineAlert, setOfflineAlert] = useState(false);
 
     useEffect(() => {
-        const removeStart = router.on('start', () => setNavigating(true));
+        const removeStart = router.on('start', (e) => {
+            if (!navigator.onLine) {
+                e.detail.visit.cancel();
+                setOfflineAlert(true);
+                setTimeout(() => setOfflineAlert(false), 4000);
+                return;
+            }
+            setNavigating(true);
+        });
         const removeFinish = router.on('finish', () => setNavigating(false));
         return () => {
             removeStart();
@@ -456,6 +465,17 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
             {/* Spinner global de navegación */}
             {navigating && <FullScreenSpinner message="Cargando..." />}
+
+            {/* Offline navigation alert */}
+            {offlineAlert && (
+                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-5 py-4 bg-red-500 text-white rounded-2xl shadow-2xl flex items-center gap-3 max-w-[90vw] animate-slide-up">
+                    <svg className="w-7 h-7 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728" /><line x1="4" y1="4" x2="20" y2="20" strokeLinecap="round" strokeWidth={2.5} /></svg>
+                    <div>
+                        <p className="text-[15px] font-bold">Sin conexion</p>
+                        <p className="text-[13px] text-white/80">No puedes navegar sin internet</p>
+                    </div>
+                </div>
+            )}
 
             {/* Mobile export bottom sheet */}
             <MobileExportSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} url={url} />

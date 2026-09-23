@@ -84,6 +84,42 @@ export async function getOfflineData(municipioId) {
     return { personas, lideres, gobernador };
 }
 
+// ─── Get a single person from offline DB (for persona panel) ───
+
+export async function getOfflinePersona(personId) {
+    // Try personas table first, then lideres
+    let person = await db.personas.get(personId);
+    let source = 'persona';
+    if (!person) {
+        person = await db.lideres.get(personId);
+        source = 'lider';
+    }
+    if (!person) return null;
+
+    // Get nexos
+    const nexos = await db.nexos.where('personId').equals(personId).toArray();
+
+    return {
+        nombre: person.nombre,
+        municipio: person.municipio || person.municipioId,
+        cargo: person.cargo,
+        telefono: person.telefono,
+        email: person.email,
+        partido: person.partido,
+        observacion: person.observacion || person.observaciones,
+        direccion: person.direccion,
+        barrio: person.barrio,
+        zona: person.zona,
+        cargos: person.cargos || (person.cargo ? [person.cargo] : []),
+        nexos: nexos.map(n => ({
+            id: n.id, nombre: n.nombre, parentesco: n.parentesco,
+            cargo: n.cargo, edad: n.edad, gustos: n.gustos, observaciones: n.observaciones,
+        })),
+        _offline: true,
+        _source: source,
+    };
+}
+
 // ─── Get downloaded municipios ───
 
 export async function getDownloads() {

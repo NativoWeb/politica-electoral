@@ -1,7 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { downloadMunicipio, isDownloaded } from '@/lib/offlineDb';
+import { downloadMunicipio, isDownloaded, getOfflinePersona } from '@/lib/offlineDb';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { FullScreenSpinner } from '@/Components/Spinner';
 
@@ -107,7 +107,17 @@ function PersonaPanel({ personId, onClose }) {
                 setLoadError(false);
                 setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '' });
             })
-            .catch(() => setLoadError(true));
+            .catch(async () => {
+                // Fallback: try offline data from IndexedDB
+                const offlineData = await getOfflinePersona(personId).catch(() => null);
+                if (offlineData) {
+                    setData(offlineData);
+                    setLoadError(false);
+                    setForm({ telefono: offlineData.telefono || '', email: offlineData.email || '', cargo: offlineData.cargo || '', cargos: offlineData.cargos || [], observacion: offlineData.observacion || '', direccion: offlineData.direccion || '', barrio: offlineData.barrio || '', zona: offlineData.zona || '', partido: offlineData.partido || '' });
+                } else {
+                    setLoadError(true);
+                }
+            });
     }
 
     useEffect(() => {
