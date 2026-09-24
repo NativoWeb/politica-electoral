@@ -370,9 +370,15 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         </div>
                     </div>
 
-                    {/* Mobile: just offline indicator */}
-                    <div className="lg:hidden flex items-center">
+                    {/* Mobile: offline indicator + logout */}
+                    <div className="lg:hidden flex items-center gap-2">
                         <OfflineIndicator />
+                        <form method="POST" action="/logout">
+                            <input type="hidden" name="_token" value={document.querySelector('meta[name="csrf-token"]')?.content} />
+                            <button type="submit" className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30" title="Cerrar sesion">
+                                <svg className="w-4 h-4 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                            </button>
+                        </form>
                     </div>
                 </div>
 
