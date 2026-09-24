@@ -257,7 +257,7 @@ class MapaPoliticoController extends Controller
         $lideresLookup = [];
         if (!empty($relevantMunicipios)) {
             $lideresAll = DB::table('lideres')
-                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona')
+                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
             foreach ($lideresAll as $l) {
