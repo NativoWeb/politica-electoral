@@ -66,6 +66,7 @@ class MapaPoliticoController extends Controller
         $search = $request->input('search');
         $partido = $request->input('partido');
         $barrio = $request->input('barrio');
+        $destacado = $request->input('destacado');
 
         // #3: Escape search for ILIKE
         $searchEscaped = $search ? $this->escapeLike($search) : null;
@@ -285,6 +286,11 @@ class MapaPoliticoController extends Controller
         }
         unset($row);
 
+        // === FILTRO POR DESTACADO ===
+        if ($destacado) {
+            $data = array_values(array_filter($data, fn ($row) => !empty($row['destacado'])));
+        }
+
         // Unify duplicates
         $unified = [];
         foreach ($data as $row) {
@@ -332,7 +338,7 @@ class MapaPoliticoController extends Controller
             'cargosPorTipo' => $this->cargosPorTipo(),
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
-            'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio']),
+            'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado']),
         ]);
     }
 

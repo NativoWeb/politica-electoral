@@ -908,7 +908,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
 
     // Determine if we should show collapsible sections or flat table
     const tipoFilter = filters.tipo ?? 'todos';
-    const hasSpecificFilters = filters.search || filters.cargo || filters.barrio;
+    const hasSpecificFilters = filters.search || filters.cargo || filters.barrio || filters.destacado;
     const showSections = tipoFilter === 'todos' && !hasSpecificFilters;
 
     // Group data by tipo_registro for sections
@@ -933,6 +933,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
             cargo: filters.cargo,
             partido: filters.partido,
             barrio: filters.barrio,
+            destacado: filters.destacado,
             search: localSearch || undefined,
             provincia: selectedProv || undefined,
             ...overrides,
@@ -1095,6 +1096,19 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                 <div className="flex items-center gap-3 text-[11px] text-[var(--color-ink-faint)] flex-wrap">
                     <span className="font-bold text-[var(--color-ink)]">{data.length} registros</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
+
+                    {/* Destacados toggle */}
+                    <button
+                        onClick={() => applyFilters({ destacado: filters.destacado ? undefined : '1' })}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
+                            filters.destacado
+                                ? 'bg-amber-400 text-white'
+                                : 'bg-amber-50 text-amber-600 border border-amber-200'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+                        {filters.destacado ? 'Destacados' : 'Destacados'}
+                    </button>
 
                     {/* Offline download button — only when a municipio is selected */}
                     {municipioInfo && offlineStatus === 'idle' && (
