@@ -207,7 +207,8 @@ export default function Users({ users, roles }) {
                     </table>
                 </div>
 
-                {/* Link a Territorio */}
+                {/* Admin links */}
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mt-6 mb-2 px-1">Administracion</h3>
                 <Link
                     href="/admin/territorio"
                     className="flex items-center gap-4 px-5 py-4 bg-white border border-[var(--color-line)] rounded-lg hover:bg-gray-50 transition-colors"
@@ -218,6 +219,19 @@ export default function Users({ users, roles }) {
                     <div className="flex-1">
                         <p className="text-[14px] font-bold text-[var(--color-ink)]">Territorio</p>
                         <p className="text-[12px] text-[var(--color-ink-faint)]">Departamentos, provincias y municipios</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                </Link>
+                <Link
+                    href="/admin/partidos"
+                    className="flex items-center gap-4 px-5 py-4 bg-white border border-[var(--color-line)] rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm0 0h3" /></svg>
+                    </div>
+                    <div className="flex-1">
+                        <p className="text-[14px] font-bold text-[var(--color-ink)]">Partidos</p>
+                        <p className="text-[12px] text-[var(--color-ink-faint)]">Crear, editar y desactivar partidos politicos</p>
                     </div>
                     <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                 </Link>

@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LegislativoController;
+use App\Http\Controllers\PartidoCrudController;
 use App\Http\Controllers\TerritoryController;
 use App\Http\Controllers\MunicipioController;
 use App\Http\Controllers\PartidoController;
@@ -82,6 +83,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store');
         Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');
         Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store');
+        Route::get('/partidos', [PartidoCrudController::class, 'index'])->name('partidos');
+        Route::post('/partidos', [PartidoCrudController::class, 'store'])->name('partidos.store');
+        Route::put('/partidos/{id}', [PartidoCrudController::class, 'update'])->name('partidos.update');
+        Route::delete('/partidos/{id}', [PartidoCrudController::class, 'destroy'])->name('partidos.destroy');
+        Route::post('/partidos/{id}/restore', [PartidoCrudController::class, 'restore'])->name('partidos.restore');
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports');
         Route::get('/catalogos', [AdminController::class, 'catalogs'])->name('catalogs');
 
