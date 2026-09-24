@@ -1,4 +1,4 @@
-import { Link, router, usePage } from '@inertiajs/react';
+import { Link, router, usePage, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
@@ -235,6 +235,61 @@ const ICONS_EXTRA = {
     ),
 };
 
+/* ── Password Change Modal ── */
+function PasswordModal({ open, onClose }) {
+    const { data, setData, post, processing, errors, reset } = useForm({
+        current_password: '', new_password: '', new_password_confirmation: '',
+    });
+    const [success, setSuccess] = useState(false);
+
+    if (!open) return null;
+
+    function handleSubmit(e) {
+        e.preventDefault();
+        post('/cambiar-password', {
+            onSuccess: () => { reset(); setSuccess(true); setTimeout(() => { setSuccess(false); onClose(); }, 2000); },
+        });
+    }
+
+    const inputCls = "w-full px-4 py-3 border border-[var(--color-line)] rounded-lg text-[16px] focus:outline-none focus:border-[var(--color-primary)]";
+
+    return (
+        <>
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[400px] overflow-hidden">
+                    <div className="bg-[var(--color-primary)] text-white px-6 py-5 flex items-center justify-between">
+                        <h2 className="text-[18px] font-extrabold">CAMBIAR CONTRASEÑA</h2>
+                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+                    <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                        {success && <div className="px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-[14px] font-semibold text-emerald-700">Contraseña actualizada</div>}
+                        <div>
+                            <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Contraseña actual</label>
+                            <input type="password" className={inputCls} value={data.current_password} onChange={e => setData('current_password', e.target.value)} required />
+                            {errors.current_password && <p className="text-[12px] text-red-500 mt-1">{errors.current_password}</p>}
+                        </div>
+                        <div>
+                            <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Nueva contraseña</label>
+                            <input type="password" className={inputCls} value={data.new_password} onChange={e => setData('new_password', e.target.value)} required placeholder="Minimo 8 caracteres" />
+                            {errors.new_password && <p className="text-[12px] text-red-500 mt-1">{errors.new_password}</p>}
+                        </div>
+                        <div>
+                            <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Confirmar nueva contraseña</label>
+                            <input type="password" className={inputCls} value={data.new_password_confirmation} onChange={e => setData('new_password_confirmation', e.target.value)} required />
+                        </div>
+                        <button type="submit" disabled={processing} className="w-full px-6 py-3.5 bg-[var(--color-primary)] text-white text-[16px] font-bold rounded-xl disabled:opacity-50">
+                            {processing ? 'Guardando...' : 'Cambiar contraseña'}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </>
+    );
+}
+
 /* ── Mobile Export Sheet ── */
 function MobileExportSheet({ open, onClose, url }) {
     if (!open) return null;
@@ -315,6 +370,8 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
+    const [mobileUserMenu, setMobileUserMenu] = useState(false);
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
 
     useEffect(() => {
         const removeStart = router.on('start', () => setNavigating(true));
@@ -378,15 +435,14 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         </div>
                     </div>
 
-                    {/* Mobile: offline indicator + logout */}
-                    <div className="lg:hidden flex items-center gap-2">
+                    {/* Mobile: offline + user menu */}
+                    <div className="lg:hidden flex items-center gap-1.5">
                         <OfflineIndicator />
                         <button
-                            onClick={() => router.post('/logout')}
-                            className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30"
-                            title="Cerrar sesion"
+                            onClick={() => setMobileUserMenu(!mobileUserMenu)}
+                            className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30 text-white text-[11px] font-bold"
                         >
-                            <svg className="w-4 h-4 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                            {auth?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'U'}
                         </button>
                     </div>
                 </div>
@@ -406,7 +462,38 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         ))}
                     </div>
                 )}
+                {/* Mobile search bar */}
+                <div className="lg:hidden bg-[var(--color-primary-dark)] px-3 py-2">
+                    <GlobalSearch />
+                </div>
             </header>
+
+            {/* Mobile user menu (bottom sheet) */}
+            {mobileUserMenu && (
+                <>
+                    <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setMobileUserMenu(false)} />
+                    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl safe-bottom animate-slide-up">
+                        <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-3" />
+                        <div className="px-6 pt-4 pb-2">
+                            <p className="text-[16px] font-bold text-[var(--color-ink)]">{auth?.name}</p>
+                            <p className="text-[13px] text-[var(--color-ink-faint)]">{auth?.email}</p>
+                        </div>
+                        <div className="px-4 pb-6 space-y-2">
+                            <button onClick={() => { setMobileUserMenu(false); setShowPasswordModal(true); }} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-gray-100 transition-colors">
+                                <svg className="w-6 h-6 text-[var(--color-ink-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                                <span className="text-[16px] font-semibold text-[var(--color-ink)]">Cambiar contraseña</span>
+                            </button>
+                            <button onClick={() => { setMobileUserMenu(false); router.post('/logout'); }} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-red-50 transition-colors">
+                                <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                <span className="text-[16px] font-semibold text-red-600">Cerrar sesion</span>
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Password change modal */}
+            <PasswordModal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
 
             <div className="flex">
                 {/* Sidebar — desktop only */}

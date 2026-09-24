@@ -63,6 +63,19 @@ Route::middleware('auth')->group(function () {
         Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
         Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
     });
+    // Change own password
+    Route::post('/cambiar-password', function (\Illuminate\Http\Request $request) {
+        $request->validate([
+            'current_password' => 'required',
+            'new_password' => 'required|string|min:8|confirmed',
+        ]);
+        if (!\Illuminate\Support\Facades\Hash::check($request->current_password, $request->user()->password)) {
+            return back()->withErrors(['current_password' => 'La contraseña actual no es correcta']);
+        }
+        $request->user()->update(['password' => \Illuminate\Support\Facades\Hash::make($request->new_password)]);
+        return back()->with('success', 'Contraseña actualizada');
+    })->name('password.update');
+
     Route::get('/analisis', [ComparadorController::class, 'index'])->name('comparador');
 
     // Exports
@@ -78,7 +91,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [AdminController::class, 'index'])->name('index');
         Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
         Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
+        Route::put('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('users.update');
         Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
+        Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy');
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory');
         Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store');
         Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');

@@ -71,11 +71,42 @@ class AdminController extends Controller
         return back()->with('success', 'Usuario creado.');
     }
 
+    public function updateUser(Request $request, string $id)
+    {
+        $user = User::findOrFail($id);
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $user->id,
+            'role_id' => 'nullable|exists:roles,id',
+            'password' => 'nullable|string|min:8',
+        ]);
+
+        $user->name = $data['name'];
+        $user->email = $data['email'];
+        $user->role_id = $data['role_id'] ?: null;
+        if (!empty($data['password'])) {
+            $user->password = Hash::make($data['password']);
+        }
+        $user->save();
+
+        return back()->with('success', 'Usuario actualizado.');
+    }
+
     public function toggleUser(string $id)
     {
         $user = User::findOrFail($id);
         $user->update(['is_active' => !$user->is_active]);
         return back();
+    }
+
+    public function destroyUser(string $id)
+    {
+        $user = User::findOrFail($id);
+        if ($user->id === request()->user()->id) {
+            return back()->withErrors(['delete' => 'No puedes eliminar tu propia cuenta']);
+        }
+        $user->delete();
+        return back()->with('success', 'Usuario eliminado.');
     }
 
     public function imports()
