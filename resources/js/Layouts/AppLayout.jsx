@@ -211,7 +211,6 @@ function ExportButtons({ url }) {
 const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
-    { name: 'TERRITORIO', href: '/admin/territorio', label: 'Territorio' },
     { name: 'USUARIOS', href: '/admin/usuarios', label: 'Usuarios', adminOnly: true },
 ];
 
