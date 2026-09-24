@@ -169,7 +169,7 @@ class MapaPoliticoController extends Controller
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('0 as votos'), DB::raw("'Líderes' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona'
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado'
                 );
 
             if ($munId) $query->where('geographic_unit_id', $munId);
@@ -190,7 +190,7 @@ class MapaPoliticoController extends Controller
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('0 as votos'), DB::raw("'Directorio Municipal' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona'
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado'
                 );
 
             if ($munId) $query->where('geographic_unit_id', $munId);
@@ -469,6 +469,7 @@ class MapaPoliticoController extends Controller
             'direccion' => $bestLider->direccion ?? null,
             'barrio' => $bestLider->barrio ?? null,
             'zona' => $bestLider->zona ?? null,
+            'destacado' => (bool) ($bestLider->destacado ?? false),
             'nexos' => $nexos,
         ]);
     }
@@ -486,6 +487,7 @@ class MapaPoliticoController extends Controller
             'direccion' => 'nullable|string|max:255',
             'barrio' => 'nullable|string|max:100',
             'zona' => 'nullable|in:rural,urbana',
+            'destacado' => 'nullable|boolean',
         ]);
 
         // #15: Wrap in transaction to prevent race conditions
@@ -557,6 +559,7 @@ class MapaPoliticoController extends Controller
                     'direccion' => $data['direccion'] ?? $lider->direccion ?? null,
                     'barrio' => $data['barrio'] ?? $lider->barrio ?? null,
                     'zona' => $data['zona'] ?? $lider->zona ?? null,
+                    'destacado' => $data['destacado'] ?? $lider->destacado ?? false,
                     'updated_at' => now(),
                 ];
                 if ($partidoSent) $updateData['partido'] = $partidoValue;

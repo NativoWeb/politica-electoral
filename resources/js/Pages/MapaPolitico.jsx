@@ -111,7 +111,7 @@ function PersonaPanel({ personId, onClose }) {
             .then(d => {
                 setData(d);
                 setLoadError(false);
-                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '' });
+                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado });
             })
             .catch(async () => {
                 // Fallback: try offline data from IndexedDB
@@ -323,6 +323,14 @@ function PersonaPanel({ personId, onClose }) {
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Observaciones</label>
                                     <textarea className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" rows={3} value={form.observacion} onChange={e => setForm({ ...form, observacion: e.target.value })} />
                                 </div>
+                                {/* Destacado */}
+                                <label className="flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors bg-amber-50 border-amber-200">
+                                    <input type="checkbox" checked={form.destacado} onChange={e => setForm({ ...form, destacado: e.target.checked })} className="w-6 h-6 rounded border-amber-300 text-amber-500 focus:ring-amber-400" />
+                                    <div>
+                                        <span className="text-[15px] font-bold text-amber-700">Persona destacada</span>
+                                        <p className="text-[12px] text-amber-600">Aparecera con estrella en el listado</p>
+                                    </div>
+                                </label>
                                 <button onClick={savePersona} disabled={saving} className="px-6 py-3 bg-[var(--color-good)] text-white text-[16px] font-bold rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50">
                                     {saving ? 'Guardando...' : 'Guardar cambios'}
                                 </button>
@@ -685,6 +693,7 @@ function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
                                 <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: color, opacity: 0.4 }} />
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
+                                        {row.destacado && <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
                                         <span className="text-[13px] font-bold text-[var(--color-primary)] uppercase truncate">{row.nombre}</span>
                                         {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[8px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
                                     </div>
@@ -723,6 +732,7 @@ function PersonRow({ row, onSelectPerson, color }) {
             {/* Info */}
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
+                    {row.destacado && <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
                     <span className="text-[14px] font-bold text-[var(--color-ink)] uppercase truncate">{row.nombre}</span>
                     {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[9px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
                 </div>
