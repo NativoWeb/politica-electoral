@@ -321,7 +321,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     return (
         <div className="min-h-screen bg-[var(--color-bg)]">
             {/* Header */}
-            <header className="bg-[var(--color-primary)] text-white relative z-40">
+            <header className="bg-[var(--color-primary)] text-white relative z-40 safe-top">
                 <div className="flex items-center justify-between px-3 lg:px-6 h-11 lg:h-14">
                     <div className="flex items-center gap-3">
                         <Link href="/" className="flex items-center gap-2 lg:gap-3">

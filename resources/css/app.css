@@ -35,7 +35,10 @@
     }
 }
 
-/* Safe area for iOS home indicator on bottom tab bar */
+/* Safe areas for iOS PWA standalone mode */
+.safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+}
 .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
 }
