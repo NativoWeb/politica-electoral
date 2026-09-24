@@ -280,6 +280,7 @@ class MapaPoliticoController extends Controller
                 if (empty($row['barrio'])) $row['barrio'] = $lider->barrio ?? null;
                 if (empty($row['direccion'])) $row['direccion'] = $lider->direccion ?? null;
                 if (empty($row['zona'])) $row['zona'] = $lider->zona ?? null;
+                $row['destacado'] = (bool) ($lider->destacado ?? false);
             }
         }
         unset($row);
