@@ -79,6 +79,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
         Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory');
+        Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store');
         Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');
         Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store');
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports');
