@@ -196,6 +196,7 @@ class MapaPoliticoController extends Controller
             if ($munId) $query->where('geographic_unit_id', $munId);
             elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
             if ($searchEscaped) $query->where('nombre', 'ilike', "%{$searchEscaped}%");
+            if (!empty($cargos)) $query->whereIn('cargo', $cargos);
             if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
             if ($noGeoFilter) $query->limit(200);
 
