@@ -211,10 +211,16 @@ function ExportButtons({ url }) {
 const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
+    { name: 'TERRITORIO', href: '/admin/territorio', label: 'Territorio' },
     { name: 'USUARIOS', href: '/admin/usuarios', label: 'Usuarios', adminOnly: true },
 ];
 
 const ICONS_EXTRA = {
+    TERRITORIO: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+            <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    ),
     USUARIOS: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" />

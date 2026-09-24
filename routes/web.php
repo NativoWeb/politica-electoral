@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LegislativoController;
+use App\Http\Controllers\TerritoryController;
 use App\Http\Controllers\MunicipioController;
 use App\Http\Controllers\PartidoController;
 use App\Http\Controllers\PersonaController;
@@ -77,6 +78,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
         Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
         Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
+        Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory');
+        Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');
+        Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store');
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports');
         Route::get('/catalogos', [AdminController::class, 'catalogs'])->name('catalogs');
 
