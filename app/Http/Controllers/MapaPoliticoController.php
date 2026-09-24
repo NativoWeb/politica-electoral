@@ -164,6 +164,7 @@ class MapaPoliticoController extends Controller
         // === LIDERES ===
         if ($tipo === 'todos' || $tipo === 'lideres') {
             $query = DB::table('lideres')
+                ->where('cargo', '!=', 'Directorio Municipal')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
@@ -175,6 +176,26 @@ class MapaPoliticoController extends Controller
             elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
             if ($searchEscaped) $query->where('nombre', 'ilike', "%{$searchEscaped}%");
             if (!empty($cargos)) $query->whereIn('cargo', $cargos);
+            if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
+            if ($noGeoFilter) $query->limit(200);
+
+            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // === DIRECTORIO MUNICIPAL ===
+        if ($tipo === 'todos' || $tipo === 'directorio') {
+            $query = DB::table('lideres')
+                ->where('cargo', 'Directorio Municipal')
+                ->select(
+                    'id', 'nombre', 'municipio', 'provincia',
+                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
+                    DB::raw('0 as votos'), DB::raw("'Directorio Municipal' as tipo_registro"),
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona'
+                );
+
+            if ($munId) $query->where('geographic_unit_id', $munId);
+            elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
+            if ($searchEscaped) $query->where('nombre', 'ilike', "%{$searchEscaped}%");
             if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
             if ($noGeoFilter) $query->limit(200);
 
