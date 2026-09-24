@@ -209,14 +209,20 @@ function ExportButtons({ url }) {
 }
 
 const SIDEBAR_ITEMS = [
-    // { name: 'SENADO', href: '/senado', label: 'Senado' },
-    // { name: 'CAMARA', href: '/camara', label: 'Camara' },
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador' },
-    // { name: 'ASAMBLEA', href: '/asamblea', label: 'Asamblea' },
-    // { name: 'ALCALDE', href: '/', label: 'Alcalde' },
-    // { name: 'CONCEJO', href: '/concejo', label: 'Concejo' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
+    { name: 'USUARIOS', href: '/admin/usuarios', label: 'Usuarios', adminOnly: true },
 ];
+
+const ICONS_EXTRA = {
+    USUARIOS: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" />
+        </svg>
+    ),
+};
 
 /* ── Mobile Export Sheet ── */
 function MobileExportSheet({ open, onClose, url }) {
@@ -293,6 +299,8 @@ function MobileExportSheet({ open, onClose, url }) {
 export default function AppLayout({ children, title, breadcrumb }) {
     const { url, props } = usePage();
     const auth = props.auth?.user;
+    const isSuperadmin = auth?.role === 'Superadministrador';
+    const visibleItems = SIDEBAR_ITEMS.filter(item => !item.adminOnly || isSuperadmin);
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
@@ -390,7 +398,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                 <aside className="hidden lg:flex fixed lg:sticky top-0 left-0 z-30 lg:z-0 w-[200px] bg-[#002244] h-screen overflow-y-auto overflow-x-hidden flex-col">
                     <div className="h-14 flex-shrink-0" />
                     <nav className="flex flex-col py-3 gap-0.5 px-2">
-                        {SIDEBAR_ITEMS.map((item) => {
+                        {visibleItems.map((item) => {
                             const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
                             return (
                                 <Link
@@ -408,7 +416,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     {isActive && (
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[var(--color-accent)] rounded-r-full" />
                                     )}
-                                    <span className="flex-shrink-0">{ICONS[item.name]}</span>
+                                    <span className="flex-shrink-0">{ICONS[item.name] || ICONS_EXTRA[item.name]}</span>
                                     <span>{item.label}</span>
                                 </Link>
                             );
@@ -425,8 +433,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
             {/* ══ Bottom Tab Bar — mobile only, BIG for elderly users ══ */}
             <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
                 <div className="flex items-stretch h-[72px]">
-                    {/* Gobernador */}
-                    {SIDEBAR_ITEMS.map((item) => {
+                    {visibleItems.map((item) => {
                         const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
                         return (
                             <Link
@@ -438,7 +445,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 }`}
                             >
                                 <span className="w-7 h-7 flex items-center justify-center [&>svg]:w-7 [&>svg]:h-7">
-                                    {ICONS[item.name]}
+                                    {ICONS[item.name] || ICONS_EXTRA[item.name]}
                                 </span>
                                 <span className="text-[12px] font-bold leading-tight">{item.label}</span>
                                 {isActive && <span className="w-6 h-[3px] bg-[var(--color-accent)] rounded-full" />}

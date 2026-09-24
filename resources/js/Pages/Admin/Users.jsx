@@ -17,24 +17,11 @@ function Badge({ active }) {
 }
 
 function RoleChip({ code, name }) {
-    const colors = {
-        R01: 'bg-purple-100 text-purple-700',
-        R02: 'bg-blue-100 text-blue-700',
-        R03: 'bg-cyan-100 text-cyan-700',
-        R04: 'bg-indigo-100 text-indigo-700',
-        R05: 'bg-violet-100 text-violet-700',
-        R06: 'bg-sky-100 text-sky-700',
-        R07: 'bg-teal-100 text-teal-700',
-        R08: 'bg-emerald-100 text-emerald-700',
-        R09: 'bg-amber-100 text-amber-700',
-        R10: 'bg-orange-100 text-orange-700',
-        R11: 'bg-red-100 text-red-700',
-        R12: 'bg-gray-100 text-gray-600',
-    };
-    const cls = colors[code] ?? 'bg-gray-100 text-gray-600';
+    const isSuperadmin = code === 'R01_SUPERADMIN';
+    const label = code === 'R09_CAMPO' ? 'Operador' : name;
     return (
-        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${cls}`}>
-            {code} · {name}
+        <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-bold ${isSuperadmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+            {label}
         </span>
     );
 }
@@ -138,9 +125,9 @@ export default function Users({ users, roles }) {
                                     onChange={e => setData('role_id', e.target.value)}
                                     className="w-full px-3 py-2 border border-[var(--color-line)] rounded text-[13px] focus:outline-none focus:border-[var(--color-primary)] bg-white"
                                 >
-                                    <option value="">Sin rol</option>
+                                    <option value="">Seleccionar rol...</option>
                                     {roles.map(r => (
-                                        <option key={r.id} value={r.id}>{r.code} · {r.name}</option>
+                                        <option key={r.id} value={r.id}>{r.name}</option>
                                     ))}
                                 </select>
                                 {errors.role_id && <p className="text-[11px] text-red-500 mt-1">{errors.role_id}</p>}

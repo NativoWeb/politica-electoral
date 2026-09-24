@@ -39,7 +39,15 @@ class AdminController extends Controller
                 'isActive' => $u->is_active,
                 'createdAt' => $u->created_at?->format('Y-m-d'),
             ]),
-            'roles' => Role::where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']),
+            'roles' => Role::where('is_active', true)
+                ->whereIn('code', ['R01_SUPERADMIN', 'R09_CAMPO'])
+                ->orderBy('level', 'desc')
+                ->get(['id', 'name', 'code'])
+                ->map(fn ($r) => [
+                    'id' => $r->id,
+                    'name' => $r->code === 'R09_CAMPO' ? 'Operador' : $r->name,
+                    'code' => $r->code,
+                ]),
         ]);
     }
 
