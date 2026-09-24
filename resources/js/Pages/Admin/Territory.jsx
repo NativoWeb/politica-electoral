@@ -1,8 +1,10 @@
 import AppLayout from '@/Layouts/AppLayout';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function Territory({ departamentos }) {
+    const auth = usePage().props.auth?.user;
+    const isSuperadmin = auth?.role === 'Superadministrador';
     const [activeForm, setActiveForm] = useState(null); // 'dept' | 'prov' | 'mun'
     const [expandedDept, setExpandedDept] = useState(departamentos.length === 1 ? departamentos[0].id : null);
     const [expandedProv, setExpandedProv] = useState(null);
@@ -217,6 +219,37 @@ export default function Territory({ departamentos }) {
                         )}
                     </div>
                 ))}
+
+                {/* Links a otras secciones admin */}
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mt-6 mb-2 px-1">Mas opciones</h3>
+                <Link
+                    href="/admin/partidos"
+                    className="flex items-center gap-4 px-5 py-4 bg-white border border-[var(--color-line)] rounded-xl active:bg-gray-50 transition-colors"
+                >
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm0 0h3" /></svg>
+                    </div>
+                    <div className="flex-1">
+                        <p className="text-[14px] font-bold text-[var(--color-ink)]">Partidos</p>
+                        <p className="text-[12px] text-[var(--color-ink-faint)]">Crear, editar y desactivar partidos</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                </Link>
+                {isSuperadmin && (
+                    <Link
+                        href="/admin/usuarios"
+                        className="flex items-center gap-4 px-5 py-4 bg-white border border-[var(--color-line)] rounded-xl active:bg-gray-50 transition-colors"
+                    >
+                        <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-[14px] font-bold text-[var(--color-ink)]">Usuarios</p>
+                            <p className="text-[12px] text-[var(--color-ink-faint)]">Crear cuentas y asignar roles</p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                    </Link>
+                )}
             </div>
         </AppLayout>
     );
