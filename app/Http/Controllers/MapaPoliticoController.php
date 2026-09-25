@@ -67,6 +67,7 @@ class MapaPoliticoController extends Controller
         $partido = $request->input('partido');
         $barrio = $request->input('barrio');
         $destacado = $request->input('destacado');
+        $profesion = $request->input('profesion');
 
         // #3: Escape search for ILIKE
         $searchEscaped = $search ? $this->escapeLike($search) : null;
@@ -170,7 +171,7 @@ class MapaPoliticoController extends Controller
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('0 as votos'), DB::raw("'Líderes' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado'
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion'
                 );
 
             if ($munId) $query->where('geographic_unit_id', $munId);
@@ -191,7 +192,7 @@ class MapaPoliticoController extends Controller
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('0 as votos'), DB::raw("'Directorio Municipal' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado'
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion'
                 );
 
             if ($munId) $query->where('geographic_unit_id', $munId);
@@ -258,7 +259,7 @@ class MapaPoliticoController extends Controller
         $lideresLookup = [];
         if (!empty($relevantMunicipios)) {
             $lideresAll = DB::table('lideres')
-                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado')
+                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
             foreach ($lideresAll as $l) {
@@ -282,6 +283,7 @@ class MapaPoliticoController extends Controller
                 if (empty($row['direccion'])) $row['direccion'] = $lider->direccion ?? null;
                 if (empty($row['zona'])) $row['zona'] = $lider->zona ?? null;
                 $row['destacado'] = (bool) ($lider->destacado ?? false);
+                if (empty($row['profesion'])) $row['profesion'] = $lider->profesion ?? null;
             }
         }
         unset($row);
@@ -289,6 +291,11 @@ class MapaPoliticoController extends Controller
         // === FILTRO POR DESTACADO ===
         if ($destacado) {
             $data = array_values(array_filter($data, fn ($row) => !empty($row['destacado'])));
+        }
+
+        // === FILTRO POR PROFESION ===
+        if ($profesion) {
+            $data = array_values(array_filter($data, fn ($row) => ($row['profesion'] ?? '') === $profesion));
         }
 
         // Unify duplicates
@@ -338,7 +345,7 @@ class MapaPoliticoController extends Controller
             'cargosPorTipo' => $this->cargosPorTipo(),
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
-            'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado']),
+            'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion']),
         ]);
     }
 
@@ -477,6 +484,7 @@ class MapaPoliticoController extends Controller
             'barrio' => $bestLider->barrio ?? null,
             'zona' => $bestLider->zona ?? null,
             'destacado' => (bool) ($bestLider->destacado ?? false),
+            'profesion' => $bestLider->profesion ?? null,
             'nexos' => $nexos,
         ]);
     }
@@ -495,6 +503,7 @@ class MapaPoliticoController extends Controller
             'barrio' => 'nullable|string|max:100',
             'zona' => 'nullable|in:rural,urbana',
             'destacado' => 'nullable|boolean',
+            'profesion' => 'nullable|string|max:255',
         ]);
 
         // #15: Wrap in transaction to prevent race conditions
@@ -567,6 +576,7 @@ class MapaPoliticoController extends Controller
                     'barrio' => $data['barrio'] ?? $lider->barrio ?? null,
                     'zona' => $data['zona'] ?? $lider->zona ?? null,
                     'destacado' => $data['destacado'] ?? $lider->destacado ?? false,
+                    'profesion' => $data['profesion'] ?? $lider->profesion ?? null,
                     'updated_at' => now(),
                 ];
                 if ($partidoSent) $updateData['partido'] = $partidoValue;

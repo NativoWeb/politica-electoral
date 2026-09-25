@@ -55,14 +55,23 @@ const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Directorio Municipal
 const PARENTESCOS = ['Esposa', 'Esposo', 'Hijo/a', 'Hermano/a', 'Padre', 'Madre', 'Sobrino/a', 'Tío/a', 'Primo/a', 'Cuñado/a', 'Suegro/a', 'Otro'];
 
 const CARGOS_DISPONIBLES = [
-    'Concejal',
     'Líder',
+    'Concejal',
     'Directorio Municipal',
-    'REPRESENTANTE JOVENES',
-    'REPRESENTANTE MUJERES',
-    'REPRESENTANTE RESERVA',
-    'COORDINADOR MUNICIPAL',
+    'Frentes de Seguridad',
+    'Roseristas',
+    'JAC',
+    'Ediles',
+    'Comunidades Religiosas',
+    'Candidato Concejo',
+    'Candidato Asamblea',
     'Candidato Alcaldía',
+    'Empresarios',
+    'Juventudes',
+    'Mujeres',
+    'Coordinador Municipal',
+    'Coordinador Provincia',
+    'Funcionario',
 ];
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]";
@@ -111,7 +120,7 @@ function PersonaPanel({ personId, onClose }) {
             .then(d => {
                 setData(d);
                 setLoadError(false);
-                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado });
+                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '' });
             })
             .catch(async () => {
                 // Fallback: try offline data from IndexedDB
@@ -320,6 +329,10 @@ function PersonaPanel({ personId, onClose }) {
                                     </div>
                                 </div>
                                 <div>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Profesion</label>
+                                    <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.profesion ?? ''} onChange={e => setForm({ ...form, profesion: e.target.value })} placeholder="Ej: Abogado, Ingeniero, Docente..." />
+                                </div>
+                                <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Observaciones</label>
                                     <textarea className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" rows={3} value={form.observacion} onChange={e => setForm({ ...form, observacion: e.target.value })} />
                                 </div>
@@ -343,6 +356,7 @@ function PersonaPanel({ personId, onClose }) {
                                     ['Partido', data.partido || '—'],
                                     ['Cargo', data.cargo || '—'],
                                     ['Cargos', data.cargos?.length > 0 ? data.cargos.join(', ') : '—'],
+                                    ['Profesion', data.profesion || '—'],
                                     ['Dirección', data.direccion || '—'],
                                     ['Barrio / Vereda', data.barrio || '—'],
                                     ['Observaciones', data.observacion || '—'],
@@ -908,7 +922,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
 
     // Determine if we should show collapsible sections or flat table
     const tipoFilter = filters.tipo ?? 'todos';
-    const hasSpecificFilters = filters.search || filters.cargo || filters.barrio || filters.destacado;
+    const hasSpecificFilters = filters.search || filters.cargo || filters.barrio || filters.destacado || filters.profesion;
     const showSections = tipoFilter === 'todos' && !hasSpecificFilters;
 
     // Group data by tipo_registro for sections
@@ -934,6 +948,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
             partido: filters.partido,
             barrio: filters.barrio,
             destacado: filters.destacado,
+            profesion: filters.profesion,
             search: localSearch || undefined,
             provincia: selectedProv || undefined,
             ...overrides,
@@ -1069,6 +1084,13 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                             <select value={filters.partido ?? ''} onChange={e => applyFilters({ partido: e.target.value || undefined })} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
                                 <option value="">Todos</option>
                                 {(data.length > 0 ? [...new Set(data.map(d => d.partido).filter(Boolean))].sort() : []).map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                        </div>
+                        <div className="col-span-1">
+                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Profesion</label>
+                            <select value={filters.profesion ?? ''} onChange={e => applyFilters({ profesion: e.target.value || undefined })} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[180px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
+                                <option value="">Todas</option>
+                                {(data.length > 0 ? [...new Set(data.map(d => d.profesion).filter(Boolean))].sort() : []).map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
                         </div>
                         {barrios.length > 0 && (
