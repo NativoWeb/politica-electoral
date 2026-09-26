@@ -365,9 +365,9 @@ function PersonaPanel({ personId, onClose }) {
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                                     </div>
                                 </div>
-                                {/* Cargos — checkboxes */}
+                                {/* Tipos — checkboxes */}
                                 <div>
-                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-2">Cargos (seleccionar los que apliquen)</label>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-2">Tipos (seleccionar los que apliquen)</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         {CARGOS_DISPONIBLES.map(c => {
                                             const isChecked = (form.cargos || []).includes(c);
@@ -440,8 +440,8 @@ function PersonaPanel({ personId, onClose }) {
                                     ['Telefono', data.telefono ? <span className="flex items-center gap-3"><a href={`tel:${data.telefono}`} className="text-[var(--color-primary)] font-bold hover:underline text-[18px]">{data.telefono}</a><a href={`https://wa.me/57${data.telefono.replace(/\D/g,'').replace(/^57/,'')}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#25D366] text-white text-[13px] font-bold rounded-lg"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492l4.625-1.472A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818c-2.168 0-4.19-.586-5.932-1.608l-.424-.254-2.744.874.87-2.676-.277-.44A9.79 9.79 0 012.182 12c0-5.418 4.4-9.818 9.818-9.818S21.818 6.582 21.818 12s-4.4 9.818-9.818 9.818z"/></svg>WhatsApp</a></span> : '—'],
                                     ['Email', data.email || '—'],
                                     ['Partido', data.partido || '—'],
-                                    ['Cargo', data.cargo || '—'],
-                                    ['Cargos', data.cargos?.length > 0 ? data.cargos.join(', ') : '—'],
+                                    ['Tipo', data.cargo || '—'],
+                                    ['Tipos', data.cargos?.length > 0 ? data.cargos.join(', ') : '—'],
                                     ['Profesion', data.profesion || '—'],
                                     ['Votos', data.votos > 0 ? data.votos.toLocaleString('es-CO') : '—'],
                                     ['Dirección', data.direccion || '—'],
@@ -680,9 +680,9 @@ function CrearLiderModal({ open, onClose, municipios }) {
                                     {municipios.map(m => <option key={m.id} value={m.id}>{m.name} ({m.provincia})</option>)}
                                 </select>
                             </div>
-                            {/* Cargo */}
+                            {/* Tipo */}
                             <div>
-                                <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Cargo *</label>
+                                <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Tipo *</label>
                                 <select className={fieldCls} value={form.cargo} onChange={e => setForm({...form, cargo: e.target.value})} required>
                                     {CARGOS_DISPONIBLES.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
@@ -1134,7 +1134,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         </div>
                         <div className="col-span-1">
                             <SearchableDropdown
-                                label="Cargo"
+                                label="Tipo"
                                 options={cargosPorTipo[filters.tipo ?? 'todos'] ?? cargosDisponibles}
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
@@ -1261,7 +1261,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Municipio</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Barrio/Vereda</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Tipo</th>
-                                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Cargo</th>
+                                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Tipo</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Partido</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Telefono</th>
                                 <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Votos</th>
