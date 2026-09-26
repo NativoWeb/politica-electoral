@@ -1113,28 +1113,45 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                 <div className={`${filtersOpen ? 'block' : 'hidden'} lg:block`}>
                     <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-end gap-2 lg:gap-3">
                         <div className="col-span-1">
-                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Provincia</label>
-                            <select value={selectedProv} onChange={e => { setSelectedProv(e.target.value); applyFilters({ provincia: e.target.value || undefined, municipio: undefined }); }} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                                <option value="">Todas</option>
-                                {provincias.map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                        </div>
-                        <div className="col-span-1">
-                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Municipio</label>
-                            <select value={filters.municipio ?? ''} onChange={e => applyFilters({ municipio: e.target.value || undefined })} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[240px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                                <option value="">Todos</option>
-                                {filteredMunicipios.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                            </select>
-                        </div>
-                        <div className="col-span-1">
-                            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Tipo</label>
-                            <select value={filters.tipo ?? 'todos'} onChange={e => { setSelectedCargos([]); applyFilters({ tipo: e.target.value, cargo: undefined }); }} className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[180px] focus:outline-none focus:border-[var(--color-primary)] font-semibold">
-                                {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </select>
+                            <SearchableDropdown
+                                label="Provincia"
+                                options={provincias}
+                                selected={selectedProv}
+                                onChange={val => { setSelectedProv(val || ''); applyFilters({ provincia: val || undefined, municipio: undefined }); }}
+                                multi={false}
+                                placeholder="Todas"
+                            />
                         </div>
                         <div className="col-span-1">
                             <SearchableDropdown
-                                label="Tipo"
+                                label="Municipio"
+                                options={filteredMunicipios.map(m => m.name)}
+                                selected={filters.municipio ? filteredMunicipios.find(m => m.id === filters.municipio)?.name : undefined}
+                                onChange={val => {
+                                    const mun = filteredMunicipios.find(m => m.name === val);
+                                    applyFilters({ municipio: mun?.id || undefined });
+                                }}
+                                multi={false}
+                                placeholder="Todos"
+                            />
+                        </div>
+                        <div className="col-span-1">
+                            <SearchableDropdown
+                                label="Seccion"
+                                options={TIPO_OPTIONS.map(o => o.label)}
+                                selected={filters.tipo ? TIPO_OPTIONS.find(o => o.value === filters.tipo)?.label : 'Todos'}
+                                onChange={val => {
+                                    const opt = TIPO_OPTIONS.find(o => o.label === val);
+                                    setSelectedCargos([]);
+                                    applyFilters({ tipo: opt?.value || 'todos', cargo: undefined });
+                                }}
+                                multi={false}
+                                placeholder="Todos"
+                            />
+                        </div>
+                        <div className="col-span-1">
+                            <SearchableDropdown
+                                label="Tipo/Cargo"
                                 options={cargosPorTipo[filters.tipo ?? 'todos'] ?? cargosDisponibles}
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
