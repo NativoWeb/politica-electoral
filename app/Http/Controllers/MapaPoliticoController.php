@@ -170,7 +170,7 @@ class MapaPoliticoController extends Controller
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
-                    DB::raw('0 as votos'), DB::raw("'Líderes' as tipo_registro"),
+                    'votos', DB::raw("'Líderes' as tipo_registro"),
                     'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
@@ -193,7 +193,7 @@ class MapaPoliticoController extends Controller
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
-                    DB::raw('0 as votos'), DB::raw("'Directorio Municipal' as tipo_registro"),
+                    'votos', DB::raw("'Directorio Municipal' as tipo_registro"),
                     'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
@@ -497,13 +497,13 @@ class MapaPoliticoController extends Controller
             'destacado' => (bool) ($bestLider->destacado ?? false),
             'profesion' => $bestLider->profesion ?? null,
             'cedula' => $bestLider->cedula ?? $person->cedula ?? null,
-            'votos' => $source === 'persona'
-                ? (int) DB::table('electoral_results as er')
+            'votos' => $source === 'lider'
+                ? (int) ($bestLider->votos ?? 0)
+                : (int) DB::table('electoral_results as er')
                     ->join('candidacies as c', 'er.candidacy_id', '=', 'c.id')
                     ->where('c.person_id', $id)
                     ->where('er.metric_type', 'votes')
-                    ->sum('er.value')
-                : 0,
+                    ->sum('er.value'),
             'nexos' => $nexos,
         ]);
     }
@@ -524,6 +524,7 @@ class MapaPoliticoController extends Controller
             'destacado' => 'nullable|boolean',
             'profesion' => 'nullable|string|max:255',
             'cedula' => 'nullable|string|max:20',
+            'votos' => 'nullable|integer|min:0',
         ]);
 
         // #15: Wrap in transaction to prevent race conditions
@@ -574,6 +575,7 @@ class MapaPoliticoController extends Controller
                             'barrio' => $data['barrio'] ?? null,
                             'zona' => $data['zona'] ?? null,
                             'observacion' => $data['observacion'],
+                            'votos' => $data['votos'] ?? 0,
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
@@ -598,6 +600,7 @@ class MapaPoliticoController extends Controller
                     'destacado' => $data['destacado'] ?? $lider->destacado ?? false,
                     'profesion' => $data['profesion'] ?? $lider->profesion ?? null,
                     'cedula' => $data['cedula'] ?? $lider->cedula ?? null,
+                    'votos' => $data['votos'] ?? $lider->votos ?? 0,
                     'updated_at' => now(),
                 ];
                 if ($partidoSent) $updateData['partido'] = $partidoValue;
