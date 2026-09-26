@@ -172,9 +172,23 @@ class EleccionCrudController extends Controller
             'organization_id' => 'nullable|exists:political_organizations,id',
             'outcome' => 'nullable|in:elected,lost,withdrawn,disqualified',
             'list_position' => 'nullable|integer',
+            'votos' => 'nullable|integer|min:0',
         ]);
 
+        $votos = $data['votos'] ?? null;
+        unset($data['votos']);
+
         $candidacy = Candidacy::create([...$data, 'status' => 'confirmed']);
+
+        if ($votos !== null && $votos >= 0) {
+            ElectoralResult::create([
+                'candidacy_id' => $candidacy->id,
+                'contest_id' => $candidacy->contest_id,
+                'geographic_unit_id' => Contest::find($candidacy->contest_id)?->geographic_unit_id,
+                'metric_type' => 'votes',
+                'value' => $votos,
+            ]);
+        }
 
         return back()->with('success', 'Candidatura registrada.');
     }

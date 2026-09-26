@@ -107,7 +107,7 @@ function EventDetail({ event, oficios, corporaciones, municipios, partidos }) {
     }
 
     const contestForm = useForm({ electoral_event_id: event.id, office_id: '', corporation_id: '', geographic_unit_id: '', seats: '' });
-    const candForm = useForm({ contest_id: '', person_id: '', organization_id: '', outcome: 'elected', list_position: '' });
+    const candForm = useForm({ contest_id: '', person_id: '', organization_id: '', outcome: 'elected', list_position: '', votos: '' });
     const resultForm = useForm({ candidacy_id: '', contest_id: '', metric_type: 'votes', value: '' });
     const [showResultForm, setShowResultForm] = useState(false);
 
@@ -237,6 +237,7 @@ function EventDetail({ event, oficios, corporaciones, municipios, partidos }) {
                         </Field>
                         <Field label="Posicion en lista"><input type="number" className={inputCls} value={candForm.data.list_position} onChange={e => candForm.setData('list_position', e.target.value)} /></Field>
                     </div>
+                    <Field label="Votos (opcional)"><input type="number" className={inputCls} value={candForm.data.votos} onChange={e => candForm.setData('votos', e.target.value)} min="0" placeholder="0" /></Field>
                     <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowCandidacyForm(false)} className={btnSecondary}>Cancelar</button><button type="submit" className={btnPrimary}>Registrar</button></div>
                 </form>
             </Modal>
