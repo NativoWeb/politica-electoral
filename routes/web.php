@@ -103,6 +103,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/partidos/{id}', [PartidoCrudController::class, 'update'])->name('partidos.update');
         Route::delete('/partidos/{id}', [PartidoCrudController::class, 'destroy'])->name('partidos.destroy');
         Route::post('/partidos/{id}/restore', [PartidoCrudController::class, 'restore'])->name('partidos.restore');
+        Route::delete('/partidos/{id}/force', [PartidoCrudController::class, 'forceDelete'])->name('partidos.forceDelete');
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports');
         Route::get('/catalogos', [AdminController::class, 'catalogs'])->name('catalogs');
 

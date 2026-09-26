@@ -97,4 +97,17 @@ class PartidoCrudController extends Controller
         Cache::forget('all_partidos');
         return back()->with('success', 'Partido reactivado.');
     }
+
+    public function forceDelete(string $id)
+    {
+        if (!Str::isUuid($id)) abort(404);
+
+        // Move endorsements to null before deleting
+        DB::table('candidacy_endorsements')->where('organization_id', $id)->delete();
+        DB::table('lideres')->where('partido', DB::table('political_organizations')->where('id', $id)->value('canonical_name'))->update(['partido' => null]);
+        DB::table('political_organizations')->where('id', $id)->delete();
+
+        Cache::forget('all_partidos');
+        return back()->with('success', 'Partido eliminado permanentemente.');
+    }
 }
