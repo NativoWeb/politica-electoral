@@ -184,7 +184,7 @@ function PersonaPanel({ personId, onClose }) {
     const [loadError, setLoadError] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [form, setForm] = useState({});
-    const [nexoForm, setNexoForm] = useState({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '' });
+    const [nexoForm, setNexoForm] = useState({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
     const [showNexoForm, setShowNexoForm] = useState(false);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
@@ -200,7 +200,7 @@ function PersonaPanel({ personId, onClose }) {
             .then(d => {
                 setData(d);
                 setLoadError(false);
-                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '' });
+                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '' });
             })
             .catch(async () => {
                 // Fallback: try offline data from IndexedDB
@@ -261,7 +261,7 @@ function PersonaPanel({ personId, onClose }) {
         })
             .then(r => r.json())
             .then(() => {
-                setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '' });
+                setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
                 setShowNexoForm(false);
                 setMessage('Nexo agregado');
                 loadData();
@@ -271,7 +271,7 @@ function PersonaPanel({ personId, onClose }) {
                 // Offline fallback
                 try {
                     const newNexo = await offlineCreateNexo(personId, nexoForm);
-                    setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '' });
+                    setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
                     setShowNexoForm(false);
                     setMessage('Nexo guardado localmente. Se enviara con internet.');
                     setData(prev => ({ ...prev, nexos: [...(prev.nexos || []), { ...nexoForm, id: newNexo.id }] }));
@@ -408,9 +408,15 @@ function PersonaPanel({ personId, onClose }) {
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.barrio ?? ''} onChange={e => setForm({ ...form, barrio: e.target.value })} />
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Profesion</label>
-                                    <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.profesion ?? ''} onChange={e => setForm({ ...form, profesion: e.target.value })} placeholder="Ej: Abogado, Ingeniero, Docente..." />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Profesion</label>
+                                        <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.profesion ?? ''} onChange={e => setForm({ ...form, profesion: e.target.value })} placeholder="Ej: Abogado, Ingeniero..." />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Votos</label>
+                                        <input type="number" className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.votos ?? ''} onChange={e => setForm({ ...form, votos: e.target.value })} min="0" placeholder="0" />
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Observaciones</label>
@@ -437,6 +443,7 @@ function PersonaPanel({ personId, onClose }) {
                                     ['Cargo', data.cargo || '—'],
                                     ['Cargos', data.cargos?.length > 0 ? data.cargos.join(', ') : '—'],
                                     ['Profesion', data.profesion || '—'],
+                                    ['Votos', data.votos > 0 ? data.votos.toLocaleString('es-CO') : '—'],
                                     ['Dirección', data.direccion || '—'],
                                     ['Barrio / Vereda', data.barrio || '—'],
                                     ['Observaciones', data.observacion || '—'],
@@ -476,6 +483,16 @@ function PersonaPanel({ personId, onClose }) {
                                         <option value="">Seleccionar...</option>
                                         {PARENTESCOS.map(p => <option key={p} value={p}>{p}</option>)}
                                     </select>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Cedula</label>
+                                    <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.cedula} onChange={e => setNexoForm({ ...nexoForm, cedula: e.target.value })} placeholder="Numero de cedula" />
+                                </div>
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Telefono</label>
+                                    <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.telefono} onChange={e => setNexoForm({ ...nexoForm, telefono: e.target.value })} placeholder="3XX XXX XXXX" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
@@ -518,6 +535,8 @@ function PersonaPanel({ personId, onClose }) {
                                         {n.cargo && <span className="text-[14px] text-[var(--color-ink-faint)]">{n.cargo}</span>}
                                         {n.edad && <span className="text-[14px] text-[var(--color-ink-faint)]">· {n.edad} años</span>}
                                     </div>
+                                    {n.cedula && <p className="text-[13px] text-[var(--color-ink-soft)] mt-1">CC: {n.cedula}</p>}
+                                    {n.telefono && <p className="text-[13px] mt-1"><a href={`tel:${n.telefono}`} className="text-[var(--color-primary)] font-semibold">{n.telefono}</a> <a href={`https://wa.me/57${n.telefono.replace(/\D/g,'').replace(/^57/,'')}`} target="_blank" rel="noopener" className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-[#25D366] text-white text-[10px] font-bold rounded ml-1"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>WA</a></p>}
                                     {n.gustos && <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Gustos: {n.gustos}</p>}
                                     {n.observaciones && <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">{n.observaciones}</p>}
                                 </div>

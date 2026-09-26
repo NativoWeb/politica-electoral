@@ -419,6 +419,7 @@ class MapaPoliticoController extends Controller
                 'id' => $n->id, 'nombre' => $n->nombre, 'parentesco' => $n->parentesco,
                 'cargo' => $n->cargo, 'edad' => $n->edad, 'gustos' => $n->gustos,
                 'observaciones' => $n->observaciones,
+                'cedula' => $n->cedula ?? null, 'telefono' => $n->telefono ?? null,
             ])->toArray();
 
         $liderRows = collect();
@@ -485,6 +486,13 @@ class MapaPoliticoController extends Controller
             'zona' => $bestLider->zona ?? null,
             'destacado' => (bool) ($bestLider->destacado ?? false),
             'profesion' => $bestLider->profesion ?? null,
+            'votos' => $source === 'persona'
+                ? (int) DB::table('electoral_results as er')
+                    ->join('candidacies as c', 'er.candidacy_id', '=', 'c.id')
+                    ->where('c.person_id', $id)
+                    ->where('er.metric_type', 'votes')
+                    ->sum('er.value')
+                : 0,
             'nexos' => $nexos,
         ]);
     }
@@ -643,6 +651,8 @@ class MapaPoliticoController extends Controller
             'edad' => 'nullable|integer|min:0|max:120',
             'gustos' => 'nullable|string|max:500',
             'observaciones' => 'nullable|string|max:500',
+            'cedula' => 'nullable|string|max:20',
+            'telefono' => 'nullable|string|max:20',
         ]);
 
         DB::table('nexos_familiares')->insert([
