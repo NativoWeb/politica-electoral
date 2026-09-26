@@ -428,6 +428,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     <p className="text-[12px] font-semibold text-[var(--color-ink)] truncate">{auth?.name}</p>
                                     <p className="text-[10px] text-[var(--color-ink-faint)] truncate">{auth?.email}</p>
                                 </div>
+                                <button onClick={() => setShowPasswordModal(true)} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors border-b border-gray-100">
+                                    Cambiar contraseña
+                                </button>
                                 <button onClick={() => router.post('/logout')} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors">
                                     Cerrar sesion
                                 </button>

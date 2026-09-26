@@ -27,8 +27,8 @@ Route::post('/login', [LoginController::class, 'login'])->middleware('guest');
 Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware('auth');
 
 // Public API (no auth required)
-Route::get('/api/search', [SearchController::class, 'search'])->name('search');
-Route::get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
+Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'])->name('search');
+Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
 
 // Offline API (auth required)
 Route::middleware('auth')->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');

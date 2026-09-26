@@ -1216,7 +1216,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                 </div>
 
                 <div className="flex items-center gap-3 text-[11px] text-[var(--color-ink-faint)] flex-wrap">
-                    <span className="font-bold text-[var(--color-ink)]">{data.length} registros</span>
+                    <span className="font-bold text-[var(--color-ink)]">{data.length} {data.length === 1 ? 'registro' : 'registros'}</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
 
                     {/* Destacados toggle */}
@@ -1292,7 +1292,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Nombre</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Municipio</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Barrio/Vereda</th>
-                                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Tipo</th>
+                                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Seccion</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Tipo</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Partido</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Telefono</th>

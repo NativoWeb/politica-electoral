@@ -47,7 +47,8 @@ class SearchController extends Controller
                     $query->whereRaw("ga.normalized_alias % ?", [$normalized])
                         ->orWhereRaw("ga.normalized_alias ILIKE ?", ["%{$normalized}%"]);
                 })
-                ->select('g.id', 'g.canonical_name as name', DB::raw("MAX(similarity(ga.normalized_alias, '{$normalized}')) as sim"))
+                ->select('g.id', 'g.canonical_name as name')
+                ->selectRaw("MAX(similarity(ga.normalized_alias, ?)) as sim", [$normalized])
                 ->groupBy('g.id', 'g.canonical_name')
                 ->orderByDesc('sim')
                 ->limit(5)
@@ -81,7 +82,7 @@ class SearchController extends Controller
 
             return response()->json(['results' => array_values($results)]);
         } catch (\Exception $e) {
-            return response()->json(['results' => [], 'error' => $e->getMessage()], 500);
+            return response()->json(['results' => []], 500);
         }
     }
 }

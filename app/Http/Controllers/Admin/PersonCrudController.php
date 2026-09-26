@@ -53,6 +53,7 @@ class PersonCrudController extends Controller
 
     public function show(string $id)
     {
+        if (!\Illuminate\Support\Str::isUuid($id)) abort(404);
         $person = Person::with(['aliases', 'contactPoints', 'candidacies.contest.electoralEvent', 'candidacies.organization'])
             ->findOrFail($id);
 
