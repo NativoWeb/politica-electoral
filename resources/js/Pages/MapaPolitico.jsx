@@ -224,9 +224,10 @@ function PersonaPanel({ personId, onClose }) {
     function savePersona() {
         setSaving(true);
         setMessage('');
+        const payload = { ...form, votos: form.votos ? parseInt(form.votos, 10) : 0 };
         apiFetch(`/mapa-politico/persona/${personId}`, {
             method: 'PUT',
-            body: JSON.stringify(form),
+            body: JSON.stringify(payload),
         })
             .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
             .then(res => {

@@ -593,17 +593,17 @@ class MapaPoliticoController extends Controller
 
             if ($lider) {
                 $updateData = [
-                    'telefono' => $data['telefono'] ?? $lider->telefono,
-                    'email' => $data['email'] ?? $lider->email,
-                    'cargo' => $data['cargo'] ?? $lider->cargo,
-                    'observacion' => $data['observacion'] ?? $lider->observacion,
-                    'direccion' => $data['direccion'] ?? $lider->direccion ?? null,
-                    'barrio' => $data['barrio'] ?? $lider->barrio ?? null,
-                    'zona' => $data['zona'] ?? $lider->zona ?? null,
-                    'destacado' => $data['destacado'] ?? $lider->destacado ?? false,
-                    'profesion' => $data['profesion'] ?? $lider->profesion ?? null,
-                    'cedula' => $data['cedula'] ?? $lider->cedula ?? null,
-                    'votos' => $data['votos'] ?? $lider->votos ?? 0,
+                    'telefono' => array_key_exists('telefono', $data) ? $data['telefono'] : $lider->telefono,
+                    'email' => array_key_exists('email', $data) ? $data['email'] : $lider->email,
+                    'cargo' => array_key_exists('cargo', $data) ? $data['cargo'] : $lider->cargo,
+                    'observacion' => array_key_exists('observacion', $data) ? $data['observacion'] : $lider->observacion,
+                    'direccion' => array_key_exists('direccion', $data) ? $data['direccion'] : $lider->direccion,
+                    'barrio' => array_key_exists('barrio', $data) ? $data['barrio'] : $lider->barrio,
+                    'zona' => array_key_exists('zona', $data) ? $data['zona'] : $lider->zona,
+                    'destacado' => array_key_exists('destacado', $data) ? (bool) $data['destacado'] : ($lider->destacado ?? false),
+                    'profesion' => array_key_exists('profesion', $data) ? $data['profesion'] : $lider->profesion,
+                    'cedula' => array_key_exists('cedula', $data) ? $data['cedula'] : $lider->cedula,
+                    'votos' => array_key_exists('votos', $data) ? (int) ($data['votos'] ?? 0) : ($lider->votos ?? 0),
                     'updated_at' => now(),
                 ];
                 if ($partidoSent) $updateData['partido'] = $partidoValue;
