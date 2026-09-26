@@ -171,12 +171,14 @@ class MapaPoliticoController extends Controller
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('0 as votos'), DB::raw("'Líderes' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion'
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
             if ($munId) $query->where('geographic_unit_id', $munId);
             elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
-            if ($searchEscaped) $query->where('nombre', 'ilike', "%{$searchEscaped}%");
+            if ($searchEscaped) $query->where(function ($q) use ($searchEscaped) {
+                $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
+            });
             if (!empty($cargos)) $query->whereIn('cargo', $cargos);
             if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
             if ($noGeoFilter) $query->limit(200);
@@ -192,12 +194,14 @@ class MapaPoliticoController extends Controller
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('0 as votos'), DB::raw("'Directorio Municipal' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion'
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
             if ($munId) $query->where('geographic_unit_id', $munId);
             elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
-            if ($searchEscaped) $query->where('nombre', 'ilike', "%{$searchEscaped}%");
+            if ($searchEscaped) $query->where(function ($q) use ($searchEscaped) {
+                $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
+            });
             if (!empty($cargos)) $query->whereIn('cargo', $cargos);
             if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
             if ($noGeoFilter) $query->limit(200);
@@ -259,7 +263,7 @@ class MapaPoliticoController extends Controller
         $lideresLookup = [];
         if (!empty($relevantMunicipios)) {
             $lideresAll = DB::table('lideres')
-                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion')
+                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
             foreach ($lideresAll as $l) {
@@ -284,6 +288,12 @@ class MapaPoliticoController extends Controller
                 if (empty($row['zona'])) $row['zona'] = $lider->zona ?? null;
                 $row['destacado'] = (bool) ($lider->destacado ?? false);
                 if (empty($row['profesion'])) $row['profesion'] = $lider->profesion ?? null;
+                if (empty($row['cedula'])) $row['cedula'] = $lider->cedula ?? null;
+                // Unify: if líder has a cargo, add it to tipo_registro
+                $liderCargo = $lider->lider_cargo ?? null;
+                if ($liderCargo && $liderCargo !== 'Líder' && !str_contains($row['tipo_registro'] ?? '', 'Líderes')) {
+                    $row['tipo_registro'] = ($row['tipo_registro'] ?? '') . ', Líderes';
+                }
             }
         }
         unset($row);
@@ -486,6 +496,7 @@ class MapaPoliticoController extends Controller
             'zona' => $bestLider->zona ?? null,
             'destacado' => (bool) ($bestLider->destacado ?? false),
             'profesion' => $bestLider->profesion ?? null,
+            'cedula' => $bestLider->cedula ?? $person->cedula ?? null,
             'votos' => $source === 'persona'
                 ? (int) DB::table('electoral_results as er')
                     ->join('candidacies as c', 'er.candidacy_id', '=', 'c.id')
@@ -512,6 +523,7 @@ class MapaPoliticoController extends Controller
             'zona' => 'nullable|in:rural,urbana',
             'destacado' => 'nullable|boolean',
             'profesion' => 'nullable|string|max:255',
+            'cedula' => 'nullable|string|max:20',
         ]);
 
         // #15: Wrap in transaction to prevent race conditions
@@ -585,6 +597,7 @@ class MapaPoliticoController extends Controller
                     'zona' => $data['zona'] ?? $lider->zona ?? null,
                     'destacado' => $data['destacado'] ?? $lider->destacado ?? false,
                     'profesion' => $data['profesion'] ?? $lider->profesion ?? null,
+                    'cedula' => $data['cedula'] ?? $lider->cedula ?? null,
                     'updated_at' => now(),
                 ];
                 if ($partidoSent) $updateData['partido'] = $partidoValue;
@@ -699,5 +712,21 @@ class MapaPoliticoController extends Controller
             return response()->json(['success' => true, 'message' => 'Nexo eliminado.']);
         }
         return back()->with('success', 'Nexo eliminado.');
+    }
+
+    public function destroyLider(Request $request, string $id)
+    {
+        if (!Str::isUuid($id)) abort(404);
+
+        // Delete nexos first
+        DB::table('nexos_familiares')->where('person_id', $id)->delete();
+        // Delete the líder
+        $affected = DB::table('lideres')->where('id', $id)->delete();
+        abort_if($affected === 0, 404);
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => 'Persona eliminada.']);
+        }
+        return back()->with('success', 'Persona eliminada.');
     }
 }

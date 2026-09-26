@@ -200,7 +200,7 @@ function PersonaPanel({ personId, onClose }) {
             .then(d => {
                 setData(d);
                 setLoadError(false);
-                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '' });
+                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '', cedula: d.cedula || '' });
             })
             .catch(async () => {
                 // Fallback: try offline data from IndexedDB
@@ -348,13 +348,27 @@ function PersonaPanel({ personId, onClose }) {
                     <div className="px-8 py-6 border-b border-[var(--color-line)]">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-[14px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Datos personales</h3>
-                            <button onClick={() => setEditMode(!editMode)} className="px-5 py-2.5 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
-                                {editMode ? 'Cancelar' : 'Editar datos'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={() => setEditMode(!editMode)} className="px-5 py-2.5 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
+                                    {editMode ? 'Cancelar' : 'Editar datos'}
+                                </button>
+                                <button onClick={() => {
+                                    if (!confirm('¿Eliminar esta persona? Se borrarán sus nexos familiares. Esta accion no se puede deshacer.')) return;
+                                    apiFetch(`/mapa-politico/persona/${personId}`, { method: 'DELETE' })
+                                        .then(() => { onClose(); router.reload(); })
+                                        .catch(() => setMessage('Error al eliminar'));
+                                }} className="px-3 py-2.5 bg-red-50 text-red-600 text-[14px] font-bold rounded-lg hover:bg-red-100 transition-colors" title="Eliminar persona">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
                         </div>
 
                         {editMode ? (
                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Cedula</label>
+                                    <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.cedula ?? ''} onChange={e => setForm({ ...form, cedula: e.target.value })} placeholder="Numero de cedula" />
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Telefono</label>
@@ -438,6 +452,7 @@ function PersonaPanel({ personId, onClose }) {
                             <div className="space-y-3">
                                 {[
                                     ['Telefono', data.telefono ? <span className="flex items-center gap-3"><a href={`tel:${data.telefono}`} className="text-[var(--color-primary)] font-bold hover:underline text-[18px]">{data.telefono}</a><a href={`https://wa.me/57${data.telefono.replace(/\D/g,'').replace(/^57/,'')}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#25D366] text-white text-[13px] font-bold rounded-lg"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492l4.625-1.472A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818c-2.168 0-4.19-.586-5.932-1.608l-.424-.254-2.744.874.87-2.676-.277-.44A9.79 9.79 0 012.182 12c0-5.418 4.4-9.818 9.818-9.818S21.818 6.582 21.818 12s-4.4 9.818-9.818 9.818z"/></svg>WhatsApp</a></span> : '—'],
+                                    ['Cedula', data.cedula || '—'],
                                     ['Email', data.email || '—'],
                                     ['Partido', data.partido || '—'],
                                     ['Tipo', data.cargo || '—'],
