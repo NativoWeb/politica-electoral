@@ -346,6 +346,25 @@ class MapaPoliticoController extends Controller
 
         $sectionCounts = collect($data)->groupBy('tipo_registro')->map(fn ($items) => count($items))->toArray();
 
+        // Party totals (votos de partido, no de candidato) for Cámara and Senado
+        $partyTotals = [];
+        if ($munId) {
+            $partyTotals = DB::table('electoral_results as er')
+                ->join('political_organizations as po', 'er.organization_id', '=', 'po.id')
+                ->join('contests as c', 'er.contest_id', '=', 'c.id')
+                ->leftJoin('corporations as corp', 'c.corporation_id', '=', 'corp.id')
+                ->whereNull('er.candidacy_id')
+                ->whereNotNull('er.organization_id')
+                ->where('er.geographic_unit_id', $munId)
+                ->select('po.canonical_name as partido', 'er.value as votos', 'corp.name as corporacion')
+                ->orderBy('corp.name')
+                ->orderByDesc('er.value')
+                ->get()
+                ->groupBy('corporacion')
+                ->map(fn ($items) => $items->map(fn ($r) => ['partido' => $r->partido, 'votos' => (int) $r->votos])->values()->toArray())
+                ->toArray();
+        }
+
         return Inertia::render('MapaPolitico', [
             'data' => array_values($data),
             'municipios' => $municipios,
@@ -355,6 +374,7 @@ class MapaPoliticoController extends Controller
             'cargosPorTipo' => $this->cargosPorTipo(),
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
+            'partyTotals' => $partyTotals,
             'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion']),
         ]);
     }

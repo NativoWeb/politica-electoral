@@ -881,7 +881,7 @@ function PersonRow({ row, onSelectPerson, color }) {
     );
 }
 
-function CollapsibleSection({ tipo, rows, onSelectPerson }) {
+function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
     const [open, setOpen] = useState(false);
     const colorCls = TIPO_COLORS[tipo] ?? 'bg-gray-100 text-gray-600';
     const icon = TIPO_ICONS[tipo];
@@ -937,6 +937,20 @@ function CollapsibleSection({ tipo, rows, onSelectPerson }) {
 
             {open && (
                 <div className="border-t border-[var(--color-line)]">
+                    {/* Party totals (Cámara/Senado) */}
+                    {partyTotals && partyTotals.length > 0 && (
+                        <div className="bg-[var(--color-primary)]/5 border-b border-[var(--color-line)] px-4 py-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-2">Votacion total por partido</p>
+                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                {partyTotals.map((pt, i) => (
+                                    <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[var(--color-line)]">
+                                        <span className="text-[12px] font-semibold text-[var(--color-ink)] truncate mr-2">{pt.partido}</span>
+                                        <span className="text-[13px] font-bold text-[var(--color-primary)] flex-shrink-0">{pt.votos.toLocaleString('es-CO')}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     {isMobile ? (
                         /* ── Mobile: flat list, no party nesting ── */
                         <div>
@@ -983,7 +997,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson }) {
 }
 
 /* ── MAIN ── */
-export default function MapaPolitico({ data = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, barrios = [], sectionCounts = {}, filters = {} }) {
+export default function MapaPolitico({ data = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, barrios = [], sectionCounts = {}, partyTotals = {}, filters = {} }) {
     const [localSearch, setLocalSearch] = useState(filters.search ?? '');
     const [selectedProv, setSelectedProv] = useState(filters.provincia ?? '');
     const [selectedPerson, setSelectedPerson] = useState(null);
@@ -1272,6 +1286,11 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                                 tipo={tipo}
                                 rows={rows}
                                 onSelectPerson={setSelectedPerson}
+                                partyTotals={
+                                    tipo === 'Cámara' ? partyTotals['Cámara de Representantes'] :
+                                    tipo === 'Senado' ? partyTotals['Senado'] :
+                                    null
+                                }
                             />
                         );
                     })}
