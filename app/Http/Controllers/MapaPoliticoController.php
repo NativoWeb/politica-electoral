@@ -711,28 +711,29 @@ class MapaPoliticoController extends Controller
     {
         if (!Str::isUuid($id)) abort(404);
 
-        $affected = DB::table('nexos_familiares')->where('id', $id)->delete();
-        abort_if($affected === 0, 404);
+        DB::table('nexos_familiares')->where('id', $id)->delete();
 
-        if ($request->wantsJson()) {
-            return response()->json(['success' => true, 'message' => 'Nexo eliminado.']);
-        }
-        return back()->with('success', 'Nexo eliminado.');
+        return response()->json(['success' => true, 'message' => 'Nexo eliminado.']);
     }
 
     public function destroyLider(Request $request, string $id)
     {
         if (!Str::isUuid($id)) abort(404);
 
-        // Delete nexos first
+        // Delete nexos
         DB::table('nexos_familiares')->where('person_id', $id)->delete();
-        // Delete the líder
-        $affected = DB::table('lideres')->where('id', $id)->delete();
-        abort_if($affected === 0, 404);
 
-        if ($request->wantsJson()) {
-            return response()->json(['success' => true, 'message' => 'Persona eliminada.']);
+        // Try lideres first
+        $affected = DB::table('lideres')->where('id', $id)->delete();
+
+        if ($affected === 0) {
+            // Try finding líder by person name match
+            $person = DB::table('persons')->where('id', $id)->first();
+            if ($person) {
+                DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->delete();
+            }
         }
-        return back()->with('success', 'Persona eliminada.');
+
+        return response()->json(['success' => true, 'message' => 'Persona eliminada.']);
     }
 }
