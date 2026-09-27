@@ -59,7 +59,7 @@ const CARGOS_DISPONIBLES = [
     'Concejal',
     'Directorio Municipal',
     'Frentes de Seguridad',
-    'Roseristas',
+    'Reservistas',
     'JAC',
     'Ediles',
     'Comunidades Religiosas',
@@ -200,7 +200,7 @@ function PersonaPanel({ personId, onClose }) {
             .then(d => {
                 setData(d);
                 setLoadError(false);
-                setForm({ telefono: d.telefono || '', email: d.email || '', cargo: d.cargo || '', cargos: d.cargos || [], observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '', cedula: d.cedula || '' });
+                { const rawCargos = d.cargos || (d.cargo ? [d.cargo] : []); const splitCargos = [...new Set(rawCargos.flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))]; setForm({ telefono: d.telefono || '', email: d.email || '', cargo: splitCargos.join(', '), cargos: splitCargos, observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '', cedula: d.cedula || '' }); }
             })
             .catch(async () => {
                 // Fallback: try offline data from IndexedDB
@@ -457,8 +457,7 @@ function PersonaPanel({ personId, onClose }) {
                                     ['Cedula', data.cedula || '—'],
                                     ['Email', data.email || '—'],
                                     ['Partido', data.partido || '—'],
-                                    ['Tipo', data.cargo || '—'],
-                                    ['Tipos', data.cargos?.length > 0 ? data.cargos.join(', ') : '—'],
+                                    ['Tipo', data.cargos?.length > 0 ? data.cargos.join(', ') : (data.cargo || '—')],
                                     ['Profesion', data.profesion || '—'],
                                     ['Votos', data.votos > 0 ? data.votos.toLocaleString('es-CO') : '—'],
                                     ['Dirección', data.direccion || '—'],
