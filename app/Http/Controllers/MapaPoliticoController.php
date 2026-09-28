@@ -545,6 +545,7 @@ class MapaPoliticoController extends Controller
             'destacado' => (bool) ($bestLider->destacado ?? false),
             'profesion' => $bestLider->profesion ?? null,
             'cedula' => $bestLider->cedula ?? $person->cedula ?? null,
+            'tipo_registro' => $source === 'lider' ? 'Líderes' : null,
             'votos' => $source === 'lider'
                 ? (int) ($bestLider->votos ?? 0)
                 : (int) DB::table('electoral_results as er')

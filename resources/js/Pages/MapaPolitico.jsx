@@ -216,7 +216,7 @@ function apiFetch(url, options = {}) {
 }
 
 /* ── Panel lateral de detalle ── */
-function PersonaPanel({ personId, onClose }) {
+function PersonaPanel({ personId, onClose, cargosPorTipo = {} }) {
     const { confirm, Dialog: ConfirmDialog } = useConfirm();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -240,7 +240,7 @@ function PersonaPanel({ personId, onClose }) {
             .then(d => {
                 setData(d);
                 setLoadError(false);
-                { const rawCargos = d.cargos || (d.cargo ? [d.cargo] : []); const splitCargos = [...new Set(rawCargos.flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))]; setForm({ telefono: d.telefono || '', email: d.email || '', cargo: splitCargos.join(', '), cargos: splitCargos, observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '', cedula: d.cedula || '' }); }
+                { const rawCargos = d.cargos || (d.cargo ? [d.cargo] : []); const splitCargos = [...new Set(rawCargos.flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))]; const tipos = d.tipo_registro ? d.tipo_registro.split(',').map(s => s.trim()) : []; setForm({ telefono: d.telefono || '', email: d.email || '', cargo: splitCargos.join(', '), cargos: splitCargos, tipos: tipos, observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '', cedula: d.cedula || '' }); }
             })
             .catch(async () => {
                 // Fallback: try offline data from IndexedDB
@@ -451,25 +451,47 @@ function PersonaPanel({ personId, onClose }) {
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                                     </div>
                                 </div>
-                                {/* Tipos — checkboxes */}
+                                {/* Tipo (secciones) */}
                                 <div>
-                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-2">Tipos (seleccionar los que apliquen)</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {CARGOS_DISPONIBLES.map(c => {
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-2">Tipo</label>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        {TIPO_OPTIONS.filter(o => o.value !== 'todos').map(o => {
+                                            const checked = (form.tipos || []).includes(o.label);
+                                            return (
+                                                <label key={o.value} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-blue-50 border-[var(--color-primary)] font-bold text-[var(--color-primary)]' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
+                                                    <input type="checkbox" checked={checked} onChange={() => {
+                                                        const tipos = form.tipos || [];
+                                                        const next = checked ? tipos.filter(x => x !== o.label) : [...tipos, o.label];
+                                                        setForm({ ...form, tipos: next });
+                                                    }} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)]" />
+                                                    {o.label}
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                {/* Cargo (dinámico según tipo) */}
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-2">Cargo</label>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        {(() => {
+                                            const selectedTipos = (form.tipos || []).map(label => TIPO_OPTIONS.find(o => o.label === label)?.value).filter(Boolean);
+                                            let opts = cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
+                                            if (selectedTipos.length > 0) {
+                                                const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
+                                                if (merged.length > 0) opts = merged.sort();
+                                            }
+                                            return opts;
+                                        })().map(c => {
                                             const isChecked = (form.cargos || []).includes(c);
                                             return (
-                                                <label key={c} className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-blue-50 border-[var(--color-primary)]' : 'border-[var(--color-line)] hover:bg-gray-50'}`}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => {
-                                                            const cargos = form.cargos || [];
-                                                            const next = isChecked ? cargos.filter(x => x !== c) : [...cargos, c];
-                                                            setForm({ ...form, cargos: next, cargo: next.join(', ') });
-                                                        }}
-                                                        className="w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                                                    />
-                                                    <span className={`text-[14px] font-semibold ${isChecked ? 'text-[var(--color-primary)]' : 'text-[var(--color-ink-soft)]'}`}>{c}</span>
+                                                <label key={c} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${isChecked ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-700' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
+                                                    <input type="checkbox" checked={isChecked} onChange={() => {
+                                                        const cargos = form.cargos || [];
+                                                        const next = isChecked ? cargos.filter(x => x !== c) : [...cargos, c];
+                                                        setForm({ ...form, cargos: next, cargo: next.join(', ') });
+                                                    }} className="w-4 h-4 rounded border-gray-300 text-emerald-500" />
+                                                    {c}
                                                 </label>
                                             );
                                         })}
@@ -731,7 +753,7 @@ function VoiceButton({ onResult, label }) {
 }
 
 /* ── Modal Crear Líder ── */
-function CrearLiderModal({ open, onClose, municipios }) {
+function CrearLiderModal({ open, onClose, municipios, cargosPorTipo = {} }) {
     const emptyForm = { nombre: '', municipio_id: '', cargo: 'Líder', tipos: ['Líderes'], telefono: '', email: '', cedula: '', profesion: '', direccion: '', barrio: '', zona: '', observacion: '' };
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
@@ -840,11 +862,16 @@ function CrearLiderModal({ open, onClose, municipios }) {
                             </div>
                         </div>
 
-                        {/* Cargo (checkboxes — Líder, Concejal, JAC, etc.) */}
+                        {/* Cargo (checkboxes — dinámico según Tipo seleccionado) */}
                         <div>
                             <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-2">Cargo</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {CARGOS_DISPONIBLES.map(c => {
+                                {(() => {
+                                    const selectedTipos = (form.tipos || []).map(label => TIPO_OPTIONS.find(o => o.label === label)?.value).filter(Boolean);
+                                    if (selectedTipos.length === 0) return cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
+                                    const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
+                                    return merged.length > 0 ? merged.sort() : CARGOS_DISPONIBLES;
+                                })().map(c => {
                                     const cargos = form.cargo ? form.cargo.split(', ').map(s => s.trim()) : [];
                                     const checked = cargos.includes(c);
                                     return (
@@ -1573,11 +1600,11 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
 
             {/* Panel lateral de detalle */}
             {selectedPerson && (
-                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} />
+                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} />
             )}
 
             {/* Modal crear líder */}
-            <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} />
+            <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} cargosPorTipo={cargosPorTipo} />
 
         </AppLayout>
     );
