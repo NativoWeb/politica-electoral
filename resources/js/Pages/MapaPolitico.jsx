@@ -404,7 +404,12 @@ function PersonaPanel({ personId, onClose }) {
 
                     {/* Mensaje de éxito */}
                     {message && (
-                        <div className="mx-8 mt-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-[14px] font-semibold text-emerald-700">
+                        <div className={`mx-4 lg:mx-8 mt-4 px-4 py-3 rounded-xl text-[14px] font-semibold flex items-center gap-3 ${message.toLowerCase().includes('error') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+                            {message.toLowerCase().includes('error') ? (
+                                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            ) : (
+                                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            )}
                             {message}
                         </div>
                     )}
@@ -1083,12 +1088,23 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                         <div className="bg-[var(--color-primary)]/5 border-b border-[var(--color-line)] px-4 py-3">
                             <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-2">Votacion total por partido</p>
                             <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                                {partyTotals.map((pt, i) => (
-                                    <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[var(--color-line)]">
-                                        <span className="text-[12px] font-semibold text-[var(--color-ink)] truncate mr-2">{pt.partido}</span>
-                                        <span className="text-[13px] font-bold text-[var(--color-primary)] flex-shrink-0">{pt.votos.toLocaleString('es-CO')}</span>
-                                    </div>
-                                ))}
+                                {partyTotals.map((pt, i) => {
+                                    const logo = partyLogo(pt.partido);
+                                    const color = partyColor(pt.partido, i);
+                                    return (
+                                        <div key={i} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2.5 border border-[var(--color-line)]">
+                                            {logo ? (
+                                                <img src={logo} alt="" className="w-6 h-6 object-contain flex-shrink-0" />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded flex-shrink-0 flex items-center justify-center text-white text-[8px] font-bold" style={{ backgroundColor: color }}>
+                                                    {(pt.partido || '?').slice(0, 2).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-[11px] font-semibold text-[var(--color-ink)] truncate flex-1">{pt.partido}</span>
+                                            <span className="text-[12px] font-bold text-[var(--color-primary)] flex-shrink-0">{pt.votos.toLocaleString('es-CO')}</span>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
