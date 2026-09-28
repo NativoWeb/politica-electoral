@@ -22,7 +22,13 @@
     @vite(['resources/css/app.css', 'resources/js/app.jsx'])
     @inertiaHead
 </head>
-<body class="antialiased">
+<body class="antialiased" style="background:#f5f5f5;font-family:system-ui,sans-serif">
+    <noscript>
+        <div style="padding:40px;text-align:center">
+            <h1 style="color:#003B71">Inteligencia Electoral</h1>
+            <p>Necesitas JavaScript habilitado para usar esta aplicación.</p>
+        </div>
+    </noscript>
     @inertia
 </body>
 </html>

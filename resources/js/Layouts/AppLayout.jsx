@@ -374,16 +374,28 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
 
     useEffect(() => {
-        const removeStart = router.on('start', () => setNavigating(true));
-        const removeFinish = router.on('finish', () => setNavigating(false));
+        let navTimeout;
+        const removeStart = router.on('start', () => {
+            setNavigating(true);
+            // Auto-cancel spinner after 8s if offline
+            navTimeout = setTimeout(() => {
+                if (!navigator.onLine) {
+                    setNavigating(false);
+                    setOfflineAlert(true);
+                    setTimeout(() => setOfflineAlert(false), 4000);
+                }
+            }, 8000);
+        });
+        const removeFinish = router.on('finish', () => { setNavigating(false); clearTimeout(navTimeout); });
         const removeError = router.on('error', () => {
             setNavigating(false);
+            clearTimeout(navTimeout);
             if (!navigator.onLine) {
                 setOfflineAlert(true);
                 setTimeout(() => setOfflineAlert(false), 4000);
             }
         });
-        return () => { removeStart(); removeFinish(); removeError(); };
+        return () => { removeStart(); removeFinish(); removeError(); clearTimeout(navTimeout); };
     }, []);
 
     return (
