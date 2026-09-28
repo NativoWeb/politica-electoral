@@ -76,6 +76,44 @@ const CARGOS_DISPONIBLES = [
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]";
 
+/* ── Confirm Dialog (replaces native confirm()) ── */
+function useConfirm() {
+    const [state, setState] = useState({ open: false, title: '', message: '', onConfirm: null, danger: false });
+    const confirm = useCallback((title, message, onConfirm, danger = true) => {
+        setState({ open: true, title, message, onConfirm, danger });
+    }, []);
+    const close = useCallback(() => setState(s => ({ ...s, open: false })), []);
+    const Dialog = () => !state.open ? null : (
+        <>
+            <div className="fixed inset-0 bg-black/50 z-[60]" onClick={close} />
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[380px] overflow-hidden animate-slide-up">
+                    <div className="px-6 pt-6 pb-4 text-center">
+                        <div className={`w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center ${state.danger ? 'bg-red-100' : 'bg-blue-100'}`}>
+                            {state.danger ? (
+                                <svg className="w-7 h-7 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            ) : (
+                                <svg className="w-7 h-7 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            )}
+                        </div>
+                        <h3 className="text-[18px] font-extrabold text-[var(--color-ink)]">{state.title}</h3>
+                        <p className="text-[14px] text-[var(--color-ink-faint)] mt-2 leading-relaxed">{state.message}</p>
+                    </div>
+                    <div className="px-6 pb-6 flex gap-3">
+                        <button onClick={close} className="flex-1 px-4 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl active:bg-gray-100">
+                            Cancelar
+                        </button>
+                        <button onClick={() => { close(); state.onConfirm?.(); }} className={`flex-1 px-4 py-3 text-white text-[15px] font-bold rounded-xl ${state.danger ? 'bg-red-500 active:bg-red-600' : 'bg-[var(--color-primary)] active:bg-[var(--color-primary-dark)]'}`}>
+                            {state.danger ? 'Eliminar' : 'Confirmar'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+    return { confirm, Dialog };
+}
+
 /* ── Searchable Checkbox Dropdown ── */
 function SearchableDropdown({ label, options, selected, onChange, placeholder = 'Todos', multi = true }) {
     const [open, setOpen] = useState(false);
@@ -179,6 +217,7 @@ function apiFetch(url, options = {}) {
 
 /* ── Panel lateral de detalle ── */
 function PersonaPanel({ personId, onClose }) {
+    const { confirm, Dialog: ConfirmDialog } = useConfirm();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
@@ -308,15 +347,16 @@ function PersonaPanel({ personId, onClose }) {
     }
 
     function deleteNexo(nexoId) {
-        if (!confirm('Eliminar este nexo familiar?')) return;
-        apiFetch(`/mapa-politico/nexos/${nexoId}`, { method: 'DELETE' })
-            .then(() => loadData())
-            .catch(async () => {
-                await offlineDeleteNexo(nexoId).catch(() => {});
-                setData(prev => ({ ...prev, nexos: (prev.nexos || []).filter(n => n.id !== nexoId) }));
-                setMessage('Eliminado localmente. Se sincronizara con internet.');
-                setTimeout(() => setMessage(''), 5000);
-            });
+        confirm('Eliminar nexo', '¿Seguro que quieres eliminar este nexo familiar?', () => {
+            apiFetch(`/mapa-politico/nexos/${nexoId}`, { method: 'DELETE' })
+                .then(() => loadData())
+                .catch(async () => {
+                    await offlineDeleteNexo(nexoId).catch(() => {});
+                    setData(prev => ({ ...prev, nexos: (prev.nexos || []).filter(n => n.id !== nexoId) }));
+                    setMessage('Eliminado localmente. Se sincronizara con internet.');
+                    setTimeout(() => setMessage(''), 5000);
+                });
+        });
     }
 
     if (loading) return <FullScreenSpinner message="Cargando ficha..." />;
@@ -378,11 +418,12 @@ function PersonaPanel({ personId, onClose }) {
                                     {editMode ? 'Cancelar' : 'Editar datos'}
                                 </button>
                                 <button onClick={() => {
-                                    if (!confirm('¿Eliminar esta persona? Se borrarán sus nexos familiares. Esta accion no se puede deshacer.')) return;
-                                    apiFetch(`/mapa-politico/persona/${personId}`, { method: 'DELETE' })
-                                        .then(r => r.json())
-                                        .then(() => { onClose(); router.get(window.location.href, {}, { preserveState: false }); })
-                                        .catch(() => setMessage('Error al eliminar'));
+                                    confirm('Eliminar persona', '¿Eliminar esta persona? Se borrarán sus nexos familiares. Esta acción no se puede deshacer.', () => {
+                                        apiFetch(`/mapa-politico/persona/${personId}`, { method: 'DELETE' })
+                                            .then(r => r.json())
+                                            .then(() => { onClose(); router.get(window.location.href, {}, { preserveState: false }); })
+                                            .catch(() => setMessage('Error al eliminar'));
+                                    });
                                 }} className="px-3 py-2.5 bg-red-50 text-red-600 text-[14px] font-bold rounded-lg hover:bg-red-100 transition-colors" title="Eliminar persona">
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                 </button>
@@ -640,6 +681,7 @@ function PersonaPanel({ personId, onClose }) {
                     </div>
                 </div>
             </div>
+            <ConfirmDialog />
         </>
     );
 }
