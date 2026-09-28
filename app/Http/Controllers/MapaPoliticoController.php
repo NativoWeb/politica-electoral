@@ -169,7 +169,6 @@ class MapaPoliticoController extends Controller
         // === LIDERES ===
         if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
-                ->where('cargo', '!=', 'Directorio Municipal')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
@@ -194,7 +193,7 @@ class MapaPoliticoController extends Controller
         // === DIRECTORIO MUNICIPAL ===
         if ($tipoMatch('directorio')) {
             $query = DB::table('lideres')
-                ->where('cargo', 'Directorio Municipal')
+                ->where('cargo', 'ilike', '%Directorio Municipal%')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
