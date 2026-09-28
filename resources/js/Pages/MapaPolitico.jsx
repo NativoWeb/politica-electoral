@@ -1416,7 +1416,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                                     options={barrios}
                                     selected={filters.barrio}
                                     onChange={val => applyFilters({ barrio: val })}
-                                    multi={false}
+                                    multi={true}
                                 />
                             </div>
                         )}

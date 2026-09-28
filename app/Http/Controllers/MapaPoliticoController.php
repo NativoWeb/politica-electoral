@@ -68,7 +68,9 @@ class MapaPoliticoController extends Controller
         $cargo = $cargoRaw;
         $search = $request->input('search');
         $partido = $request->input('partido');
-        $barrio = $request->input('barrio');
+        $barrioRaw = $request->input('barrio');
+        $barrios_filter = $barrioRaw ? explode(',', $barrioRaw) : [];
+        $barrio = $barrioRaw;
         $destacado = $request->input('destacado');
         $profesion = $request->input('profesion');
 
@@ -184,7 +186,9 @@ class MapaPoliticoController extends Controller
             if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
                 foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
             });
-            if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
+            if (!empty($barrios_filter)) $query->where(function ($q) use ($barrios_filter) {
+                foreach ($barrios_filter as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
+            });
             if ($noGeoFilter) $query->limit(200);
 
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
@@ -209,7 +213,9 @@ class MapaPoliticoController extends Controller
             if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
                 foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
             });
-            if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
+            if (!empty($barrios_filter)) $query->where(function ($q) use ($barrios_filter) {
+                foreach ($barrios_filter as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
+            });
             if ($noGeoFilter) $query->limit(200);
 
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
@@ -340,8 +346,14 @@ class MapaPoliticoController extends Controller
         $data = array_values($unified);
 
         // Filtrar por barrio (post-unificación)
-        if ($barrioEscaped) {
-            $data = array_values(array_filter($data, fn ($row) => !empty($row['barrio']) && stripos($row['barrio'], $barrio) !== false));
+        if (!empty($barrios_filter)) {
+            $data = array_values(array_filter($data, function ($row) use ($barrios_filter) {
+                if (empty($row['barrio'])) return false;
+                foreach ($barrios_filter as $b) {
+                    if (stripos($row['barrio'], trim($b)) !== false) return true;
+                }
+                return false;
+            }));
         }
 
         $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
