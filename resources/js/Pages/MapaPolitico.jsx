@@ -1192,8 +1192,9 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
 
     // Determine if we should show collapsible sections or flat table
     const tipoFilter = filters.tipo ?? 'todos';
+    const tipoIsAll = tipoFilter === 'todos';
     const hasSpecificFilters = filters.search || filters.cargo || filters.barrio || filters.destacado || filters.profesion;
-    const showSections = tipoFilter === 'todos' && !hasSpecificFilters;
+    const showSections = tipoIsAll && !hasSpecificFilters;
 
     // Group data by tipo_registro for sections
     const groupedData = useMemo(() => {
@@ -1310,14 +1311,14 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         <div className="col-span-1">
                             <SearchableDropdown
                                 label="Tipo"
-                                options={TIPO_OPTIONS.map(o => o.label)}
-                                selected={filters.tipo ? TIPO_OPTIONS.find(o => o.value === filters.tipo)?.label : 'Todos'}
+                                options={TIPO_OPTIONS.filter(o => o.value !== 'todos').map(o => o.label)}
+                                selected={filters.tipo && filters.tipo !== 'todos' ? filters.tipo.split(',').map(v => TIPO_OPTIONS.find(o => o.value === v)?.label).filter(Boolean).join(',') : undefined}
                                 onChange={val => {
-                                    const opt = TIPO_OPTIONS.find(o => o.label === val);
-                                    setSelectedCargos([]);
-                                    applyFilters({ tipo: opt?.value || 'todos', cargo: undefined });
+                                    if (!val) { applyFilters({ tipo: 'todos' }); return; }
+                                    const values = val.split(',').map(label => TIPO_OPTIONS.find(o => o.label === label)?.value).filter(Boolean).join(',');
+                                    applyFilters({ tipo: values || 'todos' });
                                 }}
-                                multi={false}
+                                multi={true}
                                 placeholder="Todos"
                             />
                         </div>

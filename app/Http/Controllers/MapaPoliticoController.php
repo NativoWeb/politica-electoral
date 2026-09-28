@@ -59,7 +59,10 @@ class MapaPoliticoController extends Controller
     public function index(Request $request)
     {
         $munId = $request->input('municipio');
-        $tipo = $request->input('tipo', 'todos');
+        $tipoRaw = $request->input('tipo', 'todos');
+        $tipos = $tipoRaw ? explode(',', $tipoRaw) : ['todos'];
+        $tipo = $tipoRaw; // keep for backward compat
+        $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
         $cargoRaw = $request->input('cargo');
         $cargos = $cargoRaw ? explode(',', $cargoRaw) : [];
         $cargo = $cargoRaw;
@@ -103,7 +106,7 @@ class MapaPoliticoController extends Controller
         $noGeoFilter = !$munId && !$provinciaIds && !$searchEscaped && !$barrioEscaped;
 
         // === ALCALDIA ===
-        if ($tipo === 'todos' || $tipo === 'alcaldia') {
+        if ($tipoMatch('alcaldia')) {
             $alcaldiaOffice = $this->officeId('Alcaldía');
             $query = DB::table('candidacies as c')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
@@ -132,8 +135,8 @@ class MapaPoliticoController extends Controller
         }
 
         // === CONCEJO ===
-        $showConcejo = $tipo === 'todos' || $tipo === 'concejo'
-            || ($tipo === 'lideres' && $cargo && stripos($cargo, 'CONCEJAL') !== false);
+        $showConcejo = $tipoMatch('concejo')
+            || (in_array('lideres', $tipos) && $cargo && stripos($cargo, 'CONCEJAL') !== false);
         if ($showConcejo) {
             $concejoCorp = $this->corporationId('Concejo');
             $query = DB::table('candidacies as c')
@@ -164,7 +167,7 @@ class MapaPoliticoController extends Controller
         }
 
         // === LIDERES ===
-        if ($tipo === 'todos' || $tipo === 'lideres') {
+        if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
                 ->where('cargo', '!=', 'Directorio Municipal')
                 ->select(
@@ -189,7 +192,7 @@ class MapaPoliticoController extends Controller
         }
 
         // === DIRECTORIO MUNICIPAL ===
-        if ($tipo === 'todos' || $tipo === 'directorio') {
+        if ($tipoMatch('directorio')) {
             $query = DB::table('lideres')
                 ->where('cargo', 'Directorio Municipal')
                 ->select(
@@ -221,7 +224,7 @@ class MapaPoliticoController extends Controller
             'asamblea' => ['corp' => 'Asamblea', 'label' => 'Asamblea'],
         ];
         foreach ($corpMap as $tipoKey => $info) {
-            if ($tipo === $tipoKey || $tipo === 'todos') {
+            if ($tipoMatch($tipoKey)) {
                 $corpId = $this->corporationId($info['corp']);
                 if (!$corpId) continue;
 
