@@ -7,13 +7,20 @@ import { createRoot } from 'react-dom/client';
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then((registration) => {
-            // Check for updates periodically (iOS doesn't auto-update SW reliably)
-            setInterval(() => registration.update(), 60 * 60 * 1000); // every hour
+            setInterval(() => registration.update(), 60 * 60 * 1000);
         }).catch(() => {});
+
+        // Pre-cache key pages for offline (tell SW to fetch and store)
+        if (navigator.onLine && navigator.serviceWorker.controller) {
+            setTimeout(() => {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'PRECACHE_PAGES',
+                    urls: ['/mapa-politico', '/gobernador'],
+                });
+            }, 3000);
+        }
     });
 
-    // iOS fallback: Safari doesn't support Background Sync
-    // Trigger sync when coming back online
     window.addEventListener('online', () => {
         if (navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({ type: 'SYNC_REQUESTED' });

@@ -182,4 +182,19 @@ self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
     }
+    // Pre-cache pages on demand from the client
+    if (event.data && event.data.type === 'PRECACHE_PAGES' && event.data.urls) {
+        event.waitUntil(
+            caches.open(CACHE_NAME).then(async (cache) => {
+                for (const url of event.data.urls) {
+                    try {
+                        const response = await fetch(url, { credentials: 'same-origin' });
+                        if (response.ok) {
+                            await cache.put(new Request(url), response);
+                        }
+                    } catch {}
+                }
+            })
+        );
+    }
 });
