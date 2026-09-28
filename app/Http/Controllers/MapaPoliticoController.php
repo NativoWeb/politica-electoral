@@ -45,15 +45,19 @@ class MapaPoliticoController extends Controller
     // #7: Cached cargos por tipo
     private function cargosPorTipo(): array
     {
-        return Cache::remember('cargos_por_tipo', 300, fn () => [
+        $liderCargos = DB::table('lideres')->select('cargo')->distinct()->pluck('cargo')
+            ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
+        return [
             'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
             'concejo' => ['Concejal Electo', 'Candidato Concejo'],
-            'lideres' => DB::table('lideres')->select('cargo')->distinct()->pluck('cargo')->sort()->values()->toArray(),
-            'todos' => collect()
-                ->merge(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal Electo', 'Candidato Concejo'])
-                ->merge(DB::table('lideres')->select('cargo')->distinct()->pluck('cargo'))
-                ->unique()->sort()->values()->toArray(),
-        ]);
+            'lideres' => $liderCargos,
+            'directorio' => $liderCargos,
+            'senado' => ['Senador', 'Candidato Senado'],
+            'camara' => ['Representante', 'Candidato Cámara'],
+            'asamblea' => ['Diputado', 'Candidato Asamblea'],
+            'todos' => collect(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal Electo', 'Candidato Concejo', 'Senador', 'Candidato Senado', 'Representante', 'Candidato Cámara', 'Diputado', 'Candidato Asamblea'])
+                ->merge($liderCargos)->unique()->sort()->values()->toArray(),
+        ];
     }
 
     public function index(Request $request)

@@ -1385,7 +1385,12 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         <div className="col-span-1">
                             <SearchableDropdown
                                 label="Cargo"
-                                options={CARGOS_DISPONIBLES}
+                                options={(() => {
+                                    const selectedTipos = (filters.tipo && filters.tipo !== 'todos') ? filters.tipo.split(',') : ['todos'];
+                                    if (selectedTipos.includes('todos')) return cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
+                                    const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
+                                    return merged.length > 0 ? merged.sort() : CARGOS_DISPONIBLES;
+                                })()}
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
                                 multi={true}
