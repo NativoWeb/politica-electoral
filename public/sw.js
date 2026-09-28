@@ -1,6 +1,7 @@
-// Service Worker — Inteligencia Electoral PWA — Build 20260928v2
-const CACHE_NAME = 'electoral-v5';
+// Service Worker — Inteligencia Electoral PWA — Build 20260928v3
+const CACHE_NAME = 'electoral-v6';
 const APP_SHELL = [
+    '/manifest.json',
     '/offline.html',
 ];
 
@@ -18,12 +19,27 @@ self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — migrate old cache entries to new cache, then delete old
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-        )
+        caches.keys().then(async (keys) => {
+            const oldKeys = keys.filter((key) => key !== CACHE_NAME && key.startsWith('electoral-'));
+            // Copy navigation entries from old cache to new
+            const newCache = await caches.open(CACHE_NAME);
+            for (const oldKey of oldKeys) {
+                const oldCache = await caches.open(oldKey);
+                const requests = await oldCache.keys();
+                for (const req of requests) {
+                    // Only migrate HTML pages and build assets, not stale API responses
+                    const url = new URL(req.url);
+                    if (req.mode === 'navigate' || url.pathname.startsWith('/build/') || url.pathname.match(/\.(js|css|png|svg|woff2?)$/)) {
+                        const response = await oldCache.match(req);
+                        if (response) await newCache.put(req, response);
+                    }
+                }
+                await caches.delete(oldKey);
+            }
+        })
     );
     self.clients.claim();
 });
