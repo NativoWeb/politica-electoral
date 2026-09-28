@@ -73,6 +73,7 @@ class ExportController extends Controller
         $cargos = $cargo ? explode(',', $cargo) : [];
         $tipos = $tipo ? explode(',', $tipo) : ['todos'];
         $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
+        $barrios = $barrio ? explode(',', $barrio) : [];
         $data = [];
 
         $votesSubQuery = DB::table('electoral_results')
@@ -135,7 +136,9 @@ class ExportController extends Controller
             if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
                 foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
             });
-            if ($barrio) $query->where('barrio', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $barrio) . '%');
+            if (!empty($barrios)) $query->where(function ($q) use ($barrios) {
+                foreach ($barrios as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
+            });
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
         }
 
@@ -149,7 +152,9 @@ class ExportController extends Controller
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
                 $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
             });
-            if ($barrio) $query->where('barrio', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $barrio) . '%');
+            if (!empty($barrios)) $query->where(function ($q) use ($barrios) {
+                foreach ($barrios as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
+            });
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
         }
 
