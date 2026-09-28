@@ -71,6 +71,8 @@ class ExportController extends Controller
     private function getMapaPoliticoData(?string $munId, string $tipo, ?string $cargo, ?string $search, ?string $partido, ?string $barrio): array
     {
         $cargos = $cargo ? explode(',', $cargo) : [];
+        $tipos = $tipo ? explode(',', $tipo) : ['todos'];
+        $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
         $data = [];
 
         $votesSubQuery = DB::table('electoral_results')
@@ -79,7 +81,7 @@ class ExportController extends Controller
             ->groupBy('candidacy_id');
 
         // Alcaldía
-        if ($tipo === 'todos' || $tipo === 'alcaldia') {
+        if ($tipoMatch('alcaldia')) {
             $officeId = DB::table('offices')->where('name', 'Alcaldía')->value('id');
             $query = DB::table('candidacies as c')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
@@ -100,7 +102,7 @@ class ExportController extends Controller
         }
 
         // Concejo
-        if ($tipo === 'todos' || $tipo === 'concejo') {
+        if ($tipoMatch('concejo')) {
             $corpId = DB::table('corporations')->where('name', 'Concejo')->value('id');
             $query = DB::table('candidacies as c')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
@@ -122,12 +124,31 @@ class ExportController extends Controller
         }
 
         // Líderes
-        if ($tipo === 'todos' || $tipo === 'lideres') {
+        if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
-                ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', DB::raw('0 as votos'));
+                ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
             if ($munId) $query->where('geographic_unit_id', $munId);
-            if ($search) $query->where('nombre', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
-            if (!empty($cargos)) $query->whereIn('cargo', $cargos);
+            if ($search) $query->where(function ($q) use ($search) {
+                $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+                $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
+            });
+            if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
+                foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
+            });
+            if ($barrio) $query->where('barrio', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $barrio) . '%');
+            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // Directorio Municipal
+        if ($tipoMatch('directorio')) {
+            $query = DB::table('lideres')
+                ->where('cargo', 'ilike', '%Directorio Municipal%')
+                ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
+            if ($munId) $query->where('geographic_unit_id', $munId);
+            if ($search) $query->where(function ($q) use ($search) {
+                $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+                $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
+            });
             if ($barrio) $query->where('barrio', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $barrio) . '%');
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
         }
@@ -135,7 +156,7 @@ class ExportController extends Controller
         // Senado / Cámara / Asamblea
         $corpMap = ['senado' => 'Senado', 'camara' => 'Cámara de Representantes', 'asamblea' => 'Asamblea'];
         foreach ($corpMap as $tipoKey => $corpName) {
-            if ($tipo === $tipoKey || $tipo === 'todos') {
+            if ($tipoMatch($tipoKey)) {
                 $data = array_merge($data, $this->getCorporacionData($corpName, $munId));
             }
         }

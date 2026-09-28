@@ -732,7 +732,7 @@ function VoiceButton({ onResult, label }) {
 
 /* ── Modal Crear Líder ── */
 function CrearLiderModal({ open, onClose, municipios }) {
-    const emptyForm = { nombre: '', municipio_id: '', cargo: 'Líder', telefono: '', email: '', direccion: '', barrio: '', zona: '', observacion: '' };
+    const emptyForm = { nombre: '', municipio_id: '', cargo: 'Líder', tipos: ['Líderes'], telefono: '', email: '', cedula: '', profesion: '', direccion: '', barrio: '', zona: '', observacion: '' };
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
@@ -780,19 +780,19 @@ function CrearLiderModal({ open, onClose, municipios }) {
         <>
             <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[800px] max-h-[90vh] overflow-y-auto">
+                <div className="bg-white lg:rounded-2xl shadow-2xl w-full max-w-[800px] h-[95vh] lg:h-auto lg:max-h-[90vh] overflow-y-auto rounded-t-2xl lg:rounded-2xl">
 
-                    <div className="bg-[var(--color-primary)] text-white px-8 py-6 rounded-t-2xl flex items-center justify-between">
+                    <div className="bg-[var(--color-primary)] text-white px-4 lg:px-8 py-4 lg:py-6 rounded-t-2xl flex items-center justify-between sticky top-0 z-10">
                         <div>
-                            <h2 className="text-[22px] font-extrabold">CREAR NUEVO LIDER</h2>
-                            <p className="text-[13px] text-white/50 mt-1">Usa el micrófono para dictar los campos</p>
+                            <h2 className="text-[18px] lg:text-[22px] font-extrabold">CREAR NUEVO LIDER</h2>
+                            <p className="text-[12px] lg:text-[13px] text-white/50 mt-1">Usa el micrófono para dictar los campos</p>
                         </div>
-                        <button onClick={onClose} className="w-12 h-12 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center text-white">
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        <button onClick={onClose} className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center text-white flex-shrink-0">
+                            <svg className="w-5 h-5 lg:w-6 lg:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                     </div>
 
-                    <form onSubmit={submit} className="px-8 py-6 space-y-5">
+                    <form onSubmit={submit} className="px-4 lg:px-8 py-4 lg:py-6 space-y-4">
                         {/* Mensajes */}
                         {successMsg && (
                             <div className="px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-[14px] font-semibold text-emerald-700">{successMsg}</div>
@@ -811,21 +811,52 @@ function CrearLiderModal({ open, onClose, municipios }) {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* Municipio */}
-                            <div>
-                                <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Municipio *</label>
-                                <select className={fieldCls} value={form.municipio_id} onChange={e => setForm({...form, municipio_id: e.target.value})} required>
-                                    <option value="">Seleccionar...</option>
-                                    {municipios.map(m => <option key={m.id} value={m.id}>{m.name} ({m.provincia})</option>)}
-                                </select>
+                        {/* Municipio */}
+                        <div>
+                            <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Municipio *</label>
+                            <select className={fieldCls} value={form.municipio_id} onChange={e => setForm({...form, municipio_id: e.target.value})} required>
+                                <option value="">Seleccionar...</option>
+                                {municipios.map(m => <option key={m.id} value={m.id}>{m.name} ({m.provincia})</option>)}
+                            </select>
+                        </div>
+
+                        {/* Tipo (checkboxes — Líderes, Directorio Municipal, etc.) */}
+                        <div>
+                            <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-2">Tipo</label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {TIPO_OPTIONS.filter(o => o.value !== 'todos').map(o => {
+                                    const checked = (form.tipos || []).includes(o.label);
+                                    return (
+                                        <label key={o.value} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-blue-50 border-[var(--color-primary)] font-bold text-[var(--color-primary)]' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
+                                            <input type="checkbox" checked={checked} onChange={() => {
+                                                const tipos = form.tipos || [];
+                                                const next = checked ? tipos.filter(x => x !== o.label) : [...tipos, o.label];
+                                                setForm({...form, tipos: next});
+                                            }} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)]" />
+                                            {o.label}
+                                        </label>
+                                    );
+                                })}
                             </div>
-                            {/* Tipo */}
-                            <div>
-                                <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Tipo *</label>
-                                <select className={fieldCls} value={form.cargo} onChange={e => setForm({...form, cargo: e.target.value})} required>
-                                    {CARGOS_DISPONIBLES.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
+                        </div>
+
+                        {/* Cargo (checkboxes — Líder, Concejal, JAC, etc.) */}
+                        <div>
+                            <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-2">Cargo</label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {CARGOS_DISPONIBLES.map(c => {
+                                    const cargos = form.cargo ? form.cargo.split(', ').map(s => s.trim()) : [];
+                                    const checked = cargos.includes(c);
+                                    return (
+                                        <label key={c} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-700' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
+                                            <input type="checkbox" checked={checked} onChange={() => {
+                                                const next = checked ? cargos.filter(x => x !== c) : [...cargos, c];
+                                                setForm({...form, cargo: next.join(', ')});
+                                            }} className="w-4 h-4 rounded border-gray-300 text-emerald-500" />
+                                            {c}
+                                        </label>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -848,7 +879,20 @@ function CrearLiderModal({ open, onClose, municipios }) {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Cédula */}
+                            <div>
+                                <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Cédula</label>
+                                <input className={fieldCls} value={form.cedula} onChange={e => setForm({...form, cedula: e.target.value})} placeholder="Número de cédula" />
+                            </div>
+                            {/* Profesión */}
+                            <div>
+                                <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Profesión</label>
+                                <input className={fieldCls} value={form.profesion} onChange={e => setForm({...form, profesion: e.target.value})} placeholder="Ej: Abogado, Ingeniero..." />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {/* Dirección + Voz */}
                             <div>
                                 <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Dirección</label>
