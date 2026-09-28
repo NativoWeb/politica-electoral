@@ -1,11 +1,6 @@
-// Service Worker — Inteligencia Electoral PWA — Build 20260923
-const CACHE_NAME = 'electoral-v4';
+// Service Worker — Inteligencia Electoral PWA — Build 20260928v2
+const CACHE_NAME = 'electoral-v5';
 const APP_SHELL = [
-    '/',
-    '/mapa-politico',
-    '/gobernador',
-    '/manifest.json',
-    '/img/bandera-colombia.svg',
     '/offline.html',
 ];
 
@@ -13,9 +8,7 @@ const APP_SHELL = [
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            // Use addAll for critical assets, but don't fail if some are unavailable
             return cache.addAll(APP_SHELL).catch(() => {
-                // Fallback: cache what we can individually
                 return Promise.allSettled(
                     APP_SHELL.map((url) => cache.add(url).catch(() => {}))
                 );
@@ -35,17 +28,17 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch — network first for navigation, cache first for assets
+// Fetch handler
 self.addEventListener('fetch', (event) => {
     const { request } = event;
 
     // Skip non-GET requests
     if (request.method !== 'GET') return;
 
-    // Skip chrome-extension and other non-http(s) requests
+    // Skip non-http(s)
     if (!request.url.startsWith('http')) return;
 
-    // For build assets (JS/CSS with hashes) — cache first (immutable)
+    // Build assets (JS/CSS with hashes) — cache first (immutable)
     if (request.url.includes('/build/')) {
         event.respondWith(
             caches.match(request).then((cached) => {
@@ -56,13 +49,13 @@ self.addEventListener('fetch', (event) => {
                         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
                     }
                     return response;
-                });
+                }).catch(() => cached || new Response('', { status: 404 }));
             })
         );
         return;
     }
 
-    // For images and fonts — cache first with network fallback
+    // Images and fonts — cache first
     if (request.url.match(/\.(png|jpg|jpeg|svg|webp|ico|woff2?|ttf|eot)(\?.*)?$/)) {
         event.respondWith(
             caches.match(request).then((cached) => {
@@ -79,7 +72,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // For Google Fonts CSS — cache first
+    // Google Fonts — cache first
     if (request.url.includes('fonts.googleapis.com') || request.url.includes('fonts.gstatic.com')) {
         event.respondWith(
             caches.match(request).then((cached) => {
@@ -96,31 +89,50 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // For navigation requests — network first, fallback to cache, then offline page
+    // API calls and data endpoints — network only (bypass SW)
+    if (request.url.includes('/api/') || request.url.includes('/persona/') || request.url.includes('/nexos/') || request.url.includes('/crear-lider') || request.url.includes('/exportar/')) {
+        return;
+    }
+
+    // Navigation requests — network first, cache the base URL (without query), fallback to offline
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request)
                 .then((response) => {
                     if (response.ok) {
                         const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+                        caches.open(CACHE_NAME).then((cache) => {
+                            // Cache both the exact URL and the base path (without query)
+                            cache.put(request, clone.clone());
+                            const baseUrl = new URL(request.url);
+                            baseUrl.search = '';
+                            cache.put(new Request(baseUrl.toString()), clone);
+                        });
                     }
                     return response;
                 })
-                .catch(() =>
-                    caches.match(request)
+                .catch(() => {
+                    // Try exact URL first
+                    return caches.match(request)
+                        .then((cached) => {
+                            if (cached) return cached;
+                            // Try base URL without query params
+                            const baseUrl = new URL(request.url);
+                            baseUrl.search = '';
+                            return caches.match(new Request(baseUrl.toString()));
+                        })
+                        .then((cached) => {
+                            if (cached) return cached;
+                            // Try root page
+                            return caches.match('/mapa-politico') || caches.match('/');
+                        })
                         .then((cached) => cached || caches.match('/offline.html'))
-                        .then((fallback) => fallback || new Response('Sin conexion', {
+                        .then((fallback) => fallback || new Response('Sin conexión', {
                             status: 503,
                             headers: { 'Content-Type': 'text/html; charset=utf-8' },
-                        }))
-                )
+                        }));
+                })
         );
-        return;
-    }
-
-    // For API calls and data endpoints — network only (bypass SW)
-    if (request.url.includes('/api/') || request.url.includes('/persona/') || request.url.includes('/nexos/') || request.url.includes('/crear-lider')) {
         return;
     }
 
@@ -138,9 +150,7 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-// Background Sync — sync pending changes when online
-// Note: Safari/iOS does NOT support Background Sync, so we also use
-// the 'online' event in the client-side code as a fallback
+// Background Sync
 self.addEventListener('sync', (event) => {
     if (event.tag === 'sync-changes') {
         event.waitUntil(
@@ -151,7 +161,7 @@ self.addEventListener('sync', (event) => {
     }
 });
 
-// Listen for messages from the client
+// Messages
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
