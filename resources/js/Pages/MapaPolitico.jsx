@@ -186,6 +186,7 @@ function PersonaPanel({ personId, onClose }) {
     const [form, setForm] = useState({});
     const [nexoForm, setNexoForm] = useState({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
     const [showNexoForm, setShowNexoForm] = useState(false);
+    const [editingNexoId, setEditingNexoId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
 
@@ -281,6 +282,29 @@ function PersonaPanel({ personId, onClose }) {
                     setMessage('Error al guardar nexo');
                 }
             });
+    }
+
+    function startEditNexo(n) {
+        setEditingNexoId(n.id);
+        setNexoForm({ nombre: n.nombre || '', parentesco: n.parentesco || '', cargo: n.cargo || '', edad: n.edad || '', gustos: n.gustos || '', observaciones: n.observaciones || '', cedula: n.cedula || '', telefono: n.telefono || '' });
+        setShowNexoForm(false);
+    }
+
+    function saveEditNexo(e) {
+        e.preventDefault();
+        apiFetch(`/mapa-politico/nexos/${editingNexoId}`, {
+            method: 'PUT',
+            body: JSON.stringify(nexoForm),
+        })
+            .then(r => r.json())
+            .then(() => {
+                setEditingNexoId(null);
+                setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
+                setMessage('Nexo actualizado');
+                loadData();
+                setTimeout(() => setMessage(''), 3000);
+            })
+            .catch(() => setMessage('Error al actualizar nexo'));
     }
 
     function deleteNexo(nexoId) {
@@ -542,22 +566,75 @@ function PersonaPanel({ personId, onClose }) {
                     )}
 
                     {data.nexos?.map(n => (
-                        <div key={n.id} className="bg-gray-50 rounded-xl p-4 mb-3 group">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="text-[18px] font-bold text-[var(--color-ink)]">{n.nombre}</p>
-                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                        {n.parentesco && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-[12px] font-bold rounded">{n.parentesco}</span>}
-                                        {n.cargo && <span className="text-[14px] text-[var(--color-ink-faint)]">{n.cargo}</span>}
-                                        {n.edad && <span className="text-[14px] text-[var(--color-ink-faint)]">· {n.edad} años</span>}
+                        <div key={n.id} className="bg-gray-50 rounded-xl p-4 mb-3">
+                            {editingNexoId === n.id ? (
+                                <form onSubmit={saveEditNexo} className="space-y-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Nombre *</label>
+                                            <input className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.nombre} onChange={e => setNexoForm({ ...nexoForm, nombre: e.target.value })} required />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Parentesco</label>
+                                            <select className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.parentesco} onChange={e => setNexoForm({ ...nexoForm, parentesco: e.target.value })}>
+                                                <option value="">Seleccionar...</option>
+                                                {PARENTESCOS.map(p => <option key={p} value={p}>{p}</option>)}
+                                            </select>
+                                        </div>
                                     </div>
-                                    {n.cedula && <p className="text-[13px] text-[var(--color-ink-soft)] mt-1">CC: {n.cedula}</p>}
-                                    {n.telefono && <p className="text-[13px] mt-1"><a href={`tel:${n.telefono}`} className="text-[var(--color-primary)] font-semibold">{n.telefono}</a> <a href={`https://wa.me/57${n.telefono.replace(/\D/g,'').replace(/^57/,'')}`} target="_blank" rel="noopener" className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-[#25D366] text-white text-[10px] font-bold rounded ml-1"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>WA</a></p>}
-                                    {n.gustos && <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Gustos: {n.gustos}</p>}
-                                    {n.observaciones && <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">{n.observaciones}</p>}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Cédula</label>
+                                            <input className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.cedula} onChange={e => setNexoForm({ ...nexoForm, cedula: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Teléfono</label>
+                                            <input className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.telefono} onChange={e => setNexoForm({ ...nexoForm, telefono: e.target.value })} />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Cargo</label>
+                                            <input className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.cargo} onChange={e => setNexoForm({ ...nexoForm, cargo: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Edad</label>
+                                            <input type="number" className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.edad} onChange={e => setNexoForm({ ...nexoForm, edad: e.target.value })} min="0" max="120" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Gustos</label>
+                                            <input className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.gustos} onChange={e => setNexoForm({ ...nexoForm, gustos: e.target.value })} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Observaciones</label>
+                                        <textarea className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" rows={2} value={nexoForm.observaciones} onChange={e => setNexoForm({ ...nexoForm, observaciones: e.target.value })} />
+                                    </div>
+                                    <div className="flex gap-2 justify-end">
+                                        <button type="button" onClick={() => setEditingNexoId(null)} className="px-4 py-2 text-[13px] text-[var(--color-ink-soft)] border border-[var(--color-line)] rounded-lg">Cancelar</button>
+                                        <button type="submit" className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg">Guardar</button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <p className="text-[16px] lg:text-[18px] font-bold text-[var(--color-ink)]">{n.nombre}</p>
+                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                            {n.parentesco && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-[12px] font-bold rounded">{n.parentesco}</span>}
+                                            {n.cargo && <span className="text-[14px] text-[var(--color-ink-faint)]">{n.cargo}</span>}
+                                            {n.edad && <span className="text-[14px] text-[var(--color-ink-faint)]">· {n.edad} años</span>}
+                                        </div>
+                                        {n.cedula && <p className="text-[13px] text-[var(--color-ink-soft)] mt-1">CC: {n.cedula}</p>}
+                                        {n.telefono && <p className="text-[13px] mt-1"><a href={`tel:${n.telefono}`} className="text-[var(--color-primary)] font-semibold">{n.telefono}</a> <a href={`https://wa.me/57${n.telefono.replace(/\D/g,'').replace(/^57/,'')}`} target="_blank" rel="noopener" className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-[#25D366] text-white text-[10px] font-bold rounded ml-1"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>WA</a></p>}
+                                        {n.gustos && <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Gustos: {n.gustos}</p>}
+                                        {n.observaciones && <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">{n.observaciones}</p>}
+                                    </div>
+                                    <div className="flex gap-1.5 flex-shrink-0">
+                                        <button onClick={() => startEditNexo(n)} className="px-3 py-2 text-[13px] text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold rounded-lg transition-colors">Editar</button>
+                                        <button onClick={() => deleteNexo(n.id)} className="px-3 py-2 text-[13px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg transition-colors">Eliminar</button>
+                                    </div>
                                 </div>
-                                <button onClick={() => deleteNexo(n.id)} className="px-4 py-2 text-[13px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg transition-colors">Eliminar</button>
-                            </div>
+                            )}
                         </div>
                     ))}
                     </div>

@@ -723,12 +723,13 @@ class MapaPoliticoController extends Controller
             'edad' => 'nullable|integer|min:0|max:120',
             'gustos' => 'nullable|string|max:500',
             'observaciones' => 'nullable|string|max:500',
+            'cedula' => 'nullable|string|max:20',
+            'telefono' => 'nullable|string|max:20',
         ]);
 
-        $affected = DB::table('nexos_familiares')->where('id', $id)->update([...$data, 'updated_at' => now()]);
-        abort_if($affected === 0, 404);
+        DB::table('nexos_familiares')->where('id', $id)->update([...$data, 'updated_at' => now()]);
 
-        return back()->with('success', 'Nexo actualizado.');
+        return response()->json(['success' => true, 'message' => 'Nexo actualizado.']);
     }
 
     public function destroyNexo(Request $request, string $id)
