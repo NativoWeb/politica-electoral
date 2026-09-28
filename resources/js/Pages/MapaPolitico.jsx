@@ -115,7 +115,7 @@ function SearchableDropdown({ label, options, selected, onChange, placeholder = 
             {open && (
                 <>
                     <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-                    <div className="absolute top-full left-0 mt-1 w-[280px] lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] flex flex-col">
+                    <div className="absolute top-full left-0 mt-1 w-[280px] lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] flex flex-col" role="listbox" aria-label={label}>
                         {/* Search */}
                         <div className="px-3 pt-3 pb-2 border-b border-[var(--color-line)]">
                             <input
@@ -137,7 +137,7 @@ function SearchableDropdown({ label, options, selected, onChange, placeholder = 
                             {filtered.map(opt => {
                                 const checked = multi ? selectedArr.includes(opt) : selected === opt;
                                 return (
-                                    <label key={opt} className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-0 ${checked ? 'bg-blue-50' : ''}`}>
+                                    <label key={opt} role="option" aria-selected={checked} className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-0 ${checked ? 'bg-blue-50' : ''}`}>
                                         <input
                                             type="checkbox"
                                             checked={checked}

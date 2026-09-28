@@ -432,7 +432,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     Cambiar contraseña
                                 </button>
                                 <button onClick={() => router.post('/logout')} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors">
-                                    Cerrar sesion
+                                    Cerrar sesión
                                 </button>
                             </div>
                         </div>
@@ -488,7 +488,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             </button>
                             <button onClick={() => { setMobileUserMenu(false); router.post('/logout'); }} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-red-50 transition-colors">
                                 <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                                <span className="text-[16px] font-semibold text-red-600">Cerrar sesion</span>
+                                <span className="text-[16px] font-semibold text-red-600">Cerrar sesión</span>
                             </button>
                         </div>
                     </div>
