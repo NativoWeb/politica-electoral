@@ -10,14 +10,13 @@ if ('serviceWorker' in navigator) {
             setInterval(() => registration.update(), 60 * 60 * 1000);
         }).catch(() => {});
 
-        // Pre-cache key pages for offline (tell SW to fetch and store)
-        if (navigator.onLine && navigator.serviceWorker.controller) {
+        // Pre-cache pages for offline — fetch them so SW caches the HTML
+        if (navigator.onLine) {
             setTimeout(() => {
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'PRECACHE_PAGES',
-                    urls: ['/mapa-politico', '/gobernador'],
+                ['/mapa-politico', '/gobernador'].forEach(url => {
+                    fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } }).catch(() => {});
                 });
-            }, 3000);
+            }, 5000);
         }
     });
 

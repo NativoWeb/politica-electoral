@@ -1,172 +1,97 @@
-// Service Worker — Inteligencia Electoral PWA — Build 20260928v3
-const CACHE_NAME = 'electoral-v6';
-const APP_SHELL = [
-    '/manifest.json',
-    '/offline.html',
-];
+// Service Worker — Inteligencia Electoral PWA — Build 20260928v4
+const CACHE_NAME = 'electoral-v7';
+const PRECACHE = ['/manifest.json', '/offline.html'];
+const PAGE_PATHS = ['/', '/mapa-politico', '/gobernador', '/admin/', '/login'];
 
-// Install — cache app shell
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(APP_SHELL).catch(() => {
-                return Promise.allSettled(
-                    APP_SHELL.map((url) => cache.add(url).catch(() => {}))
-                );
-            });
-        })
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE).catch(() => {}))
     );
     self.skipWaiting();
 });
 
-// Activate — migrate old cache entries to new cache, then delete old
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then(async (keys) => {
-            const oldKeys = keys.filter((key) => key !== CACHE_NAME && key.startsWith('electoral-'));
-            // Copy navigation entries from old cache to new
-            const newCache = await caches.open(CACHE_NAME);
-            for (const oldKey of oldKeys) {
-                const oldCache = await caches.open(oldKey);
-                const requests = await oldCache.keys();
-                for (const req of requests) {
-                    // Only migrate HTML pages and build assets, not stale API responses
-                    const url = new URL(req.url);
-                    if (req.mode === 'navigate' || url.pathname.startsWith('/build/') || url.pathname.match(/\.(js|css|png|svg|woff2?)$/)) {
-                        const response = await oldCache.match(req);
-                        if (response) await newCache.put(req, response);
-                    }
-                }
-                await caches.delete(oldKey);
-            }
-        })
+        caches.keys().then((keys) =>
+            Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+        )
     );
     self.clients.claim();
 });
 
-// Fetch handler
 self.addEventListener('fetch', (event) => {
     const { request } = event;
-
-    // Skip non-GET requests
     if (request.method !== 'GET') return;
-
-    // Skip non-http(s)
     if (!request.url.startsWith('http')) return;
 
-    // Build assets (JS/CSS with hashes) — cache first (immutable)
-    if (request.url.includes('/build/')) {
+    const url = new URL(request.url);
+
+    // Build assets — cache first (immutable)
+    if (url.pathname.startsWith('/build/')) {
         event.respondWith(
-            caches.match(request).then((cached) => {
-                if (cached) return cached;
-                return fetch(request).then((response) => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                    }
-                    return response;
-                }).catch(() => cached || new Response('', { status: 404 }));
-            })
+            caches.match(request).then((c) => c || fetch(request).then((r) => {
+                if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((cache) => cache.put(request, cl)); }
+                return r;
+            }).catch(() => new Response('', { status: 404 })))
         );
         return;
     }
 
-    // Images and fonts — cache first
-    if (request.url.match(/\.(png|jpg|jpeg|svg|webp|ico|woff2?|ttf|eot)(\?.*)?$/)) {
+    // Static assets — cache first
+    if (url.pathname.match(/\.(png|jpg|jpeg|svg|webp|ico|woff2?|ttf|eot|css)(\?.*)?$/) || url.host.includes('fonts.g')) {
         event.respondWith(
-            caches.match(request).then((cached) => {
-                if (cached) return cached;
-                return fetch(request).then((response) => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                    }
-                    return response;
-                }).catch(() => new Response('', { status: 404 }));
-            })
+            caches.match(request).then((c) => c || fetch(request).then((r) => {
+                if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((cache) => cache.put(request, cl)); }
+                return r;
+            }).catch(() => new Response('', { status: 404 })))
         );
         return;
     }
 
-    // Google Fonts — cache first
-    if (request.url.includes('fonts.googleapis.com') || request.url.includes('fonts.gstatic.com')) {
+    // API/data endpoints — network only
+    if (url.pathname.includes('/api/') || url.pathname.includes('/persona/') || url.pathname.includes('/nexos/') || url.pathname.includes('/crear-lider') || url.pathname.includes('/exportar/')) {
+        return;
+    }
+
+    // Page requests (navigation OR fetch to page URLs) — network first, cache aggressively
+    const isPage = request.mode === 'navigate' || PAGE_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(p));
+
+    if (isPage) {
         event.respondWith(
-            caches.match(request).then((cached) => {
-                if (cached) return cached;
-                return fetch(request).then((response) => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                    }
-                    return response;
-                }).catch(() => cached || new Response('', { status: 404 }));
-            })
-        );
-        return;
-    }
-
-    // API calls and data endpoints — network only (bypass SW)
-    if (request.url.includes('/api/') || request.url.includes('/persona/') || request.url.includes('/nexos/') || request.url.includes('/crear-lider') || request.url.includes('/exportar/')) {
-        return;
-    }
-
-    // Navigation requests — network first, cache the base URL (without query), fallback to offline
-    if (request.mode === 'navigate') {
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => {
-                            // Cache both the exact URL and the base path (without query)
-                            cache.put(request, clone.clone());
-                            const baseUrl = new URL(request.url);
-                            baseUrl.search = '';
-                            cache.put(new Request(baseUrl.toString()), clone);
-                        });
-                    }
-                    return response;
-                })
-                .catch(() => {
-                    // Try exact URL first
-                    return caches.match(request)
-                        .then((cached) => {
-                            if (cached) return cached;
-                            // Try base URL without query params
-                            const baseUrl = new URL(request.url);
-                            baseUrl.search = '';
-                            return caches.match(new Request(baseUrl.toString()));
-                        })
-                        .then((cached) => {
-                            if (cached) return cached;
-                            // Try root page
-                            return caches.match('/mapa-politico') || caches.match('/');
-                        })
-                        .then((cached) => cached || caches.match('/offline.html'))
-                        .then((fallback) => fallback || new Response('Sin conexión', {
-                            status: 503,
-                            headers: { 'Content-Type': 'text/html; charset=utf-8' },
-                        }));
-                })
-        );
-        return;
-    }
-
-    // Everything else — network first with cache fallback
-    event.respondWith(
-        fetch(request)
-            .then((response) => {
-                if (response.ok) {
+            fetch(request).then((response) => {
+                if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
                     const clone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(request, clone.clone());
+                        // Also cache without query params
+                        if (url.search) {
+                            const baseReq = new Request(url.origin + url.pathname);
+                            cache.put(baseReq, clone);
+                        }
+                    });
                 }
                 return response;
-            })
-            .catch(() => caches.match(request))
+            }).catch(() =>
+                caches.match(request)
+                    .then((c) => c || caches.match(url.origin + url.pathname))
+                    .then((c) => c || caches.match('/mapa-politico'))
+                    .then((c) => c || caches.match('/'))
+                    .then((c) => c || caches.match('/offline.html'))
+                    .then((c) => c || new Response('<h1>Sin conexión</h1>', { headers: { 'Content-Type': 'text/html' } }))
+            )
+        );
+        return;
+    }
+
+    // Everything else — network first, cache fallback
+    event.respondWith(
+        fetch(request).then((r) => {
+            if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((cache) => cache.put(request, cl)); }
+            return r;
+        }).catch(() => caches.match(request))
     );
 });
 
-// Background Sync
 self.addEventListener('sync', (event) => {
     if (event.tag === 'sync-changes') {
         event.waitUntil(
@@ -177,24 +102,6 @@ self.addEventListener('sync', (event) => {
     }
 });
 
-// Messages
 self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'SKIP_WAITING') {
-        self.skipWaiting();
-    }
-    // Pre-cache pages on demand from the client
-    if (event.data && event.data.type === 'PRECACHE_PAGES' && event.data.urls) {
-        event.waitUntil(
-            caches.open(CACHE_NAME).then(async (cache) => {
-                for (const url of event.data.urls) {
-                    try {
-                        const response = await fetch(url, { credentials: 'same-origin' });
-                        if (response.ok) {
-                            await cache.put(new Request(url), response);
-                        }
-                    } catch {}
-                }
-            })
-        );
-    }
+    if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
