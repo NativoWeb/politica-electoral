@@ -27,3 +27,10 @@ node_modules/
 public/build/
 storage/aval_data.json
 deploy/
+lang/en/
+lang/es/auth.php
+lang/es/pagination.php
+lang/es/passwords.php
+qa-screenshots/
+mobile-*.png
+camara-*.png
