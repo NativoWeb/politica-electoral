@@ -1190,7 +1190,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         </div>
                         <div className="col-span-1">
                             <SearchableDropdown
-                                label="Seccion"
+                                label="Tipo"
                                 options={TIPO_OPTIONS.map(o => o.label)}
                                 selected={filters.tipo ? TIPO_OPTIONS.find(o => o.value === filters.tipo)?.label : 'Todos'}
                                 onChange={val => {
@@ -1204,7 +1204,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         </div>
                         <div className="col-span-1">
                             <SearchableDropdown
-                                label="Tipo/Cargo"
+                                label="Cargo"
                                 options={cargosPorTipo[filters.tipo ?? 'todos'] ?? cargosDisponibles}
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
