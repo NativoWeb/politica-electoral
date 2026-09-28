@@ -1376,13 +1376,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
         return groups;
     }, [data, showSections]);
 
-    const [offlineMsg, setOfflineMsg] = useState('');
     function applyFilters(overrides = {}) {
-        if (!navigator.onLine) {
-            setOfflineMsg('Sin conexión. No puedes filtrar sin internet.');
-            setTimeout(() => setOfflineMsg(''), 3000);
-            return;
-        }
         const params = {
             municipio: filters.municipio,
             tipo: filters.tipo ?? 'todos',
@@ -1690,12 +1684,6 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
             {/* Modal crear líder */}
             <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} provincias={provincias} cargosPorTipo={cargosPorTipo} />
 
-            {offlineMsg && (
-                <div className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 bg-red-500 text-white text-[14px] font-semibold rounded-xl shadow-lg flex items-center gap-2">
-                    <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728" /><line x1="4" y1="4" x2="20" y2="20" strokeLinecap="round" strokeWidth={2.5} /></svg>
-                    {offlineMsg}
-                </div>
-            )}
         </AppLayout>
     );
 }

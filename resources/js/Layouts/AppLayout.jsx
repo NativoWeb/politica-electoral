@@ -375,26 +375,20 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
     useEffect(() => {
         let navTimeout;
-        const removeStart = router.on('start', () => {
+        const removeStart = router.on('start', (e) => {
+            // Block ALL navigation when offline
+            if (!navigator.onLine) {
+                e.detail.visit.cancel();
+                setOfflineAlert(true);
+                setTimeout(() => setOfflineAlert(false), 3000);
+                return;
+            }
             setNavigating(true);
-            // Auto-cancel spinner after 8s if offline
-            navTimeout = setTimeout(() => {
-                if (!navigator.onLine) {
-                    setNavigating(false);
-                    setOfflineAlert(true);
-                    setTimeout(() => setOfflineAlert(false), 4000);
-                }
-            }, 8000);
+            // Safety timeout in case finish/error never fires
+            navTimeout = setTimeout(() => { setNavigating(false); }, 15000);
         });
         const removeFinish = router.on('finish', () => { setNavigating(false); clearTimeout(navTimeout); });
-        const removeError = router.on('error', () => {
-            setNavigating(false);
-            clearTimeout(navTimeout);
-            if (!navigator.onLine) {
-                setOfflineAlert(true);
-                setTimeout(() => setOfflineAlert(false), 4000);
-            }
-        });
+        const removeError = router.on('error', () => { setNavigating(false); clearTimeout(navTimeout); });
         return () => { removeStart(); removeFinish(); removeError(); clearTimeout(navTimeout); };
     }, []);
 
