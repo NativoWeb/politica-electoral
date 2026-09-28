@@ -319,22 +319,22 @@ function PersonaPanel({ personId, onClose }) {
             {/* Overlay */}
             <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
 
-            {/* Modal centrado */}
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[750px] max-h-[90vh] overflow-y-auto">
+            {/* Modal — full screen on mobile, centered on desktop */}
+            <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center lg:p-4">
+                <div className="bg-white lg:rounded-2xl shadow-2xl w-full max-w-[750px] h-[95vh] lg:h-auto lg:max-h-[90vh] overflow-y-auto rounded-t-2xl lg:rounded-2xl">
 
                     {/* Header */}
-                    <div className="bg-[var(--color-primary)] text-white px-8 py-6 rounded-t-2xl flex items-center justify-between">
-                        <div>
-                            <p className="text-[12px] text-white/50 uppercase tracking-widest">
+                    <div className="bg-[var(--color-primary)] text-white px-4 lg:px-8 py-4 lg:py-6 rounded-t-2xl flex items-start justify-between gap-3 sticky top-0 z-10">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-[10px] lg:text-[12px] text-white/50 uppercase tracking-widest">
                                 Ficha personal
                                 {data._offline && <span className="ml-2 px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded normal-case">Datos guardados</span>}
                             </p>
-                            <h2 className="text-[24px] font-extrabold uppercase mt-1">{data.nombre}</h2>
-                            <p className="text-[14px] text-white/60 mt-1">{data.municipio ?? '—'} · {data.cargo ?? '—'}</p>
+                            <h2 className="text-[18px] lg:text-[24px] font-extrabold uppercase mt-1 break-words">{data.nombre}</h2>
+                            <p className="text-[12px] lg:text-[14px] text-white/60 mt-1 truncate">{data.municipio ?? '—'} · {data.cargo ?? '—'}</p>
                         </div>
-                        <button onClick={onClose} className="w-12 h-12 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center text-white transition-colors">
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        <button onClick={onClose} className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center text-white transition-colors flex-shrink-0">
+                            <svg className="w-5 h-5 lg:w-6 lg:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                     </div>
 
@@ -346,7 +346,7 @@ function PersonaPanel({ personId, onClose }) {
                     )}
 
                     {/* Datos personales */}
-                    <div className="px-8 py-6 border-b border-[var(--color-line)]">
+                    <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[var(--color-line)]">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-[14px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Datos personales</h3>
                             <div className="flex gap-2">
@@ -371,7 +371,7 @@ function PersonaPanel({ personId, onClose }) {
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Cedula</label>
                                     <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.cedula ?? ''} onChange={e => setForm({ ...form, cedula: e.target.value })} placeholder="Numero de cedula" />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Telefono</label>
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
@@ -414,7 +414,7 @@ function PersonaPanel({ personId, onClose }) {
                                     </select>
                                 </div>
                                 {/* Dirección / Barrio */}
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Dirección</label>
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.direccion ?? ''} onChange={e => setForm({ ...form, direccion: e.target.value })} />
@@ -424,7 +424,7 @@ function PersonaPanel({ personId, onClose }) {
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.barrio ?? ''} onChange={e => setForm({ ...form, barrio: e.target.value })} />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Profesion</label>
                                         <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]" value={form.profesion ?? ''} onChange={e => setForm({ ...form, profesion: e.target.value })} placeholder="Ej: Abogado, Ingeniero..." />
@@ -474,7 +474,7 @@ function PersonaPanel({ personId, onClose }) {
                     </div>
 
                     {/* Familia / Nexos */}
-                    <div className="px-8 py-6">
+                    <div className="px-4 lg:px-8 py-4 lg:py-6">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-[14px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                 Familia / Nexos ({data.nexos?.length ?? 0})
@@ -511,7 +511,7 @@ function PersonaPanel({ personId, onClose }) {
                                     <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.telefono} onChange={e => setNexoForm({ ...nexoForm, telefono: e.target.value })} placeholder="3XX XXX XXXX" />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:gap-4">
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Cargo</label>
                                     <input className="w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.cargo} onChange={e => setNexoForm({ ...nexoForm, cargo: e.target.value })} />
