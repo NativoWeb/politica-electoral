@@ -1324,7 +1324,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         <div className="col-span-1">
                             <SearchableDropdown
                                 label="Cargo"
-                                options={cargosPorTipo[filters.tipo ?? 'todos'] ?? cargosDisponibles}
+                                options={CARGOS_DISPONIBLES}
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
                                 multi={true}
