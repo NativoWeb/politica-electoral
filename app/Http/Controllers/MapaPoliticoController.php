@@ -179,7 +179,9 @@ class MapaPoliticoController extends Controller
             if ($searchEscaped) $query->where(function ($q) use ($searchEscaped) {
                 $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
             });
-            if (!empty($cargos)) $query->whereIn('cargo', $cargos);
+            if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
+                foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
+            });
             if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
             if ($noGeoFilter) $query->limit(200);
 
@@ -202,7 +204,9 @@ class MapaPoliticoController extends Controller
             if ($searchEscaped) $query->where(function ($q) use ($searchEscaped) {
                 $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
             });
-            if (!empty($cargos)) $query->whereIn('cargo', $cargos);
+            if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
+                foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
+            });
             if ($barrioEscaped) $query->where('barrio', 'ilike', "%{$barrioEscaped}%");
             if ($noGeoFilter) $query->limit(200);
 
@@ -338,7 +342,7 @@ class MapaPoliticoController extends Controller
             $data = array_values(array_filter($data, fn ($row) => !empty($row['barrio']) && stripos($row['barrio'], $barrio) !== false));
         }
 
-        $cargosDisponibles = collect($data)->pluck('cargo')->unique()->filter()->sort()->values()->toArray();
+        $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
 
         $barriosQuery = DB::table('lideres')->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
         if ($munId) $barriosQuery->where('geographic_unit_id', $munId);
