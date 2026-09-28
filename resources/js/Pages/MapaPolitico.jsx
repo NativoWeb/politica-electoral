@@ -753,8 +753,8 @@ function VoiceButton({ onResult, label }) {
 }
 
 /* ── Modal Crear Líder ── */
-function CrearLiderModal({ open, onClose, municipios, cargosPorTipo = {} }) {
-    const emptyForm = { nombre: '', municipio_id: '', cargo: 'Líder', tipos: ['Líderes'], telefono: '', email: '', cedula: '', profesion: '', direccion: '', barrio: '', zona: '', observacion: '' };
+function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPorTipo = {} }) {
+    const emptyForm = { nombre: '', municipio_id: '', provincia: '', cargo: 'Líder', tipos: ['Líderes'], telefono: '', email: '', cedula: '', profesion: '', direccion: '', barrio: '', zona: '', observacion: '' };
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
@@ -833,13 +833,36 @@ function CrearLiderModal({ open, onClose, municipios, cargosPorTipo = {} }) {
                             </div>
                         </div>
 
-                        {/* Municipio */}
-                        <div>
-                            <label className="block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1">Municipio *</label>
-                            <select className={fieldCls} value={form.municipio_id} onChange={e => setForm({...form, municipio_id: e.target.value})} required>
-                                <option value="">Seleccionar...</option>
-                                {municipios.map(m => <option key={m.id} value={m.id}>{m.name} ({m.provincia})</option>)}
-                            </select>
+                        {/* Provincia + Municipio */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <SearchableDropdown
+                                    label="Provincia"
+                                    options={provincias}
+                                    selected={form.provincia || undefined}
+                                    onChange={val => setForm({...form, provincia: val || '', municipio_id: ''})}
+                                    multi={false}
+                                    placeholder="Todas"
+                                />
+                            </div>
+                            <div>
+                                <SearchableDropdown
+                                    label="Municipio *"
+                                    options={(() => {
+                                        const filtered = form.provincia ? municipios.filter(m => m.provincia === form.provincia) : municipios;
+                                        return filtered.map(m => `${m.name} (${m.provincia})`);
+                                    })()}
+                                    selected={form.municipio_id ? (() => { const m = municipios.find(m => m.id === form.municipio_id); return m ? `${m.name} (${m.provincia})` : undefined; })() : undefined}
+                                    onChange={val => {
+                                        if (!val) { setForm({...form, municipio_id: ''}); return; }
+                                        const name = val.split(' (')[0];
+                                        const mun = municipios.find(m => m.name === name);
+                                        setForm({...form, municipio_id: mun?.id || ''});
+                                    }}
+                                    multi={false}
+                                    placeholder="Seleccionar..."
+                                />
+                            </div>
                         </div>
 
                         {/* Tipo (checkboxes — Líderes, Directorio Municipal, etc.) */}
@@ -1604,7 +1627,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
             )}
 
             {/* Modal crear líder */}
-            <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} cargosPorTipo={cargosPorTipo} />
+            <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} provincias={provincias} cargosPorTipo={cargosPorTipo} />
 
         </AppLayout>
     );
