@@ -1,5 +1,5 @@
-// Service Worker — Inteligencia Electoral PWA — Build 20260928v4
-const CACHE_NAME = 'electoral-v7';
+// Service Worker — Inteligencia Electoral PWA — Build 20260928v5
+const CACHE_NAME = 'electoral-v8';
 const PRECACHE = ['/manifest.json', '/offline.html'];
 const PAGE_PATHS = ['/', '/mapa-politico', '/gobernador', '/admin/', '/login'];
 
@@ -11,10 +11,25 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
+    // Don't delete old caches immediately — keep build assets available
+    // Old caches get cleaned up gradually as new assets replace them
     event.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-        )
+        caches.keys().then(async (keys) => {
+            const newCache = await caches.open(CACHE_NAME);
+            // Copy build assets from old caches to new
+            for (const key of keys) {
+                if (key === CACHE_NAME) continue;
+                const old = await caches.open(key);
+                const reqs = await old.keys();
+                for (const req of reqs) {
+                    if (req.url.includes('/build/') || req.url.match(/\.(js|css|png|svg|woff2?)(\?|$)/)) {
+                        const res = await old.match(req);
+                        if (res) await newCache.put(req, res);
+                    }
+                }
+                await caches.delete(key);
+            }
+        })
     );
     self.clients.claim();
 });
