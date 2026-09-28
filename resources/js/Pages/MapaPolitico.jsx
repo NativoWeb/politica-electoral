@@ -819,10 +819,10 @@ function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
                                 onClick={() => onSelectPerson(row.id)}
                                 className={`flex items-center gap-3 px-5 py-2.5 border-b border-[var(--color-line)] last:border-0 hover:bg-blue-50 cursor-pointer transition-colors ${isElecto ? 'bg-emerald-50/60' : ''}`}
                             >
+                                <StarToggle id={row.id} initial={!!row.destacado} />
                                 <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: color, opacity: 0.4 }} />
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                        {row.destacado && <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
                                         <span className="text-[13px] font-bold text-[var(--color-primary)] uppercase truncate">{row.nombre}</span>
                                         {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[8px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
                                     </div>
@@ -840,6 +840,28 @@ function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
 }
 
 /* ── Sección colapsable (Alcaldía, Concejo, etc.) ── */
+/* ── Toggle destacado helper ── */
+function toggleDestacado(personId, currentValue, onDone) {
+    apiFetch(`/mapa-politico/persona/${personId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ destacado: !currentValue }),
+    }).then(() => onDone && onDone()).catch(() => {});
+}
+
+/* ── Star toggle button (reusable) ── */
+function StarToggle({ id, initial }) {
+    const [starred, setStarred] = useState(initial);
+    return (
+        <button
+            onClick={(e) => { e.stopPropagation(); const next = !starred; setStarred(next); toggleDestacado(id, starred); }}
+            className="flex-shrink-0 active:scale-125 transition-transform"
+            title={starred ? 'Quitar destacado' : 'Destacar'}
+        >
+            <svg className={`w-5 h-5 ${starred ? 'text-amber-400' : 'text-gray-300'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+        </button>
+    );
+}
+
 /* ── Flat person row — used on mobile for all types ── */
 function PersonRow({ row, onSelectPerson, color }) {
     const isElecto = row.outcome === 'elected' || (row.cargo && row.cargo.includes('Electo'));
@@ -850,6 +872,8 @@ function PersonRow({ row, onSelectPerson, color }) {
             onClick={() => onSelectPerson(row.id)}
             className={`flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 active:bg-blue-50 cursor-pointer transition-colors ${isElecto ? 'bg-emerald-50/40' : ''}`}
         >
+            <StarToggle id={row.id} initial={!!row.destacado} />
+
             {/* Avatar */}
             <div
                 className="w-10 h-10 rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0 text-white"
@@ -861,7 +885,6 @@ function PersonRow({ row, onSelectPerson, color }) {
             {/* Info */}
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                    {row.destacado && <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
                     <span className="text-[14px] font-bold text-[var(--color-ink)] uppercase truncate">{row.nombre}</span>
                     {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[9px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
                 </div>
@@ -1330,7 +1353,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                                     >
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
-                                                {row.destacado && <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
+                                                <StarToggle id={row.id} initial={!!row.destacado} />
                                                 <span className="font-bold text-[var(--color-primary)] uppercase hover:underline">{row.nombre}</span>
                                                 {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[8px] font-bold uppercase rounded">Electo</span>}
                                             </div>
