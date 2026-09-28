@@ -1547,8 +1547,8 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Nombre</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Municipio</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Barrio/Vereda</th>
-                                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Seccion</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Tipo</th>
+                                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Cargo</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Partido</th>
                                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Telefono</th>
                                 <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Votos</th>
