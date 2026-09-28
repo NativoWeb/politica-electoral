@@ -418,9 +418,63 @@ function PersonaPanel({ personId, onClose, cargosPorTipo = {} }) {
                     <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[var(--color-line)]">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-[14px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Datos personales</h3>
-                            <div className="flex gap-2">
-                                <button onClick={() => setEditMode(!editMode)} className="px-5 py-2.5 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
-                                    {editMode ? 'Cancelar' : 'Editar datos'}
+                            <div className="flex gap-2 flex-wrap">
+                                <button onClick={() => setEditMode(!editMode)} className="px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
+                                    {editMode ? 'Cancelar' : 'Editar'}
+                                </button>
+                                <button onClick={() => {
+                                    const w = window.open('', '_blank');
+                                    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ficha - ${data.nombre}</title>
+                                    <style>
+                                        * { margin:0; padding:0; box-sizing:border-box; }
+                                        body { font-family: Arial, sans-serif; color: #1a1a2e; padding: 0; }
+                                        .header { background: #003B71; color: white; padding: 30px 40px; }
+                                        .header h1 { font-size: 24px; margin-bottom: 4px; }
+                                        .header p { font-size: 13px; opacity: 0.7; }
+                                        .section { padding: 20px 40px; border-bottom: 1px solid #e8e8ee; }
+                                        .section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #8e8ea0; margin-bottom: 15px; }
+                                        .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+                                        .row:last-child { border: none; }
+                                        .label { font-size: 13px; color: #8e8ea0; text-transform: uppercase; width: 140px; flex-shrink: 0; }
+                                        .value { font-size: 14px; text-align: right; flex: 1; }
+                                        .nexo { background: #f5f5f5; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; }
+                                        .nexo-name { font-size: 16px; font-weight: bold; }
+                                        .nexo-detail { font-size: 12px; color: #8e8ea0; margin-top: 4px; }
+                                        .footer { padding: 20px 40px; font-size: 10px; color: #8e8ea0; text-align: center; }
+                                        @media print { body { padding: 0; } .no-print { display: none; } }
+                                    </style></head><body>
+                                    <div class="header">
+                                        <p>FICHA PERSONAL</p>
+                                        <h1>${data.nombre}</h1>
+                                        <p>${data.municipio || ''} · ${data.cargo || ''}</p>
+                                    </div>
+                                    <div class="section">
+                                        <h2>Datos Personales</h2>
+                                        ${[
+                                            ['Cédula', data.cedula],
+                                            ['Teléfono', data.telefono],
+                                            ['Email', data.email],
+                                            ['Partido', data.partido],
+                                            ['Tipo', data.tipo_registro],
+                                            ['Cargo', data.cargos?.join(', ') || data.cargo],
+                                            ['Profesión', data.profesion],
+                                            ['Votos', data.votos > 0 ? data.votos.toLocaleString('es-CO') : null],
+                                            ['Dirección', data.direccion],
+                                            ['Barrio / Vereda', data.barrio],
+                                            ['Observaciones', data.observacion],
+                                        ].filter(([,v]) => v).map(([l,v]) => '<div class="row"><span class="label">'+l+'</span><span class="value">'+v+'</span></div>').join('')}
+                                    </div>
+                                    ${data.nexos?.length > 0 ? '<div class="section"><h2>Familia / Nexos ('+data.nexos.length+')</h2>' +
+                                        data.nexos.map(n => '<div class="nexo"><div class="nexo-name">'+n.nombre+'</div><div class="nexo-detail">' +
+                                            [n.parentesco, n.cargo, n.edad ? n.edad+' años' : null, n.cedula ? 'CC: '+n.cedula : null, n.telefono, n.gustos ? 'Gustos: '+n.gustos : null, n.observaciones].filter(Boolean).join(' · ') +
+                                        '</div></div>').join('') + '</div>' : ''}
+                                    <div class="footer">Inteligencia Electoral Santander · Generado el ${new Date().toLocaleDateString('es-CO')} a las ${new Date().toLocaleTimeString('es-CO')}</div>
+                                    <div class="no-print" style="text-align:center;padding:20px"><button onclick="window.print()" style="padding:12px 30px;background:#003B71;color:white;border:none;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer">Imprimir / Guardar PDF</button></div>
+                                    </body></html>`);
+                                    w.document.close();
+                                }} className="px-3 py-2.5 bg-emerald-50 text-emerald-700 text-[13px] font-bold rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5" title="Exportar ficha">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                    PDF
                                 </button>
                                 <button onClick={() => {
                                     confirm('Eliminar persona', '¿Eliminar esta persona? Se borrarán sus nexos familiares. Esta acción no se puede deshacer.', () => {
