@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#003B71">
-    <title>Sin conexion — Electoral</title>
+    <title>Sin conexión — Electoral</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -31,19 +31,24 @@
         }
         .icon svg { width: 40px; height: 40px; color: white; }
         h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; }
-        p { font-size: 0.9rem; color: #8e8ea0; line-height: 1.5; max-width: 320px; }
-        button {
-            margin-top: 1.5rem;
-            padding: 0.75rem 2rem;
+        p { font-size: 0.95rem; color: #8e8ea0; line-height: 1.6; max-width: 320px; }
+        .buttons { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; width: 100%; max-width: 280px; }
+        button, a.btn {
+            display: block;
+            padding: 0.85rem 2rem;
             background: #003B71;
             color: white;
             border: none;
-            border-radius: 10px;
-            font-size: 0.9rem;
+            border-radius: 12px;
+            font-size: 1rem;
             font-weight: 700;
             cursor: pointer;
+            text-decoration: none;
+            text-align: center;
         }
-        button:active { background: #002B54; }
+        button:active, a.btn:active { background: #002B54; }
+        .secondary { background: transparent; color: #003B71; border: 2px solid #003B71; }
+        .secondary:active { background: #003B71; color: white; }
     </style>
 </head>
 <body>
@@ -52,8 +57,17 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728M8.464 15.536a5 5 0 010-7.072M15.536 8.464a5 5 0 010 7.072M12 12h.01" />
         </svg>
     </div>
-    <h1>Sin conexion</h1>
-    <p>No tienes conexion a internet. Si ya descargaste datos de un municipio, estaran disponibles cuando vuelvas a conectarte.</p>
-    <button onclick="location.reload()">Reintentar</button>
+    <h1>Sin conexión</h1>
+    <p>No hay conexión a internet. Cuando se restablezca la conexión, la app cargará normalmente.</p>
+    <div class="buttons">
+        <button onclick="location.reload()">Reintentar</button>
+        <a href="/mapa-politico" class="btn secondary">Ir al Mapa Político</a>
+    </div>
+    <script>
+        // Auto-reload when connection comes back
+        window.addEventListener('online', function() {
+            location.reload();
+        });
+    </script>
 </body>
 </html>

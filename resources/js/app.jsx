@@ -1,29 +1,28 @@
 import '../css/app.css';
 import 'leaflet/dist/leaflet.css';
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
 
-// Register Service Worker for PWA (including iOS Safari)
+// Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then((registration) => {
             setInterval(() => registration.update(), 60 * 60 * 1000);
-        }).catch(() => {});
 
-        // Pre-cache: fetch current page assets + key pages for offline
-        if (navigator.onLine) {
-            setTimeout(() => {
-                // Cache all CSS/JS from current page so they work offline
-                const assets = [...document.querySelectorAll('link[rel="stylesheet"][href*="/build/"], script[src*="/build/"]')]
-                    .map(el => el.href || el.src).filter(Boolean);
-                assets.forEach(url => fetch(url).catch(() => {}));
-
-                // Cache key pages HTML
-                ['/mapa-politico', '/gobernador'].forEach(url => {
-                    fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } }).catch(() => {});
+            // Pre-cache key pages so they work on offline reload
+            if (registration.active) {
+                registration.active.postMessage({
+                    type: 'PRECACHE_PAGES',
+                    urls: ['/mapa-politico', '/gobernador'],
                 });
-            }, 3000);
-        }
+            }
+            navigator.serviceWorker.ready.then(reg => {
+                reg.active.postMessage({
+                    type: 'PRECACHE_PAGES',
+                    urls: ['/mapa-politico', '/gobernador'],
+                });
+            });
+        }).catch(() => {});
     });
 
     window.addEventListener('online', () => {
@@ -32,6 +31,16 @@ if ('serviceWorker' in navigator) {
         }
     });
 }
+
+// When Inertia XHR fails (offline), force hard navigation so SW can serve cached page
+router.on('exception', (event) => {
+    const visitUrl = event?.detail?.visit?.url;
+    if (visitUrl) {
+        event.preventDefault();
+        window.location.href = typeof visitUrl === 'string' ? visitUrl : visitUrl.href;
+        return false;
+    }
+});
 
 createInertiaApp({
     title: (title) => title ? `${title} — Inteligencia Electoral` : 'Inteligencia Electoral Santander',
