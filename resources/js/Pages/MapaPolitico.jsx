@@ -469,7 +469,7 @@ function PersonaPanel({ personId, onClose, cargosPorTipo = {} }) {
                                             [n.parentesco, n.cargo, n.edad ? n.edad+' años' : null, n.cedula ? 'CC: '+n.cedula : null, n.telefono, n.gustos ? 'Gustos: '+n.gustos : null, n.observaciones].filter(Boolean).join(' · ') +
                                         '</div></div>').join('') + '</div>' : ''}
                                     <div class="footer">Inteligencia Electoral Santander · Generado el ${new Date().toLocaleDateString('es-CO')} a las ${new Date().toLocaleTimeString('es-CO')}</div>
-                                    <div class="no-print" style="text-align:center;padding:20px"><button onclick="window.print()" style="padding:12px 30px;background:#003B71;color:white;border:none;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer">Imprimir / Guardar PDF</button></div>
+                                    <div class="no-print" style="text-align:center;padding:20px;display:flex;gap:12px;justify-content:center"><button onclick="window.close()" style="padding:12px 30px;background:white;color:#003B71;border:2px solid #003B71;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer">← Volver</button><button onclick="window.print()" style="padding:12px 30px;background:#003B71;color:white;border:none;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer">Imprimir / Guardar PDF</button></div>
                                     </body></html>`);
                                     w.document.close();
                                 }} className="px-3 py-2.5 bg-emerald-50 text-emerald-700 text-[13px] font-bold rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1.5" title="Exportar ficha">
