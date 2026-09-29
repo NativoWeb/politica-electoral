@@ -65,10 +65,22 @@ self.addEventListener('fetch', (event) => {
     //    Network first → cache fallback → offline.html
     if (request.mode === 'navigate') {
         event.respondWith(
-            fetch(request).then(response => {
+            fetch(request).then(async (response) => {
                 if (response.ok && response.type === 'basic') {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then(c => c.put(request, clone));
+                    let toCache;
+                    if (response.redirected) {
+                        // Safari rejects redirected responses from SW cache —
+                        // create a clean 200 response without redirect metadata
+                        const body = await response.clone().blob();
+                        toCache = new Response(body, {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: new Headers(response.headers),
+                        });
+                    } else {
+                        toCache = response.clone();
+                    }
+                    caches.open(CACHE_NAME).then(c => c.put(request, toCache));
                 }
                 return response;
             }).catch(() =>
