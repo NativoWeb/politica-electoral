@@ -570,8 +570,10 @@ export default function AppLayout({ children, title, breadcrumb }) {
                 </div>
             </nav>
 
-            {/* Spinner global de navegación */}
-            {navigating && <FullScreenSpinner message="Cargando..." />}
+            {/* Spinner global de navegación — sutil, no bloquea */}
+            {navigating && (
+                <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-[var(--color-primary)] animate-pulse" />
+            )}
 
             {/* Offline navigation alert */}
             {offlineAlert && (
