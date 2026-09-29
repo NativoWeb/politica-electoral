@@ -1,5 +1,5 @@
 // Service Worker — Inteligencia Electoral PWA — Build 20260929
-const CACHE_NAME = 'electoral-v10';
+const CACHE_NAME = 'electoral-v11';
 const PRECACHE = ['/manifest.json', '/offline.html'];
 const PAGE_PATHS = ['/', '/mapa-politico', '/gobernador', '/admin/', '/login'];
 
@@ -46,9 +46,6 @@ self.addEventListener('fetch', (event) => {
     // Pages — network first, cache ONLY text/html responses (not Inertia JSON)
     const isPage = request.mode === 'navigate' || PAGE_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(p));
     if (isPage) {
-        // Skip Inertia XHR requests — let them pass through without caching
-        if (request.headers.get('X-Inertia')) return;
-
         event.respondWith(
             fetch(request).then((response) => {
                 if (response.ok) {
