@@ -904,7 +904,8 @@ function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPor
                                 <SearchableDropdown
                                     label="Municipio *"
                                     options={(() => {
-                                        const filtered = form.provincia ? municipios.filter(m => m.provincia === form.provincia) : municipios;
+                                        const AREA_MET = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
+                                        const filtered = !form.provincia ? municipios : form.provincia === 'Área Metropolitana' ? municipios.filter(m => AREA_MET.includes(m.name)) : municipios.filter(m => m.provincia === form.provincia);
                                         return filtered.map(m => `${m.name} (${m.provincia})`);
                                     })()}
                                     selected={form.municipio_id ? (() => { const m = municipios.find(m => m.id === form.municipio_id); return m ? `${m.name} (${m.provincia})` : undefined; })() : undefined}
