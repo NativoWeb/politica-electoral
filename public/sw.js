@@ -1,5 +1,5 @@
-// Service Worker — Inteligencia Electoral PWA — Build 20260928v6
-const CACHE_NAME = 'electoral-v9';
+// Service Worker — Inteligencia Electoral PWA — Build 20260929
+const CACHE_NAME = 'electoral-v10';
 const PRECACHE = ['/manifest.json', '/offline.html'];
 const PAGE_PATHS = ['/', '/mapa-politico', '/gobernador', '/admin/', '/login'];
 
@@ -43,17 +43,24 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Pages — network first, cache HTML
+    // Pages — network first, cache ONLY text/html responses (not Inertia JSON)
     const isPage = request.mode === 'navigate' || PAGE_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(p));
     if (isPage) {
+        // Skip Inertia XHR requests — let them pass through without caching
+        if (request.headers.get('X-Inertia')) return;
+
         event.respondWith(
             fetch(request).then((response) => {
                 if (response.ok) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(request, clone.clone());
-                        if (url.search) cache.put(new Request(url.origin + url.pathname), clone);
-                    });
+                    const ct = response.headers.get('content-type') || '';
+                    // Only cache actual HTML pages, never JSON
+                    if (ct.includes('text/html')) {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, clone.clone());
+                            if (url.search) cache.put(new Request(url.origin + url.pathname), clone);
+                        });
+                    }
                 }
                 return response;
             }).catch(() =>
