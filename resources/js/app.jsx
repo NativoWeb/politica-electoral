@@ -32,14 +32,36 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-// When Inertia XHR fails (offline), force hard navigation so SW can serve cached page
+function showOfflineToast() {
+    if (document.getElementById('offline-toast')) return;
+    const toast = document.createElement('div');
+    toast.id = 'offline-toast';
+    toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:9999;padding:14px 28px;background:#ef4444;color:white;border-radius:14px;font-size:15px;font-weight:700;box-shadow:0 4px 24px rgba(0,0,0,0.3);text-align:center;max-width:90vw;';
+    toast.textContent = 'Sin conexión — los filtros no están disponibles';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+// When Inertia XHR fails (offline):
+// - Same page (filtering) → show toast, keep current data
+// - Different page (tab switch) → hard navigation so SW serves cached page
 router.on('exception', (event) => {
     const visitUrl = event?.detail?.visit?.url;
-    if (visitUrl) {
-        event.preventDefault();
-        window.location.href = typeof visitUrl === 'string' ? visitUrl : visitUrl.href;
+    if (!visitUrl) return;
+
+    event.preventDefault();
+    const target = new URL(
+        typeof visitUrl === 'string' ? visitUrl : visitUrl.href,
+        window.location.origin
+    );
+
+    if (target.pathname === window.location.pathname) {
+        showOfflineToast();
         return false;
     }
+
+    window.location.href = target.href;
+    return false;
 });
 
 createInertiaApp({
