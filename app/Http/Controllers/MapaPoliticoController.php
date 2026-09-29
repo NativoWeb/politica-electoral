@@ -412,7 +412,7 @@ class MapaPoliticoController extends Controller
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
             'municipio_id' => 'required|uuid|exists:geographic_units,id',
-            'cargo' => 'required|string|max:100',
+            'cargo' => 'nullable|string|max:255',
             'telefono' => 'nullable|string|max:20',
             'email' => 'nullable|email|max:255',
             'direccion' => 'nullable|string|max:255',
