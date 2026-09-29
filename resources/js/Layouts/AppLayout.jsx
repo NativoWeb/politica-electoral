@@ -375,24 +375,35 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
     useEffect(() => {
         let navTimeout;
-        const removeStart = router.on('start', (e) => {
-            // Block ALL Inertia navigation when offline
-            if (!navigator.onLine) {
+
+        // Intercept ALL clicks on links/buttons when offline — prevent Inertia from even starting
+        const interceptClick = (e) => {
+            if (navigator.onLine) return;
+            const link = e.target.closest('a[href], button[type="submit"]');
+            if (link && link.tagName === 'A' && link.href && !link.href.startsWith('tel:') && !link.href.startsWith('https://wa.me')) {
                 e.preventDefault();
+                e.stopPropagation();
+                setOfflineAlert(true);
+                setTimeout(() => setOfflineAlert(false), 3000);
+            }
+        };
+        document.addEventListener('click', interceptClick, true);
+
+        const removeStart = router.on('start', (e) => {
+            if (!navigator.onLine) {
                 setNavigating(false);
                 setOfflineAlert(true);
                 setTimeout(() => setOfflineAlert(false), 3000);
                 return false;
             }
             setNavigating(true);
-            navTimeout = setTimeout(() => { setNavigating(false); }, 15000);
+            navTimeout = setTimeout(() => { setNavigating(false); }, 10000);
         });
         const removeFinish = router.on('finish', () => { setNavigating(false); clearTimeout(navTimeout); });
         const removeError = router.on('error', () => { setNavigating(false); clearTimeout(navTimeout); });
-        // Also catch unhandled fetch failures that bypass Inertia events
         const handleOffline = () => setNavigating(false);
         window.addEventListener('offline', handleOffline);
-        return () => { removeStart(); removeFinish(); removeError(); clearTimeout(navTimeout); window.removeEventListener('offline', handleOffline); };
+        return () => { removeStart(); removeFinish(); removeError(); clearTimeout(navTimeout); window.removeEventListener('offline', handleOffline); document.removeEventListener('click', interceptClick, true); };
     }, []);
 
     return (

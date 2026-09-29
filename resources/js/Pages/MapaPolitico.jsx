@@ -1378,6 +1378,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
     }, [data, showSections]);
 
     function applyFilters(overrides = {}) {
+        if (!navigator.onLine) return;
         const params = {
             municipio: filters.municipio,
             tipo: filters.tipo ?? 'todos',
