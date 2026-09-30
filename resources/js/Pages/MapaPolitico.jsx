@@ -52,6 +52,8 @@ const TIPO_OPTIONS = [
 
 const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Directorio Municipal', 'Senado', 'Cámara', 'Asamblea'];
 
+const AREA_METROPOLITANA = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
+
 const PARENTESCOS = ['Esposa', 'Esposo', 'Hijo/a', 'Hermano/a', 'Padre', 'Madre', 'Sobrino/a', 'Tío/a', 'Primo/a', 'Cuñado/a', 'Suegro/a', 'Otro'];
 
 const CARGOS_DISPONIBLES = [
@@ -1449,8 +1451,6 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         setSelectedProv(filters.provincia ?? '');
         setSelectedCargos(filters.cargo ? filters.cargo.split(',') : []);
     }, [filters.search, filters.provincia, filters.cargo]);
-
-    const AREA_METROPOLITANA = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
 
     const filteredMunicipios = useMemo(() => {
         if (!selectedProv) return municipios;
