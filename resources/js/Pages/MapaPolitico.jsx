@@ -216,7 +216,7 @@ function apiFetch(url, options = {}) {
 }
 
 /* ── Panel lateral de detalle ── */
-function PersonaPanel({ personId, onClose, cargosPorTipo = {} }) {
+function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fallbackData = null }) {
     const { confirm, Dialog: ConfirmDialog } = useConfirm();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -243,12 +243,15 @@ function PersonaPanel({ personId, onClose, cargosPorTipo = {} }) {
                 { const rawCargos = d.cargos || (d.cargo ? [d.cargo] : []); const splitCargos = [...new Set(rawCargos.flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))]; const tipos = d.tipo_registro ? d.tipo_registro.split(',').map(s => s.trim()) : []; setForm({ telefono: d.telefono || '', email: d.email || '', cargo: splitCargos.join(', '), cargos: splitCargos, tipos: tipos, observacion: d.observacion || '', direccion: d.direccion || '', barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '', destacado: !!d.destacado, profesion: d.profesion || '', votos: d.votos || '', cedula: d.cedula || '' }); }
             })
             .catch(async () => {
-                // Fallback: try offline data from IndexedDB
                 const offlineData = await getOfflinePersona(personId).catch(() => null);
-                if (offlineData) {
-                    setData(offlineData);
+                const source = offlineData || fallbackData;
+                if (source) {
+                    setData({ ...source, _offline: true });
                     setLoadError(false);
-                    setForm({ telefono: offlineData.telefono || '', email: offlineData.email || '', cargo: offlineData.cargo || '', cargos: offlineData.cargos || [], observacion: offlineData.observacion || '', direccion: offlineData.direccion || '', barrio: offlineData.barrio || '', zona: offlineData.zona || '', partido: offlineData.partido || '' });
+                    const rawCargos = source.cargos || (source.cargo ? [source.cargo] : []);
+                    const splitCargos = [...new Set((Array.isArray(rawCargos) ? rawCargos : [rawCargos]).flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))];
+                    const tipos = source.tipo_registro ? source.tipo_registro.split(',').map(s => s.trim()) : [];
+                    setForm({ telefono: source.telefono || '', email: source.email || '', cargo: splitCargos.join(', '), cargos: splitCargos, tipos, observacion: source.observacion || '', direccion: source.direccion || '', barrio: source.barrio || '', zona: source.zona || '', partido: source.partido || '', destacado: !!source.destacado, profesion: source.profesion || '', votos: source.votos || '', cedula: source.cedula || '' });
                 } else {
                     setLoadError(true);
                 }
@@ -1728,7 +1731,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
 
             {/* Panel lateral de detalle */}
             {selectedPerson && (
-                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} />
+                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} fallbackData={data.find(d => d.id === selectedPerson)} />
             )}
 
             {/* Modal crear líder */}
