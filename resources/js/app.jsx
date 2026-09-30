@@ -42,18 +42,15 @@ function showOfflineToast() {
     setTimeout(() => toast.remove(), 3000);
 }
 
-// When Inertia XHR fails (offline):
+// Inertia v3: "networkError" fires when XHR fails (e.g. offline)
 // - Same page (filtering) → show toast, keep current data
 // - Different page (tab switch) → hard navigation so SW serves cached page
-router.on('exception', (event) => {
-    const visitUrl = event?.detail?.visit?.url;
-    if (!visitUrl) return;
+router.on('networkError', (event) => {
+    // Get the URL Inertia was trying to visit
+    const error = event?.detail?.error;
+    const targetUrl = error?.url || window.location.href;
 
-    event.preventDefault();
-    const target = new URL(
-        typeof visitUrl === 'string' ? visitUrl : visitUrl.href,
-        window.location.origin
-    );
+    const target = new URL(targetUrl, window.location.origin);
 
     if (target.pathname === window.location.pathname) {
         showOfflineToast();
