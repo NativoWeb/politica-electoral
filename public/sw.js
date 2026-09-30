@@ -1,5 +1,32 @@
-// Service Worker — Inteligencia Electoral PWA v15
-const CACHE_NAME = 'electoral-v15';
+// Service Worker — Inteligencia Electoral PWA v16
+const CACHE_NAME = 'electoral-v16';
+
+// Safari rejects responses with the redirected flag from SW cache.
+// Create a clean 200 response without redirect metadata.
+async function stripRedirect(response) {
+    if (!response.redirected) return response.clone();
+    const body = await response.clone().blob();
+    return new Response(body, {
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(response.headers),
+    });
+}
+
+// Check if a response is safe to cache for a given request URL.
+// Returns false if the response was redirected to a DIFFERENT path
+// (e.g., auth redirect to /login — that content doesn't belong to the original URL).
+// Same-path redirects (HTTP→HTTPS, www normalization) are safe to cache.
+function isSamePathResponse(request, response) {
+    if (!response.redirected) return true;
+    try {
+        const reqPath = new URL(request.url).pathname;
+        const resPath = new URL(response.url).pathname;
+        return reqPath === resPath;
+    } catch {
+        return false;
+    }
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -20,12 +47,13 @@ self.addEventListener('message', (event) => {
     if (event.data?.type === 'PRECACHE_PAGES') {
         event.waitUntil(
             caches.open(CACHE_NAME).then(cache => {
-                (event.data.urls || []).forEach(url => {
-                    fetch(url, { credentials: 'same-origin' })
-                        .then(res => {
-                            // Only cache direct 200 responses — never redirects
-                            // (a redirect means auth expired → login page, not our content)
-                            if (res.ok && !res.redirected) cache.put(url, res);
+                (event.data.urls || []).forEach(pageUrl => {
+                    const req = new Request(pageUrl, { credentials: 'same-origin' });
+                    fetch(req)
+                        .then(async (res) => {
+                            if (res.ok && isSamePathResponse(req, res)) {
+                                cache.put(pageUrl, await stripRedirect(res));
+                            }
                         })
                         .catch(() => {});
                 });
@@ -68,12 +96,11 @@ self.addEventListener('fetch', (event) => {
     // 3. Page navigation: network first → cache fallback → offline.html
     if (request.mode === 'navigate') {
         event.respondWith(
-            fetch(request).then(response => {
-                // Only cache direct 200 responses (not redirected)
-                // A redirect likely means auth → login page, wrong content for this URL
-                if (response.ok && response.type === 'basic' && !response.redirected) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then(c => c.put(request, clone));
+            fetch(request).then(async (response) => {
+                if (response.ok && response.type === 'basic' && isSamePathResponse(request, response)) {
+                    caches.open(CACHE_NAME).then(async (c) => {
+                        c.put(request, await stripRedirect(response));
+                    });
                 }
                 return response;
             }).catch(() =>
