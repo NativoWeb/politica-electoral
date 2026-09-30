@@ -1,17 +1,5 @@
-// Service Worker — Inteligencia Electoral PWA v14
-const CACHE_NAME = 'electoral-v14';
-
-// Safari rejects responses with redirected flag from SW cache.
-// This creates a clean 200 response without redirect metadata.
-async function cleanResponse(response) {
-    if (!response.redirected) return response.clone();
-    const body = await response.clone().blob();
-    return new Response(body, {
-        status: 200,
-        statusText: 'OK',
-        headers: new Headers(response.headers),
-    });
-}
+// Service Worker — Inteligencia Electoral PWA v15
+const CACHE_NAME = 'electoral-v15';
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -34,8 +22,10 @@ self.addEventListener('message', (event) => {
             caches.open(CACHE_NAME).then(cache => {
                 (event.data.urls || []).forEach(url => {
                     fetch(url, { credentials: 'same-origin' })
-                        .then(async (res) => {
-                            if (res.ok) cache.put(url, await cleanResponse(res));
+                        .then(res => {
+                            // Only cache direct 200 responses — never redirects
+                            // (a redirect means auth expired → login page, not our content)
+                            if (res.ok && !res.redirected) cache.put(url, res);
                         })
                         .catch(() => {});
                 });
@@ -78,11 +68,12 @@ self.addEventListener('fetch', (event) => {
     // 3. Page navigation: network first → cache fallback → offline.html
     if (request.mode === 'navigate') {
         event.respondWith(
-            fetch(request).then(async (response) => {
-                if (response.ok && response.type === 'basic') {
-                    caches.open(CACHE_NAME).then(async (c) => {
-                        c.put(request, await cleanResponse(response));
-                    });
+            fetch(request).then(response => {
+                // Only cache direct 200 responses (not redirected)
+                // A redirect likely means auth → login page, wrong content for this URL
+                if (response.ok && response.type === 'basic' && !response.redirected) {
+                    const clone = response.clone();
+                    caches.open(CACHE_NAME).then(c => c.put(request, clone));
                 }
                 return response;
             }).catch(() =>
