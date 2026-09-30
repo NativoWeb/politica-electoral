@@ -126,7 +126,6 @@ export async function getAllOfflineData() {
 // ─── Get a single person from offline DB (for persona panel) ───
 
 export async function getOfflinePersona(personId) {
-    // Try personas table first, then lideres
     let person = await db.personas.get(personId);
     let source = 'persona';
     if (!person) {
@@ -135,21 +134,13 @@ export async function getOfflinePersona(personId) {
     }
     if (!person) return null;
 
-    // Get nexos
     const nexos = await db.nexos.where('personId').equals(personId).toArray();
 
     return {
-        nombre: person.nombre,
+        ...person,
         municipio: person.municipio || person.municipioId,
-        cargo: person.cargo,
-        telefono: person.telefono,
-        email: person.email,
-        partido: person.partido,
-        observacion: person.observacion || person.observaciones,
-        direccion: person.direccion,
-        barrio: person.barrio,
-        zona: person.zona,
         cargos: person.cargos || (person.cargo ? [person.cargo] : []),
+        observacion: person.observacion || person.observaciones || '',
         nexos: nexos.map(n => ({
             id: n.id, nombre: n.nombre, parentesco: n.parentesco,
             cargo: n.cargo, edad: n.edad, gustos: n.gustos, observaciones: n.observaciones,
@@ -293,17 +284,33 @@ export async function offlineCreateLider(liderData) {
 }
 
 export async function offlineUpdatePersona(id, updates) {
-    // Update in local DB if exists
-    const lider = await db.lideres.get(id);
-    if (lider) {
-        await db.lideres.update(id, updates);
-    }
-    const persona = await db.personas.get(id);
-    if (persona) {
-        await db.personas.update(id, updates);
+    const original = (await db.personas.get(id)) || (await db.lideres.get(id));
+
+    // Only sync fields that actually changed (prevents overwriting server data with blanks)
+    const changedFields = { id };
+    if (original) {
+        for (const [key, val] of Object.entries(updates)) {
+            if (key === 'cargos' || key === 'tipos') continue;
+            const origVal = original[key] ?? '';
+            const newVal = val ?? '';
+            if (String(origVal) !== String(newVal)) {
+                changedFields[key] = val;
+            }
+        }
+    } else {
+        Object.assign(changedFields, updates);
     }
 
-    await addPendingChange('persona', 'update', { id, ...updates });
+    // Update local DB with all provided fields
+    const lider = await db.lideres.get(id);
+    if (lider) await db.lideres.update(id, updates);
+    const persona = await db.personas.get(id);
+    if (persona) await db.personas.update(id, updates);
+
+    // Only queue changed fields for sync
+    if (Object.keys(changedFields).length > 1) {
+        await addPendingChange('persona', 'update', changedFields);
+    }
 }
 
 export async function offlineCreateNexo(personId, nexoData) {
