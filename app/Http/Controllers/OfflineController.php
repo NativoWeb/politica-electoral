@@ -82,16 +82,76 @@ class OfflineController extends Controller
         // Líderes
         $lideres = DB::table('lideres')
             ->where('geographic_unit_id', $municipioId)
+            ->where(function ($q) {
+                $q->where('cargo', 'not ilike', '%Directorio Municipal%')
+                  ->orWhereNull('cargo');
+            })
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
-                'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona')
+                'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
+                'votos', 'destacado', 'profesion', 'cedula')
             ->orderBy('nombre')
             ->get()->map(fn ($r) => (array) $r)->toArray();
+
+        // Directorio Municipal (líderes with cargo "Directorio Municipal")
+        $directorio = DB::table('lideres')
+            ->where('geographic_unit_id', $municipioId)
+            ->where('cargo', 'ilike', '%Directorio Municipal%')
+            ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
+                'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
+                'votos', 'destacado', 'profesion', 'cedula',
+                DB::raw("'Directorio Municipal' as tipo_registro"))
+            ->orderBy('nombre')
+            ->get()->map(fn ($r) => (array) $r)->toArray();
+
+        // Senado / Cámara / Asamblea (votes filtered by municipio)
+        $corpMap = [
+            'Senado' => 'Senado',
+            'Cámara de Representantes' => 'Cámara',
+            'Asamblea' => 'Asamblea',
+        ];
+        $congresistas = [];
+        foreach ($corpMap as $corpName => $label) {
+            $corpId = DB::table('corporations')->where('name', $corpName)->value('id');
+            if (!$corpId) continue;
+
+            $resSubQuery = DB::table('electoral_results')
+                ->whereIn('metric_type', ['votes', 'nominal_votes'])
+                ->where('value', '>', 0)
+                ->where('geographic_unit_id', $municipioId)
+                ->select('candidacy_id', DB::raw('SUM(value) as votos'))
+                ->groupBy('candidacy_id');
+
+            $rows = DB::table('candidacies as c')
+                ->join('persons as p', 'c.person_id', '=', 'p.id')
+                ->join('contests as con', 'c.contest_id', '=', 'con.id')
+                ->where('con.corporation_id', $corpId)
+                ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
+                ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
+                ->joinSub($resSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
+                ->select(
+                    'p.id', 'p.full_name as nombre',
+                    DB::raw("'{$mun->name}' as municipio"),
+                    DB::raw("'{$mun->provincia}' as provincia"),
+                    'po.canonical_name as partido',
+                    DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
+                    DB::raw('res.votos')
+                )
+                ->selectRaw('? as tipo_registro', [$label])
+                ->selectRaw('? as cargo', [$label])
+                ->orderByDesc('res.votos')
+                ->limit(30)
+                ->get()->map(fn ($r) => (array) $r)->toArray();
+
+            $congresistas = array_merge($congresistas, $rows);
+        }
 
         // Nexos for all persons + líderes of this municipio
         $personIds = array_merge(
             array_column($alcaldes, 'id'),
             array_column($concejales, 'id'),
-            array_column($lideres, 'id')
+            array_column($lideres, 'id'),
+            array_column($directorio, 'id'),
+            array_column($congresistas, 'id')
         );
         $nexos = [];
         if (!empty($personIds)) {
@@ -124,8 +184,8 @@ class OfflineController extends Controller
                 ->get()->map(fn ($r) => (array) $r)->toArray();
         }
 
-        // Merge personas (alcaldes + concejales)
-        $personas = array_merge($alcaldes, $concejales);
+        // Merge personas (alcaldes + concejales + congresistas + directorio)
+        $personas = array_merge($alcaldes, $concejales, $congresistas, $directorio);
 
         return response()->json([
             'municipioId' => $municipioId,
