@@ -194,6 +194,21 @@ function SearchableDropdown({ label, options, selected, onChange, placeholder = 
     );
 }
 
+function showGlobalToast(text, type = 'success') {
+    const existing = document.getElementById('global-offline-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'global-offline-toast';
+    const bg = type === 'success' ? '#059669' : type === 'error' ? '#ef4444' : '#2563eb';
+    toast.style.cssText = `position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;padding:16px 28px;background:${bg};color:white;border-radius:16px;font-size:16px;font-weight:700;box-shadow:0 8px 32px rgba(0,0,0,0.3);text-align:center;max-width:90vw;animation:slideDown 0.3s ease-out;`;
+    toast.textContent = text;
+    const style = document.createElement('style');
+    style.textContent = '@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+    toast.appendChild(style);
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 4000);
+}
+
 function getCsrfToken() {
     // Try XSRF-TOKEN cookie first (auto-renewed by Laravel), then meta tag fallback
     const cookie = document.cookie.split('; ').find(c => c.startsWith('XSRF-TOKEN='));
@@ -286,11 +301,13 @@ function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fallbackData = nu
                 // Offline fallback: save locally
                 try {
                     await offlineUpdatePersona(personId, form);
-                    setMessage('Guardado localmente. Se enviara cuando haya internet.');
+                    setMessage('Guardado localmente');
+                    showGlobalToast('Guardado sin internet. Se sincronizará automáticamente.');
                     setEditMode(false);
                     setData(prev => ({ ...prev, ...form }));
                 } catch {
                     setMessage('Error al guardar');
+                    showGlobalToast('Error al guardar', 'error');
                 }
                 setTimeout(() => setMessage(''), 5000);
             })
@@ -317,11 +334,13 @@ function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fallbackData = nu
                     const newNexo = await offlineCreateNexo(personId, nexoForm);
                     setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
                     setShowNexoForm(false);
-                    setMessage('Nexo guardado localmente. Se enviara con internet.');
+                    setMessage('Nexo guardado localmente');
+                    showGlobalToast('Nexo guardado sin internet. Se sincronizará automáticamente.');
                     setData(prev => ({ ...prev, nexos: [...(prev.nexos || []), { ...nexoForm, id: newNexo.id }] }));
                     setTimeout(() => setMessage(''), 5000);
                 } catch {
                     setMessage('Error al guardar nexo');
+                    showGlobalToast('Error al guardar nexo', 'error');
                 }
             });
     }
@@ -833,11 +852,12 @@ function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPor
             // Offline: save locally
             offlineCreateLider({ ...form, municipio: municipios.find(m => m.id === form.municipio_id)?.name || '' })
                 .then(() => {
-                    setSuccessMsg('Lider guardado localmente. Se enviara cuando haya internet.');
+                    setSuccessMsg('Líder guardado localmente');
+                    showGlobalToast('Líder creado sin internet. Se sincronizará automáticamente.');
                     setForm(emptyForm);
                     setTimeout(() => { setSuccessMsg(''); onClose(); }, 2500);
                 })
-                .catch(() => setErrors({ general: 'Error al guardar localmente' }))
+                .catch(() => { setErrors({ general: 'Error al guardar localmente' }); showGlobalToast('Error al guardar líder', 'error'); })
                 .finally(() => setSaving(false));
             return;
         }
@@ -1353,6 +1373,18 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         if (f.search) {
             const q = f.search.toLowerCase();
             result = result.filter(r => (r.nombre || '').toLowerCase().includes(q) || (r.cedula || '').includes(q));
+        }
+        if (f.municipio) {
+            result = result.filter(r => r.municipioId === f.municipio || r.municipio_id === f.municipio);
+        }
+        if (f.provincia) {
+            const prov = f.provincia.toLowerCase();
+            if (prov === 'área metropolitana') {
+                const am = AREA_METROPOLITANA.map(n => n.toLowerCase());
+                result = result.filter(r => am.includes((r.municipio || '').toLowerCase()));
+            } else {
+                result = result.filter(r => (r.provincia || '').toLowerCase() === prov);
+            }
         }
         if (f.tipo && f.tipo !== 'todos') {
             const tipos = f.tipo.split(',');
