@@ -153,7 +153,7 @@ function SearchableDropdown({ label, options, selected, onChange, placeholder = 
             {open && (
                 <>
                     <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-                    <div className="absolute top-full left-0 mt-1 w-[280px] lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] flex flex-col" role="listbox" aria-label={label}>
+                    <div className="absolute top-full left-0 right-0 lg:right-auto mt-1 w-auto lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] flex flex-col" role="listbox" aria-label={label}>
                         {/* Search */}
                         <div className="px-3 pt-3 pb-2 border-b border-[var(--color-line)]">
                             <input
@@ -1304,19 +1304,62 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
 }
 
 /* ── MAIN ── */
-export default function MapaPolitico({ data = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, barrios = [], sectionCounts = {}, partyTotals = {}, filters = {} }) {
-    const [localSearch, setLocalSearch] = useState(filters.search ?? '');
-    const [selectedProv, setSelectedProv] = useState(filters.provincia ?? '');
+export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, barrios = [], sectionCounts = {}, partyTotals = {}, filters: serverFilters = {} }) {
+    const [allData] = useState(() => serverData);
+    const [localFilters, setLocalFilters] = useState({});
+    const [localSearch, setLocalSearch] = useState(serverFilters.search ?? '');
+    const [selectedProv, setSelectedProv] = useState(serverFilters.provincia ?? '');
     const [selectedPerson, setSelectedPerson] = useState(null);
     const [showCrearLider, setShowCrearLider] = useState(false);
-    const [selectedCargos, setSelectedCargos] = useState(filters.cargo ? filters.cargo.split(',') : []);
+    const [selectedCargos, setSelectedCargos] = useState(serverFilters.cargo ? serverFilters.cargo.split(',') : []);
     const [filtersOpen, setFiltersOpen] = useState(false);
-    const [offlineStatus, setOfflineStatus] = useState('idle'); // idle | downloading | saved | already
+    const [offlineStatus, setOfflineStatus] = useState('idle');
     const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
-    // Detect online/offline
+    const isOfflineFiltering = !isOnline && Object.keys(localFilters).length > 0;
+    const filters = isOfflineFiltering ? { ...serverFilters, ...localFilters } : serverFilters;
+
+    const data = useMemo(() => {
+        if (!isOfflineFiltering) return serverData;
+        let result = allData;
+        const f = localFilters;
+        if (f.search) {
+            const q = f.search.toLowerCase();
+            result = result.filter(r => (r.nombre || '').toLowerCase().includes(q) || (r.cedula || '').includes(q));
+        }
+        if (f.tipo && f.tipo !== 'todos') {
+            const tipos = f.tipo.split(',');
+            const tipoLabels = tipos.map(v => TIPO_OPTIONS.find(o => o.value === v)?.label).filter(Boolean);
+            result = result.filter(r => {
+                const rowTipos = (r.tipo_registro || '').split(',').map(t => t.trim());
+                return tipoLabels.some(tl => rowTipos.includes(tl));
+            });
+        }
+        if (f.cargo) {
+            const cargos = f.cargo.split(',');
+            result = result.filter(r => {
+                const rowCargos = (r.cargo || '').toLowerCase();
+                return cargos.some(c => rowCargos.includes(c.toLowerCase()));
+            });
+        }
+        if (f.partido) {
+            result = result.filter(r => r.partido === f.partido);
+        }
+        if (f.profesion) {
+            result = result.filter(r => r.profesion === f.profesion);
+        }
+        if (f.barrio) {
+            const barrs = f.barrio.split(',').map(b => b.toLowerCase());
+            result = result.filter(r => barrs.some(b => (r.barrio || '').toLowerCase().includes(b)));
+        }
+        if (f.destacado === '1') {
+            result = result.filter(r => r.destacado);
+        }
+        return result;
+    }, [isOfflineFiltering, serverData, allData, localFilters]);
+
     useEffect(() => {
-        const goOnline = () => setIsOnline(true);
+        const goOnline = () => { setIsOnline(true); setLocalFilters({}); };
         const goOffline = () => setIsOnline(false);
         window.addEventListener('online', goOnline);
         window.addEventListener('offline', goOffline);
@@ -1391,6 +1434,12 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
             ...overrides,
         };
         Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
+
+        if (!isOnline) {
+            setLocalFilters(params);
+            return;
+        }
+
         router.get('/mapa-politico', params, { preserveState: true, replace: true });
     }
 
@@ -1421,8 +1470,8 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         <line x1="4" y1="4" x2="20" y2="20" strokeLinecap="round" strokeWidth={2.5} />
                     </svg>
                     <div>
-                        <p className="text-[15px] font-bold">Sin conexion a internet</p>
-                        <p className="text-[13px] text-white/80">Solo puedes ver los datos que hayas guardado antes. Conectate a internet para buscar o filtrar.</p>
+                        <p className="text-[15px] font-bold">Sin conexión a internet</p>
+                        <p className="text-[13px] text-white/80">Puedes filtrar los datos cargados. Para nuevos datos, conecta a internet.</p>
                     </div>
                 </div>
             )}
@@ -1539,7 +1588,7 @@ export default function MapaPolitico({ data = [], municipios = [], provincias = 
                         </div>
                         <div className="col-span-2 lg:col-span-1 flex gap-2 pt-1 lg:pt-4">
                             <button onClick={() => { applyFilters({ search: localSearch || undefined }); setFiltersOpen(false); }} className="flex-1 lg:flex-initial px-4 lg:px-6 py-2.5 lg:py-3 bg-[var(--color-primary)] text-white text-[13px] lg:text-[15px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">Filtrar</button>
-                            <button onClick={() => { setLocalSearch(''); setSelectedProv(''); setSelectedCargos([]); setFiltersOpen(false); router.get('/mapa-politico', {}, { preserveState: false }); }} className="flex-1 lg:flex-initial px-3 lg:px-5 py-2.5 lg:py-3 border border-[var(--color-line)] text-[13px] lg:text-[15px] font-semibold text-[var(--color-ink-soft)] rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
+                            <button onClick={() => { setLocalSearch(''); setSelectedProv(''); setSelectedCargos([]); setLocalFilters({}); setFiltersOpen(false); if (isOnline) router.get('/mapa-politico', {}, { preserveState: false }); }} className="flex-1 lg:flex-initial px-3 lg:px-5 py-2.5 lg:py-3 border border-[var(--color-line)] text-[13px] lg:text-[15px] font-semibold text-[var(--color-ink-soft)] rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
                         </div>
                     </div>
                 </div>
