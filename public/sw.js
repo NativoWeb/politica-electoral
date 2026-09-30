@@ -1,5 +1,17 @@
-// Service Worker — Inteligencia Electoral PWA v13
-const CACHE_NAME = 'electoral-v13';
+// Service Worker — Inteligencia Electoral PWA v14
+const CACHE_NAME = 'electoral-v14';
+
+// Safari rejects responses with redirected flag from SW cache.
+// This creates a clean 200 response without redirect metadata.
+async function cleanResponse(response) {
+    if (!response.redirected) return response.clone();
+    const body = await response.clone().blob();
+    return new Response(body, {
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(response.headers),
+    });
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -22,7 +34,9 @@ self.addEventListener('message', (event) => {
             caches.open(CACHE_NAME).then(cache => {
                 (event.data.urls || []).forEach(url => {
                     fetch(url, { credentials: 'same-origin' })
-                        .then(res => { if (res.ok) cache.put(url, res); })
+                        .then(async (res) => {
+                            if (res.ok) cache.put(url, await cleanResponse(res));
+                        })
                         .catch(() => {});
                 });
             })
@@ -61,26 +75,14 @@ self.addEventListener('fetch', (event) => {
     // 2. Inertia XHR requests: NEVER intercept
     if (request.headers.get('X-Inertia')) return;
 
-    // 3. Page navigation (reload, URL bar, hard link):
-    //    Network first → cache fallback → offline.html
+    // 3. Page navigation: network first → cache fallback → offline.html
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request).then(async (response) => {
                 if (response.ok && response.type === 'basic') {
-                    let toCache;
-                    if (response.redirected) {
-                        // Safari rejects redirected responses from SW cache —
-                        // create a clean 200 response without redirect metadata
-                        const body = await response.clone().blob();
-                        toCache = new Response(body, {
-                            status: 200,
-                            statusText: 'OK',
-                            headers: new Headers(response.headers),
-                        });
-                    } else {
-                        toCache = response.clone();
-                    }
-                    caches.open(CACHE_NAME).then(c => c.put(request, toCache));
+                    caches.open(CACHE_NAME).then(async (c) => {
+                        c.put(request, await cleanResponse(response));
+                    });
                 }
                 return response;
             }).catch(() =>
