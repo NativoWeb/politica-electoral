@@ -1,7 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { downloadMunicipio, isDownloaded, getOfflinePersona, offlineUpdatePersona, offlineCreateNexo, offlineDeleteNexo, offlineCreateLider } from '@/lib/offlineDb';
+import { downloadMunicipio, isDownloaded, getOfflinePersona, offlineUpdatePersona, offlineCreateNexo, offlineDeleteNexo, offlineCreateLider, getAllOfflineData } from '@/lib/offlineDb';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { FullScreenSpinner } from '@/Components/Spinner';
 
@@ -1308,7 +1308,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
 
 /* ── MAIN ── */
 export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, barrios = [], sectionCounts = {}, partyTotals = {}, filters: serverFilters = {} }) {
-    const [allData] = useState(() => serverData);
+    const [allData, setAllData] = useState(() => serverData);
     const [localFilters, setLocalFilters] = useState({});
     const [localSearch, setLocalSearch] = useState(serverFilters.search ?? '');
     const [selectedProv, setSelectedProv] = useState(serverFilters.provincia ?? '');
@@ -1318,12 +1318,36 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [offlineStatus, setOfflineStatus] = useState('idle');
     const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+    const [offlineDataLoaded, setOfflineDataLoaded] = useState(false);
+    const [offlineMunicipios, setOfflineMunicipios] = useState(null);
+
+    // Load IndexedDB data when offline (replaces stale SW cache data)
+    useEffect(() => {
+        if (isOnline) {
+            setOfflineDataLoaded(false);
+            return;
+        }
+        getAllOfflineData().then(result => {
+            if (result && result.data.length > 0) {
+                setAllData(result.data);
+                setOfflineDataLoaded(true);
+                setOfflineMunicipios(result.municipioNames);
+            }
+        }).catch(() => {});
+    }, [isOnline]);
+
+    // Keep allData in sync with server props when online
+    useEffect(() => {
+        if (isOnline) setAllData(serverData);
+    }, [serverData, isOnline]);
 
     const isOfflineFiltering = !isOnline && Object.keys(localFilters).length > 0;
     const filters = isOfflineFiltering ? { ...serverFilters, ...localFilters } : serverFilters;
 
     const data = useMemo(() => {
-        if (!isOfflineFiltering) return serverData;
+        const source = (!isOnline && offlineDataLoaded) ? allData : serverData;
+        if (!isOfflineFiltering && isOnline) return serverData;
+        if (!isOfflineFiltering && !isOnline) return source;
         let result = allData;
         const f = localFilters;
         if (f.search) {
@@ -1359,7 +1383,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             result = result.filter(r => r.destacado);
         }
         return result;
-    }, [isOfflineFiltering, serverData, allData, localFilters]);
+    }, [isOnline, isOfflineFiltering, offlineDataLoaded, serverData, allData, localFilters]);
 
     useEffect(() => {
         const goOnline = () => { setIsOnline(true); setLocalFilters({}); };
@@ -1474,7 +1498,11 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                     </svg>
                     <div>
                         <p className="text-[15px] font-bold">Sin conexión a internet</p>
-                        <p className="text-[13px] text-white/80">Puedes filtrar los datos cargados. Para nuevos datos, conecta a internet.</p>
+                        <p className="text-[13px] text-white/80">
+                            {offlineDataLoaded && offlineMunicipios
+                                ? `Mostrando datos guardados: ${offlineMunicipios.join(', ')}. Puedes filtrar estos datos.`
+                                : 'Puedes filtrar los datos cargados. Para nuevos datos, conecta a internet.'}
+                        </p>
                     </div>
                 </div>
             )}

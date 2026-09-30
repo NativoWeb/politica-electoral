@@ -84,6 +84,45 @@ export async function getOfflineData(municipioId) {
     return { personas, lideres, gobernador };
 }
 
+// ─── Get ALL downloaded data merged (for offline page reload) ───
+
+export async function getAllOfflineData() {
+    const downloads = await db.downloads.toArray();
+    if (downloads.length === 0) return null;
+
+    const [personas, lideres] = await Promise.all([
+        db.personas.toArray(),
+        db.lideres.toArray(),
+    ]);
+
+    const transformedLideres = lideres.map(l => ({
+        ...l,
+        tipo_registro: 'Líderes',
+        votos: l.votos ?? 0,
+    }));
+
+    const seen = new Set();
+    const merged = [];
+    for (const row of [...personas, ...transformedLideres]) {
+        const key = row.id;
+        if (seen.has(key)) {
+            const existing = merged.find(r => r.id === key);
+            if (existing && row.tipo_registro && !existing.tipo_registro.includes(row.tipo_registro)) {
+                existing.tipo_registro += `, ${row.tipo_registro}`;
+            }
+            continue;
+        }
+        seen.add(key);
+        merged.push({ ...row });
+    }
+
+    return {
+        data: merged,
+        downloads,
+        municipioNames: downloads.map(d => d.municipioName),
+    };
+}
+
 // ─── Get a single person from offline DB (for persona panel) ───
 
 export async function getOfflinePersona(personId) {
