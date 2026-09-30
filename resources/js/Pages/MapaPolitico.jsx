@@ -845,13 +845,16 @@ function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPor
         e.preventDefault();
         if (!form.nombre.trim()) { setErrors({ nombre: 'El nombre es obligatorio' }); return; }
         if (!form.municipio_id) { setErrors({ municipio_id: 'Selecciona un municipio' }); return; }
+        if (saving) return;
 
         setSaving(true);
         setErrors({});
         setSuccessMsg('');
 
+        // Safety: always unlock button after 8s max
+        const safetyTimeout = setTimeout(() => setSaving(false), 8000);
+
         if (!navigator.onLine) {
-            // Offline: save locally
             offlineCreateLider({ ...form, municipio: municipios.find(m => m.id === form.municipio_id)?.name || '' })
                 .then(() => {
                     setSuccessMsg('Líder guardado localmente');
@@ -860,20 +863,37 @@ function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPor
                     setTimeout(() => { setSuccessMsg(''); onClose(); }, 2500);
                 })
                 .catch(() => { setErrors({ general: 'Error al guardar localmente' }); showGlobalToast('Error al guardar líder', 'error'); })
-                .finally(() => setSaving(false));
+                .finally(() => { setSaving(false); clearTimeout(safetyTimeout); });
             return;
         }
 
-        router.post('/mapa-politico/crear-lider', form, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setSuccessMsg('Líder creado exitosamente');
+        apiFetch('/mapa-politico/crear-lider', {
+            method: 'POST',
+            body: JSON.stringify(form),
+        })
+            .then(r => { if (!r.ok) throw r; return r.json(); })
+            .then(res => {
+                setSuccessMsg(res.message || 'Líder creado exitosamente');
+                showGlobalToast('Líder creado exitosamente');
                 setForm(emptyForm);
-                setTimeout(() => { setSuccessMsg(''); onClose(); }, 1500);
-            },
-            onError: (errs) => setErrors(errs),
-            onFinish: () => setSaving(false),
-        });
+                setTimeout(() => { setSuccessMsg(''); onClose(); router.reload(); }, 1500);
+            })
+            .catch(async (err) => {
+                if (err instanceof Response) {
+                    try { const body = await err.json(); setErrors(body.errors || { general: body.message || 'Error al guardar' }); }
+                    catch { setErrors({ general: `Error ${err.status}` }); }
+                } else {
+                    // Network error — save offline
+                    try {
+                        await offlineCreateLider({ ...form, municipio: municipios.find(m => m.id === form.municipio_id)?.name || '' });
+                        setSuccessMsg('Líder guardado localmente');
+                        showGlobalToast('Sin conexión. Líder guardado localmente.');
+                        setForm(emptyForm);
+                        setTimeout(() => { setSuccessMsg(''); onClose(); }, 2500);
+                    } catch { setErrors({ general: 'Error al guardar' }); }
+                }
+            })
+            .finally(() => { setSaving(false); clearTimeout(safetyTimeout); });
     }
 
     const fieldCls = "w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]";

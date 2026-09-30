@@ -543,7 +543,6 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             <Link
                                 key={item.name}
                                 href={item.href}
-                                prefetch="hover"
                                 className={`flex flex-col items-center justify-center flex-1 gap-1 transition-colors active:bg-white/10 ${
                                     isActive ? 'text-[var(--color-accent)]' : 'text-white/50'
                                 }`}
