@@ -1227,15 +1227,6 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
     const colorCls = TIPO_COLORS[tipo] ?? 'bg-gray-100 text-gray-600';
     const icon = TIPO_ICONS[tipo];
     const totalVotos = rows.reduce((sum, r) => sum + (r.votos || 0), 0);
-    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 1024);
-
-    useEffect(() => {
-        function handleResize() { setIsMobile(window.innerWidth < 1024); }
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
-    // Agrupar por partido para acordeones internos (desktop only)
     const byParty = useMemo(() => {
         const groups = {};
         rows.forEach(r => {
@@ -1249,11 +1240,6 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
             return votosB - votosA;
         });
     }, [rows]);
-
-    // Sort rows by votos desc for mobile flat list
-    const sortedRows = useMemo(() =>
-        [...rows].sort((a, b) => (b.votos || 0) - (a.votos || 0)),
-    [rows]);
 
     return (
         <div className="border border-[var(--color-line)] rounded-xl overflow-hidden bg-white">
@@ -1303,45 +1289,30 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                             </div>
                         </div>
                     )}
-                    {isMobile ? (
-                        /* ── Mobile: flat list, no party nesting ── */
-                        <div>
-                            {sortedRows.map((row, i) => (
-                                <PersonRow
-                                    key={`${row.id}-${i}`}
-                                    row={row}
-                                    onSelectPerson={onSelectPerson}
-                                    color={partyColor(row.partido, i)}
-                                />
-                            ))}
-                        </div>
-                    ) : (
-                        /* ── Desktop: party accordions ── */
-                        <div className="px-4 py-3 space-y-1">
-                            {tipo === 'Líderes' ? (
-                                <div className="space-y-1">
-                                    {rows.map((row, i) => (
-                                        <PersonRow
-                                            key={`${row.id}-${i}`}
-                                            row={row}
-                                            onSelectPerson={onSelectPerson}
-                                            color={partyColor(row.partido, i)}
-                                        />
-                                    ))}
-                                </div>
-                            ) : (
-                                byParty.map(([party, partyRows], idx) => (
-                                    <PartyAccordion
-                                        key={party}
-                                        partyName={party}
-                                        rows={partyRows}
-                                        index={idx}
+                    <div className="px-4 py-3 space-y-1">
+                        {tipo === 'Líderes' ? (
+                            <div className="space-y-1">
+                                {rows.map((row, i) => (
+                                    <PersonRow
+                                        key={`${row.id}-${i}`}
+                                        row={row}
                                         onSelectPerson={onSelectPerson}
+                                        color={partyColor(row.partido, i)}
                                     />
-                                ))
-                            )}
-                        </div>
-                    )}
+                                ))}
+                            </div>
+                        ) : (
+                            byParty.map(([party, partyRows], idx) => (
+                                <PartyAccordion
+                                    key={party}
+                                    partyName={party}
+                                    rows={partyRows}
+                                    index={idx}
+                                    onSelectPerson={onSelectPerson}
+                                />
+                            ))
+                        )}
+                    </div>
                 </div>
             )}
         </div>
