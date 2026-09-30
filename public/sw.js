@@ -1,11 +1,11 @@
-// Service Worker — Inteligencia Electoral PWA v16
-const CACHE_NAME = 'electoral-v16';
+// Service Worker — Inteligencia Electoral PWA v17
+const CACHE_NAME = 'electoral-v17';
 
 // Safari rejects responses with the redirected flag from SW cache.
 // Create a clean 200 response without redirect metadata.
 async function stripRedirect(response) {
-    if (!response.redirected) return response.clone();
-    const body = await response.clone().blob();
+    if (!response.redirected) return response;
+    const body = await response.blob();
     return new Response(body, {
         status: 200,
         statusText: 'OK',
@@ -14,10 +14,8 @@ async function stripRedirect(response) {
 }
 
 // Check if a response is safe to cache for a given request URL.
-// Returns false if the response was redirected to a DIFFERENT path
-// (e.g., auth redirect to /login — that content doesn't belong to the original URL).
-// Same-path redirects (HTTP→HTTPS, www normalization) are safe to cache.
-function isSamePathResponse(request, response) {
+// Same-path redirects (HTTP→HTTPS, www) are safe; different-path (auth→/login) are not.
+function isSamePathRedirect(request, response) {
     if (!response.redirected) return true;
     try {
         const reqPath = new URL(request.url).pathname;
@@ -26,6 +24,20 @@ function isSamePathResponse(request, response) {
     } catch {
         return false;
     }
+}
+
+// Find a cached response by pathname (robust fallback when exact URL match fails)
+async function matchByPathname(cacheName, pathname) {
+    const cache = await caches.open(cacheName);
+    const keys = await cache.keys();
+    for (const key of keys) {
+        try {
+            if (new URL(key.url).pathname === pathname) {
+                return cache.match(key);
+            }
+        } catch {}
+    }
+    return null;
 }
 
 self.addEventListener('install', (event) => {
@@ -47,16 +59,17 @@ self.addEventListener('message', (event) => {
     if (event.data?.type === 'PRECACHE_PAGES') {
         event.waitUntil(
             caches.open(CACHE_NAME).then(cache => {
-                (event.data.urls || []).forEach(pageUrl => {
-                    const req = new Request(pageUrl, { credentials: 'same-origin' });
-                    fetch(req)
+                const urls = event.data.urls || [];
+                return Promise.all(urls.map(pageUrl =>
+                    fetch(new Request(pageUrl, { credentials: 'same-origin' }))
                         .then(async (res) => {
-                            if (res.ok && isSamePathResponse(req, res)) {
-                                cache.put(pageUrl, await stripRedirect(res));
+                            if (res.ok && isSamePathRedirect({ url: new URL(pageUrl, self.location.origin).href }, res)) {
+                                const clean = await stripRedirect(res);
+                                await cache.put(pageUrl, clean);
                             }
                         })
-                        .catch(() => {});
-                });
+                        .catch(() => {})
+                ));
             })
         );
     }
@@ -97,19 +110,26 @@ self.addEventListener('fetch', (event) => {
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request).then(async (response) => {
-                if (response.ok && response.type === 'basic' && isSamePathResponse(request, response)) {
+                if (response.ok && isSamePathRedirect(request, response)) {
+                    // IMPORTANT: clone BEFORE returning to browser (avoids race condition)
+                    const toCache = response.clone();
                     caches.open(CACHE_NAME).then(async (c) => {
-                        c.put(request, await stripRedirect(response));
+                        c.put(request, await stripRedirect(toCache));
                     });
                 }
                 return response;
-            }).catch(() =>
-                caches.match(request, { ignoreSearch: true })
-                    .then(cached => cached || caches.match('/offline.html'))
-            )
+            }).catch(async () => {
+                // Offline: try exact match first
+                const cached = await caches.match(request, { ignoreSearch: true });
+                if (cached) return cached;
+
+                // Fallback: search by pathname (handles URL format mismatches)
+                const byPath = await matchByPathname(CACHE_NAME, url.pathname);
+                if (byPath) return byPath;
+
+                return caches.match('/offline.html');
+            })
         );
         return;
     }
-
-    // 4. Everything else: let browser handle normally
 });
