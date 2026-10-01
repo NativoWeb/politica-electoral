@@ -139,6 +139,14 @@ const ICONS = {
             <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
+    VOTANTES: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+            <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" strokeLinecap="round" strokeLinejoin="round" />
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+            <circle cx="12" cy="13" r="2.5" />
+            <path d="M16 19c0-1.657-1.79-3-4-3s-4 1.343-4 3" strokeLinecap="round" />
+        </svg>
+    ),
 };
 
 /* ── Export buttons ── */
@@ -211,6 +219,7 @@ function ExportButtons({ url }) {
 const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
+    { name: 'VOTANTES', href: '/votantes', label: 'Votantes' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin' },
 ];
 

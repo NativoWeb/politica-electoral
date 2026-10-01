@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Lider;
 use App\Services\CachedQueries;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -36,8 +37,11 @@ class MapaPoliticoController extends Controller
             ->select('candidacy_id', DB::raw('SUM(value) as votos'))
             ->groupBy('candidacy_id');
 
-        if ($munId) $q->where('geographic_unit_id', $munId);
-        elseif ($provinciaIds) $q->whereIn('geographic_unit_id', $provinciaIds);
+        if ($munId) {
+            $q->where('geographic_unit_id', $munId);
+        } elseif ($provinciaIds) {
+            $q->whereIn('geographic_unit_id', $provinciaIds);
+        }
 
         return $q;
     }
@@ -47,6 +51,7 @@ class MapaPoliticoController extends Controller
     {
         $liderCargos = DB::table('lideres')->select('cargo')->distinct()->pluck('cargo')
             ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
+
         return [
             'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
             'concejo' => ['Concejal Electo', 'Candidato Concejo'],
@@ -91,7 +96,7 @@ class MapaPoliticoController extends Controller
 
         $provincia = $request->input('provincia');
         $provinciaIds = null;
-        if ($provincia && !$munId) {
+        if ($provincia && ! $munId) {
             if ($provincia === 'Área Metropolitana') {
                 $provinciaIds = collect($municipios)->filter(fn ($m) => in_array($m['name'], $areaMetropolitana))->pluck('id')->toArray();
             } else {
@@ -109,7 +114,7 @@ class MapaPoliticoController extends Controller
         }
 
         $data = [];
-        $noGeoFilter = !$munId && !$provinciaIds && !$searchEscaped && !$barrioEscaped;
+        $noGeoFilter = ! $munId && ! $provinciaIds && ! $searchEscaped && ! $barrioEscaped;
 
         // === ALCALDIA ===
         if ($tipoMatch('alcaldia')) {
@@ -132,10 +137,17 @@ class MapaPoliticoController extends Controller
                     DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato Alcaldía' END as cargo")
                 );
 
-            if ($munId) $query->where('con.geographic_unit_id', $munId);
-            elseif ($provinciaIds) $query->whereIn('con.geographic_unit_id', $provinciaIds);
-            if ($searchEscaped) $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
-            if ($noGeoFilter) $query->where('c.outcome', 'elected');
+            if ($munId) {
+                $query->where('con.geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $query->whereIn('con.geographic_unit_id', $provinciaIds);
+            }
+            if ($searchEscaped) {
+                $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
+            }
+            if ($noGeoFilter) {
+                $query->where('c.outcome', 'elected');
+            }
 
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
         }
@@ -163,11 +175,20 @@ class MapaPoliticoController extends Controller
                     DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END as cargo")
                 );
 
-            if ($munId) $query->where('con.geographic_unit_id', $munId);
-            elseif ($provinciaIds) $query->whereIn('con.geographic_unit_id', $provinciaIds);
-            if ($searchEscaped) $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
-            if (!empty($cargos)) $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END"), $cargos);
-            if ($noGeoFilter) $query->where('c.outcome', 'elected');
+            if ($munId) {
+                $query->where('con.geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $query->whereIn('con.geographic_unit_id', $provinciaIds);
+            }
+            if ($searchEscaped) {
+                $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
+            }
+            if (! empty($cargos)) {
+                $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END"), $cargos);
+            }
+            if ($noGeoFilter) {
+                $query->where('c.outcome', 'elected');
+            }
 
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
         }
@@ -182,18 +203,33 @@ class MapaPoliticoController extends Controller
                     'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
-            if ($munId) $query->where('geographic_unit_id', $munId);
-            elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
-            if ($searchEscaped) $query->where(function ($q) use ($searchEscaped) {
-                $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
-            });
-            if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
-                foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
-            });
-            if (!empty($barrios_filter)) $query->where(function ($q) use ($barrios_filter) {
-                foreach ($barrios_filter as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
-            });
-            if ($noGeoFilter) $query->limit(200);
+            if ($munId) {
+                $query->where('geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $query->whereIn('geographic_unit_id', $provinciaIds);
+            }
+            if ($searchEscaped) {
+                $query->where(function ($q) use ($searchEscaped) {
+                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
+                });
+            }
+            if (! empty($cargos)) {
+                $query->where(function ($q) use ($cargos) {
+                    foreach ($cargos as $c) {
+                        $q->orWhere('cargo', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], $c).'%');
+                    }
+                });
+            }
+            if (! empty($barrios_filter)) {
+                $query->where(function ($q) use ($barrios_filter) {
+                    foreach ($barrios_filter as $b) {
+                        $q->orWhere('barrio', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($b)).'%');
+                    }
+                });
+            }
+            if ($noGeoFilter) {
+                $query->limit(200);
+            }
 
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
         }
@@ -209,18 +245,33 @@ class MapaPoliticoController extends Controller
                     'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
-            if ($munId) $query->where('geographic_unit_id', $munId);
-            elseif ($provinciaIds) $query->whereIn('geographic_unit_id', $provinciaIds);
-            if ($searchEscaped) $query->where(function ($q) use ($searchEscaped) {
-                $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
-            });
-            if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
-                foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
-            });
-            if (!empty($barrios_filter)) $query->where(function ($q) use ($barrios_filter) {
-                foreach ($barrios_filter as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
-            });
-            if ($noGeoFilter) $query->limit(200);
+            if ($munId) {
+                $query->where('geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $query->whereIn('geographic_unit_id', $provinciaIds);
+            }
+            if ($searchEscaped) {
+                $query->where(function ($q) use ($searchEscaped) {
+                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
+                });
+            }
+            if (! empty($cargos)) {
+                $query->where(function ($q) use ($cargos) {
+                    foreach ($cargos as $c) {
+                        $q->orWhere('cargo', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], $c).'%');
+                    }
+                });
+            }
+            if (! empty($barrios_filter)) {
+                $query->where(function ($q) use ($barrios_filter) {
+                    foreach ($barrios_filter as $b) {
+                        $q->orWhere('barrio', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($b)).'%');
+                    }
+                });
+            }
+            if ($noGeoFilter) {
+                $query->limit(200);
+            }
 
             $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
         }
@@ -235,12 +286,17 @@ class MapaPoliticoController extends Controller
         foreach ($corpMap as $tipoKey => $info) {
             if ($tipoMatch($tipoKey)) {
                 $corpId = $this->corporationId($info['corp']);
-                if (!$corpId) continue;
+                if (! $corpId) {
+                    continue;
+                }
 
                 $resSubQuery = DB::table('electoral_results')
                     ->whereIn('metric_type', ['votes', 'nominal_votes'])->where('value', '>', 0);
-                if ($munId) $resSubQuery->where('geographic_unit_id', $munId);
-                elseif ($provinciaIds) $resSubQuery->whereIn('geographic_unit_id', $provinciaIds);
+                if ($munId) {
+                    $resSubQuery->where('geographic_unit_id', $munId);
+                } elseif ($provinciaIds) {
+                    $resSubQuery->whereIn('geographic_unit_id', $provinciaIds);
+                }
 
                 $label = $info['label']; // Safe: from hardcoded map, never user input
 
@@ -256,14 +312,16 @@ class MapaPoliticoController extends Controller
                     )
                     ->select(
                         'p.id', 'p.full_name as nombre', DB::raw("'Santander' as municipio"),
-                        DB::raw("NULL as provincia"), 'po.canonical_name as partido',
-                        DB::raw("NULL as outcome"), DB::raw("NULL as tipo_aval"),
+                        DB::raw('NULL as provincia'), 'po.canonical_name as partido',
+                        DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                         DB::raw('res.votos')
                     )
-                    ->selectRaw("? as tipo_registro", [$label])
-                    ->selectRaw("? as cargo", [$label]);
+                    ->selectRaw('? as tipo_registro', [$label])
+                    ->selectRaw('? as cargo', [$label]);
 
-                if ($searchEscaped) $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
+                if ($searchEscaped) {
+                    $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
+                }
 
                 $data = array_merge($data, $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray());
             }
@@ -277,38 +335,60 @@ class MapaPoliticoController extends Controller
         // #6: Enrich non-líder rows — only load líderes for relevant municipios
         $relevantMunicipios = array_unique(array_filter(array_column($data, 'municipio')));
         $lideresLookup = [];
-        if (!empty($relevantMunicipios)) {
+        if (! empty($relevantMunicipios)) {
             $lideresAll = DB::table('lideres')
                 ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
             foreach ($lideresAll as $l) {
-                $key = mb_strtoupper(trim($l->nombre)) . '|' . mb_strtoupper(trim($l->municipio));
+                $key = mb_strtoupper(trim($l->nombre)).'|'.mb_strtoupper(trim($l->municipio));
                 $lideresLookup[$key] = $l;
             }
         }
 
         foreach ($data as &$row) {
-            if (!isset($row['barrio'])) $row['barrio'] = null;
-            if (!isset($row['direccion'])) $row['direccion'] = null;
-            if (!isset($row['zona'])) $row['zona'] = null;
-            if (($row['tipo_registro'] ?? '') === 'Líderes') continue;
+            if (! isset($row['barrio'])) {
+                $row['barrio'] = null;
+            }
+            if (! isset($row['direccion'])) {
+                $row['direccion'] = null;
+            }
+            if (! isset($row['zona'])) {
+                $row['zona'] = null;
+            }
+            if (($row['tipo_registro'] ?? '') === 'Líderes') {
+                continue;
+            }
 
-            $key = mb_strtoupper(trim($row['nombre'] ?? '')) . '|' . mb_strtoupper(trim($row['municipio'] ?? ''));
+            $key = mb_strtoupper(trim($row['nombre'] ?? '')).'|'.mb_strtoupper(trim($row['municipio'] ?? ''));
             $lider = $lideresLookup[$key] ?? null;
             if ($lider) {
-                if (empty($row['telefono'])) $row['telefono'] = $lider->telefono;
-                if (empty($row['email'])) $row['email'] = $lider->email;
-                if (empty($row['barrio'])) $row['barrio'] = $lider->barrio ?? null;
-                if (empty($row['direccion'])) $row['direccion'] = $lider->direccion ?? null;
-                if (empty($row['zona'])) $row['zona'] = $lider->zona ?? null;
+                if (empty($row['telefono'])) {
+                    $row['telefono'] = $lider->telefono;
+                }
+                if (empty($row['email'])) {
+                    $row['email'] = $lider->email;
+                }
+                if (empty($row['barrio'])) {
+                    $row['barrio'] = $lider->barrio ?? null;
+                }
+                if (empty($row['direccion'])) {
+                    $row['direccion'] = $lider->direccion ?? null;
+                }
+                if (empty($row['zona'])) {
+                    $row['zona'] = $lider->zona ?? null;
+                }
                 $row['destacado'] = (bool) ($lider->destacado ?? false);
-                if (empty($row['profesion'])) $row['profesion'] = $lider->profesion ?? null;
-                if (empty($row['cedula'])) $row['cedula'] = $lider->cedula ?? null;
+                if (empty($row['profesion'])) {
+                    $row['profesion'] = $lider->profesion ?? null;
+                }
+                if (empty($row['cedula'])) {
+                    $row['cedula'] = $lider->cedula ?? null;
+                }
                 // Unify: if líder has a cargo, add it to tipo_registro
                 $liderCargo = $lider->lider_cargo ?? null;
-                if ($liderCargo && $liderCargo !== 'Líder' && !str_contains($row['tipo_registro'] ?? '', 'Líderes')) {
-                    $row['tipo_registro'] = ($row['tipo_registro'] ?? '') . ', Líderes';
+                if ($liderCargo && $liderCargo !== 'Líder' && ! str_contains($row['tipo_registro'] ?? '', 'Líderes')) {
+                    $row['tipo_registro'] = ($row['tipo_registro'] ?? '').', Líderes';
                 }
             }
         }
@@ -316,7 +396,7 @@ class MapaPoliticoController extends Controller
 
         // === FILTRO POR DESTACADO ===
         if ($destacado) {
-            $data = array_values(array_filter($data, fn ($row) => !empty($row['destacado'])));
+            $data = array_values(array_filter($data, fn ($row) => ! empty($row['destacado'])));
         }
 
         // === FILTRO POR PROFESION ===
@@ -327,22 +407,42 @@ class MapaPoliticoController extends Controller
         // Unify duplicates
         $unified = [];
         foreach ($data as $row) {
-            $key = strtoupper(trim($row['nombre'] ?? '')) . '|' . strtoupper(trim($row['municipio'] ?? ''));
+            $key = strtoupper(trim($row['nombre'] ?? '')).'|'.strtoupper(trim($row['municipio'] ?? ''));
             if (isset($unified[$key])) {
                 $existing = $unified[$key]['tipo_registro'];
                 $new = $row['tipo_registro'] ?? '';
-                if ($new && !str_contains($existing, $new)) $unified[$key]['tipo_registro'] = $existing . ', ' . $new;
+                if ($new && ! str_contains($existing, $new)) {
+                    $unified[$key]['tipo_registro'] = $existing.', '.$new;
+                }
                 $existingCargo = $unified[$key]['cargo'] ?? '';
                 $newCargo = $row['cargo'] ?? '';
-                if ($newCargo && !str_contains($existingCargo, $newCargo)) $unified[$key]['cargo'] = $existingCargo ? $existingCargo . ', ' . $newCargo : $newCargo;
-                if (($row['votos'] ?? 0) > ($unified[$key]['votos'] ?? 0)) $unified[$key]['votos'] = $row['votos'];
-                if (!empty($row['telefono']) && empty($unified[$key]['telefono'])) $unified[$key]['telefono'] = $row['telefono'];
-                if (!empty($row['email']) && empty($unified[$key]['email'])) $unified[$key]['email'] = $row['email'];
-                if (!empty($row['partido']) && empty($unified[$key]['partido'])) $unified[$key]['partido'] = $row['partido'];
-                if (($row['outcome'] ?? '') === 'elected') $unified[$key]['outcome'] = 'elected';
-                if (!empty($row['barrio']) && empty($unified[$key]['barrio'])) $unified[$key]['barrio'] = $row['barrio'];
-                if (!empty($row['direccion']) && empty($unified[$key]['direccion'])) $unified[$key]['direccion'] = $row['direccion'];
-                if (!empty($row['zona']) && empty($unified[$key]['zona'])) $unified[$key]['zona'] = $row['zona'];
+                if ($newCargo && ! str_contains($existingCargo, $newCargo)) {
+                    $unified[$key]['cargo'] = $existingCargo ? $existingCargo.', '.$newCargo : $newCargo;
+                }
+                if (($row['votos'] ?? 0) > ($unified[$key]['votos'] ?? 0)) {
+                    $unified[$key]['votos'] = $row['votos'];
+                }
+                if (! empty($row['telefono']) && empty($unified[$key]['telefono'])) {
+                    $unified[$key]['telefono'] = $row['telefono'];
+                }
+                if (! empty($row['email']) && empty($unified[$key]['email'])) {
+                    $unified[$key]['email'] = $row['email'];
+                }
+                if (! empty($row['partido']) && empty($unified[$key]['partido'])) {
+                    $unified[$key]['partido'] = $row['partido'];
+                }
+                if (($row['outcome'] ?? '') === 'elected') {
+                    $unified[$key]['outcome'] = 'elected';
+                }
+                if (! empty($row['barrio']) && empty($unified[$key]['barrio'])) {
+                    $unified[$key]['barrio'] = $row['barrio'];
+                }
+                if (! empty($row['direccion']) && empty($unified[$key]['direccion'])) {
+                    $unified[$key]['direccion'] = $row['direccion'];
+                }
+                if (! empty($row['zona']) && empty($unified[$key]['zona'])) {
+                    $unified[$key]['zona'] = $row['zona'];
+                }
             } else {
                 $unified[$key] = $row;
             }
@@ -350,12 +450,17 @@ class MapaPoliticoController extends Controller
         $data = array_values($unified);
 
         // Filtrar por barrio (post-unificación)
-        if (!empty($barrios_filter)) {
+        if (! empty($barrios_filter)) {
             $data = array_values(array_filter($data, function ($row) use ($barrios_filter) {
-                if (empty($row['barrio'])) return false;
-                foreach ($barrios_filter as $b) {
-                    if (stripos($row['barrio'], trim($b)) !== false) return true;
+                if (empty($row['barrio'])) {
+                    return false;
                 }
+                foreach ($barrios_filter as $b) {
+                    if (stripos($row['barrio'], trim($b)) !== false) {
+                        return true;
+                    }
+                }
+
                 return false;
             }));
         }
@@ -363,7 +468,9 @@ class MapaPoliticoController extends Controller
         $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
 
         $barriosQuery = DB::table('lideres')->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
-        if ($munId) $barriosQuery->where('geographic_unit_id', $munId);
+        if ($munId) {
+            $barriosQuery->where('geographic_unit_id', $munId);
+        }
         $barrios = $barriosQuery->pluck('barrio')->sort()->values()->toArray();
 
         $sectionCounts = collect($data)->groupBy('tipo_registro')->map(fn ($items) => count($items))->toArray();
@@ -423,6 +530,37 @@ class MapaPoliticoController extends Controller
             'barrio' => 'nullable|string|max:100',
             'zona' => 'nullable|in:rural,urbana',
             'observacion' => 'nullable|string|max:1000',
+            // Extended fields
+            'tipo_documento' => 'nullable|string|max:20',
+            'fecha_expedicion_doc' => 'nullable|date',
+            'genero' => 'nullable|string|max:20',
+            'fecha_nacimiento' => 'nullable|date',
+            'estado_civil' => 'nullable|string|max:30',
+            'referente_documento' => 'nullable|string|max:20',
+            'referente_nombre' => 'nullable|string|max:150',
+            'referente_apellido' => 'nullable|string|max:150',
+            'departamento_votacion' => 'nullable|string|max:100',
+            'municipio_votacion' => 'nullable|string|max:100',
+            'puesto_votacion' => 'nullable|string|max:200',
+            'direccion_puesto' => 'nullable|string|max:300',
+            'mesa_votacion' => 'nullable|string|max:20',
+            'militante' => 'nullable|boolean',
+            'autoriza_datos' => 'nullable|boolean',
+            'verificado' => 'nullable|boolean',
+            'fallecido' => 'nullable|boolean',
+            'empresario' => 'nullable|boolean',
+            'reservista' => 'nullable|boolean',
+            'funcionario' => 'nullable|boolean',
+            'exfuncionario' => 'nullable|boolean',
+            'gran_elector' => 'nullable|boolean',
+            'nivel_confianza' => 'nullable|string|max:30',
+            'convenio' => 'nullable|string|max:200',
+            'escolaridad' => 'nullable|string|max:50',
+            'tipo_hoja_vida' => 'nullable|string|max:50',
+            'fecha_registro_hv' => 'nullable|date',
+            'facebook' => 'nullable|string|max:255',
+            'twitter' => 'nullable|string|max:255',
+            'instagram' => 'nullable|string|max:255',
         ]);
 
         $mun = DB::table('geographic_units as g')
@@ -431,7 +569,7 @@ class MapaPoliticoController extends Controller
             ->select('g.canonical_name', 'prov.canonical_name as provincia')
             ->first();
 
-        DB::table('lideres')->insert([
+        $insertData = [
             'id' => Str::uuid(),
             'nombre' => $data['nombre'],
             'municipio' => $mun->canonical_name ?? '',
@@ -449,7 +587,25 @@ class MapaPoliticoController extends Controller
             'geographic_unit_id' => $data['municipio_id'],
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+
+        // Extended fields
+        $extendedFields = [
+            'tipo_documento', 'fecha_expedicion_doc', 'genero', 'fecha_nacimiento',
+            'estado_civil', 'referente_documento', 'referente_nombre', 'referente_apellido',
+            'departamento_votacion', 'municipio_votacion', 'puesto_votacion', 'direccion_puesto', 'mesa_votacion',
+            'nivel_confianza', 'convenio', 'escolaridad', 'tipo_hoja_vida', 'fecha_registro_hv',
+            'facebook', 'twitter', 'instagram',
+        ];
+        foreach ($extendedFields as $field) {
+            $insertData[$field] = $data[$field] ?? null;
+        }
+        $booleanFields = ['militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario', 'reservista', 'funcionario', 'exfuncionario', 'gran_elector'];
+        foreach ($booleanFields as $field) {
+            $insertData[$field] = $data[$field] ?? false;
+        }
+
+        DB::table('lideres')->insert($insertData);
 
         Cache::forget('cargos_por_tipo');
 
@@ -463,17 +619,21 @@ class MapaPoliticoController extends Controller
     public function persona(string $id)
     {
         // #5: Validate UUID format
-        if (!Str::isUuid($id)) abort(404);
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
 
         $person = DB::table('persons')->where('id', $id)->first();
         $source = 'persona';
+        $liderModel = null;
 
-        if (!$person) {
-            $person = DB::table('lideres')->where('id', $id)->first();
+        if (! $person) {
+            $liderModel = Lider::with(['contactos', 'infoPolitica'])->find($id);
+            $person = $liderModel;
             $source = 'lider';
         }
 
-        abort_if(!$person, 404);
+        abort_if(! $person, 404);
 
         $nexos = DB::table('nexos_familiares')
             ->where('person_id', $id)
@@ -508,7 +668,9 @@ class MapaPoliticoController extends Controller
                 $nameParts = explode(' ', $person->full_name);
                 $query = DB::table('lideres')->where('municipio', 'ilike', $personMunicipio);
                 foreach ($nameParts as $part) {
-                    if (mb_strlen($part) >= 3) $query->where('nombre', 'ilike', '%' . $this->escapeLike($part) . '%');
+                    if (mb_strlen($part) >= 3) {
+                        $query->where('nombre', 'ilike', '%'.$this->escapeLike($part).'%');
+                    }
                 }
                 $liderRows = $query->get();
             }
@@ -527,11 +689,10 @@ class MapaPoliticoController extends Controller
             $partido = $person->partido ?? null;
         }
 
-        $partidos = Cache::remember('all_partidos', 3600, fn () =>
-            DB::table('political_organizations')->orderBy('canonical_name')->pluck('canonical_name')->toArray()
+        $partidos = Cache::remember('all_partidos', 3600, fn () => DB::table('political_organizations')->orderBy('canonical_name')->pluck('canonical_name')->toArray()
         );
 
-        return response()->json([
+        $response = [
             'id' => $id,
             'source' => $source,
             'nombre' => $source === 'persona' ? $person->full_name : $person->nombre,
@@ -560,12 +721,53 @@ class MapaPoliticoController extends Controller
                     ->where('er.metric_type', 'votes')
                     ->sum('er.value'),
             'nexos' => $nexos,
-        ]);
+        ];
+
+        // Include extended lider fields when source is lider
+        if ($source === 'lider' && $liderModel) {
+            $response['tipo_documento'] = $liderModel->tipo_documento;
+            $response['fecha_expedicion_doc'] = $liderModel->fecha_expedicion_doc;
+            $response['genero'] = $liderModel->genero;
+            $response['fecha_nacimiento'] = $liderModel->fecha_nacimiento;
+            $response['foto'] = $liderModel->foto;
+            $response['estado_civil'] = $liderModel->estado_civil;
+            $response['referente_documento'] = $liderModel->referente_documento;
+            $response['referente_nombre'] = $liderModel->referente_nombre;
+            $response['referente_apellido'] = $liderModel->referente_apellido;
+            $response['departamento_votacion'] = $liderModel->departamento_votacion;
+            $response['municipio_votacion'] = $liderModel->municipio_votacion;
+            $response['puesto_votacion'] = $liderModel->puesto_votacion;
+            $response['direccion_puesto'] = $liderModel->direccion_puesto;
+            $response['mesa_votacion'] = $liderModel->mesa_votacion;
+            $response['militante'] = $liderModel->militante;
+            $response['autoriza_datos'] = $liderModel->autoriza_datos;
+            $response['verificado'] = $liderModel->verificado;
+            $response['fallecido'] = $liderModel->fallecido;
+            $response['empresario'] = $liderModel->empresario;
+            $response['reservista'] = $liderModel->reservista;
+            $response['funcionario'] = $liderModel->funcionario;
+            $response['exfuncionario'] = $liderModel->exfuncionario;
+            $response['gran_elector'] = $liderModel->gran_elector;
+            $response['nivel_confianza'] = $liderModel->nivel_confianza;
+            $response['convenio'] = $liderModel->convenio;
+            $response['escolaridad'] = $liderModel->escolaridad;
+            $response['tipo_hoja_vida'] = $liderModel->tipo_hoja_vida;
+            $response['fecha_registro_hv'] = $liderModel->fecha_registro_hv;
+            $response['facebook'] = $liderModel->facebook;
+            $response['twitter'] = $liderModel->twitter;
+            $response['instagram'] = $liderModel->instagram;
+            $response['contactos'] = $liderModel->contactos;
+            $response['info_politica'] = $liderModel->infoPolitica;
+        }
+
+        return response()->json($response);
     }
 
     public function updatePersona(Request $request, string $id)
     {
-        if (!Str::isUuid($id)) abort(404);
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
 
         $data = $request->validate([
             'telefono' => 'nullable|string|max:20',
@@ -580,13 +782,45 @@ class MapaPoliticoController extends Controller
             'profesion' => 'nullable|string|max:255',
             'cedula' => 'nullable|string|max:20',
             'votos' => 'nullable|integer|min:0',
+            // Extended fields
+            'tipo_documento' => 'nullable|string|max:20',
+            'fecha_expedicion_doc' => 'nullable|date',
+            'genero' => 'nullable|string|max:20',
+            'fecha_nacimiento' => 'nullable|date',
+            'foto' => 'nullable|string|max:500',
+            'estado_civil' => 'nullable|string|max:30',
+            'referente_documento' => 'nullable|string|max:20',
+            'referente_nombre' => 'nullable|string|max:150',
+            'referente_apellido' => 'nullable|string|max:150',
+            'departamento_votacion' => 'nullable|string|max:100',
+            'municipio_votacion' => 'nullable|string|max:100',
+            'puesto_votacion' => 'nullable|string|max:200',
+            'direccion_puesto' => 'nullable|string|max:300',
+            'mesa_votacion' => 'nullable|string|max:20',
+            'militante' => 'nullable|boolean',
+            'autoriza_datos' => 'nullable|boolean',
+            'verificado' => 'nullable|boolean',
+            'fallecido' => 'nullable|boolean',
+            'empresario' => 'nullable|boolean',
+            'reservista' => 'nullable|boolean',
+            'funcionario' => 'nullable|boolean',
+            'exfuncionario' => 'nullable|boolean',
+            'gran_elector' => 'nullable|boolean',
+            'nivel_confianza' => 'nullable|string|max:30',
+            'convenio' => 'nullable|string|max:200',
+            'escolaridad' => 'nullable|string|max:50',
+            'tipo_hoja_vida' => 'nullable|string|max:50',
+            'fecha_registro_hv' => 'nullable|date',
+            'facebook' => 'nullable|string|max:255',
+            'twitter' => 'nullable|string|max:255',
+            'instagram' => 'nullable|string|max:255',
         ]);
 
         // #15: Wrap in transaction to prevent race conditions
-        DB::transaction(function () use ($id, $data, $request) {
+        DB::transaction(function () use ($id, $data) {
             $lider = DB::table('lideres')->where('id', $id)->first();
 
-            if (!$lider) {
+            if (! $lider) {
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
                     $personMunicipio = DB::table('candidacies as c')
@@ -605,12 +839,12 @@ class MapaPoliticoController extends Controller
                             ->where('municipio', 'ilike', $munName)
                             ->first();
                     }
-                    if (!$lider) {
+                    if (! $lider) {
                         $lider = DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->first();
                     }
 
                     // #14: Create lider only when user explicitly edits — with correct municipio
-                    if (!$lider) {
+                    if (! $lider) {
                         $provName = $geoId ? DB::table('geographic_units as g')
                             ->join('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
                             ->where('g.id', $geoId)->value('prov.canonical_name') : '';
@@ -661,7 +895,26 @@ class MapaPoliticoController extends Controller
                     'votos' => array_key_exists('votos', $data) ? (int) ($data['votos'] ?? 0) : ($lider->votos ?? 0),
                     'updated_at' => now(),
                 ];
-                if ($partidoSent) $updateData['partido'] = $partidoValue;
+                if ($partidoSent) {
+                    $updateData['partido'] = $partidoValue;
+                }
+
+                // Extended fields — only update when explicitly sent
+                $extendedFields = [
+                    'tipo_documento', 'fecha_expedicion_doc', 'genero', 'fecha_nacimiento', 'foto',
+                    'estado_civil', 'referente_documento', 'referente_nombre', 'referente_apellido',
+                    'departamento_votacion', 'municipio_votacion', 'puesto_votacion', 'direccion_puesto', 'mesa_votacion',
+                    'militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario', 'reservista',
+                    'funcionario', 'exfuncionario', 'gran_elector', 'nivel_confianza', 'convenio',
+                    'escolaridad', 'tipo_hoja_vida', 'fecha_registro_hv',
+                    'facebook', 'twitter', 'instagram',
+                ];
+                foreach ($extendedFields as $field) {
+                    if (array_key_exists($field, $data)) {
+                        $updateData[$field] = $data[$field];
+                    }
+                }
+
                 DB::table('lideres')->where('id', $lider->id)->update($updateData);
             }
 
@@ -706,17 +959,20 @@ class MapaPoliticoController extends Controller
         if ($request->wantsJson() || $request->header('Accept') === 'application/json') {
             return response()->json(['success' => true, 'message' => 'Datos actualizados.']);
         }
+
         return back()->with('success', 'Datos actualizados.');
     }
 
     public function storeNexo(Request $request, string $personId)
     {
-        if (!Str::isUuid($personId)) abort(404);
+        if (! Str::isUuid($personId)) {
+            abort(404);
+        }
 
         // #16: Verify personId exists in either persons OR lideres
         $exists = DB::table('persons')->where('id', $personId)->exists()
             || DB::table('lideres')->where('id', $personId)->exists();
-        abort_if(!$exists, 404);
+        abort_if(! $exists, 404);
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -740,12 +996,15 @@ class MapaPoliticoController extends Controller
         if ($request->wantsJson()) {
             return response()->json(['success' => true, 'message' => 'Nexo familiar agregado.']);
         }
+
         return back()->with('success', 'Nexo familiar agregado.');
     }
 
     public function updateNexo(Request $request, string $id)
     {
-        if (!Str::isUuid($id)) abort(404);
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -765,7 +1024,9 @@ class MapaPoliticoController extends Controller
 
     public function destroyNexo(Request $request, string $id)
     {
-        if (!Str::isUuid($id)) abort(404);
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
 
         DB::table('nexos_familiares')->where('id', $id)->delete();
 
@@ -774,7 +1035,9 @@ class MapaPoliticoController extends Controller
 
     public function destroyLider(Request $request, string $id)
     {
-        if (!Str::isUuid($id)) abort(404);
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
 
         // Delete nexos
         DB::table('nexos_familiares')->where('person_id', $id)->delete();

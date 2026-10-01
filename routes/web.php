@@ -1,24 +1,27 @@
 <?php
 
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Admin\CatalogCrudController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\LegislativoController;
-use App\Http\Controllers\PartidoCrudController;
-use App\Http\Controllers\TerritoryController;
-use App\Http\Controllers\MunicipioController;
-use App\Http\Controllers\PartidoController;
-use App\Http\Controllers\PersonaController;
-use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ExportController;
+use App\Http\Controllers\LegislativoController;
 use App\Http\Controllers\LiderController;
 use App\Http\Controllers\MapaPoliticoController;
+use App\Http\Controllers\MunicipioController;
 use App\Http\Controllers\OfflineController;
+use App\Http\Controllers\PartidoController;
+use App\Http\Controllers\PartidoCrudController;
+use App\Http\Controllers\PersonaController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\TerritoryController;
+use App\Http\Controllers\VotanteController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 
 // Auth routes (guest only)
@@ -55,6 +58,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
     Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona');
 
+    // Votantes
+    Route::get('/votantes', [VotanteController::class, 'index'])->name('votantes.index');
+    Route::get('/votantes/{id}', [VotanteController::class, 'show'])->name('votantes.show');
+
     // Write routes — require can.write middleware (#4 RBAC)
     Route::middleware('can.write')->group(function () {
         Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store');
@@ -63,17 +70,29 @@ Route::middleware('auth')->group(function () {
         Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
         Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
         Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
+
+        // Votantes write
+        Route::post('/votantes', [VotanteController::class, 'store']);
+        Route::put('/votantes/{id}', [VotanteController::class, 'update']);
+        Route::delete('/votantes/{id}', [VotanteController::class, 'destroy']);
+        Route::post('/votantes/{id}/contactos', [VotanteController::class, 'storeContacto']);
+        Route::put('/votantes/contactos/{id}', [VotanteController::class, 'updateContacto']);
+        Route::delete('/votantes/contactos/{id}', [VotanteController::class, 'destroyContacto']);
+        Route::post('/votantes/{id}/info-politica', [VotanteController::class, 'storeInfoPolitica']);
+        Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica']);
+        Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica']);
     });
     // Change own password
-    Route::post('/cambiar-password', function (\Illuminate\Http\Request $request) {
+    Route::post('/cambiar-password', function (Request $request) {
         $request->validate([
             'current_password' => 'required',
             'new_password' => 'required|string|min:8|confirmed',
         ]);
-        if (!\Illuminate\Support\Facades\Hash::check($request->current_password, $request->user()->password)) {
+        if (! Hash::check($request->current_password, $request->user()->password)) {
             return back()->withErrors(['current_password' => 'La contraseña actual no es correcta']);
         }
-        $request->user()->update(['password' => \Illuminate\Support\Facades\Hash::make($request->new_password)]);
+        $request->user()->update(['password' => Hash::make($request->new_password)]);
+
         return back()->with('success', 'Contraseña actualizada');
     })->name('password.update');
 
