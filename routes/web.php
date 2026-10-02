@@ -61,6 +61,7 @@ Route::middleware('auth')->group(function () {
     // Votantes
     Route::get('/votantes', [VotanteController::class, 'index'])->name('votantes.index');
     Route::get('/votantes/{id}', [VotanteController::class, 'show'])->name('votantes.show');
+    Route::get('/votantes/{id}/referidos', [VotanteController::class, 'referidos'])->name('votantes.referidos');
 
     // Write routes — require can.write middleware (#4 RBAC)
     Route::middleware('can.write')->group(function () {

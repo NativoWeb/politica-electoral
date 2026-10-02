@@ -20,7 +20,9 @@ class VotanteController extends Controller
 
     public function index(Request $request)
     {
-        $query = Lider::query();
+        $query = Lider::query()
+            ->addSelect(['lideres.*'])
+            ->addSelect(DB::raw("(SELECT count(*) FROM lideres AS r WHERE r.referente_documento IS NOT NULL AND r.referente_documento != '' AND r.referente_documento = lideres.cedula) as referidos_count"));
 
         if ($search = $request->input('search')) {
             $escaped = $this->escapeLike($search);
@@ -59,6 +61,12 @@ class VotanteController extends Controller
 
         $total = Lider::count();
         $granElectorCount = Lider::where('gran_elector', true)->count();
+        $conReferidos = Lider::whereIn('cedula', function ($q) {
+            $q->select('referente_documento')
+                ->from('lideres')
+                ->whereNotNull('referente_documento')
+                ->where('referente_documento', '!=', '');
+        })->count();
 
         $municipios = CachedQueries::allMunicipios();
 
@@ -67,6 +75,7 @@ class VotanteController extends Controller
             'counters' => [
                 'total' => $total,
                 'gran_elector' => $granElectorCount,
+                'con_referidos' => $conReferidos,
             ],
             'municipios' => $municipios,
             'filters' => $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante']),
@@ -101,11 +110,47 @@ class VotanteController extends Controller
                 'telefono' => $n->telefono ?? null,
             ])->toArray();
 
+        $referidos = [];
+        $referidosCount = 0;
+        if ($lider->cedula) {
+            $referidos = Lider::where('referente_documento', $lider->cedula)
+                ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
+                ->orderBy('nombre')
+                ->get()
+                ->toArray();
+            $referidosCount = count($referidos);
+        }
+
         return response()->json([
             'success' => true,
             'data' => array_merge($lider->toArray(), [
                 'nexos' => $nexos,
+                'referidos' => $referidos,
+                'referidos_count' => $referidosCount,
             ]),
+        ]);
+    }
+
+    public function referidos(string $id)
+    {
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+
+        $lider = Lider::find($id);
+        if (! $lider || ! $lider->cedula) {
+            return response()->json(['success' => true, 'data' => [], 'total' => 0]);
+        }
+
+        $referidos = Lider::where('referente_documento', $lider->cedula)
+            ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
+            ->orderBy('nombre')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $referidos,
+            'total' => $referidos->count(),
         ]);
     }
 

@@ -59,6 +59,7 @@ export default function VotanteTable({ votantes, selectedId, onSelect }) {
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider hidden lg:table-cell">Partido</th>
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider hidden sm:table-cell">Tel</th>
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider">Confianza</th>
+                            <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider hidden sm:table-cell">Referidos</th>
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider w-[60px]">Tags</th>
                         </tr>
                     </thead>
@@ -106,6 +107,18 @@ export default function VotanteTable({ votantes, selectedId, onSelect }) {
                                         <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge.cls}`}>
                                             {badge.label}
                                         </span>
+                                    </td>
+                                    <td className="px-3 py-2.5 hidden sm:table-cell">
+                                        {(v.referidos_count || 0) > 0 ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[12px] font-bold">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                </svg>
+                                                {v.referidos_count}
+                                            </span>
+                                        ) : (
+                                            <span className="text-[13px] text-gray-300">-</span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div className="flex items-center gap-1">

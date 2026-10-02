@@ -758,6 +758,19 @@ class MapaPoliticoController extends Controller
             $response['instagram'] = $liderModel->instagram;
             $response['contactos'] = $liderModel->contactos;
             $response['info_politica'] = $liderModel->infoPolitica;
+
+            if ($liderModel->cedula) {
+                $referidos = Lider::where('referente_documento', $liderModel->cedula)
+                    ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
+                    ->orderBy('nombre')
+                    ->get()
+                    ->toArray();
+                $response['referidos'] = $referidos;
+                $response['referidos_count'] = count($referidos);
+            } else {
+                $response['referidos'] = [];
+                $response['referidos_count'] = 0;
+            }
         }
 
         return response()->json($response);
