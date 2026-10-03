@@ -29,6 +29,12 @@ class AdminController extends Controller
 
     public function users()
     {
+        $municipios = DB::table('geographic_units')
+            ->where('type', 'municipality')
+            ->orderBy('canonical_name')
+            ->get(['id', 'canonical_name as name'])
+            ->toArray();
+
         return Inertia::render('Admin/Users', [
             'users' => User::with('role')->orderBy('name')->get()->map(fn ($u) => [
                 'id' => $u->id,
@@ -37,6 +43,7 @@ class AdminController extends Controller
                 'role' => $u->role?->name,
                 'roleCode' => $u->role?->code,
                 'isActive' => $u->is_active,
+                'territoryScope' => $u->territory_scope,
                 'createdAt' => $u->created_at?->format('Y-m-d'),
             ]),
             'roles' => Role::where('is_active', true)
@@ -48,6 +55,7 @@ class AdminController extends Controller
                     'name' => $r->code === 'R09_CAMPO' ? 'Operador' : $r->name,
                     'code' => $r->code,
                 ]),
+            'municipios' => $municipios,
         ]);
     }
 
@@ -58,6 +66,8 @@ class AdminController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'role_id' => 'nullable|exists:roles,id',
+            'territory_scope' => 'nullable|array',
+            'territory_scope.*' => 'uuid',
         ]);
 
         User::create([
@@ -65,6 +75,7 @@ class AdminController extends Controller
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role_id' => $data['role_id'],
+            'territory_scope' => ! empty($data['territory_scope']) ? $data['territory_scope'] : null,
             'is_active' => true,
         ]);
 
@@ -79,11 +90,14 @@ class AdminController extends Controller
             'email' => 'required|email|unique:users,email,' . $user->id,
             'role_id' => 'nullable|exists:roles,id',
             'password' => 'nullable|string|min:8',
+            'territory_scope' => 'nullable|array',
+            'territory_scope.*' => 'uuid',
         ]);
 
         $user->name = $data['name'];
         $user->email = $data['email'];
         $user->role_id = $data['role_id'] ?: null;
+        $user->territory_scope = ! empty($data['territory_scope']) ? $data['territory_scope'] : null;
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
         }

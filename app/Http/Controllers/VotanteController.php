@@ -24,6 +24,13 @@ class VotanteController extends Controller
             ->addSelect(['lideres.*'])
             ->addSelect(DB::raw("(SELECT count(*) FROM lideres AS r WHERE r.referente_documento IS NOT NULL AND r.referente_documento != '' AND r.referente_documento = lideres.cedula) as referidos_count"));
 
+        // Territory scope restriction
+        $user = $request->user();
+        $allowedMunicipios = $user?->allowedMunicipioNames();
+        if ($allowedMunicipios) {
+            $query->whereIn('municipio', $allowedMunicipios);
+        }
+
         if ($search = $request->input('search')) {
             $escaped = $this->escapeLike($search);
             $query->where(function ($q) use ($escaped) {
@@ -33,7 +40,9 @@ class VotanteController extends Controller
         }
 
         if ($municipio = $request->input('municipio')) {
-            $query->where('municipio', $municipio);
+            if (! $allowedMunicipios || in_array($municipio, $allowedMunicipios)) {
+                $query->where('municipio', $municipio);
+            }
         }
 
         if ($partido = $request->input('partido')) {
@@ -59,9 +68,14 @@ class VotanteController extends Controller
 
         $paginated = $query->orderBy('nombre')->paginate(20)->withQueryString();
 
-        $total = Lider::count();
-        $granElectorCount = Lider::where('gran_elector', true)->count();
-        $conReferidos = Lider::whereIn('cedula', function ($q) {
+        // Counters also respect territory scope
+        $counterBase = Lider::query();
+        if ($allowedMunicipios) {
+            $counterBase->whereIn('municipio', $allowedMunicipios);
+        }
+        $total = (clone $counterBase)->count();
+        $granElectorCount = (clone $counterBase)->where('gran_elector', true)->count();
+        $conReferidos = (clone $counterBase)->whereIn('cedula', function ($q) {
             $q->select('referente_documento')
                 ->from('lideres')
                 ->whereNotNull('referente_documento')
@@ -69,6 +83,10 @@ class VotanteController extends Controller
         })->count();
 
         $municipios = CachedQueries::allMunicipios();
+        $allowedGeoIds = $user?->allowedGeoIds();
+        if ($allowedGeoIds) {
+            $municipios = array_values(array_filter($municipios, fn ($m) => in_array($m['id'], $allowedGeoIds)));
+        }
 
         return Inertia::render('Votantes', [
             'votantes' => $paginated,

@@ -90,6 +90,16 @@ class MapaPoliticoController extends Controller
         $areaMetropolitana = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
         $municipios = CachedQueries::allMunicipios();
 
+        // Territory scope: restrict municipios for users with territory_scope
+        $user = $request->user();
+        $allowedGeoIds = $user?->allowedGeoIds();
+        if ($allowedGeoIds) {
+            $municipios = array_values(array_filter($municipios, fn ($m) => in_array($m['id'], $allowedGeoIds)));
+            if ($munId && ! in_array($munId, $allowedGeoIds)) {
+                $munId = null;
+            }
+        }
+
         $provincias = collect($municipios)->pluck('provincia')->unique()->filter()->sort()->values()->toArray();
         array_unshift($provincias, 'Área Metropolitana');
         $provincias = array_unique($provincias);
@@ -102,6 +112,11 @@ class MapaPoliticoController extends Controller
             } else {
                 $provinciaIds = collect($municipios)->filter(fn ($m) => ($m['provincia'] ?? '') === $provincia)->pluck('id')->toArray();
             }
+        }
+
+        // If user has territory restriction and no geo filter set, force filter by allowed IDs
+        if ($allowedGeoIds && ! $munId && ! $provinciaIds) {
+            $provinciaIds = $allowedGeoIds;
         }
 
         $municipioInfo = null;

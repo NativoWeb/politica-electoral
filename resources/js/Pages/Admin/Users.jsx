@@ -1,6 +1,6 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 function RoleChip({ code, name }) {
     const isSuperadmin = code === 'R01_SUPERADMIN';
@@ -12,15 +12,91 @@ function RoleChip({ code, name }) {
     );
 }
 
-export default function Users({ users, roles }) {
+function TerritoryBadges({ scope, municipios }) {
+    if (!scope || scope.length === 0) return <span className="text-[10px] text-emerald-600 font-bold">TODOS</span>;
+    const names = scope.map(id => municipios.find(m => m.id === id)?.name || '?').sort();
+    return (
+        <div className="flex flex-wrap gap-1 mt-1">
+            {names.map(n => (
+                <span key={n} className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-bold">{n}</span>
+            ))}
+        </div>
+    );
+}
+
+function MunicipioSelector({ selected, municipios, onChange }) {
+    const [search, setSearch] = useState('');
+
+    const filtered = useMemo(() => {
+        if (!search) return municipios;
+        const q = search.toLowerCase();
+        return municipios.filter(m => m.name.toLowerCase().includes(q));
+    }, [municipios, search]);
+
+    function toggle(id) {
+        if (selected.includes(id)) {
+            onChange(selected.filter(s => s !== id));
+        } else {
+            onChange([...selected, id]);
+        }
+    }
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-1">
+                <label className="block text-[12px] font-bold text-[var(--color-ink-faint)]">
+                    Municipios permitidos
+                </label>
+                {selected.length > 0 && (
+                    <button type="button" onClick={() => onChange([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">
+                        Quitar todos
+                    </button>
+                )}
+            </div>
+            <p className="text-[11px] text-[var(--color-ink-faint)] mb-2">
+                {selected.length === 0
+                    ? 'Sin restriccion — ve todos los municipios'
+                    : `${selected.length} municipio${selected.length > 1 ? 's' : ''} seleccionado${selected.length > 1 ? 's' : ''}`}
+            </p>
+            <input
+                type="text"
+                className="w-full px-3 py-2 border border-[var(--color-line)] rounded-lg text-[13px] focus:outline-none focus:border-[var(--color-primary)] mb-2"
+                placeholder="Buscar municipio..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+            />
+            <div className="max-h-[200px] overflow-y-auto border border-[var(--color-line)] rounded-lg">
+                {filtered.map(m => (
+                    <label key={m.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-[var(--color-line)] last:border-0">
+                        <input
+                            type="checkbox"
+                            checked={selected.includes(m.id)}
+                            onChange={() => toggle(m.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                        />
+                        <span className="text-[13px] text-[var(--color-ink)]">{m.name}</span>
+                    </label>
+                ))}
+                {filtered.length === 0 && (
+                    <p className="px-3 py-4 text-[12px] text-[var(--color-ink-faint)] text-center italic">No se encontraron municipios</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function Users({ users, roles, municipios }) {
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
 
     const { data, setData, post, processing, errors, reset } = useForm({
-        name: '', email: '', password: '', role_id: '',
+        name: '', email: '', password: '', role_id: '', territory_scope: [],
     });
 
-    const editForm = useForm({ name: '', email: '', role_id: '', password: '' });
+    const editForm = useForm({ name: '', email: '', role_id: '', password: '', territory_scope: [] });
+
+    const selectedRoleCode = roles.find(r => r.id === data.role_id)?.code;
+    const editRoleCode = roles.find(r => r.id === editForm.data.role_id)?.code;
 
     function handleSubmit(e) {
         e.preventDefault();
@@ -35,6 +111,7 @@ export default function Users({ users, roles }) {
             name: user.name, email: user.email,
             role_id: roles.find(r => r.name === user.role || (r.code === 'R09_CAMPO' && user.role === 'Usuario de campo'))?.id || '',
             password: '',
+            territory_scope: user.territoryScope || [],
         });
     }
 
@@ -100,6 +177,13 @@ export default function Users({ users, roles }) {
                                 {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                             </select>
                         </div>
+                        {selectedRoleCode === 'R09_CAMPO' && (
+                            <MunicipioSelector
+                                selected={data.territory_scope}
+                                municipios={municipios}
+                                onChange={val => setData('territory_scope', val)}
+                            />
+                        )}
                         <div className="flex gap-3">
                             <button type="submit" disabled={processing} className="flex-1 px-4 py-3 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-xl disabled:opacity-50">
                                 {processing ? 'Creando...' : 'Crear Usuario'}
@@ -133,6 +217,13 @@ export default function Users({ users, roles }) {
                                         {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                     </select>
                                 </div>
+                                {editRoleCode === 'R09_CAMPO' && (
+                                    <MunicipioSelector
+                                        selected={editForm.data.territory_scope}
+                                        municipios={municipios}
+                                        onChange={val => editForm.setData('territory_scope', val)}
+                                    />
+                                )}
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Nueva contraseña (dejar vacio para no cambiar)</label>
                                     <input type="password" className={inputCls} value={editForm.data.password} onChange={e => editForm.setData('password', e.target.value)} placeholder="Dejar vacio para mantener" />
@@ -157,6 +248,9 @@ export default function Users({ users, roles }) {
                                             {user.isActive ? 'ACTIVO' : 'INACTIVO'}
                                         </span>
                                     </div>
+                                    {user.roleCode === 'R09_CAMPO' && (
+                                        <TerritoryBadges scope={user.territoryScope} municipios={municipios} />
+                                    )}
                                 </div>
                                 <div className="flex gap-1.5 flex-shrink-0">
                                     <button onClick={() => startEdit(user)} className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center active:bg-blue-100" title="Editar">

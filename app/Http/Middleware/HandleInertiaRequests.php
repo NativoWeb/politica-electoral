@@ -35,14 +35,24 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        $roleCode = $user?->role?->code;
+
         return [
             ...parent::share($request),
             'auth' => [
-                'user' => $request->user() ? [
-                    'id' => $request->user()->id,
-                    'name' => $request->user()->name,
-                    'email' => $request->user()->email,
-                    'role' => $request->user()->role?->name,
+                'user' => $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role?->name,
+                    'roleCode' => $roleCode,
+                    'isSuperadmin' => $roleCode === 'R01_SUPERADMIN',
+                    'territoryScope' => $user->territory_scope,
+                    'canWrite' => in_array($roleCode, [
+                        'R01_SUPERADMIN', 'R02_ADMIN_FUNCIONAL', 'R03_ADMIN_DATOS',
+                        'R07_GESTOR_INFO', 'R08_COORDINADOR', 'R09_CAMPO',
+                    ]),
                 ] : null,
             ],
         ];

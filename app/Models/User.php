@@ -39,6 +39,32 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    public function hasTerritoryScopeRestriction(): bool
+    {
+        return ! empty($this->territory_scope) && $this->role?->code !== 'R01_SUPERADMIN';
+    }
+
+    public function allowedMunicipioNames(): ?array
+    {
+        if (! $this->hasTerritoryScopeRestriction()) {
+            return null;
+        }
+
+        return \Illuminate\Support\Facades\DB::table('geographic_units')
+            ->whereIn('id', $this->territory_scope)
+            ->pluck('canonical_name')
+            ->toArray();
+    }
+
+    public function allowedGeoIds(): ?array
+    {
+        if (! $this->hasTerritoryScopeRestriction()) {
+            return null;
+        }
+
+        return $this->territory_scope;
+    }
+
     public function favorites(): HasMany
     {
         return $this->hasMany(Favorite::class);
