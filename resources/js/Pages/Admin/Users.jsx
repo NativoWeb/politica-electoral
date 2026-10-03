@@ -1,6 +1,6 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 
 function RoleChip({ code, name }) {
     const isSuperadmin = code === 'R01_SUPERADMIN';
@@ -192,9 +192,22 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
     );
 }
 
-export default function Users({ users, roles, municipios, provincias, availablePermissions }) {
+export default function Users({ users, roles, municipios, provincias, availablePermissions, filters }) {
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
+    const [search, setSearch] = useState(filters?.search || '');
+    const searchTimeout = useRef(null);
+
+    function handleSearch(val) {
+        setSearch(val);
+        if (searchTimeout.current) clearTimeout(searchTimeout.current);
+        searchTimeout.current = setTimeout(() => {
+            router.get('/admin/usuarios', val ? { search: val } : {}, { preserveState: true, replace: true });
+        }, 400);
+    }
+
+    const userList = users?.data || users;
+    const pagination = users?.links ? users : null;
 
     const { data, setData, post, processing, errors, reset } = useForm({
         name: '', email: '', role_id: '', permissions: [], territory_scope: [],
@@ -248,7 +261,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between">
                 <div>
                     <h1 className="text-[18px] lg:text-[22px] font-extrabold">USUARIOS</h1>
-                    <p className="text-[11px] text-white/40 mt-0.5">{users.length} cuenta{users.length !== 1 ? 's' : ''}</p>
+                    <p className="text-[11px] text-white/40 mt-0.5">{pagination ? `${pagination.total} cuenta${pagination.total !== 1 ? 's' : ''}` : ''}</p>
                 </div>
                 <button
                     onClick={() => { setShowForm(!showForm); setEditId(null); }}
@@ -259,6 +272,18 @@ export default function Users({ users, roles, municipios, provincias, availableP
             </div>
 
             <div className="p-4 space-y-3">
+                {/* Search */}
+                <div className="relative">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="m21 21-4.35-4.35" /></svg>
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={e => handleSearch(e.target.value)}
+                        placeholder="Buscar por nombre o correo..."
+                        className="w-full pl-10 pr-4 py-3 border border-[var(--color-line)] rounded-xl text-[14px] focus:outline-none focus:border-[var(--color-primary)]"
+                    />
+                </div>
+
                 {/* Create form */}
                 {showForm && (
                     <form onSubmit={handleSubmit} className="bg-white border-2 border-[var(--color-primary)] rounded-xl p-5 space-y-4">
@@ -309,7 +334,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                 )}
 
                 {/* Users list */}
-                {users.map(user => (
+                {userList.map(user => (
                     <div key={user.id} className={`bg-white border border-[var(--color-line)] rounded-xl overflow-hidden ${!user.isActive ? 'opacity-50' : ''}`}>
                         {editId === user.id ? (
                             <form onSubmit={submitEdit} className="p-4 space-y-3">
@@ -400,6 +425,35 @@ export default function Users({ users, roles, municipios, provincias, availableP
                         )}
                     </div>
                 ))}
+
+                {/* Pagination */}
+                {pagination && pagination.last_page > 1 && (
+                    <div className="flex items-center justify-between pt-2">
+                        <p className="text-[12px] text-[var(--color-ink-faint)]">
+                            {pagination.from}–{pagination.to} de {pagination.total}
+                        </p>
+                        <div className="flex gap-1">
+                            {pagination.links.map((link, i) => {
+                                if (!link.url) return (
+                                    <span key={i} className="px-3 py-1.5 text-[12px] text-gray-300 font-bold" dangerouslySetInnerHTML={{ __html: link.label }} />
+                                );
+                                return (
+                                    <Link
+                                        key={i}
+                                        href={link.url}
+                                        preserveState
+                                        className={`px-3 py-1.5 text-[12px] font-bold rounded-lg transition-colors ${
+                                            link.active
+                                                ? 'bg-[var(--color-primary)] text-white'
+                                                : 'bg-white border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:bg-gray-50'
+                                        }`}
+                                        dangerouslySetInnerHTML={{ __html: link.label }}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* Admin links */}
                 <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mt-6 mb-2 px-1">Administracion</h3>

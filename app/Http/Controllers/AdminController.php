@@ -58,8 +58,19 @@ class AdminController extends Controller
             ->get(['id', 'canonical_name as name'])
             ->toArray();
 
+        $search = request('search', '');
+        $query = User::with('role')->orderBy('name');
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'ilike', "%{$search}%")
+                  ->orWhere('email', 'ilike', "%{$search}%");
+            });
+        }
+
+        $paginated = $query->paginate(10)->withQueryString();
+
         return Inertia::render('Admin/Users', [
-            'users' => User::with('role')->orderBy('name')->get()->map(fn ($u) => [
+            'users' => $paginated->through(fn ($u) => [
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
@@ -70,6 +81,7 @@ class AdminController extends Controller
                 'territoryScope' => $u->territory_scope,
                 'createdAt' => $u->created_at?->format('Y-m-d'),
             ]),
+            'filters' => ['search' => $search],
             'roles' => Role::where('is_active', true)
                 ->whereIn('code', ['R01_SUPERADMIN', 'R09_CAMPO'])
                 ->orderBy('level', 'desc')
