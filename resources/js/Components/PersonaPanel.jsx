@@ -704,14 +704,14 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
                                 )}
 
                                 {/* Referidos */}
-                                {data.referidos?.length > 0 && (
-                                    <div className="pt-4 border-t border-[var(--color-line)]">
-                                        <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-3 flex items-center gap-2">
-                                            <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
-                                            Referidos ({data.referidos?.length || data.referidos_count || 0})
-                                        </p>
+                                <div className="pt-4 border-t border-[var(--color-line)]">
+                                    <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-3 flex items-center gap-2">
+                                        <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                                        Referidos ({data.referidos?.length || data.referidos_count || 0})
+                                    </p>
+                                    {(data.referidos?.length > 0) ? (
                                         <div className="space-y-2">
-                                            {(data.referidos || []).map(r => (
+                                            {data.referidos.map(r => (
                                                 <div key={r.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50/60 border border-amber-100">
                                                     <div className="min-w-0">
                                                         <span className="text-[13px] font-semibold text-[var(--color-ink)] block truncate">{r.nombre}</span>
@@ -727,8 +727,10 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
                                                 </div>
                                             ))}
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <p className="text-[13px] text-[var(--color-ink-faint)] italic">Sin referidos</p>
+                                    )}
+                                </div>
 
                                 {/* Info Politica CRUD */}
                                 <div className="pt-4 border-t border-[var(--color-line)]">
