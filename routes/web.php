@@ -118,8 +118,8 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
     Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona');
     Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio');
 
-    // Admin panel
-    Route::prefix('admin')->name('admin.')->group(function () {
+    // Admin panel — requires view.admin permission
+    Route::prefix('admin')->name('admin.')->middleware('permission:view.admin')->group(function () {
         Route::get('/', [AdminController::class, 'index'])->name('index');
         Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
         Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');

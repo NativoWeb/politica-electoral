@@ -40,6 +40,18 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    public function resolvedPermissions(): array
+    {
+        $perms = config('permissions.' . $this->role?->code, []);
+        return in_array('*', $perms) ? ['*'] : $perms;
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        $perms = $this->resolvedPermissions();
+        return in_array('*', $perms) || in_array($permission, $perms);
+    }
+
     public function hasTerritoryScopeRestriction(): bool
     {
         return ! empty($this->territory_scope) && $this->role?->code !== 'R01_SUPERADMIN';

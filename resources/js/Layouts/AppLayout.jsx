@@ -217,10 +217,10 @@ function ExportButtons({ url }) {
 }
 
 const SIDEBAR_ITEMS = [
-    { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador' },
-    { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico' },
-    { name: 'VOTANTES', href: '/votantes', label: 'Votantes' },
-    { name: 'ADMIN', href: '/admin/territorio', label: 'Admin' },
+    { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador' },
+    { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', permission: 'view.mapa' },
+    { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
+    { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
 ];
 
 const ICONS_EXTRA = {
@@ -374,8 +374,9 @@ function MobileExportSheet({ open, onClose, url }) {
 export default function AppLayout({ children, title, breadcrumb }) {
     const { url, props } = usePage();
     const auth = props.auth?.user;
-    const isSuperadmin = auth?.role === 'Superadministrador';
-    const visibleItems = SIDEBAR_ITEMS;
+    const perms = auth?.permissions || [];
+    const hasPerm = (p) => perms.includes('*') || perms.includes(p);
+    const visibleItems = SIDEBAR_ITEMS.filter(item => hasPerm(item.permission));
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);

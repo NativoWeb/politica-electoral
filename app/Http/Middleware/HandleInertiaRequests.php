@@ -38,6 +38,8 @@ class HandleInertiaRequests extends Middleware
         $user = $request->user();
         $roleCode = $user?->role?->code;
 
+        $permissions = $user ? $user->resolvedPermissions() : [];
+
         return [
             ...parent::share($request),
             'auth' => [
@@ -49,10 +51,8 @@ class HandleInertiaRequests extends Middleware
                     'roleCode' => $roleCode,
                     'isSuperadmin' => $roleCode === 'R01_SUPERADMIN',
                     'territoryScope' => $user->territory_scope,
-                    'canWrite' => in_array($roleCode, [
-                        'R01_SUPERADMIN', 'R02_ADMIN_FUNCIONAL', 'R03_ADMIN_DATOS',
-                        'R07_GESTOR_INFO', 'R08_COORDINADOR', 'R09_CAMPO',
-                    ]),
+                    'permissions' => $permissions,
+                    'canWrite' => in_array('*', $permissions) || in_array('write.data', $permissions),
                 ] : null,
             ],
         ];
