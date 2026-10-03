@@ -58,6 +58,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
     Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona');
 
+    // Búsqueda de líderes para referidos
+    Route::get('/mapa-politico/search-lideres', [MapaPoliticoController::class, 'searchLideres'])->name('mapa-politico.search-lideres');
+
     // Votantes
     Route::get('/votantes', [VotanteController::class, 'index'])->name('votantes.index');
     Route::get('/votantes/{id}', [VotanteController::class, 'show'])->name('votantes.show');
@@ -71,6 +74,8 @@ Route::middleware('auth')->group(function () {
         Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
         Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
         Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
+        Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add');
+        Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove');
 
         // Votantes write
         Route::post('/votantes', [VotanteController::class, 'store']);

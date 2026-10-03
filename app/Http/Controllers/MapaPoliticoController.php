@@ -1072,4 +1072,77 @@ class MapaPoliticoController extends Controller
 
         return response()->json(['success' => true, 'message' => 'Persona eliminada.']);
     }
+
+    public function searchLideres(Request $request)
+    {
+        $q = trim($request->input('q', ''));
+        if (mb_strlen($q) < 2) {
+            return response()->json(['data' => []]);
+        }
+
+        $excludeId = $request->input('exclude_id');
+
+        $query = DB::table('lideres')
+            ->where(function ($qb) use ($q) {
+                $qb->where('nombre', 'ilike', "%{$q}%")
+                    ->orWhere('cedula', 'like', "%{$q}%");
+            })
+            ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
+            ->orderBy('nombre')
+            ->limit(10);
+
+        if ($excludeId && Str::isUuid($excludeId)) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        return response()->json(['data' => $query->get()]);
+    }
+
+    public function addReferido(Request $request, string $id)
+    {
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            'lider_id' => 'required|uuid',
+        ]);
+
+        $referente = DB::table('lideres')->where('id', $id)->first();
+        if (! $referente || ! $referente->cedula) {
+            return response()->json(['success' => false, 'message' => 'El referente debe tener cédula registrada.'], 422);
+        }
+
+        $referido = DB::table('lideres')->where('id', $data['lider_id'])->first();
+        if (! $referido) {
+            return response()->json(['success' => false, 'message' => 'Persona no encontrada.'], 404);
+        }
+
+        $nameParts = explode(' ', $referente->nombre, 2);
+
+        DB::table('lideres')->where('id', $data['lider_id'])->update([
+            'referente_documento' => $referente->cedula,
+            'referente_nombre' => $nameParts[0] ?? '',
+            'referente_apellido' => $nameParts[1] ?? '',
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Referido agregado.']);
+    }
+
+    public function removeReferido(Request $request, string $id, string $referidoId)
+    {
+        if (! Str::isUuid($id) || ! Str::isUuid($referidoId)) {
+            abort(404);
+        }
+
+        DB::table('lideres')->where('id', $referidoId)->update([
+            'referente_documento' => null,
+            'referente_nombre' => null,
+            'referente_apellido' => null,
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Referido eliminado.']);
+    }
 }
