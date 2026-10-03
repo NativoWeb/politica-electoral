@@ -598,7 +598,11 @@ class MapaPoliticoController extends Controller
             'facebook', 'twitter', 'instagram',
         ];
         foreach ($extendedFields as $field) {
-            $insertData[$field] = $data[$field] ?? null;
+            if ($field === 'nivel_confianza') {
+                $insertData[$field] = $data[$field] ?? 'sin_llamar';
+            } else {
+                $insertData[$field] = $data[$field] ?? null;
+            }
         }
         $booleanFields = ['militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario', 'reservista', 'funcionario', 'exfuncionario', 'gran_elector'];
         foreach ($booleanFields as $field) {
