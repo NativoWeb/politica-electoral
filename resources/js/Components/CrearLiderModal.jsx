@@ -60,7 +60,7 @@ function CollapsibleSection({ title, open: defaultOpen = false, children }) {
     );
 }
 
-const AREA_MET = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Giron', 'Rionegro', 'Lebrija'];
+const AREA_MET = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Giron', 'Rionegro', 'Lebrija'];
 const fieldCls = "w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]";
 const labelCls = "block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1";
 
@@ -187,7 +187,7 @@ export default function CrearLiderModal({ open, onClose, municipios, provincias 
                             <SearchableDropdown
                                 label="Municipio *"
                                 options={(() => {
-                                    const filtered = !form.provincia ? municipios : form.provincia === 'Area Metropolitana' ? municipios.filter(m => AREA_MET.includes(m.name)) : municipios.filter(m => m.provincia === form.provincia);
+                                    const filtered = !form.provincia ? municipios : form.provincia === 'Área Metropolitana' ? municipios.filter(m => AREA_MET.includes(m.name)) : municipios.filter(m => m.provincia === form.provincia);
                                     return filtered.map(m => `${m.name} (${m.provincia})`);
                                 })()}
                                 selected={form.municipio_id ? (() => { const m = municipios.find(m => m.id === form.municipio_id); return m ? `${m.name} (${m.provincia})` : undefined; })() : undefined}
