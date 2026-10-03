@@ -31,20 +31,26 @@ class AdminController extends Controller
 
     public function users()
     {
+        $displayNames = ['Soto' => 'Área Metropolitana'];
+
         $provincias = DB::table('geographic_units as p')
             ->where('p.type', 'province')
             ->orderBy('p.canonical_name')
             ->get(['p.id', 'p.canonical_name as name'])
-            ->map(function ($prov) {
+            ->map(function ($prov) use ($displayNames) {
+                $prov->name = $displayNames[$prov->name] ?? $prov->name;
                 $prov->municipios = DB::table('geographic_units')
                     ->where('type', 'municipality')
                     ->where('parent_id', $prov->id)
                     ->orderBy('canonical_name')
                     ->get(['id', 'canonical_name as name'])
-                    ->toArray();
+                    ->values()
+                    ->all();
                 return $prov;
             })
-            ->toArray();
+            ->filter(fn ($prov) => count($prov->municipios) > 0)
+            ->values()
+            ->all();
 
         $municipios = DB::table('geographic_units')
             ->where('type', 'municipality')
