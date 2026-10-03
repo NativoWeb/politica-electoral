@@ -31,6 +31,21 @@ class AdminController extends Controller
 
     public function users()
     {
+        $provincias = DB::table('geographic_units as p')
+            ->where('p.type', 'province')
+            ->orderBy('p.canonical_name')
+            ->get(['p.id', 'p.canonical_name as name'])
+            ->map(function ($prov) {
+                $prov->municipios = DB::table('geographic_units')
+                    ->where('type', 'municipality')
+                    ->where('parent_id', $prov->id)
+                    ->orderBy('canonical_name')
+                    ->get(['id', 'canonical_name as name'])
+                    ->toArray();
+                return $prov;
+            })
+            ->toArray();
+
         $municipios = DB::table('geographic_units')
             ->where('type', 'municipality')
             ->orderBy('canonical_name')
@@ -58,6 +73,7 @@ class AdminController extends Controller
                     'code' => $r->code,
                 ]),
             'municipios' => $municipios,
+            'provincias' => $provincias,
         ]);
     }
 

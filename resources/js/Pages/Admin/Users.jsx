@@ -24,20 +24,36 @@ function TerritoryBadges({ scope, municipios }) {
     );
 }
 
-function MunicipioSelector({ selected, municipios, onChange }) {
+function MunicipioSelector({ selected, provincias, onChange }) {
     const [search, setSearch] = useState('');
+    const [openProvs, setOpenProvs] = useState({});
 
-    const filtered = useMemo(() => {
-        if (!search) return municipios;
+    const toggleProv = (provId) => setOpenProvs(prev => ({ ...prev, [provId]: !prev[provId] }));
+
+    const filteredProvincias = useMemo(() => {
+        if (!search) return provincias;
         const q = search.toLowerCase();
-        return municipios.filter(m => m.name.toLowerCase().includes(q));
-    }, [municipios, search]);
+        return provincias.map(p => ({
+            ...p,
+            municipios: p.municipios.filter(m => m.name.toLowerCase().includes(q)),
+        })).filter(p => p.municipios.length > 0);
+    }, [provincias, search]);
 
-    function toggle(id) {
+    function toggleMun(id) {
         if (selected.includes(id)) {
             onChange(selected.filter(s => s !== id));
         } else {
             onChange([...selected, id]);
+        }
+    }
+
+    function toggleAllProv(prov) {
+        const munIds = prov.municipios.map(m => m.id);
+        const allSelected = munIds.every(id => selected.includes(id));
+        if (allSelected) {
+            onChange(selected.filter(s => !munIds.includes(s)));
+        } else {
+            onChange([...new Set([...selected, ...munIds])]);
         }
     }
 
@@ -55,7 +71,7 @@ function MunicipioSelector({ selected, municipios, onChange }) {
             </div>
             <p className="text-[11px] text-[var(--color-ink-faint)] mb-2">
                 {selected.length === 0
-                    ? 'Sin restriccion — ve todos los municipios'
+                    ? 'Sin restricción — ve todos los municipios'
                     : `${selected.length} municipio${selected.length > 1 ? 's' : ''} seleccionado${selected.length > 1 ? 's' : ''}`}
             </p>
             <input
@@ -65,19 +81,55 @@ function MunicipioSelector({ selected, municipios, onChange }) {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
             />
-            <div className="max-h-[200px] overflow-y-auto border border-[var(--color-line)] rounded-lg">
-                {filtered.map(m => (
-                    <label key={m.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-[var(--color-line)] last:border-0">
-                        <input
-                            type="checkbox"
-                            checked={selected.includes(m.id)}
-                            onChange={() => toggle(m.id)}
-                            className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                        />
-                        <span className="text-[13px] text-[var(--color-ink)]">{m.name}</span>
-                    </label>
-                ))}
-                {filtered.length === 0 && (
+            <div className="max-h-[280px] overflow-y-auto border border-[var(--color-line)] rounded-lg">
+                {filteredProvincias.map(prov => {
+                    const munIds = prov.municipios.map(m => m.id);
+                    const selectedCount = munIds.filter(id => selected.includes(id)).length;
+                    const allSelected = munIds.length > 0 && selectedCount === munIds.length;
+                    const someSelected = selectedCount > 0 && !allSelected;
+                    const isOpen = openProvs[prov.id] || !!search;
+
+                    return (
+                        <div key={prov.id} className="border-b border-[var(--color-line)] last:border-0">
+                            <div
+                                className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 cursor-pointer hover:bg-gray-100 select-none"
+                                onClick={() => toggleProv(prov.id)}
+                            >
+                                <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                                <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    ref={el => { if (el) el.indeterminate = someSelected; }}
+                                    onChange={(e) => { e.stopPropagation(); toggleAllProv(prov); }}
+                                    onClick={e => e.stopPropagation()}
+                                    className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                />
+                                <span className="text-[13px] font-bold text-[var(--color-ink)]">{prov.name}</span>
+                                {selectedCount > 0 && (
+                                    <span className="ml-auto text-[10px] font-bold text-[var(--color-primary)] bg-blue-50 px-1.5 py-0.5 rounded">
+                                        {selectedCount}/{munIds.length}
+                                    </span>
+                                )}
+                            </div>
+                            {isOpen && (
+                                <div className="pl-6">
+                                    {prov.municipios.map(m => (
+                                        <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={selected.includes(m.id)}
+                                                onChange={() => toggleMun(m.id)}
+                                                className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                            />
+                                            <span className="text-[13px] text-[var(--color-ink)]">{m.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+                {filteredProvincias.length === 0 && (
                     <p className="px-3 py-4 text-[12px] text-[var(--color-ink-faint)] text-center italic">No se encontraron municipios</p>
                 )}
             </div>
@@ -85,7 +137,7 @@ function MunicipioSelector({ selected, municipios, onChange }) {
     );
 }
 
-export default function Users({ users, roles, municipios }) {
+export default function Users({ users, roles, municipios, provincias }) {
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
 
@@ -180,7 +232,7 @@ export default function Users({ users, roles, municipios }) {
                         {selectedRoleCode === 'R09_CAMPO' && (
                             <MunicipioSelector
                                 selected={data.territory_scope}
-                                municipios={municipios}
+                                provincias={provincias}
                                 onChange={val => setData('territory_scope', val)}
                             />
                         )}
@@ -220,7 +272,7 @@ export default function Users({ users, roles, municipios }) {
                                 {editRoleCode === 'R09_CAMPO' && (
                                     <MunicipioSelector
                                         selected={editForm.data.territory_scope}
-                                        municipios={municipios}
+                                        provincias={provincias}
                                         onChange={val => editForm.setData('territory_scope', val)}
                                     />
                                 )}
