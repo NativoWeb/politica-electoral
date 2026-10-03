@@ -137,15 +137,70 @@ function MunicipioSelector({ selected, provincias, onChange }) {
     );
 }
 
-export default function Users({ users, roles, municipios, provincias }) {
+function PermissionSelector({ selected, availablePermissions, onChange }) {
+    const grouped = useMemo(() => {
+        const map = {};
+        availablePermissions.forEach(p => {
+            if (!map[p.group]) map[p.group] = [];
+            map[p.group].push(p);
+        });
+        return map;
+    }, [availablePermissions]);
+
+    function toggle(key) {
+        if (selected.includes(key)) {
+            onChange(selected.filter(k => k !== key));
+        } else {
+            onChange([...selected, key]);
+        }
+    }
+
+    function selectAll() {
+        onChange(availablePermissions.map(p => p.key));
+    }
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-1">
+                <label className="block text-[12px] font-bold text-[var(--color-ink-faint)]">Permisos</label>
+                <div className="flex gap-2">
+                    <button type="button" onClick={selectAll} className="text-[10px] text-blue-500 font-bold hover:text-blue-700">Todos</button>
+                    <button type="button" onClick={() => onChange([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">Ninguno</button>
+                </div>
+            </div>
+            <div className="border border-[var(--color-line)] rounded-lg overflow-hidden">
+                {Object.entries(grouped).map(([group, perms]) => (
+                    <div key={group}>
+                        <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-[var(--color-line)]">
+                            {group}
+                        </div>
+                        {perms.map(p => (
+                            <label key={p.key} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-[var(--color-line)] last:border-0">
+                                <input
+                                    type="checkbox"
+                                    checked={selected.includes(p.key)}
+                                    onChange={() => toggle(p.key)}
+                                    className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                />
+                                <span className="text-[13px] text-[var(--color-ink)]">{p.label}</span>
+                            </label>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+export default function Users({ users, roles, municipios, provincias, availablePermissions }) {
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
 
     const { data, setData, post, processing, errors, reset } = useForm({
-        name: '', email: '', role_id: '', territory_scope: [],
+        name: '', email: '', role_id: '', permissions: [], territory_scope: [],
     });
 
-    const editForm = useForm({ name: '', email: '', role_id: '', password: '', territory_scope: [] });
+    const editForm = useForm({ name: '', email: '', role_id: '', password: '', permissions: [], territory_scope: [] });
 
     const selectedRoleCode = roles.find(r => r.id === data.role_id)?.code;
     const editRoleCode = roles.find(r => r.id === editForm.data.role_id)?.code;
@@ -163,6 +218,7 @@ export default function Users({ users, roles, municipios, provincias }) {
             name: user.name, email: user.email,
             role_id: roles.find(r => r.name === user.role || (r.code === 'R09_CAMPO' && user.role === 'Usuario de campo'))?.id || '',
             password: '',
+            permissions: user.permissions || [],
             territory_scope: user.territoryScope || [],
         });
     }
@@ -227,6 +283,13 @@ export default function Users({ users, roles, municipios, provincias }) {
                                 {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                             </select>
                         </div>
+                        {selectedRoleCode !== 'R01_SUPERADMIN' && (
+                            <PermissionSelector
+                                selected={data.permissions}
+                                availablePermissions={availablePermissions}
+                                onChange={val => setData('permissions', val)}
+                            />
+                        )}
                         {selectedRoleCode === 'R09_CAMPO' && (
                             <MunicipioSelector
                                 selected={data.territory_scope}
@@ -267,6 +330,13 @@ export default function Users({ users, roles, municipios, provincias }) {
                                         {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                     </select>
                                 </div>
+                                {editRoleCode !== 'R01_SUPERADMIN' && (
+                                    <PermissionSelector
+                                        selected={editForm.data.permissions}
+                                        availablePermissions={availablePermissions}
+                                        onChange={val => editForm.setData('permissions', val)}
+                                    />
+                                )}
                                 {editRoleCode === 'R09_CAMPO' && (
                                     <MunicipioSelector
                                         selected={editForm.data.territory_scope}
@@ -298,6 +368,15 @@ export default function Users({ users, roles, municipios, provincias }) {
                                             {user.isActive ? 'ACTIVO' : 'INACTIVO'}
                                         </span>
                                     </div>
+                                    {user.permissions && user.permissions.length > 0 && user.roleCode !== 'R01_SUPERADMIN' && (
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                            {user.permissions.map(p => (
+                                                <span key={p} className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-[9px] font-bold">
+                                                    {availablePermissions.find(ap => ap.key === p)?.label || p}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                     {user.roleCode === 'R09_CAMPO' && (
                                         <TerritoryBadges scope={user.territoryScope} municipios={municipios} />
                                     )}

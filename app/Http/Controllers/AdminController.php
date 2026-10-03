@@ -66,6 +66,7 @@ class AdminController extends Controller
                 'role' => $u->role?->name,
                 'roleCode' => $u->role?->code,
                 'isActive' => $u->is_active,
+                'permissions' => $u->permissions,
                 'territoryScope' => $u->territory_scope,
                 'createdAt' => $u->created_at?->format('Y-m-d'),
             ]),
@@ -80,6 +81,16 @@ class AdminController extends Controller
                 ]),
             'municipios' => $municipios,
             'provincias' => $provincias,
+            'availablePermissions' => [
+                ['key' => 'view.gobernador', 'label' => 'Ver Gobernador', 'group' => 'Vistas'],
+                ['key' => 'view.mapa', 'label' => 'Ver Mapa Político', 'group' => 'Vistas'],
+                ['key' => 'view.votantes', 'label' => 'Ver Votantes', 'group' => 'Vistas'],
+                ['key' => 'view.admin', 'label' => 'Ver panel Admin', 'group' => 'Vistas'],
+                ['key' => 'write.data', 'label' => 'Editar datos (líderes, personas)', 'group' => 'Acciones'],
+                ['key' => 'manage.users', 'label' => 'Gestionar usuarios', 'group' => 'Administración'],
+                ['key' => 'manage.territory', 'label' => 'Gestionar territorio', 'group' => 'Administración'],
+                ['key' => 'manage.partidos', 'label' => 'Gestionar partidos', 'group' => 'Administración'],
+            ],
         ]);
     }
 
@@ -89,6 +100,8 @@ class AdminController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'role_id' => 'nullable|exists:roles,id',
+            'permissions' => 'nullable|array',
+            'permissions.*' => 'string',
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
         ]);
@@ -100,6 +113,7 @@ class AdminController extends Controller
             'email' => $data['email'],
             'password' => Hash::make($plainPassword),
             'role_id' => $data['role_id'],
+            'permissions' => ! empty($data['permissions']) ? $data['permissions'] : null,
             'territory_scope' => ! empty($data['territory_scope']) ? $data['territory_scope'] : null,
             'is_active' => true,
             'must_change_password' => true,
@@ -123,6 +137,8 @@ class AdminController extends Controller
             'email' => 'required|email|unique:users,email,' . $user->id,
             'role_id' => 'nullable|exists:roles,id',
             'password' => 'nullable|string|min:8',
+            'permissions' => 'nullable|array',
+            'permissions.*' => 'string',
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
         ]);
@@ -130,6 +146,7 @@ class AdminController extends Controller
         $user->name = $data['name'];
         $user->email = $data['email'];
         $user->role_id = $data['role_id'] ?: null;
+        $user->permissions = ! empty($data['permissions']) ? $data['permissions'] : null;
         $user->territory_scope = ! empty($data['territory_scope']) ? $data['territory_scope'] : null;
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);

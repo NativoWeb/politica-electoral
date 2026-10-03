@@ -15,7 +15,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password', 'role_id', 'is_active',
-        'must_change_password', 'territory_scope', 'preferred_density', 'executive_mode',
+        'must_change_password', 'permissions', 'territory_scope', 'preferred_density', 'executive_mode',
     ];
 
     protected $hidden = [
@@ -30,6 +30,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
+            'permissions' => 'array',
             'territory_scope' => 'array',
             'executive_mode' => 'boolean',
         ];
@@ -42,8 +43,11 @@ class User extends Authenticatable
 
     public function resolvedPermissions(): array
     {
-        $perms = config('permissions.' . $this->role?->code, []);
-        return in_array('*', $perms) ? ['*'] : $perms;
+        if ($this->role?->code === 'R01_SUPERADMIN') {
+            return ['*'];
+        }
+
+        return $this->permissions ?? [];
     }
 
     public function hasPermission(string $permission): bool
