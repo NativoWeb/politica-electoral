@@ -29,6 +29,14 @@ Route::get('/login', [LoginController::class, 'showLogin'])->name('login')->midd
 Route::post('/login', [LoginController::class, 'login'])->middleware('guest');
 Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware('auth');
 
+// Password reset (guest only)
+Route::middleware('guest')->group(function () {
+    Route::get('/olvide-password', [LoginController::class, 'showForgotPassword'])->name('password.request');
+    Route::post('/olvide-password', [LoginController::class, 'sendResetLink'])->name('password.email');
+    Route::get('/resetear-password/{token}', [LoginController::class, 'showResetPassword'])->name('password.reset');
+    Route::post('/resetear-password', [LoginController::class, 'resetPassword'])->name('password.store');
+});
+
 // Force password change (auth but exempt from password.changed middleware)
 Route::middleware('auth')->group(function () {
     Route::get('/forzar-cambio-password', [LoginController::class, 'showForceChangePassword'])->name('password.force-change');

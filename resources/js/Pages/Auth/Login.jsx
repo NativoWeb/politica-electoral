@@ -1,16 +1,43 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 
 export default function Login() {
+    const { flash } = usePage().props;
     const { data, setData, post, processing, errors } = useForm({
         email: '',
         password: '',
         remember: false,
     });
 
+    const [countdown, setCountdown] = useState(0);
+
+    useEffect(() => {
+        if (errors.lockout_seconds) {
+            setCountdown(parseInt(errors.lockout_seconds, 10));
+        }
+    }, [errors.lockout_seconds]);
+
+    useEffect(() => {
+        if (countdown <= 0) return;
+        const timer = setInterval(() => {
+            setCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [countdown]);
+
     function handleSubmit(e) {
         e.preventDefault();
+        if (countdown > 0) return;
         post('/login');
     }
+
+    const isLocked = countdown > 0;
 
     return (
         <>
@@ -23,14 +50,11 @@ export default function Login() {
                 }}
             >
                 <div className="w-full max-w-sm">
-                    {/* Card */}
                     <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-                        {/* Card header */}
                         <div
                             className="px-8 pt-8 pb-6 text-center"
                             style={{ background: 'linear-gradient(160deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)' }}
                         >
-                            {/* Colombia flag */}
                             <div className="w-10 h-7 rounded overflow-hidden flex flex-col mx-auto mb-4">
                                 <span className="flex-[2] bg-[#FCD116]"></span>
                                 <span className="flex-1 bg-[#003893]"></span>
@@ -48,9 +72,27 @@ export default function Login() {
                             </p>
                         </div>
 
-                        {/* Form */}
                         <form onSubmit={handleSubmit} className="px-8 py-7 space-y-5">
-                            {/* Email */}
+                            {flash?.success && (
+                                <div className="px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-[13px] font-semibold text-emerald-700">
+                                    {flash.success}
+                                </div>
+                            )}
+
+                            {isLocked && (
+                                <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                                    <p className="text-[13px] font-semibold text-amber-700">
+                                        Cuenta bloqueada temporalmente
+                                    </p>
+                                    <p className="text-2xl font-bold text-amber-600 mt-1 tabular-nums">
+                                        {String(Math.floor(countdown / 60)).padStart(2, '0')}:{String(countdown % 60).padStart(2, '0')}
+                                    </p>
+                                    <p className="text-[11px] text-amber-600 mt-0.5">
+                                        Espera para intentar de nuevo
+                                    </p>
+                                </div>
+                            )}
+
                             <div>
                                 <label
                                     htmlFor="email"
@@ -68,19 +110,18 @@ export default function Login() {
                                     className={`
                                         w-full px-3 py-2.5 rounded-lg border text-sm text-gray-900
                                         focus:outline-none focus:ring-2 transition-colors
-                                        ${errors.email
+                                        ${errors.email && !isLocked
                                             ? 'border-red-400 bg-red-50 focus:ring-red-200'
                                             : 'border-gray-300 bg-gray-50 focus:ring-blue-200 focus:border-blue-400'
                                         }
                                     `}
                                     placeholder="usuario@ejemplo.com"
                                 />
-                                {errors.email && (
+                                {errors.email && !isLocked && !errors.lockout_seconds && (
                                     <p className="mt-1.5 text-[11px] text-red-600">{errors.email}</p>
                                 )}
                             </div>
 
-                            {/* Password */}
                             <div>
                                 <label
                                     htmlFor="password"
@@ -109,31 +150,38 @@ export default function Login() {
                                 )}
                             </div>
 
-                            {/* Remember */}
-                            <div className="flex items-center gap-2">
-                                <input
-                                    id="remember"
-                                    type="checkbox"
-                                    checked={data.remember}
-                                    onChange={e => setData('remember', e.target.checked)}
-                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-200 cursor-pointer"
-                                />
-                                <label
-                                    htmlFor="remember"
-                                    className="text-sm text-gray-600 cursor-pointer select-none"
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        id="remember"
+                                        type="checkbox"
+                                        checked={data.remember}
+                                        onChange={e => setData('remember', e.target.checked)}
+                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-200 cursor-pointer"
+                                    />
+                                    <label
+                                        htmlFor="remember"
+                                        className="text-sm text-gray-600 cursor-pointer select-none"
+                                    >
+                                        Recordar
+                                    </label>
+                                </div>
+
+                                <Link
+                                    href="/olvide-password"
+                                    className="text-sm text-[var(--color-primary)] font-semibold hover:underline"
                                 >
-                                    Recordar sesión
-                                </label>
+                                    ¿Olvidaste tu contraseña?
+                                </Link>
                             </div>
 
-                            {/* Submit */}
                             <button
                                 type="submit"
-                                disabled={processing}
+                                disabled={processing || isLocked}
                                 className="w-full py-3 rounded-lg text-sm font-bold tracking-wide text-white transition-opacity disabled:opacity-60"
                                 style={{ background: 'var(--color-primary)' }}
                             >
-                                {processing ? 'Verificando...' : 'Iniciar Sesión'}
+                                {processing ? 'Verificando...' : isLocked ? 'Bloqueado' : 'Iniciar Sesión'}
                             </button>
                         </form>
                     </div>
