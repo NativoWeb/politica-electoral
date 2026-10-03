@@ -1,6 +1,8 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 
-export default function ForgotPassword({ status }) {
+export default function ForgotPassword() {
+    const { flash } = usePage().props;
+    const status = flash?.status;
     const { data, setData, post, processing, errors } = useForm({ email: '' });
 
     function handleSubmit(e) {
