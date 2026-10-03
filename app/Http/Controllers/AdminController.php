@@ -82,13 +82,12 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8',
             'role_id' => 'nullable|exists:roles,id',
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
         ]);
 
-        $plainPassword = $data['password'];
+        $plainPassword = \Illuminate\Support\Str::random(10);
 
         $user = User::create([
             'name' => $data['name'],

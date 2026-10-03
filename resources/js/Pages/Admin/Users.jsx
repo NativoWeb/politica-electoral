@@ -142,7 +142,7 @@ export default function Users({ users, roles, municipios, provincias }) {
     const [editId, setEditId] = useState(null);
 
     const { data, setData, post, processing, errors, reset } = useForm({
-        name: '', email: '', password: '', role_id: '', territory_scope: [],
+        name: '', email: '', role_id: '', territory_scope: [],
     });
 
     const editForm = useForm({ name: '', email: '', role_id: '', password: '', territory_scope: [] });
@@ -217,11 +217,9 @@ export default function Users({ users, roles, municipios, provincias }) {
                             <input type="email" className={inputCls} value={data.email} onChange={e => setData('email', e.target.value)} required placeholder="correo@ejemplo.com" />
                             {errors.email && <p className="text-[12px] text-red-500 mt-1">{errors.email}</p>}
                         </div>
-                        <div>
-                            <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Contraseña *</label>
-                            <input type="password" className={inputCls} value={data.password} onChange={e => setData('password', e.target.value)} required placeholder="Minimo 8 caracteres" />
-                            {errors.password && <p className="text-[12px] text-red-500 mt-1">{errors.password}</p>}
-                        </div>
+                        <p className="text-[11px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                            Se generará una contraseña aleatoria y se enviará al correo del usuario.
+                        </p>
                         <div>
                             <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Rol</label>
                             <select className={inputCls} value={data.role_id} onChange={e => setData('role_id', e.target.value)}>
