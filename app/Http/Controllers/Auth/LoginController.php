@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Inertia;
 
@@ -33,6 +34,11 @@ class LoginController extends Controller
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             RateLimiter::clear($key);
             $request->session()->regenerate();
+
+            if ($request->user()->must_change_password) {
+                return redirect()->route('password.force-change');
+            }
+
             return redirect()->intended('/');
         }
 
@@ -41,6 +47,25 @@ class LoginController extends Controller
         return back()->withErrors([
             'email' => 'Las credenciales no coinciden con nuestros registros.',
         ])->onlyInput('email');
+    }
+
+    public function showForceChangePassword()
+    {
+        return Inertia::render('Auth/ChangePassword');
+    }
+
+    public function forceChangePassword(Request $request)
+    {
+        $request->validate([
+            'new_password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $request->user()->update([
+            'password' => Hash::make($request->new_password),
+            'must_change_password' => false,
+        ]);
+
+        return redirect('/')->with('success', 'Contraseña actualizada correctamente.');
     }
 
     public function logout(Request $request)

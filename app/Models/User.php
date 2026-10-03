@@ -15,7 +15,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password', 'role_id', 'is_active',
-        'territory_scope', 'preferred_density', 'executive_mode',
+        'must_change_password', 'territory_scope', 'preferred_density', 'executive_mode',
     ];
 
     protected $hidden = [
@@ -29,6 +29,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_change_password' => 'boolean',
             'territory_scope' => 'array',
             'executive_mode' => 'boolean',
         ];

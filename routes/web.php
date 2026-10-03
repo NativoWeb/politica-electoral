@@ -29,6 +29,12 @@ Route::get('/login', [LoginController::class, 'showLogin'])->name('login')->midd
 Route::post('/login', [LoginController::class, 'login'])->middleware('guest');
 Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware('auth');
 
+// Force password change (auth but exempt from password.changed middleware)
+Route::middleware('auth')->group(function () {
+    Route::get('/forzar-cambio-password', [LoginController::class, 'showForceChangePassword'])->name('password.force-change');
+    Route::post('/forzar-cambio-password', [LoginController::class, 'forceChangePassword'])->name('password.force-change.store');
+});
+
 // Public API (no auth required)
 Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'])->name('search');
 Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
@@ -37,7 +43,7 @@ Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'c
 Route::middleware('auth')->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
 
 // Protected routes
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'password.changed'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/municipio/{id}', [MunicipioController::class, 'show'])->name('municipio.show');
     Route::get('/persona/{id}', [PersonaController::class, 'show'])->name('persona.show');

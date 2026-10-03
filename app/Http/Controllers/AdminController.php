@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\WelcomeCredentials;
 use App\Models\ImportJob;
 use App\Models\PoliticalOrganization;
 use App\Models\Role;
@@ -10,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 
 class AdminController extends Controller
@@ -70,16 +72,26 @@ class AdminController extends Controller
             'territory_scope.*' => 'uuid',
         ]);
 
-        User::create([
+        $plainPassword = $data['password'];
+
+        $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
-            'password' => Hash::make($data['password']),
+            'password' => Hash::make($plainPassword),
             'role_id' => $data['role_id'],
             'territory_scope' => ! empty($data['territory_scope']) ? $data['territory_scope'] : null,
             'is_active' => true,
+            'must_change_password' => true,
         ]);
 
-        return back()->with('success', 'Usuario creado.');
+        Mail::to($user->email)->send(new WelcomeCredentials(
+            userName: $user->name,
+            userEmail: $user->email,
+            plainPassword: $plainPassword,
+            loginUrl: url('/login'),
+        ));
+
+        return back()->with('success', 'Usuario creado. Se enviaron las credenciales por correo.');
     }
 
     public function updateUser(Request $request, string $id)
