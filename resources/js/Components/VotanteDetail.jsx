@@ -200,34 +200,40 @@ export default function VotanteDetail({
             .finally(() => setRefSearching(false));
     }
 
-    function addRef(liderId) {
-        apiFetch(`/mapa-politico/persona/${data.id}/add-referido`, {
-            method: 'POST',
-            body: JSON.stringify({ lider_id: liderId }),
-        })
-            .then(() => {
-                setShowRefSearch(false); setRefQuery(''); setRefResults([]);
-                showToast('Referido agregado');
-                handleRefreshDetail();
-            })
-            .catch(err => showToast(err.message || 'Error al agregar referido', 'error'));
+    async function addRef(liderId) {
+        try {
+            await apiFetch(`/mapa-politico/persona/${data.id}/add-referido`, {
+                method: 'POST',
+                body: JSON.stringify({ lider_id: liderId }),
+            });
+            setShowRefSearch(false); setRefQuery(''); setRefResults([]);
+            showToast('Referido agregado');
+            await handleRefreshDetail();
+        } catch (err) {
+            showToast(err.message || 'Error al agregar referido', 'error');
+        }
     }
 
-    function removeRef(referidoId) {
+    async function removeRef(referidoId) {
         if (!window.confirm('¿Quitar esta persona de los referidos?')) return;
-        apiFetch(`/mapa-politico/persona/${data.id}/referido/${referidoId}`, { method: 'DELETE' })
-            .then(() => { showToast('Referido eliminado'); handleRefreshDetail(); })
-            .catch(() => showToast('Error al eliminar referido', 'error'));
+        try {
+            await apiFetch(`/mapa-politico/persona/${data.id}/referido/${referidoId}`, { method: 'DELETE' });
+            showToast('Referido eliminado');
+            await handleRefreshDetail();
+        } catch {
+            showToast('Error al eliminar referido', 'error');
+        }
     }
 
-    function handleRefreshDetail() {
+    async function handleRefreshDetail() {
         if (data?.id) {
-            apiFetch(`/votantes/${data.id}`).then(res => {
+            try {
+                const res = await apiFetch(`/votantes/${data.id}`);
                 setLocalContacts(res.data.contactos || []);
                 setLocalInfoPolitica(res.data.info_politica || []);
                 setLocalNexos(res.data.nexos || []);
                 setLocalReferidos(res.data.referidos || []);
-            }).catch(() => {});
+            } catch {}
         }
     }
 

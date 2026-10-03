@@ -249,38 +249,39 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
             .finally(() => setReferidoSearching(false));
     }
 
-    function addReferido(liderId) {
-        apiFetch(`/mapa-politico/persona/${personId}/add-referido`, {
-            method: 'POST',
-            body: JSON.stringify({ lider_id: liderId }),
-        })
-            .then(r => { if (!r.ok) return r.json().then(d => { throw new Error(d.message); }); return r.json(); })
-            .then(() => {
-                setShowReferidoSearch(false);
-                setReferidoQuery('');
-                setReferidoResults([]);
-                setMessage('Referido agregado');
-                loadData();
-                setTimeout(() => setMessage(''), 3000);
-            })
-            .catch(err => {
-                setMessage(err.message || 'Error al agregar referido');
-                setTimeout(() => setMessage(''), 5000);
+    async function addReferido(liderId) {
+        try {
+            const r = await apiFetch(`/mapa-politico/persona/${personId}/add-referido`, {
+                method: 'POST',
+                body: JSON.stringify({ lider_id: liderId }),
             });
+            if (!r.ok) { const d = await r.json(); throw new Error(d.message); }
+            setShowReferidoSearch(false);
+            setReferidoQuery('');
+            setReferidoResults([]);
+            setMessage('Referido agregado');
+            await loadData();
+            router.reload({ only: ['data'] });
+            setTimeout(() => setMessage(''), 3000);
+        } catch (err) {
+            setMessage(err.message || 'Error al agregar referido');
+            setTimeout(() => setMessage(''), 5000);
+        }
     }
 
     function removeReferido(referidoId) {
-        confirm('Quitar referido', '¿Seguro que quieres quitar esta persona de tus referidos?', () => {
-            apiFetch(`/mapa-politico/persona/${personId}/referido/${referidoId}`, { method: 'DELETE' })
-                .then(() => {
-                    setMessage('Referido eliminado');
-                    loadData();
-                    setTimeout(() => setMessage(''), 3000);
-                })
-                .catch(() => {
-                    setMessage('Error al eliminar referido');
-                    setTimeout(() => setMessage(''), 5000);
-                });
+        confirm('Quitar referido', '¿Seguro que quieres quitar esta persona de tus referidos?', async () => {
+            try {
+                const r = await apiFetch(`/mapa-politico/persona/${personId}/referido/${referidoId}`, { method: 'DELETE' });
+                if (!r.ok) throw new Error();
+                setMessage('Referido eliminado');
+                await loadData();
+                router.reload({ only: ['data'] });
+                setTimeout(() => setMessage(''), 3000);
+            } catch {
+                setMessage('Error al eliminar referido');
+                setTimeout(() => setMessage(''), 5000);
+            }
         }, false);
     }
 
