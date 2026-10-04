@@ -628,6 +628,10 @@ class MapaPoliticoController extends Controller
 
         Cache::forget('cargos_por_tipo');
 
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => "Líder «{$data['nombre']}» creado."]);
+        }
+
         return redirect()->route('mapa-politico', [
             'municipio' => $data['municipio_id'],
             'tipo' => 'lideres',
@@ -900,6 +904,7 @@ class MapaPoliticoController extends Controller
                             'profesion' => $data['profesion'] ?? null,
                             'destacado' => $data['destacado'] ?? false,
                             'votos' => $data['votos'] ?? 0,
+                            'nivel_confianza' => $data['nivel_confianza'] ?? 'sin_llamar',
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
@@ -943,7 +948,11 @@ class MapaPoliticoController extends Controller
                 ];
                 foreach ($extendedFields as $field) {
                     if (array_key_exists($field, $data)) {
-                        $updateData[$field] = $data[$field];
+                        $value = $data[$field];
+                        if ($field === 'nivel_confianza' && ($value === null || $value === '')) {
+                            $value = 'sin_llamar';
+                        }
+                        $updateData[$field] = $value;
                     }
                 }
 
