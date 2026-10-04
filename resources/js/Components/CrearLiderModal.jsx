@@ -126,14 +126,17 @@ export default function CrearLiderModal({ open, onClose, municipios, provincias 
                 if (err instanceof Response) {
                     try { const body = await err.json(); setErrors(body.errors || { general: body.message || 'Error al guardar' }); }
                     catch { setErrors({ general: `Error ${err.status}` }); }
-                } else {
+                } else if (!navigator.onLine) {
                     try {
                         await offlineCreateLider({ ...form, municipio: municipios.find(m => m.id === form.municipio_id)?.name || '' });
                         setSuccessMsg('Lider guardado localmente');
-                        showGlobalToast('Sin conexion. Lider guardado localmente.');
+                        showGlobalToast('Sin conexión. Líder guardado localmente.');
                         setForm(EMPTY_FORM);
                         setTimeout(() => { setSuccessMsg(''); onClose(); }, 2500);
-                    } catch { setErrors({ general: 'Error al guardar' }); }
+                    } catch { setErrors({ general: 'Error al guardar localmente' }); }
+                } else {
+                    setErrors({ general: 'Error de conexión con el servidor. Intenta de nuevo.' });
+                    showGlobalToast('Error al guardar. Intenta de nuevo.', 'error');
                 }
             })
             .finally(() => { setSaving(false); clearTimeout(safetyTimeout); });

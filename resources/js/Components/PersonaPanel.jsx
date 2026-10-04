@@ -170,15 +170,20 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
                 setTimeout(() => setMessage(''), 3000);
             })
             .catch(async () => {
-                try {
-                    await offlineUpdatePersona(personId, form);
-                    setMessage('Guardado localmente');
-                    showGlobalToast('Guardado sin internet. Se sincronizara automaticamente.');
-                    setEditMode(false);
-                    setData(prev => ({ ...prev, ...form }));
-                } catch {
-                    setMessage('Error al guardar');
-                    showGlobalToast('Error al guardar', 'error');
+                if (!navigator.onLine) {
+                    try {
+                        await offlineUpdatePersona(personId, form);
+                        setMessage('Guardado localmente');
+                        showGlobalToast('Guardado sin internet. Se sincronizará automáticamente.');
+                        setEditMode(false);
+                        setData(prev => ({ ...prev, ...form }));
+                    } catch {
+                        setMessage('Error al guardar');
+                        showGlobalToast('Error al guardar', 'error');
+                    }
+                } else {
+                    setMessage('Error al guardar. Intenta de nuevo.');
+                    showGlobalToast('Error al guardar. Intenta de nuevo.', 'error');
                 }
                 setTimeout(() => setMessage(''), 5000);
             })
@@ -200,17 +205,22 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
                 setTimeout(() => setMessage(''), 3000);
             })
             .catch(async () => {
-                try {
-                    const newNexo = await offlineCreateNexo(personId, nexoForm);
-                    setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
-                    setShowNexoForm(false);
-                    setMessage('Nexo guardado localmente');
-                    showGlobalToast('Nexo guardado sin internet. Se sincronizara automaticamente.');
-                    setData(prev => ({ ...prev, nexos: [...(prev.nexos || []), { ...nexoForm, id: newNexo.id }] }));
-                    setTimeout(() => setMessage(''), 5000);
-                } catch {
-                    setMessage('Error al guardar nexo');
-                    showGlobalToast('Error al guardar nexo', 'error');
+                if (!navigator.onLine) {
+                    try {
+                        const newNexo = await offlineCreateNexo(personId, nexoForm);
+                        setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
+                        setShowNexoForm(false);
+                        setMessage('Nexo guardado localmente');
+                        showGlobalToast('Nexo guardado sin internet. Se sincronizará automáticamente.');
+                        setData(prev => ({ ...prev, nexos: [...(prev.nexos || []), { ...nexoForm, id: newNexo.id }] }));
+                        setTimeout(() => setMessage(''), 5000);
+                    } catch {
+                        setMessage('Error al guardar nexo');
+                        showGlobalToast('Error al guardar nexo', 'error');
+                    }
+                } else {
+                    setMessage('Error al guardar nexo. Intenta de nuevo.');
+                    showGlobalToast('Error al guardar nexo. Intenta de nuevo.', 'error');
                 }
             });
     }
@@ -290,9 +300,14 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
             apiFetch(`/mapa-politico/nexos/${nexoId}`, { method: 'DELETE' })
                 .then(() => loadData())
                 .catch(async () => {
-                    await offlineDeleteNexo(nexoId).catch(() => {});
-                    setData(prev => ({ ...prev, nexos: (prev.nexos || []).filter(n => n.id !== nexoId) }));
-                    setMessage('Eliminado localmente. Se sincronizara con internet.');
+                    if (!navigator.onLine) {
+                        await offlineDeleteNexo(nexoId).catch(() => {});
+                        setData(prev => ({ ...prev, nexos: (prev.nexos || []).filter(n => n.id !== nexoId) }));
+                        setMessage('Eliminado localmente. Se sincronizará con internet.');
+                    } else {
+                        setMessage('Error al eliminar. Intenta de nuevo.');
+                        showGlobalToast('Error al eliminar nexo. Intenta de nuevo.', 'error');
+                    }
                     setTimeout(() => setMessage(''), 5000);
                 });
         });
