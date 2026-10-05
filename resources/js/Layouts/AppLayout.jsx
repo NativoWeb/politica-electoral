@@ -139,6 +139,11 @@ const ICONS = {
             <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
+WHATSAPP: (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+        <path d="M12 0a12 12 0 0 0-10.4 18L0 24l6.2-1.6A12 12 0 1 0 12 0Zm0 21.8a9.8 9.8 0 0 1-5-1.4l-.4-.2-3.7 1 1-3.7-.2-.4A9.8 9.8 0 1 1 12 21.8Zm5.4-7.3c-.3-.2-1.7-.9-2-1s-.5-.1-.7.2-.7 1-.9 1.2-.3.2-.6.1c-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.4-.5c.1-.2.2-.3.3-.5s.1-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4s-1 1-1 2.5 1.1 2.9 1.2 3.1 2.1 3.2 5.1 4.5c.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4s.3-1.3.2-1.4-.2-.2-.5-.4Z"/>
+    </svg>
+),
     VOTANTES: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
             <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" strokeLinecap="round" strokeLinejoin="round" />
@@ -220,6 +225,7 @@ const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', permission: 'view.mapa' },
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
+    { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
 ];
 

@@ -3,6 +3,8 @@
 use App\Http\Controllers\Admin\CatalogCrudController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
+use App\Http\Controllers\Admin\WhatsAppController;
+use App\Http\Controllers\Admin\WhatsAppTemplateController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ComparadorController;
@@ -102,15 +104,18 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
         Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica']);
         Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica']);
     });
+
     // Change own password
     Route::post('/cambiar-password', function (Request $request) {
         $request->validate([
             'current_password' => 'required',
             'new_password' => 'required|string|min:8|confirmed',
         ]);
+
         if (! Hash::check($request->current_password, $request->user()->password)) {
             return back()->withErrors(['current_password' => 'La contraseña actual no es correcta']);
         }
+
         $request->user()->update(['password' => Hash::make($request->new_password)]);
 
         return back()->with('success', 'Contraseña actualizada');
@@ -134,16 +139,19 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
         Route::put('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('users.update');
         Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
         Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy');
+
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory');
         Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store');
         Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');
         Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store');
+
         Route::get('/partidos', [PartidoCrudController::class, 'index'])->name('partidos');
         Route::post('/partidos', [PartidoCrudController::class, 'store'])->name('partidos.store');
         Route::put('/partidos/{id}', [PartidoCrudController::class, 'update'])->name('partidos.update');
         Route::delete('/partidos/{id}', [PartidoCrudController::class, 'destroy'])->name('partidos.destroy');
         Route::post('/partidos/{id}/restore', [PartidoCrudController::class, 'restore'])->name('partidos.restore');
         Route::delete('/partidos/{id}/force', [PartidoCrudController::class, 'forceDelete'])->name('partidos.forceDelete');
+
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports');
         Route::get('/catalogos', [AdminController::class, 'catalogs'])->name('catalogs');
 
@@ -157,6 +165,24 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
         Route::delete('/personas/{id}/aliases/{aliasId}', [PersonCrudController::class, 'destroyAlias'])->name('personas.alias.destroy');
         Route::post('/personas/{id}/contacts', [PersonCrudController::class, 'storeContact'])->name('personas.contact.store');
         Route::delete('/personas/{id}/contacts/{contactId}', [PersonCrudController::class, 'destroyContact'])->name('personas.contact.destroy');
+
+        // WhatsApp
+        Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
+
+        Route::post('/whatsapp/prepare', [WhatsAppController::class, 'prepare'])
+            ->name('whatsapp.prepare');
+
+        Route::get('/whatsapp/templates', [WhatsAppTemplateController::class, 'index'])
+            ->name('whatsapp.templates');
+
+        Route::post('/whatsapp/templates', [WhatsAppTemplateController::class, 'store'])
+            ->name('whatsapp.templates.store');
+
+        Route::put('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'update'])
+            ->name('whatsapp.templates.update');
+
+        Route::delete('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'destroy'])
+            ->name('whatsapp.templates.destroy');
 
         // Catálogos CRUD
         Route::post('/catalogos/partidos', [CatalogCrudController::class, 'storePartido'])->name('catalogs.partido.store');
