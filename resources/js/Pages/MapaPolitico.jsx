@@ -613,17 +613,23 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
 
                     {/* Destacados toggle */}
-                    <button
-                        onClick={() => applyFilters({ destacado: filters.destacado ? undefined : '1' })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
-                            filters.destacado
-                                ? 'bg-amber-400 text-white'
-                                : 'bg-amber-50 text-amber-600 border border-amber-200'
-                        }`}
-                    >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
-                        {filters.destacado ? 'Destacados' : 'Destacados'}
-                    </button>
+                    {(() => {
+                        const source = (!isOnline && offlineDataLoaded) ? allData : serverData;
+                        const count = source.filter(r => r.destacado).length;
+                        return (
+                            <button
+                                onClick={() => applyFilters({ destacado: filters.destacado ? undefined : '1' })}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
+                                    filters.destacado
+                                        ? 'bg-amber-400 text-white'
+                                        : 'bg-amber-50 text-amber-600 border border-amber-200'
+                                }`}
+                            >
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+                                Destacados {count > 0 && <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${filters.destacado ? 'bg-white/30' : 'bg-amber-200 text-amber-700'}`}>{count}</span>}
+                            </button>
+                        );
+                    })()}
 
                     {/* Offline download button — only when a municipio is selected */}
                     {municipioInfo && offlineStatus === 'idle' && (

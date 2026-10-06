@@ -24,6 +24,9 @@ class ExportController extends Controller
 
     public function pdf(Request $request)
     {
+        ini_set('memory_limit', '512M');
+        set_time_limit(120);
+
         $data = $this->getData($request);
         $title = $request->input('title', 'Exportacion');
         $columns = explode(',', $request->input('columns', 'nombre,municipio,tipo,cargo,partido,telefono,votos'));
@@ -33,7 +36,9 @@ class ExportController extends Controller
             'columns' => $columns,
             'title' => $title,
             'date' => now()->format('d/m/Y H:i'),
-        ])->setPaper('a4', 'landscape');
+        ])->setPaper('a4', 'landscape')
+          ->setOption('isRemoteEnabled', false)
+          ->setOption('isPhpEnabled', false);
 
         return $pdf->download(str_replace(' ', '_', $title) . '.pdf');
     }
