@@ -2,7 +2,7 @@ import { Link, router, usePage, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
-import { OfflineIndicator } from '@/Components/OfflineManager';
+import { OfflineIndicator, OfflinePanel } from '@/Components/OfflineManager';
 
 const TYPE_LABELS = { persona: 'Persona', municipio: 'Municipio', partido: 'Partido' };
 const TYPE_COLORS = {
@@ -225,7 +225,7 @@ const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', permission: 'view.mapa' },
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
-    { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
+    // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
 ];
 
@@ -385,6 +385,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const visibleItems = SIDEBAR_ITEMS.filter(item => hasPerm(item.permission));
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
+    const [offlinePanelOpen, setOfflinePanelOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
     const [mobileUserMenu, setMobileUserMenu] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -572,6 +573,17 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         );
                     })}
 
+                    {/* Guardar datos offline */}
+                    <button
+                        onClick={() => setOfflinePanelOpen(true)}
+                        className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
+                    >
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        <span className="text-[12px] font-bold leading-tight">Offline</span>
+                    </button>
+
                     {/* Exportar Excel/PDF */}
                     <button
                         onClick={() => setExportSheetOpen(true)}
@@ -603,6 +615,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
             {/* Mobile export bottom sheet */}
             <MobileExportSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} url={url} />
+
+            {/* Offline panel (mobile) */}
+            <OfflinePanel open={offlinePanelOpen} onClose={() => setOfflinePanelOpen(false)} />
         </div>
     );
 }
