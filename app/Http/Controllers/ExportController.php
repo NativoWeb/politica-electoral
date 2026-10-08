@@ -10,6 +10,8 @@ use App\Exports\GenericExport;
 
 class ExportController extends Controller
 {
+    private const PDF_MAX_ROWS = 500;
+
     public function excel(Request $request)
     {
         $data = $this->getData($request);
@@ -31,11 +33,20 @@ class ExportController extends Controller
         $title = $request->input('title', 'Exportacion');
         $columns = explode(',', $request->input('columns', 'nombre,municipio,tipo,cargo,partido,telefono,votos'));
 
+        $totalCount = count($data);
+        $truncated = false;
+        if ($totalCount > self::PDF_MAX_ROWS) {
+            $data = array_slice($data, 0, self::PDF_MAX_ROWS);
+            $truncated = true;
+        }
+
         $pdf = Pdf::loadView('exports.table', [
             'data' => $data,
             'columns' => $columns,
             'title' => $title,
             'date' => now()->format('d/m/Y H:i'),
+            'truncated' => $truncated,
+            'totalCount' => $totalCount,
         ])->setPaper('a4', 'landscape')
           ->setOption('isRemoteEnabled', false)
           ->setOption('isPhpEnabled', false);

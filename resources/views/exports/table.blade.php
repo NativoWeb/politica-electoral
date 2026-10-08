@@ -17,6 +17,7 @@
         .r { text-align: right; font-weight: bold; font-family: monospace; }
         .e { background: #d4edda; }
         .footer { text-align: center; padding: 10px; font-size: 8px; color: #999; border-top: 1px solid #003B71; margin-top: 5px; }
+        .truncated-notice { background: #fff3cd; border: 1px solid #ffc107; padding: 8px 15px; margin: 10px 20px; font-size: 10px; color: #856404; }
         .page-break { page-break-after: always; }
     </style>
 </head>
@@ -24,8 +25,14 @@
     <div class="header">
         <span class="date">{{ $date }}</span>
         <h1>{{ $title }}</h1>
-        <p>Inteligencia Electoral Santander &middot; {{ count($data) }} registros</p>
+        <p>Inteligencia Electoral Santander &middot; {{ count($data) }} registros{{ !empty($truncated) ? ' (de ' . number_format($totalCount, 0, ',', '.') . ' totales)' : '' }}</p>
     </div>
+
+    @if(!empty($truncated))
+    <div class="truncated-notice">
+        Este PDF muestra los primeros {{ count($data) }} de {{ number_format($totalCount, 0, ',', '.') }} registros. Para obtener todos los datos, use la opci&oacute;n Exportar Excel.
+    </div>
+    @endif
 
     @php $chunks = array_chunk($data, 40); @endphp
 

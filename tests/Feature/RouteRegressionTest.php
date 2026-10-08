@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
+use App\Http\Controllers\ExportController;
 
 class RouteRegressionTest extends TestCase
 {
@@ -79,5 +80,13 @@ class RouteRegressionTest extends TestCase
             'password_confirmation' => 'newpass123',
         ]);
         $this->assertNotEquals(404, $response->getStatusCode());
+    }
+
+    public function test_pdf_max_rows_constant_is_defined(): void
+    {
+        $reflection = new \ReflectionClass(ExportController::class);
+        $constant = $reflection->getReflectionConstant('PDF_MAX_ROWS');
+        $this->assertNotFalse($constant);
+        $this->assertEquals(500, $constant->getValue());
     }
 }
