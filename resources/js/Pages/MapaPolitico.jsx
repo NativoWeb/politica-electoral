@@ -414,7 +414,16 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const [provProgress, setProvProgress] = useState(null);
     const [provDownloadedName, setProvDownloadedName] = useState('');
 
-    useEffect(() => { setProvOfflineStatus('idle'); setProvProgress(null); }, [selectedProv]);
+    useEffect(() => {
+        setProvProgress(null);
+        if (!selectedProv || !filteredMunicipios.length) { setProvOfflineStatus('idle'); return; }
+        let cancelled = false;
+        Promise.all(filteredMunicipios.map(m => isDownloaded(m.id))).then(results => {
+            if (cancelled) return;
+            setProvOfflineStatus(results.every(Boolean) ? 'already' : 'idle');
+        }).catch(() => { if (!cancelled) setProvOfflineStatus('idle'); });
+        return () => { cancelled = true; };
+    }, [selectedProv, filteredMunicipios]);
 
     const handleProvOfflineDownload = useCallback(async () => {
         if (!selectedProv || !filteredMunicipios.length) return;
@@ -429,7 +438,6 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             if (result.failed > 0) {
                 alert(`${result.completed} municipios guardados, ${result.failed} con error.`);
             }
-            setTimeout(() => setProvOfflineStatus('idle'), 4000);
         } catch {
             setProvOfflineStatus('idle');
             alert('No se pudo guardar. Revisa tu conexion.');
@@ -691,10 +699,10 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                             {provProgress.current} ({provProgress.completed + provProgress.failed}/{provProgress.total})
                         </span>
                     )}
-                    {selectedProv && !municipioInfo && provOfflineStatus === 'saved' && (
+                    {selectedProv && !municipioInfo && (provOfflineStatus === 'saved' || provOfflineStatus === 'already') && (
                         <span className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 text-[12px] font-bold rounded-lg">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                            {provDownloadedName} guardada
+                            {selectedProv} guardada
                         </span>
                     )}
                 </div>
