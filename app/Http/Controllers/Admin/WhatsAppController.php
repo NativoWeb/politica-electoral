@@ -409,7 +409,7 @@ class WhatsAppController extends Controller
                         ->orWhereHas('contactos', function ($contactQuery) {
                             $contactQuery
                                 ->whereNotNull('valor')
-                                ->where('valor', '!= '');
+                                ->where('valor', '!=', '');
                         });
                 });
 
