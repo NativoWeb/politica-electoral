@@ -24,6 +24,28 @@ db.version(1).stores({
     pendingChanges: '++id, type, action, synced, createdAt',
 });
 
+// ─── Download all municipios in a province sequentially ───
+
+export async function downloadProvincia(municipios, onProgress) {
+    const total = municipios.length;
+    let completed = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (const mun of municipios) {
+        try {
+            await downloadMunicipio(mun.id);
+            completed++;
+        } catch (err) {
+            failed++;
+            errors.push({ id: mun.id, name: mun.name, error: err.message });
+        }
+        onProgress?.({ completed, failed, total, current: mun.name });
+    }
+
+    return { completed, failed, total, errors };
+}
+
 // ─── Download a municipio's data from the server ───
 
 export async function downloadMunicipio(municipioId) {
