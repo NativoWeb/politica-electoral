@@ -258,6 +258,8 @@ export default function WhatsApp({
     };
 
     const toggleContact = (contact) => {
+        if (!contact.phone) return;
+
         const contactId = String(contact.id);
 
         setSelectedContactIds((current) => {
@@ -277,6 +279,7 @@ export default function WhatsApp({
 
     const toggleAllContacts = () => {
         const visibleIds = contactData
+            .filter((contact) => contact.phone)
             .map((contact) => contact.id)
             .filter(Boolean);
 
@@ -509,9 +512,13 @@ export default function WhatsApp({
         });
     };
 
+    const selectableContactData = contactData.filter(
+        (contact) => Boolean(contact.phone)
+    );
+
     const allVisibleSelected =
-        contactData.length > 0 &&
-        contactData.every((contact) =>
+        selectableContactData.length > 0 &&
+        selectableContactData.every((contact) =>
             selectedContactIds.some(
                 (id) => String(id) === String(contact.id)
             )
@@ -650,23 +657,6 @@ export default function WhatsApp({
                             {selectedTemplate && (
                                 <>
                                     <div>
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <div>
-                                                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
-                                                    Destinatarios
-                                                </label>
-
-                                                <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                    Mostrando {contactData.length} de{' '}
-                                                    {totalContacts} contactos.
-                                                </p>
-                                            </div>
-
-                                            <span className="text-[10px] text-[var(--color-ink-faint)]">
-                                                {selectedContactIds.length}{' '}
-                                                seleccionados
-                                            </span>
-                                        </div>
 
                                         <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
                                             {isBirthdayTemplate && (
@@ -759,19 +749,14 @@ export default function WhatsApp({
 
                                             <div className="mt-4 flex items-center justify-between">
                                                 <span className="text-[11px] text-[var(--color-ink-faint)]">
-                                                    Página{' '}
-                                                    {contacts?.current_page ??
-                                                        1}{' '}
-                                                    de{' '}
+                                                    Página {contacts?.current_page ?? 1} de{' '}
                                                     {contacts?.last_page ?? 1}
                                                 </span>
 
-                                                {contactData.length > 0 && (
+                                                {selectableContactData.length > 0 && (
                                                     <button
                                                         type="button"
-                                                        onClick={
-                                                            toggleAllContacts
-                                                        }
+                                                        onClick={toggleAllContacts}
                                                         className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline"
                                                     >
                                                         {allVisibleSelected
@@ -801,7 +786,9 @@ export default function WhatsApp({
                                                                     key={
                                                                         contact.id
                                                                     }
-                                                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border bg-white px-3 py-3 transition ${
+                                                                    className={`flex ${
+                                                                        contact.phone ? 'cursor-pointer' : 'cursor-default'
+                                                                    } items-center gap-3 rounded-lg border bg-white px-3 py-3 transition ${
                                                                         selected
                                                                             ? 'border-[var(--color-primary)] bg-gray-50'
                                                                             : 'border-[var(--color-line)] hover:bg-gray-50'
@@ -809,15 +796,12 @@ export default function WhatsApp({
                                                                 >
                                                                     <input
                                                                         type="checkbox"
-                                                                        checked={
-                                                                            selected
-                                                                        }
+                                                                        checked={selected}
+                                                                        disabled={!contact.phone}
                                                                         onChange={() =>
-                                                                            toggleContact(
-                                                                                contact
-                                                                            )
+                                                                            toggleContact(contact)
                                                                         }
-                                                                        className="h-4 w-4 rounded border-gray-300"
+                                                                        className="h-4 w-4 rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
                                                                     />
 
                                                                     <div className="min-w-0 flex-1">
@@ -836,9 +820,7 @@ export default function WhatsApp({
                                                                                 </p>
 
                                                                                 <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
-                                                                                    {
-                                                                                        contact.phone
-                                                                                    }
+                                                                                    {contact.phone || 'Sin celular'}
                                                                                 </p>
                                                                             </div>
 
@@ -868,9 +850,8 @@ export default function WhatsApp({
                                                     </p>
 
                                                     <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                        Los contactos deben
-                                                        tener un número móvil
-                                                        registrado.
+                                                        Las personas sin celular aparecen en la lista,
+                                                        pero no pueden ser seleccionadas para el envío.
                                                     </p>
                                                 </div>
                                             )}
