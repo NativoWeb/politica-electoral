@@ -309,9 +309,8 @@ class WhatsAppController extends Controller
             'image_url' => $validated['image_url'] ?? null,
         ];
 
-        // Webhook de n8n.
-        // Usar la URL pública del webhook de n8n.
-        $webhook = 'http://127.0.0.1:5678/webhook-test/whatsapp/receive';
+        // Webhook de n8n configurado mediante .env.
+        $webhook = config('services.n8n.whatsapp_webhook');
 
         if ($request->hasFile('image')) {
             $image = $request->file('image');
