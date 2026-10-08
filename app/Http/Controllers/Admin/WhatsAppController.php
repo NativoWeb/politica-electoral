@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Lider;
 use App\Models\Person;
 use App\Models\WhatsAppSend;
 use App\Models\WhatsAppSendRecipient;
 use App\Models\WhatsAppTemplate;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 
@@ -17,111 +20,269 @@ class WhatsAppController extends Controller
     {
         $user = $request->user();
 
-        $query = Person::query()
-            ->whereNull('persons.merged_into_id');
+        /*
+         * Origen de los destinatarios:
+         *
+         * todos     = Personas + Líderes
+         * votantes  = Personas
+         * lideres   = Líderes
+         */
+        $source = $request->input('source', 'todos');
 
-        if ($user?->hasTerritoryScopeRestriction()) {
-            $allowedGeoIds = $user->allowedGeoIds();
+        if (!in_array($source, ['todos', 'votantes', 'lideres'], true)) {
+            $source = 'todos';
+        }
 
-            if (!empty($allowedGeoIds)) {
-                $query->whereHas('candidacies.contest', function ($q) use ($allowedGeoIds) {
-                    $q->whereIn('geographic_unit_id', $allowedGeoIds);
+        /*
+         * ---------------------------------------------------------
+         * PERSONAS / VOTANTES
+         * ---------------------------------------------------------
+         */
+        $persons = collect();
+
+        if (in_array($source, ['todos', 'votantes'], true)) {
+            $query = Person::query()
+                ->whereNull('persons.merged_into_id');
+
+            if ($user?->hasTerritoryScopeRestriction()) {
+                $allowedGeoIds = $user->allowedGeoIds();
+
+                if (!empty($allowedGeoIds)) {
+                    $query->whereHas('candidacies.contest', function ($q) use ($allowedGeoIds) {
+                        $q->whereIn('geographic_unit_id', $allowedGeoIds);
+                    });
+                }
+            }
+
+            if ($search = trim((string) $request->input('search'))) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('persons.full_name', 'ilike', "%{$search}%")
+                        ->orWhereHas('contactPoints', function ($contactQuery) use ($search) {
+                            $contactQuery
+                                ->where('type', 'mobile')
+                                ->where('is_current', true)
+                                ->where(function ($phoneQuery) use ($search) {
+                                    $phoneQuery
+                                        ->where('value_normalized', 'ilike', "%{$search}%")
+                                        ->orWhere('value_raw', 'ilike', "%{$search}%");
+                                });
+                        });
                 });
             }
-        }
 
-        if ($search = trim((string) $request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('persons.full_name', 'ilike', "%{$search}%")
-                    ->orWhereHas('contactPoints', function ($contactQuery) use ($search) {
-                        $contactQuery
-                            ->where('type', 'mobile')
-                            ->where('is_current', true)
-                            ->where(function ($phoneQuery) use ($search) {
-                                $phoneQuery
-                                    ->where('value_normalized', 'ilike', "%{$search}%")
-                                    ->orWhere('value_raw', 'ilike', "%{$search}%");
-                            });
-                    });
-            });
-        }
-
-        if ($birthMonth = $request->integer('birth_month')) {
-            if ($birthMonth >= 1 && $birthMonth <= 12) {
-                $query->whereMonth('birth_date', $birthMonth);
+            if ($birthMonth = $request->integer('birth_month')) {
+                if ($birthMonth >= 1 && $birthMonth <= 12) {
+                    $query->whereMonth('birth_date', $birthMonth);
+                }
             }
-        }
 
-        if ($birthDay = $request->integer('birth_day')) {
-            if ($birthDay >= 1 && $birthDay <= 31) {
-                $query->whereDay('birth_date', $birthDay);
+            if ($birthDay = $request->integer('birth_day')) {
+                if ($birthDay >= 1 && $birthDay <= 31) {
+                    $query->whereDay('birth_date', $birthDay);
+                }
             }
+
+            $persons = $query
+                ->with([
+                    'contactPoints' => function ($q) {
+                        $q->select([
+                            'id',
+                            'person_id',
+                            'type',
+                            'value_raw',
+                            'value_normalized',
+                            'is_current',
+                            'allow_export',
+                        ])
+                        ->where('type', 'mobile')
+                        ->where('is_current', true)
+                        ->where(function ($phoneQuery) {
+                            $phoneQuery
+                                ->whereNotNull('value_normalized')
+                                ->where('value_normalized', '!=', '')
+                                ->orWhere(function ($rawQuery) {
+                                    $rawQuery
+                                        ->whereNotNull('value_raw')
+                                        ->where('value_raw', '!=', '');
+                                });
+                        })
+                        ->orderByDesc('type');
+                    },
+                    'candidacies.electoralList.organization',
+                    'candidacies.contest.office',
+                    'candidacies.contest.corporation',
+                    'candidacies.contest.geographicUnit',
+                ])
+                ->select([
+                    'persons.id',
+                    'persons.full_name',
+                    'persons.birth_date',
+                ])
+                ->get()
+                ->map(function (Person $person) {
+                    $contact = $person->contactPoints->first();
+
+                    $candidacy = $person->candidacies
+                        ->sortByDesc(fn ($c) => $c->outcome_date?->timestamp ?? 0)
+                        ->first();
+
+                    $contest = $candidacy?->contest;
+                    $organization = $candidacy?->electoralList?->organization;
+
+                    $cargo = $contest?->office?->name
+                        ?? $contest?->corporation?->name;
+
+                    return [
+                        'id' => $person->id,
+                        'name' => $person->full_name,
+                        'phone' => $contact?->value_normalized ?: $contact?->value_raw,
+                        'birth_date' => $person->birth_date?->format('Y-m-d'),
+                        'municipio' => $contest?->geographicUnit?->canonical_name,
+                        'partido' => $organization?->canonical_name,
+                        'cargo' => $cargo,
+                        'tipo_registro' => $candidacy ? 'Candidato' : 'Persona',
+                        'source' => 'votante',
+                    ];
+                });
         }
 
-        $persons = $query
-            ->with([
-                'contactPoints' => function ($q) {
-                    $q->select([
-                        'id',
-                        'person_id',
-                        'type',
-                        'value_raw',
-                        'value_normalized',
-                        'is_current',
-                        'allow_export',
-                    ])
-                    ->where('type', 'mobile')
-                    ->where('is_current', true)
-                    ->where(function ($phoneQuery) {
-                        $phoneQuery
-                            ->whereNotNull('value_normalized')
-                            ->where('value_normalized', '!=', '')
-                            ->orWhere(function ($rawQuery) {
-                                $rawQuery
-                                    ->whereNotNull('value_raw')
-                                    ->where('value_raw', '!=', '');
-                            });
-                    })
-                    ->orderByDesc('type');
-                },
-                'candidacies.electoralList.organization',
-                'candidacies.contest.office',
-                'candidacies.contest.corporation',
-                'candidacies.contest.geographicUnit',
-            ])
-            ->select([
-                'persons.id',
-                'persons.full_name',
-                'persons.birth_date',
-            ])
-            ->orderBy('persons.full_name')
-            ->paginate(100)
-            ->withQueryString()
-            ->through(function (Person $person) {
-                $contact = $person->contactPoints->first();
+        /*
+         * ---------------------------------------------------------
+         * LÍDERES
+         * ---------------------------------------------------------
+         */
+        $lideres = collect();
 
-                $candidacy = $person->candidacies
-                    ->sortByDesc(fn ($c) => $c->outcome_date?->timestamp ?? 0)
-                    ->first();
+        if (in_array($source, ['todos', 'lideres'], true)) {
+            $query = Lider::query();
 
-                $contest = $candidacy?->contest;
-                $organization = $candidacy?->electoralList?->organization;
+            if ($user?->hasTerritoryScopeRestriction()) {
+                $allowedGeoIds = $user->allowedGeoIds();
 
-                $cargo = $contest?->office?->name
-                    ?? $contest?->corporation?->name;
+                if (!empty($allowedGeoIds)) {
+                    $query->whereIn('geographic_unit_id', $allowedGeoIds);
+                }
+            }
 
-                return [
-                    'id' => $person->id,
-                    'name' => $person->full_name,
-                    'phone' => $contact?->value_normalized ?: $contact?->value_raw,
-                    'birth_date' => $person->birth_date?->format('Y-m-d'),
-                    'municipio' => $contest?->geographicUnit?->canonical_name,
-                    'partido' => $organization?->canonical_name,
-                    'cargo' => $cargo,
-                    'tipo_registro' => $candidacy ? 'Candidato' : 'Persona',
-                ];
-            });
+            if ($search = trim((string) $request->input('search'))) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('nombre', 'ilike', "%{$search}%")
+                        ->orWhere('telefono', 'ilike', "%{$search}%")
+                        ->orWhereHas('contactos', function ($contactQuery) use ($search) {
+                            $contactQuery
+                                ->where('valor', 'ilike', "%{$search}%");
+                        });
+                });
+            }
 
+            if ($birthMonth = $request->integer('birth_month')) {
+                if ($birthMonth >= 1 && $birthMonth <= 12) {
+                    $query->whereMonth('fecha_nacimiento', $birthMonth);
+                }
+            }
+
+            if ($birthDay = $request->integer('birth_day')) {
+                if ($birthDay >= 1 && $birthDay <= 31) {
+                    $query->whereDay('fecha_nacimiento', $birthDay);
+                }
+            }
+
+            $lideres = $query
+                ->with([
+                    'contactos' => function ($q) {
+                        $q->where(function ($contactQuery) {
+                            $contactQuery
+                                ->where('estado', true)
+                                ->orWhereNull('estado');
+                        })
+                        ->orderByDesc('principal');
+                    },
+                    'geographicUnit',
+                ])
+                ->select([
+                    'id',
+                    'nombre',
+                    'telefono',
+                    'fecha_nacimiento',
+                    'municipio',
+                    'partido',
+                    'cargo',
+                    'geographic_unit_id',
+                ])
+                ->get()
+                ->map(function (Lider $lider) {
+                    /*
+                     * Primero usamos el teléfono principal de la
+                     * tabla lideres. Si no existe, buscamos uno
+                     * dentro de lider_contactos.
+                     */
+                    $phone = $lider->telefono;
+
+                    if (!$phone) {
+                        $contacto = $lider->contactos->first();
+                        $phone = $contacto?->valor;
+                    }
+
+                    return [
+                        'id' => $lider->id,
+                        'name' => $lider->nombre,
+                        'phone' => $phone,
+                        'birth_date' => $lider->fecha_nacimiento?->format('Y-m-d'),
+                        'municipio' => $lider->geographicUnit?->canonical_name
+                            ?? $lider->municipio,
+                        'partido' => $lider->partido,
+                        'cargo' => $lider->cargo,
+                        'tipo_registro' => 'Líder',
+                        'source' => 'lider',
+                    ];
+                });
+        }
+
+        /*
+         * ---------------------------------------------------------
+         * UNIFICAR RESULTADOS
+         * ---------------------------------------------------------
+         *
+         * No modificamos el funcionamiento del checkmark.
+         * React seguirá recibiendo un "id" por contacto.
+         */
+        $contacts = $persons
+            ->concat($lideres)
+            ->sortBy(fn ($contact) => mb_strtolower($contact['name'] ?? ''))
+            ->values();
+
+        /*
+         * ---------------------------------------------------------
+         * PAGINACIÓN
+         * ---------------------------------------------------------
+         *
+         * Antes Laravel paginaba directamente la consulta de Person.
+         * Ahora tenemos dos fuentes, por lo que paginamos la colección
+         * combinada manteniendo el mismo formato de paginación.
+         */
+        $perPage = 100;
+        $currentPage = LengthAwarePaginator::resolveCurrentPage();
+
+        $currentItems = $contacts
+            ->slice(($currentPage - 1) * $perPage, $perPage)
+            ->values();
+
+        $paginatedContacts = new LengthAwarePaginator(
+            $currentItems,
+            $contacts->count(),
+            $perPage,
+            $currentPage,
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
+        );
+
+        /*
+         * ---------------------------------------------------------
+         * PLANTILLAS
+         * ---------------------------------------------------------
+         */
         $templates = WhatsAppTemplate::query()
             ->where('is_active', true)
             ->orderBy('name')
@@ -139,12 +300,14 @@ class WhatsAppController extends Controller
             ]);
 
         return Inertia::render('Admin/WhatsApp', [
-            'contacts' => $persons,
+            'contacts' => $paginatedContacts,
             'templates' => $templates,
+
             'filters' => [
                 'search' => $request->input('search'),
                 'birth_month' => $request->input('birth_month'),
                 'birth_day' => $request->input('birth_day'),
+                'source' => $source,
             ],
         ]);
     }
@@ -158,41 +321,25 @@ class WhatsAppController extends Controller
             'variables' => ['nullable', 'array'],
             'image_url' => ['nullable', 'url'],
             'image' => ['nullable', 'image', 'max:10240'],
+            'source' => ['nullable', 'in:todos,votantes,lideres'],
         ]);
+
+        $source = $validated['source'] ?? 'todos';
 
         $user = $request->user();
 
-        $query = Person::query()
-            ->whereNull('persons.merged_into_id')
-            ->whereIn('persons.id', $validated['contact_ids'])
-            ->whereHas('contactPoints', function ($q) {
-                $q->where('type', 'mobile')
-                    ->where('is_current', true)
-                    ->where(function ($phoneQuery) {
-                        $phoneQuery
-                            ->whereNotNull('value_normalized')
-                            ->where('value_normalized', '!=', '')
-                            ->orWhere(function ($rawQuery) {
-                                $rawQuery
-                                    ->whereNotNull('value_raw')
-                                    ->where('value_raw', '!=', '');
-                            });
-                    });
-            });
+        /*
+         * ---------------------------------------------------------
+         * DESTINATARIOS PERSONAS / VOTANTES
+         * ---------------------------------------------------------
+         */
+        $persons = collect();
 
-        if ($user?->hasTerritoryScopeRestriction()) {
-            $allowedGeoIds = $user->allowedGeoIds();
-
-            if (!empty($allowedGeoIds)) {
-                $query->whereHas('candidacies.contest', function ($q) use ($allowedGeoIds) {
-                    $q->whereIn('geographic_unit_id', $allowedGeoIds);
-                });
-            }
-        }
-
-        $persons = $query
-            ->with([
-                'contactPoints' => function ($q) {
+        if (in_array($source, ['todos', 'votantes'], true)) {
+            $query = Person::query()
+                ->whereNull('persons.merged_into_id')
+                ->whereIn('persons.id', $validated['contact_ids'])
+                ->whereHas('contactPoints', function ($q) {
                     $q->where('type', 'mobile')
                         ->where('is_current', true)
                         ->where(function ($phoneQuery) {
@@ -205,23 +352,110 @@ class WhatsAppController extends Controller
                                         ->where('value_raw', '!=', '');
                                 });
                         });
-                },
-            ])
-            ->get();
+                });
 
-        $template = WhatsAppTemplate::query()
-            ->where('is_active', true)
-            ->findOrFail($validated['template_id']);
+            if ($user?->hasTerritoryScopeRestriction()) {
+                $allowedGeoIds = $user->allowedGeoIds();
 
-        $recipients = $persons->map(function (Person $person) {
-            $contact = $person->contactPoints->first();
+                if (!empty($allowedGeoIds)) {
+                    $query->whereHas('candidacies.contest', function ($q) use ($allowedGeoIds) {
+                        $q->whereIn('geographic_unit_id', $allowedGeoIds);
+                    });
+                }
+            }
 
-            return [
-                'id' => $person->id,
-                'name' => $person->full_name,
-                'phone' => $contact?->value_normalized ?: $contact?->value_raw,
-            ];
-        })->values()->all();
+            $persons = $query
+                ->with([
+                    'contactPoints' => function ($q) {
+                        $q->where('type', 'mobile')
+                            ->where('is_current', true)
+                            ->where(function ($phoneQuery) {
+                                $phoneQuery
+                                    ->whereNotNull('value_normalized')
+                                    ->where('value_normalized', '!=', '')
+                                    ->orWhere(function ($rawQuery) {
+                                        $rawQuery
+                                            ->whereNotNull('value_raw')
+                                            ->where('value_raw', '!=', '');
+                                    });
+                            });
+                    },
+                ])
+                ->get()
+                ->map(function (Person $person) {
+                    $contact = $person->contactPoints->first();
+
+                    return [
+                        'id' => $person->id,
+                        'name' => $person->full_name,
+                        'phone' => $contact?->value_normalized ?: $contact?->value_raw,
+                    ];
+                });
+        }
+
+        /*
+         * ---------------------------------------------------------
+         * DESTINATARIOS LÍDERES
+         * ---------------------------------------------------------
+         */
+        $lideres = collect();
+
+        if (in_array($source, ['todos', 'lideres'], true)) {
+            $query = Lider::query()
+                ->whereIn('lideres.id', $validated['contact_ids'])
+                ->where(function ($q) {
+                    $q->whereNotNull('telefono')
+                        ->where('telefono', '!=', '')
+                        ->orWhereHas('contactos', function ($contactQuery) {
+                            $contactQuery
+                                ->whereNotNull('valor')
+                                ->where('valor', '!= '');
+                        });
+                });
+
+            if ($user?->hasTerritoryScopeRestriction()) {
+                $allowedGeoIds = $user->allowedGeoIds();
+
+                if (!empty($allowedGeoIds)) {
+                    $query->whereIn('geographic_unit_id', $allowedGeoIds);
+                }
+            }
+
+            $lideres = $query
+                ->with([
+                    'contactos' => function ($q) {
+                        $q->where(function ($contactQuery) {
+                            $contactQuery
+                                ->where('estado', true)
+                                ->orWhereNull('estado');
+                        })
+                        ->orderByDesc('principal');
+                    },
+                ])
+                ->get()
+                ->map(function (Lider $lider) {
+                    $phone = $lider->telefono;
+
+                    if (!$phone) {
+                        $contacto = $lider->contactos->first();
+                        $phone = $contacto?->valor;
+                    }
+
+                    return [
+                        'id' => $lider->id,
+                        'name' => $lider->nombre,
+                        'phone' => $phone,
+                    ];
+                });
+        }
+
+        /*
+         * Unificamos los dos tipos de destinatarios.
+         */
+        $recipients = $persons
+            ->concat($lideres)
+            ->values()
+            ->all();
 
         if (empty($recipients)) {
             return response()->json([
@@ -229,39 +463,45 @@ class WhatsAppController extends Controller
             ], 422);
         }
 
+        $template = WhatsAppTemplate::query()
+            ->where('is_active', true)
+            ->findOrFail($validated['template_id']);
+
         /*
-         * Creamos el envío antes de llamar a n8n porque n8n
-         * necesitará conocer el ID del envío para actualizar
-         * posteriormente los estados de cada destinatario.
+         * ---------------------------------------------------------
+         * CREAR ENVÍO
+         * ---------------------------------------------------------
          */
         $send = WhatsAppSend::create([
             'template_id' => $template->id,
         ]);
 
-        /*
-         * Registramos cada destinatario con estado inicial
-         * "pendiente".
-         */
         $sendRecipients = [];
 
         foreach ($recipients as $recipient) {
             $sendRecipient = WhatsAppSendRecipient::create([
                 'whatsapp_send_id' => $send->id,
+
+                /*
+                 * Esta columna actualmente es UUID y no tiene
+                 * foreign key hacia persons, por lo que puede
+                 * almacenar tanto el UUID de una Persona como
+                 * el UUID de un Líder.
+                 */
                 'person_id' => $recipient['id'],
+
                 'name' => $recipient['name'],
                 'phone' => $recipient['phone'],
                 'status' => 'pendiente',
             ]);
 
             $sendRecipients[] = $sendRecipient;
-
-            $recipient['send_recipient_id'] = $sendRecipient->id;
-            $recipient['send_id'] = $send->id;
         }
 
         /*
-         * Volvemos a construir los destinatarios con sus IDs
-         * internos para enviarlos a n8n.
+         * ---------------------------------------------------------
+         * PAYLOAD PARA N8N
+         * ---------------------------------------------------------
          */
         $recipients = collect($sendRecipients)
             ->map(function (WhatsAppSendRecipient $recipient) {
@@ -295,7 +535,9 @@ class WhatsAppController extends Controller
             'image_url' => $validated['image_url'] ?? null,
         ];
 
-        // Webhook de n8n configurado mediante .env.
+        /*
+         * Webhook de n8n configurado mediante .env.
+         */
         $webhook = config('services.n8n.whatsapp_webhook');
 
         if ($request->hasFile('image')) {
