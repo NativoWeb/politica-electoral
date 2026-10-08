@@ -20,6 +20,17 @@ export default function WhatsApp({
     const [search, setSearch] = useState(filters.search ?? '');
     const [variableValues, setVariableValues] = useState({});
 
+    /*
+     * Origen de los destinatarios:
+     *
+     * todos    = Personas + Líderes
+     * lideres  = Líderes
+     * votantes = Personas
+     */
+    const [source, setSource] = useState(
+        filters.source ?? 'todos'
+    );
+
     const [imageFile, setImageFile] = useState(null);
     const [imageUrl, setImageUrl] = useState('');
     const [imagePreview, setImagePreview] = useState('');
@@ -42,16 +53,6 @@ export default function WhatsApp({
               )}`
             : ''
     );
-
-    const initialBirthdayDate =
-        filters.birth_month && filters.birth_day
-            ? `${new Date().getFullYear()}-${String(
-                  filters.birth_month
-              ).padStart(2, '0')}-${String(filters.birth_day).padStart(
-                  2,
-                  '0'
-              )}`
-            : '';
 
     const contactData = contacts?.data ?? [];
     const totalContacts = contacts?.total ?? contactData.length;
@@ -126,9 +127,6 @@ export default function WhatsApp({
 
     /*
      * Consulta a Laravel el estado real del envío.
-     *
-     * Laravel devuelve los registros de whatsapp_send_recipients
-     * que n8n está actualizando.
      */
     useEffect(() => {
         if (!currentSendId || !isTrackingActive) {
@@ -214,6 +212,25 @@ export default function WhatsApp({
         setImageFile(null);
         setImageUrl('');
         setImagePreview('');
+    };
+
+    /*
+     * Cambia el origen de los destinatarios.
+     *
+     * Al cambiarlo limpiamos la selección porque los contactos
+     * visibles pueden haber cambiado.
+     */
+    const handleSourceChange = (event) => {
+        const value = event.target.value;
+
+        setSource(value);
+        setSelectedContactIds([]);
+        setSendMessage('');
+        setSendError('');
+
+        applyFilters({
+            sourceValue: value,
+        });
     };
 
     const handleVariableChange = (position, value) => {
@@ -326,9 +343,6 @@ export default function WhatsApp({
 
     /*
      * Envía la preparación del envío a Laravel.
-     *
-     * Laravel crea el registro del envío y sus destinatarios,
-     * y posteriormente envía el payload a n8n.
      */
     const prepareSending = async () => {
         if (!selectedTemplate || selectedContactIds.length === 0) {
@@ -348,6 +362,14 @@ export default function WhatsApp({
             formData.append(
                 'template_id',
                 String(selectedTemplate.id)
+            );
+
+            /*
+             * Indicamos a Laravel de dónde vienen los destinatarios.
+             */
+            formData.append(
+                'source',
+                source
             );
 
             selectedContactIds.forEach((contactId) => {
@@ -419,10 +441,6 @@ export default function WhatsApp({
                     'Datos enviados correctamente a n8n.'
             );
 
-            /*
-             * A partir de aquí React deja de simular.
-             * El seguimiento se obtiene desde Laravel.
-             */
             setIsTrackingActive(true);
         } catch (error) {
             setSendError(
@@ -440,11 +458,19 @@ export default function WhatsApp({
     const applyFilters = ({
         searchValue = search,
         birthdayValue = birthdayDate,
+        sourceValue = source,
     } = {}) => {
         const params = {};
 
         if (searchValue.trim()) {
             params.search = searchValue.trim();
+        }
+
+        /*
+         * Conservamos el origen seleccionado.
+         */
+        if (sourceValue) {
+            params.source = sourceValue;
         }
 
         if (isBirthdayTemplate && birthdayValue) {
@@ -657,8 +683,48 @@ export default function WhatsApp({
                             {selectedTemplate && (
                                 <>
                                     <div>
-
                                         <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
+
+                                            {/* ==================================================
+                                                FILTRO DE ORIGEN
+                                            ================================================== */}
+                                            <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
+                                                <div className="mb-3">
+                                                    <label
+                                                        htmlFor="source-filter"
+                                                        className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]"
+                                                    >
+                                                        Mostrar destinatarios de
+                                                    </label>
+
+                                                    <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                        Selecciona de qué grupo quieres obtener los destinatarios.
+                                                    </p>
+                                                </div>
+
+                                                <select
+                                                    id="source-filter"
+                                                    value={source}
+                                                    onChange={handleSourceChange}
+                                                    className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                                                >
+                                                    <option value="todos">
+                                                        Todos
+                                                    </option>
+
+                                                    <option value="lideres">
+                                                        Líderes
+                                                    </option>
+
+                                                    <option value="votantes">
+                                                        Votantes
+                                                    </option>
+                                                </select>
+                                            </div>
+
+                                            {/* ==================================================
+                                                FILTRO DE CUMPLEAÑOS
+                                            ================================================== */}
                                             {isBirthdayTemplate && (
                                                 <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
                                                     <div className="mb-2">
@@ -787,7 +853,9 @@ export default function WhatsApp({
                                                                         contact.id
                                                                     }
                                                                     className={`flex ${
-                                                                        contact.phone ? 'cursor-pointer' : 'cursor-default'
+                                                                        contact.phone
+                                                                            ? 'cursor-pointer'
+                                                                            : 'cursor-default'
                                                                     } items-center gap-3 rounded-lg border bg-white px-3 py-3 transition ${
                                                                         selected
                                                                             ? 'border-[var(--color-primary)] bg-gray-50'
