@@ -14,7 +14,7 @@
         td { padding: 4px 6px; border-bottom: 1px solid #ddd; font-size: 9px; }
         .alt { background: #f5f5f5; }
         .b { font-weight: bold; }
-        .r { text-align: right; font-family: monospace; }
+        .r { text-align: right; font-weight: bold; font-family: monospace; }
         .e { background: #d4edda; }
         .footer { text-align: center; padding: 10px; font-size: 8px; color: #999; border-top: 1px solid #003B71; margin-top: 5px; }
         .page-break { page-break-after: always; }

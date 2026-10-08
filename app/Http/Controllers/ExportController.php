@@ -24,6 +24,7 @@ class ExportController extends Controller
 
     public function pdf(Request $request)
     {
+        ini_set('memory_limit', '256M');
         set_time_limit(120);
 
         $data = $this->getData($request);
