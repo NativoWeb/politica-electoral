@@ -18,21 +18,7 @@ class WhatsAppController extends Controller
         $user = $request->user();
 
         $query = Person::query()
-            ->whereNull('persons.merged_into_id')
-            ->whereHas('contactPoints', function ($q) {
-                $q->where('type', 'mobile')
-                    ->where('is_current', true)
-                    ->where(function ($phoneQuery) {
-                        $phoneQuery
-                            ->whereNotNull('value_normalized')
-                            ->where('value_normalized', '!=', '')
-                            ->orWhere(function ($rawQuery) {
-                                $rawQuery
-                                    ->whereNotNull('value_raw')
-                                    ->where('value_raw', '!=', '');
-                            });
-                    });
-            });
+            ->whereNull('persons.merged_into_id');
 
         if ($user?->hasTerritoryScopeRestriction()) {
             $allowedGeoIds = $user->allowedGeoIds();
