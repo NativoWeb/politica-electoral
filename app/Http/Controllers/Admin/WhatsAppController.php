@@ -468,16 +468,6 @@ class WhatsAppController extends Controller
          * No se manda texto ni imagen desde Laravel.
          * El procesamiento y envío se conectarán con n8n.
          */
-        if ($isBirthdayTemplate) {
-            return response()->json([
-                'message' => 'Destinatarios de cumpleaños registrados.',
-                'send_id' => $send->id,
-                'recipients_count' => $savedRecipients->count(),
-                'recipients' => $savedRecipients,
-                'campaign_date' => $send->campaign_date?->toDateString(),
-                'queued' => true,
-            ]);
-        }
 
         $payload = [
             'send_id' => $send->id,
