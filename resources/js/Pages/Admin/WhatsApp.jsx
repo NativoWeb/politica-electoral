@@ -1,3 +1,4 @@
+
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
 import { useMemo, useState, useEffect } from 'react';
@@ -19,17 +20,7 @@ export default function WhatsApp({
     const [selectedContactIds, setSelectedContactIds] = useState([]);
     const [search, setSearch] = useState(filters.search ?? '');
     const [variableValues, setVariableValues] = useState({});
-
-    /*
-     * Origen de los destinatarios:
-     *
-     * todos    = Personas + Líderes
-     * lideres  = Líderes
-     * votantes = Personas
-     */
-    const [source, setSource] = useState(
-        filters.source ?? 'todos'
-    );
+    const [source, setSource] = useState(filters.source ?? 'todos');
 
     const [imageFile, setImageFile] = useState(null);
     const [imageUrl, setImageUrl] = useState('');
@@ -55,7 +46,6 @@ export default function WhatsApp({
     );
 
     const contactData = contacts?.data ?? [];
-    const totalContacts = contacts?.total ?? contactData.length;
 
     const selectedTemplate = useMemo(
         () =>
@@ -94,9 +84,7 @@ export default function WhatsApp({
     const previewName =
         selectedContactIds.length === 1
             ? previewContact?.name ?? '[NOMBRE DEL CONTACTO]'
-            : selectedContactIds.length > 1
-              ? '[NOMBRE DEL CONTACTO]'
-              : '';
+            : '[NOMBRE DEL CONTACTO]';
 
     const previewText = useMemo(() => {
         if (!selectedTemplate) return '';
@@ -105,7 +93,6 @@ export default function WhatsApp({
 
         for (const variable of sortedVariables) {
             const position = Number(variable.position);
-
             const value =
                 position === 1
                     ? previewName
@@ -126,12 +113,11 @@ export default function WhatsApp({
     ]);
 
     /*
-     * Consulta a Laravel el estado real del envío.
+     * Consulta periódicamente el estado real del envío en Laravel.
+     * Se conserva la ruta existente para no afectar otras plantillas.
      */
     useEffect(() => {
-        if (!currentSendId || !isTrackingActive) {
-            return;
-        }
+        if (!currentSendId || !isTrackingActive) return;
 
         let cancelled = false;
 
@@ -159,7 +145,6 @@ export default function WhatsApp({
                 if (cancelled) return;
 
                 const recipients = data?.recipients ?? [];
-
                 setSendTracking(recipients);
 
                 const hasPendingRecipients = recipients.some((recipient) =>
@@ -175,21 +160,17 @@ export default function WhatsApp({
                     setIsTrackingActive(false);
                 }
             } catch (error) {
-                if (cancelled) return;
-
-                console.error(
-                    'Error consultando estado del envío:',
-                    error
-                );
+                if (!cancelled) {
+                    console.error(
+                        'Error consultando estado del envío:',
+                        error
+                    );
+                }
             }
         };
 
         fetchTrackingStatus();
-
-        const interval = setInterval(
-            fetchTrackingStatus,
-            3000
-        );
+        const interval = setInterval(fetchTrackingStatus, 3000);
 
         return () => {
             cancelled = true;
@@ -214,12 +195,37 @@ export default function WhatsApp({
         setImagePreview('');
     };
 
-    /*
-     * Cambia el origen de los destinatarios.
-     *
-     * Al cambiarlo limpiamos la selección porque los contactos
-     * visibles pueden haber cambiado.
-     */
+    const applyFilters = ({
+        searchValue = search,
+        birthdayValue = birthdayDate,
+        sourceValue = source,
+    } = {}) => {
+        const params = {};
+
+        if (searchValue.trim()) {
+            params.search = searchValue.trim();
+        }
+
+        if (sourceValue) {
+            params.source = sourceValue;
+        }
+
+        if (isBirthdayTemplate && birthdayValue) {
+            const [, month, day] = birthdayValue.split('-');
+
+            if (month && day) {
+                params.birth_month = month;
+                params.birth_day = day;
+            }
+        }
+
+        router.get('/admin/whatsapp', params, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
     const handleSourceChange = (event) => {
         const value = event.target.value;
 
@@ -228,9 +234,7 @@ export default function WhatsApp({
         setSendMessage('');
         setSendError('');
 
-        applyFilters({
-            sourceValue: value,
-        });
+        applyFilters({ sourceValue: value });
     };
 
     const handleVariableChange = (position, value) => {
@@ -249,14 +253,15 @@ export default function WhatsApp({
 
         if (!file.type.startsWith('image/')) {
             event.target.value = '';
+            setSendError('Selecciona un archivo de imagen válido.');
             return;
         }
 
+        setSendError('');
         setImageFile(file);
         setImageUrl('');
 
-        const previewUrl = URL.createObjectURL(file);
-        setImagePreview(previewUrl);
+        setImagePreview(URL.createObjectURL(file));
     };
 
     const handleImageUrlChange = (event) => {
@@ -264,7 +269,6 @@ export default function WhatsApp({
 
         setImageUrl(value);
         setImageFile(null);
-
         setImagePreview(value.trim());
     };
 
@@ -294,22 +298,26 @@ export default function WhatsApp({
         });
     };
 
+    const selectableContactData = contactData.filter(
+        (contact) => Boolean(contact.phone)
+    );
+
+    const allVisibleSelected =
+        selectableContactData.length > 0 &&
+        selectableContactData.every((contact) =>
+            selectedContactIds.some(
+                (id) => String(id) === String(contact.id)
+            )
+        );
+
     const toggleAllContacts = () => {
-        const visibleIds = contactData
-            .filter((contact) => contact.phone)
+        const visibleIds = selectableContactData
             .map((contact) => contact.id)
             .filter(Boolean);
 
         if (!visibleIds.length) return;
 
-        const allSelected = visibleIds.every((id) =>
-            selectedContactIds.some(
-                (selectedId) =>
-                    String(selectedId) === String(id)
-            )
-        );
-
-        if (allSelected) {
+        if (allVisibleSelected) {
             setSelectedContactIds((current) =>
                 current.filter(
                     (id) =>
@@ -342,10 +350,20 @@ export default function WhatsApp({
     };
 
     /*
-     * Envía la preparación del envío a Laravel.
+     * Envía la selección a Laravel.
+     *
+     * Para oscarfc NO se envían variables manuales ni imágenes:
+     * el flujo de cumpleaños se gestionará con n8n.
+     *
+     * Las demás plantillas conservan el comportamiento existente.
      */
     const prepareSending = async () => {
-        if (!selectedTemplate || selectedContactIds.length === 0) {
+        if (
+            !selectedTemplate ||
+            selectedContactIds.length === 0 ||
+            isSending ||
+            isTrackingActive
+        ) {
             return;
         }
 
@@ -364,58 +382,43 @@ export default function WhatsApp({
                 String(selectedTemplate.id)
             );
 
-            /*
-             * Indicamos a Laravel de dónde vienen los destinatarios.
-             */
-            formData.append(
-                'source',
-                source
-            );
+            formData.append('source', source);
 
             selectedContactIds.forEach((contactId) => {
-                formData.append(
-                    'contact_ids[]',
-                    String(contactId)
-                );
+                formData.append('contact_ids[]', String(contactId));
             });
 
-            Object.entries(variableValues).forEach(
-                ([position, value]) => {
-                    formData.append(
-                        `variables[${position}]`,
-                        value ?? ''
-                    );
-                }
-            );
-
-            if (imageUrl.trim()) {
-                formData.append(
-                    'image_url',
-                    imageUrl.trim()
+            if (!isBirthdayTemplate) {
+                Object.entries(variableValues).forEach(
+                    ([position, value]) => {
+                        formData.append(
+                            `variables[${position}]`,
+                            value ?? ''
+                        );
+                    }
                 );
-            }
 
-            if (imageFile) {
-                formData.append('image', imageFile);
-            }
-
-            const response = await fetch(
-                '/admin/whatsapp/prepare',
-                {
-                    method: 'POST',
-                    headers: {
-                        Accept: 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRF-TOKEN':
-                            document
-                                .querySelector(
-                                    'meta[name="csrf-token"]'
-                                )
-                                ?.getAttribute('content') ?? '',
-                    },
-                    body: formData,
+                if (imageUrl.trim()) {
+                    formData.append('image_url', imageUrl.trim());
                 }
-            );
+
+                if (imageFile) {
+                    formData.append('image', imageFile);
+                }
+            }
+
+            const response = await fetch('/admin/whatsapp/prepare', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN':
+                        document
+                            .querySelector('meta[name="csrf-token"]')
+                            ?.getAttribute('content') ?? '',
+                },
+                body: formData,
+            });
 
             const data = await response.json();
 
@@ -435,10 +438,11 @@ export default function WhatsApp({
             }
 
             setCurrentSendId(sendId);
-
             setSendMessage(
                 data?.message ??
-                    'Datos enviados correctamente a n8n.'
+                    (isBirthdayTemplate
+                        ? 'Campaña de cumpleaños preparada. El envío se gestionará mediante n8n.'
+                        : 'Datos enviados correctamente a n8n.')
             );
 
             setIsTrackingActive(true);
@@ -452,65 +456,21 @@ export default function WhatsApp({
         }
     };
 
-    /*
-     * Aplica búsqueda y filtros usando Inertia.
-     */
-    const applyFilters = ({
-        searchValue = search,
-        birthdayValue = birthdayDate,
-        sourceValue = source,
-    } = {}) => {
-        const params = {};
-
-        if (searchValue.trim()) {
-            params.search = searchValue.trim();
-        }
-
-        /*
-         * Conservamos el origen seleccionado.
-         */
-        if (sourceValue) {
-            params.source = sourceValue;
-        }
-
-        if (isBirthdayTemplate && birthdayValue) {
-            const [, month, day] = birthdayValue.split('-');
-
-            if (month && day) {
-                params.birth_month = month;
-                params.birth_day = day;
-            }
-        }
-
-        router.get('/admin/whatsapp', params, {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
-        });
-    };
-
     const submitSearch = (event) => {
         event.preventDefault();
-
         applyFilters();
     };
 
     const clearSearch = () => {
         setSearch('');
-
-        applyFilters({
-            searchValue: '',
-        });
+        applyFilters({ searchValue: '' });
     };
 
     const handleBirthdayDateChange = (event) => {
         const value = event.target.value;
-
         setBirthdayDate(value);
 
-        applyFilters({
-            birthdayValue: value,
-        });
+        applyFilters({ birthdayValue: value });
     };
 
     const selectTodayBirthdays = () => {
@@ -518,46 +478,23 @@ export default function WhatsApp({
 
         const value = `${today.getFullYear()}-${String(
             today.getMonth() + 1
-        ).padStart(2, '0')}-${String(today.getDate()).padStart(
-            2,
-            '0'
-        )}`;
+        ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
         setBirthdayDate(value);
-
-        applyFilters({
-            birthdayValue: value,
-        });
+        applyFilters({ birthdayValue: value });
     };
 
     const clearBirthdayFilter = () => {
         setBirthdayDate('');
-
-        applyFilters({
-            birthdayValue: '',
-        });
+        applyFilters({ birthdayValue: '' });
     };
-
-    const selectableContactData = contactData.filter(
-        (contact) => Boolean(contact.phone)
-    );
-
-    const allVisibleSelected =
-        selectableContactData.length > 0 &&
-        selectableContactData.every((contact) =>
-            selectedContactIds.some(
-                (id) => String(id) === String(contact.id)
-            )
-        );
 
     const formatBirthDate = (birthDate) => {
         if (!birthDate) return 'Sin fecha';
 
         const date = new Date(`${birthDate}T00:00:00`);
 
-        if (Number.isNaN(date.getTime())) {
-            return birthDate;
-        }
+        if (Number.isNaN(date.getTime())) return birthDate;
 
         return new Intl.DateTimeFormat('es-CO', {
             day: '2-digit',
@@ -566,23 +503,21 @@ export default function WhatsApp({
         }).format(date);
     };
 
-    const normalizeStatus = (status) => {
-        return String(status ?? '').toLowerCase();
-    };
+    const normalizeStatus = (status) =>
+        String(status ?? '').toLowerCase();
 
     const getStatusLabel = (status) => {
         switch (normalizeStatus(status)) {
             case 'pendiente':
                 return 'Pendiente';
-
+            case 'enviando':
+                return 'Enviando';
             case 'enviado':
                 return 'Enviado';
-
             case 'error':
                 return 'Error';
-
             default:
-                return status;
+                return status || 'Sin estado';
         }
     };
 
@@ -590,21 +525,19 @@ export default function WhatsApp({
         switch (normalizeStatus(status)) {
             case 'pendiente':
                 return 'bg-gray-100 text-gray-600';
-
+            case 'enviando':
+                return 'bg-blue-100 text-blue-700';
             case 'enviado':
                 return 'bg-green-100 text-green-700';
-
             case 'error':
                 return 'bg-red-100 text-red-700';
-
             default:
                 return 'bg-gray-100 text-gray-600';
         }
     };
 
     const sentCount = sendTracking.filter(
-        (item) =>
-            normalizeStatus(item.status) === 'enviado'
+        (item) => normalizeStatus(item.status) === 'enviado'
     ).length;
 
     return (
@@ -682,378 +615,367 @@ export default function WhatsApp({
 
                             {selectedTemplate && (
                                 <>
-                                    <div>
-                                        <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
+                                    {isBirthdayTemplate && (
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                                            <p className="text-sm font-semibold text-amber-900">
+                                                Envío automático de cumpleaños
+                                            </p>
 
-                                            {/* ==================================================
-                                                FILTRO DE ORIGEN
-                                            ================================================== */}
-                                            <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
-                                                <div className="mb-3">
-                                                    <label
-                                                        htmlFor="source-filter"
-                                                        className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]"
-                                                    >
-                                                        Mostrar destinatarios de
-                                                    </label>
-
-                                                    <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                        Selecciona de qué grupo quieres obtener los destinatarios.
-                                                    </p>
-                                                </div>
-
-                                                <select
-                                                    id="source-filter"
-                                                    value={source}
-                                                    onChange={handleSourceChange}
-                                                    className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                >
-                                                    <option value="todos">
-                                                        Todos
-                                                    </option>
-
-                                                    <option value="lideres">
-                                                        Líderes
-                                                    </option>
-
-                                                    <option value="votantes">
-                                                        Votantes
-                                                    </option>
-                                                </select>
-                                            </div>
-
-                                            {/* ==================================================
-                                                FILTRO DE CUMPLEAÑOS
-                                            ================================================== */}
-                                            {isBirthdayTemplate && (
-                                                <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
-                                                    <div className="mb-2">
-                                                        <label
-                                                            htmlFor="birthday-filter"
-                                                            className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]"
-                                                        >
-                                                            Filtrar por cumpleaños
-                                                        </label>
-
-                                                        <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                            Selecciona un día para
-                                                            encontrar todas las
-                                                            personas que cumplen
-                                                            años en esa fecha.
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                                        <input
-                                                            id="birthday-filter"
-                                                            type="date"
-                                                            value={birthdayDate}
-                                                            onChange={
-                                                                handleBirthdayDateChange
-                                                            }
-                                                            className="flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                        />
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={
-                                                                selectTodayBirthdays
-                                                            }
-                                                            className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
-                                                        >
-                                                            Cumplen hoy
-                                                        </button>
-
-                                                        {birthdayDate && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={
-                                                                    clearBirthdayFilter
-                                                                }
-                                                                className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                            >
-                                                                Quitar filtro
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            <form
-                                                onSubmit={submitSearch}
-                                                className="flex flex-col gap-2 sm:flex-row"
-                                            >
-                                                <input
-                                                    type="text"
-                                                    value={search}
-                                                    onChange={(event) =>
-                                                        setSearch(
-                                                            event.target.value
-                                                        )
-                                                    }
-                                                    placeholder="Buscar por nombre o teléfono..."
-                                                    className="flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                />
-
-                                                <button
-                                                    type="submit"
-                                                    className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
-                                                >
-                                                    Buscar
-                                                </button>
-
-                                                {search && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={clearSearch}
-                                                        className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                    >
-                                                        Limpiar
-                                                    </button>
-                                                )}
-                                            </form>
-
-                                            <div className="mt-4 flex items-center justify-between">
-                                                <span className="text-[11px] text-[var(--color-ink-faint)]">
-                                                    Página {contacts?.current_page ?? 1} de{' '}
-                                                    {contacts?.last_page ?? 1}
-                                                </span>
-
-                                                {selectableContactData.length > 0 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={toggleAllContacts}
-                                                        className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline"
-                                                    >
-                                                        {allVisibleSelected
-                                                            ? 'Deseleccionar todos'
-                                                            : 'Seleccionar todos'}
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {contactData.length > 0 ? (
-                                                <div className="mt-3 max-h-96 space-y-2 overflow-y-auto">
-                                                    {contactData.map(
-                                                        (contact) => {
-                                                            const selected =
-                                                                selectedContactIds.some(
-                                                                    (id) =>
-                                                                        String(
-                                                                            id
-                                                                        ) ===
-                                                                        String(
-                                                                            contact.id
-                                                                        )
-                                                                );
-
-                                                            return (
-                                                                <label
-                                                                    key={
-                                                                        contact.id
-                                                                    }
-                                                                    className={`flex ${
-                                                                        contact.phone
-                                                                            ? 'cursor-pointer'
-                                                                            : 'cursor-default'
-                                                                    } items-center gap-3 rounded-lg border bg-white px-3 py-3 transition ${
-                                                                        selected
-                                                                            ? 'border-[var(--color-primary)] bg-gray-50'
-                                                                            : 'border-[var(--color-line)] hover:bg-gray-50'
-                                                                    }`}
-                                                                >
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={selected}
-                                                                        disabled={!contact.phone}
-                                                                        onChange={() =>
-                                                                            toggleContact(contact)
-                                                                        }
-                                                                        className="h-4 w-4 rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
-                                                                    />
-
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-center">
-                                                                            <div className="min-w-0">
-                                                                                <p className="truncate text-sm font-semibold text-[var(--color-ink)]">
-                                                                                    {
-                                                                                        contact.name
-                                                                                    }
-                                                                                </p>
-                                                                            </div>
-
-                                                                            <div>
-                                                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
-                                                                                    Celular
-                                                                                </p>
-
-                                                                                <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
-                                                                                    {contact.phone || 'Sin celular'}
-                                                                                </p>
-                                                                            </div>
-
-                                                                            <div>
-                                                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
-                                                                                    Cumpleaños
-                                                                                </p>
-
-                                                                                <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
-                                                                                    {formatBirthDate(
-                                                                                        contact.birth_date
-                                                                                    )}
-                                                                                </p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </label>
-                                                            );
-                                                        }
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="py-8 text-center">
-                                                    <p className="text-[12px] text-[var(--color-ink-faint)]">
-                                                        No se encontraron
-                                                        contactos disponibles.
-                                                    </p>
-
-                                                    <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                        Las personas sin celular aparecen en la lista,
-                                                        pero no pueden ser seleccionadas para el envío.
-                                                    </p>
-                                                </div>
-                                            )}
-
-                                            <div className="mt-4 flex items-center justify-between">
-                                                <span className="text-[10px] text-[var(--color-ink-faint)]">
-                                                    {selectedContactIds.length}{' '}
-                                                    destinatarios
-                                                    seleccionados
-                                                </span>
-
-                                                <div className="flex gap-2">
-                                                    {contacts?.prev_page_url && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                router.get(
-                                                                    contacts.prev_page_url,
-                                                                    {},
-                                                                    {
-                                                                        preserveState:
-                                                                            true,
-                                                                        preserveScroll:
-                                                                            true,
-                                                                        replace: true,
-                                                                    }
-                                                                )
-                                                            }
-                                                            className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                        >
-                                                            Anterior
-                                                        </button>
-                                                    )}
-
-                                                    {contacts?.next_page_url && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                router.get(
-                                                                    contacts.next_page_url,
-                                                                    {},
-                                                                    {
-                                                                        preserveState:
-                                                                            true,
-                                                                        preserveScroll:
-                                                                            true,
-                                                                        replace: true,
-                                                                    }
-                                                                )
-                                                            }
-                                                            className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                        >
-                                                            Siguiente
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {sortedVariables.length > 0 && (
-                                        <div>
-                                            <label className="mb-3 block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
-                                                Personalización
-                                            </label>
-
-                                            <div className="space-y-3">
-                                                {sortedVariables.map(
-                                                    (variable) => {
-                                                        const position =
-                                                            Number(
-                                                                variable.position
-                                                            );
-
-                                                        if (position === 1) {
-                                                            return null;
-                                                        }
-
-                                                        return (
-                                                            <div
-                                                                key={
-                                                                    variable.position
-                                                                }
-                                                            >
-                                                                <label
-                                                                    htmlFor={`variable-${variable.position}`}
-                                                                    className="mb-1.5 block text-[11px] font-semibold text-[var(--color-ink)]"
-                                                                >
-                                                                    {
-                                                                        variable.label
-                                                                    }
-                                                                </label>
-
-                                                                <input
-                                                                    id={`variable-${variable.position}`}
-                                                                    type="text"
-                                                                    value={
-                                                                        variableValues?.[
-                                                                            position
-                                                                        ] ?? ''
-                                                                    }
-                                                                    onChange={(
-                                                                        event
-                                                                    ) =>
-                                                                        handleVariableChange(
-                                                                            position,
-                                                                            event
-                                                                                .target
-                                                                                .value
-                                                                        )
-                                                                    }
-                                                                    placeholder={`Escribe el ${String(
-                                                                        variable.label ??
-                                                                            ''
-                                                                    ).toLowerCase()}`}
-                                                                    className="w-full rounded-lg border border-[var(--color-line)] px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                                />
-                                                            </div>
-                                                        );
-                                                    }
-                                                )}
-                                            </div>
-
-                                            <p className="mt-2 text-[10px] text-[var(--color-ink-faint)]">
-                                                <strong>
-                                                    El nombre del contacto se
-                                                    agregará automáticamente al
-                                                    momento del envío.
-                                                </strong>
+                                            <p className="mt-1 text-xs leading-5 text-amber-800">
+                                                Aquí solo debes seleccionar los
+                                                destinatarios. El mensaje
+                                                personalizado y la imagen se
+                                                gestionarán desde n8n. No necesitas
+                                                escribir el mensaje ni adjuntar
+                                                archivos.
                                             </p>
                                         </div>
                                     )}
 
-                                    {hasImageHeader && (
+                                    <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
+                                        <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
+                                            <label
+                                                htmlFor="source-filter"
+                                                className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]"
+                                            >
+                                                Mostrar destinatarios de
+                                            </label>
+
+                                            <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                Selecciona de qué grupo quieres
+                                                obtener los destinatarios.
+                                            </p>
+
+                                            <select
+                                                id="source-filter"
+                                                value={source}
+                                                onChange={handleSourceChange}
+                                                className="mt-3 w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                                            >
+                                                <option value="todos">
+                                                    Todos
+                                                </option>
+                                                <option value="lideres">
+                                                    Líderes
+                                                </option>
+                                                <option value="votantes">
+                                                    Votantes
+                                                </option>
+                                            </select>
+                                        </div>
+
+                                        {isBirthdayTemplate && (
+                                            <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
+                                                <label
+                                                    htmlFor="birthday-filter"
+                                                    className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]"
+                                                >
+                                                    Filtrar por cumpleaños
+                                                </label>
+
+                                                <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                    Elige una fecha para encontrar
+                                                    personas que cumplen años ese
+                                                    día.
+                                                </p>
+
+                                                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                                    <input
+                                                        id="birthday-filter"
+                                                        type="date"
+                                                        value={birthdayDate}
+                                                        onChange={
+                                                            handleBirthdayDateChange
+                                                        }
+                                                        className="flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                                                    />
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={
+                                                            selectTodayBirthdays
+                                                        }
+                                                        className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
+                                                    >
+                                                        Cumplen hoy
+                                                    </button>
+
+                                                    {birthdayDate && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={
+                                                                clearBirthdayFilter
+                                                            }
+                                                            className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
+                                                        >
+                                                            Quitar filtro
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <form
+                                            onSubmit={submitSearch}
+                                            className="flex flex-col gap-2 sm:flex-row"
+                                        >
+                                            <input
+                                                type="text"
+                                                value={search}
+                                                onChange={(event) =>
+                                                    setSearch(event.target.value)
+                                                }
+                                                placeholder="Buscar por nombre o teléfono..."
+                                                className="flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                                            />
+
+                                            <button
+                                                type="submit"
+                                                className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
+                                            >
+                                                Buscar
+                                            </button>
+
+                                            {search && (
+                                                <button
+                                                    type="button"
+                                                    onClick={clearSearch}
+                                                    className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
+                                                >
+                                                    Limpiar
+                                                </button>
+                                            )}
+                                        </form>
+
+                                        <div className="mt-4 flex items-center justify-between">
+                                            <span className="text-[11px] text-[var(--color-ink-faint)]">
+                                                Página{' '}
+                                                {contacts?.current_page ?? 1} de{' '}
+                                                {contacts?.last_page ?? 1}
+                                            </span>
+
+                                            {selectableContactData.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={toggleAllContacts}
+                                                    className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline"
+                                                >
+                                                    {allVisibleSelected
+                                                        ? 'Deseleccionar todos'
+                                                        : 'Seleccionar todos'}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {contactData.length > 0 ? (
+                                            <div className="mt-3 max-h-96 space-y-2 overflow-y-auto">
+                                                {contactData.map((contact) => {
+                                                    const selected =
+                                                        selectedContactIds.some(
+                                                            (id) =>
+                                                                String(id) ===
+                                                                String(contact.id)
+                                                        );
+
+                                                    return (
+                                                        <label
+                                                            key={contact.id}
+                                                            className={`flex ${
+                                                                contact.phone
+                                                                    ? 'cursor-pointer'
+                                                                    : 'cursor-default'
+                                                            } items-center gap-3 rounded-lg border bg-white px-3 py-3 transition ${
+                                                                selected
+                                                                    ? 'border-[var(--color-primary)] bg-gray-50'
+                                                                    : 'border-[var(--color-line)] hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selected}
+                                                                disabled={!contact.phone}
+                                                                onChange={() =>
+                                                                    toggleContact(
+                                                                        contact
+                                                                    )
+                                                                }
+                                                                className="h-4 w-4 rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+                                                            />
+
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-center">
+                                                                    <div className="min-w-0">
+                                                                        <p className="truncate text-sm font-semibold text-[var(--color-ink)]">
+                                                                            {contact.name}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
+                                                                            Celular
+                                                                        </p>
+                                                                        <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
+                                                                            {contact.phone ||
+                                                                                'Sin celular'}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
+                                                                            Cumpleaños
+                                                                        </p>
+                                                                        <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
+                                                                            {formatBirthDate(
+                                                                                contact.birth_date
+                                                                            )}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div className="py-8 text-center">
+                                                <p className="text-[12px] text-[var(--color-ink-faint)]">
+                                                    No se encontraron contactos
+                                                    disponibles.
+                                                </p>
+
+                                                <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                    Los contactos sin celular no
+                                                    pueden seleccionarse para el
+                                                    envío.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-4 flex items-center justify-between">
+                                            <span className="text-[10px] text-[var(--color-ink-faint)]">
+                                                {selectedContactIds.length}{' '}
+                                                destinatarios seleccionados
+                                            </span>
+
+                                            <div className="flex gap-2">
+                                                {contacts?.prev_page_url && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            router.get(
+                                                                contacts.prev_page_url,
+                                                                {},
+                                                                {
+                                                                    preserveState: true,
+                                                                    preserveScroll: true,
+                                                                    replace: true,
+                                                                }
+                                                            )
+                                                        }
+                                                        className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
+                                                    >
+                                                        Anterior
+                                                    </button>
+                                                )}
+
+                                                {contacts?.next_page_url && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            router.get(
+                                                                contacts.next_page_url,
+                                                                {},
+                                                                {
+                                                                    preserveState: true,
+                                                                    preserveScroll: true,
+                                                                    replace: true,
+                                                                }
+                                                            )
+                                                        }
+                                                        className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
+                                                    >
+                                                        Siguiente
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {!isBirthdayTemplate &&
+                                        sortedVariables.length > 0 && (
+                                            <div>
+                                                <label className="mb-3 block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
+                                                    Personalización
+                                                </label>
+
+                                                <div className="space-y-3">
+                                                    {sortedVariables.map(
+                                                        (variable) => {
+                                                            const position =
+                                                                Number(
+                                                                    variable.position
+                                                                );
+
+                                                            if (position === 1) {
+                                                                return null;
+                                                            }
+
+                                                            return (
+                                                                <div
+                                                                    key={
+                                                                        variable.position
+                                                                    }
+                                                                >
+                                                                    <label
+                                                                        htmlFor={`variable-${variable.position}`}
+                                                                        className="mb-1.5 block text-[11px] font-semibold text-[var(--color-ink)]"
+                                                                    >
+                                                                        {
+                                                                            variable.label
+                                                                        }
+                                                                    </label>
+
+                                                                    <input
+                                                                        id={`variable-${variable.position}`}
+                                                                        type="text"
+                                                                        value={
+                                                                            variableValues?.[
+                                                                                position
+                                                                            ] ?? ''
+                                                                        }
+                                                                        onChange={(
+                                                                            event
+                                                                        ) =>
+                                                                            handleVariableChange(
+                                                                                position,
+                                                                                event
+                                                                                    .target
+                                                                                    .value
+                                                                            )
+                                                                        }
+                                                                        placeholder={`Escribe el ${String(
+                                                                            variable.label ??
+                                                                                ''
+                                                                        ).toLowerCase()}`}
+                                                                        className="w-full rounded-lg border border-[var(--color-line)] px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        }
+                                                    )}
+                                                </div>
+
+                                                <p className="mt-2 text-[10px] text-[var(--color-ink-faint)]">
+                                                    <strong>
+                                                        El nombre del contacto se
+                                                        agregará automáticamente
+                                                        al momento del envío.
+                                                    </strong>
+                                                </p>
+                                            </div>
+                                        )}
+
+                                    {!isBirthdayTemplate && hasImageHeader && (
                                         <div>
                                             <label className="mb-3 block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
                                                 Imagen del encabezado
@@ -1103,32 +1025,14 @@ export default function WhatsApp({
                                                 {(imageFile || imageUrl) && (
                                                     <div className="mt-3 flex items-center justify-between gap-3">
                                                         <p className="min-w-0 truncate text-[10px] text-[var(--color-ink-faint)]">
-                                                            {imageFile ? (
-                                                                <>
-                                                                    Archivo seleccionado:{' '}
-                                                                    <strong>
-                                                                        {
-                                                                            imageFile.name
-                                                                        }
-                                                                    </strong>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    Imagen desde URL pública:{' '}
-                                                                    <strong>
-                                                                        {
-                                                                            imageUrl
-                                                                        }
-                                                                    </strong>
-                                                                </>
-                                                            )}
+                                                            {imageFile
+                                                                ? `Archivo seleccionado: ${imageFile.name}`
+                                                                : `Imagen desde URL pública: ${imageUrl}`}
                                                         </p>
 
                                                         <button
                                                             type="button"
-                                                            onClick={
-                                                                clearImage
-                                                            }
+                                                            onClick={clearImage}
                                                             className="shrink-0 text-[10px] font-semibold text-[var(--color-primary)] hover:underline"
                                                         >
                                                             Quitar
@@ -1139,62 +1043,68 @@ export default function WhatsApp({
                                         </div>
                                     )}
 
-                                    <div>
-                                        <div className="mb-2 flex items-center justify-between">
-                                            <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
-                                                Vista previa
-                                            </label>
+                                    {!isBirthdayTemplate && (
+                                        <div>
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
+                                                    Vista previa
+                                                </label>
 
-                                            {selectedContactIds.length ===
-                                                1 &&
-                                                previewContact && (
+                                                {selectedContactIds.length ===
+                                                    1 &&
+                                                    previewContact && (
+                                                        <span className="text-[10px] text-[var(--color-ink-faint)]">
+                                                            Para:{' '}
+                                                            <strong>
+                                                                {
+                                                                    previewContact.name
+                                                                }
+                                                            </strong>
+                                                        </span>
+                                                    )}
+
+                                                {selectedContactIds.length >
+                                                    1 && (
                                                     <span className="text-[10px] text-[var(--color-ink-faint)]">
-                                                        Para:{' '}
+                                                        Vista previa general
+                                                        para{' '}
                                                         <strong>
                                                             {
-                                                                previewContact.name
+                                                                selectedContactIds.length
                                                             }
-                                                        </strong>
+                                                        </strong>{' '}
+                                                        destinatarios
                                                     </span>
                                                 )}
+                                            </div>
 
-                                            {selectedContactIds.length > 1 && (
-                                                <span className="text-[10px] text-[var(--color-ink-faint)]">
-                                                    Vista previa general para{' '}
-                                                    <strong>
-                                                        {
-                                                            selectedContactIds.length
-                                                        }
-                                                    </strong>{' '}
-                                                    destinatarios
-                                                </span>
-                                            )}
-                                        </div>
+                                            <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
+                                                {hasImageHeader &&
+                                                    imagePreview && (
+                                                        <div className="mb-4 overflow-hidden rounded-lg bg-white">
+                                                            <img
+                                                                src={imagePreview}
+                                                                alt="Vista previa del encabezado"
+                                                                className="max-h-80 w-full object-contain"
+                                                            />
+                                                        </div>
+                                                    )}
 
-                                        <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
-                                            {hasImageHeader &&
-                                                imagePreview && (
-                                                    <div className="mb-4 overflow-hidden rounded-lg bg-white">
-                                                        <img
-                                                            src={imagePreview}
-                                                            alt="Vista previa del encabezado"
-                                                            className="max-h-80 w-full object-contain"
-                                                        />
-                                                    </div>
+                                                {selectedContactIds.length >
+                                                0 ? (
+                                                    <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-ink)]">
+                                                        {previewText}
+                                                    </p>
+                                                ) : (
+                                                    <p className="text-[12px] text-[var(--color-ink-faint)]">
+                                                        Selecciona un contacto
+                                                        para visualizar el
+                                                        mensaje.
+                                                    </p>
                                                 )}
-
-                                            {selectedContactIds.length > 0 ? (
-                                                <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-ink)]">
-                                                    {previewText}
-                                                </p>
-                                            ) : (
-                                                <p className="text-[12px] text-[var(--color-ink-faint)]">
-                                                    Selecciona un contacto para
-                                                    visualizar el mensaje.
-                                                </p>
-                                            )}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                                 </>
                             )}
 
@@ -1226,10 +1136,12 @@ export default function WhatsApp({
                                     }`}
                                 >
                                     {isSending
-                                        ? 'Enviando a n8n...'
+                                        ? 'Preparando envío...'
                                         : isTrackingActive
                                           ? 'Envío en progreso...'
-                                          : 'Enviar'}
+                                          : isBirthdayTemplate
+                                            ? 'Preparar campaña de cumpleaños'
+                                            : 'Enviar'}
                                 </button>
 
                                 {sendMessage && (
@@ -1261,8 +1173,7 @@ export default function WhatsApp({
 
                                             <span className="text-[10px] font-medium text-[var(--color-ink-faint)]">
                                                 {sentCount} de{' '}
-                                                {sendTracking.length}{' '}
-                                                enviados
+                                                {sendTracking.length} enviados
                                             </span>
                                         </div>
                                     </div>
@@ -1274,11 +1185,9 @@ export default function WhatsApp({
                                                     <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                                         Destinatario
                                                     </th>
-
                                                     <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                                         Celular
                                                     </th>
-
                                                     <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                                         Estado
                                                     </th>
@@ -1291,7 +1200,8 @@ export default function WhatsApp({
                                                         const order = {
                                                             enviado: 1,
                                                             error: 2,
-                                                            pendiente: 3,
+                                                            enviando: 3,
+                                                            pendiente: 4,
                                                         };
 
                                                         return (
@@ -1315,9 +1225,7 @@ export default function WhatsApp({
 
                                                         return (
                                                             <tr
-                                                                key={
-                                                                    recipient.id
-                                                                }
+                                                                key={recipient.id}
                                                                 className="border-b border-[var(--color-line)] last:border-b-0"
                                                             >
                                                                 <td className="px-4 py-3">

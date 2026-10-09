@@ -37,6 +37,7 @@ return [
 
     'n8n' => [
         'whatsapp_webhook' => env('N8N_WHATSAPP_WEBHOOK'),
+        'birthday_token' => env('N8N_BIRTHDAY_TOKEN'),
     ],
 
 ];

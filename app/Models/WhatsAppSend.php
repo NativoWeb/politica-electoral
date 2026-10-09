@@ -12,7 +12,16 @@ class WhatsAppSend extends Model
 
     protected $fillable = [
         'template_id',
+        'campaign_type',
+        'campaign_date',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'campaign_date' => 'date',
+        ];
+    }
 
     public function template(): BelongsTo
     {
