@@ -44,6 +44,22 @@ export default function WhatsApp({
             : ''
     );
 
+
+    const [birthdayMode, setBirthdayMode] = useState('manual');
+
+    const [birthdayHistoryDate, setBirthdayHistoryDate] = useState(() => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+
+        return `${year}-${month}-${day}`;
+    });
+
+    const [birthdayHistory, setBirthdayHistory] = useState(null);
+    const [birthdayHistoryLoading, setBirthdayHistoryLoading] = useState(false);
+    const [birthdayHistoryError, setBirthdayHistoryError] = useState('');
+
     const contactData = contacts?.data ?? [];
 
     const selectedTemplate = useMemo(
@@ -179,6 +195,9 @@ export default function WhatsApp({
 
     const handleTemplateChange = (event) => {
         setSelectedTemplateId(event.target.value);
+        setBirthdayMode('manual');
+        setBirthdayHistory(null);
+        setBirthdayHistoryError('');
         setVariableValues({});
         setSelectedContactIds([]);
         setBirthdayDate('');
@@ -488,6 +507,52 @@ export default function WhatsApp({
         applyFilters({ birthdayValue: '' });
     };
 
+
+    const loadBirthdayHistory = async () => {
+        if (!birthdayHistoryDate) {
+            setBirthdayHistoryError('Selecciona una fecha para consultar.');
+            setBirthdayHistory(null);
+            return;
+        }
+
+        setBirthdayHistoryLoading(true);
+        setBirthdayHistoryError('');
+        setBirthdayHistory(null);
+
+        try {
+            const response = await fetch(
+                `/admin/whatsapp/birthdays/history?date=${encodeURIComponent(
+                    birthdayHistoryDate
+                )}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data?.message ??
+                        'No fue posible consultar el historial.'
+                );
+            }
+
+            setBirthdayHistory(data);
+        } catch (error) {
+            setBirthdayHistoryError(
+                error?.message ??
+                    'Ocurrió un error consultando el historial.'
+            );
+        } finally {
+            setBirthdayHistoryLoading(false);
+        }
+    };
+
     const formatBirthDate = (birthDate) => {
         if (!birthDate) return 'Sin fecha';
 
@@ -576,10 +641,67 @@ export default function WhatsApp({
                             destinatarios.
                         </p>
 
-                        <div className="space-y-6">
+                        {isBirthdayTemplate && (
+                            <>
+                                <div className="mb-6">
+                                <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                    Modo de cumpleaños
+                                </p>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBirthdayMode('manual')}
+                                        className={`rounded-lg border p-4 text-left transition ${
+                                            birthdayMode === 'manual'
+                                                ? 'border-[var(--color-primary)] bg-gray-50 ring-1 ring-[var(--color-primary)]'
+                                                : 'border-[var(--color-line)] bg-white hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <span className="block text-sm font-bold text-[var(--color-ink)]">
+                                            Envío manual
+                                        </span>
+                                        <span className="mt-1 block text-[11px] text-[var(--color-ink-faint)]">
+                                            Filtrar y seleccionar destinatarios para preparar un envío.
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setBirthdayMode('history');
+                                            setBirthdayHistory(null);
+                                            setBirthdayHistoryError('');
+                                        }}
+                                        className={`rounded-lg border p-4 text-left transition ${
+                                            birthdayMode === 'history'
+                                                ? 'border-[var(--color-primary)] bg-gray-50 ring-1 ring-[var(--color-primary)]'
+                                                : 'border-[var(--color-line)] bg-white hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <span className="block text-sm font-bold text-[var(--color-ink)]">
+                                            Historial de envíos
+                                        </span>
+                                        <span className="mt-1 block text-[11px] text-[var(--color-ink-faint)]">
+                                            Consultar destinatarios y estados por fecha.
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    <div
+                        className={`space-y-6 ${
+                                    isBirthdayTemplate && birthdayMode === 'history'
+                                        ? 'hidden'
+                                        : ''
+                                }`}
+                            >
                             <div>
-                                <label
-                                    htmlFor="plantilla"
+                                    <label
+                                        htmlFor="plantilla"
+
                                     className="block text-sm font-medium text-gray-700"
                                 >
                                     Plantilla
@@ -1268,6 +1390,174 @@ export default function WhatsApp({
                                 </div>
                             )}
                         </div>
+                        {isBirthdayTemplate && birthdayMode === 'history' && (
+                            <div className="space-y-5">
+                                <div>
+                                    <h3 className="text-sm font-bold text-[var(--color-ink)]">
+                                        Historial de envíos de cumpleaños
+                                    </h3>
+                                    <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">
+                                        Consulta las campañas registradas para una fecha.
+                                    </p>
+                                </div>
+
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                    <div className="flex-1">
+                                        <label
+                                            htmlFor="birthday-history-date"
+                                            className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]"
+                                        >
+                                            Fecha del envío
+                                        </label>
+
+                                        <input
+                                            id="birthday-history-date"
+                                            type="date"
+                                            value={birthdayHistoryDate}
+                                            onChange={(event) => {
+                                                setBirthdayHistoryDate(event.target.value);
+                                                setBirthdayHistory(null);
+                                                setBirthdayHistoryError('');
+                                            }}
+                                            className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)]"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={loadBirthdayHistory}
+                                        disabled={birthdayHistoryLoading || !birthdayHistoryDate}
+                                        className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {birthdayHistoryLoading
+                                            ? 'Consultando...'
+                                            : 'Consultar historial'}
+                                    </button>
+                                </div>
+
+                                {birthdayHistoryError && (
+                                    <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-[11px] text-red-700">
+                                        {birthdayHistoryError}
+                                    </p>
+                                )}
+
+                                {birthdayHistory && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                                            {[
+                                                {
+                                                    label: 'Enviados',
+                                                    value: birthdayHistory.summary?.enviado ?? 0,
+                                                    style: 'bg-green-50 text-green-700',
+                                                },
+                                                {
+                                                    label: 'Con error',
+                                                    value: birthdayHistory.summary?.error ?? 0,
+                                                    style: 'bg-red-50 text-red-700',
+                                                },
+                                                {
+                                                    label: 'Pendientes',
+                                                    value: birthdayHistory.summary?.pendiente ?? 0,
+                                                    style: 'bg-gray-100 text-gray-700',
+                                                },
+                                                {
+                                                    label: 'En curso',
+                                                    value: birthdayHistory.summary?.enviando ?? 0,
+                                                    style: 'bg-blue-50 text-blue-700',
+                                                },
+                                            ].map((item) => (
+                                                <div
+                                                    key={item.label}
+                                                    className={`rounded-lg p-4 ${item.style}`}
+                                                >
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider">
+                                                        {item.label}
+                                                    </p>
+                                                    <p className="mt-1 text-2xl font-extrabold">
+                                                        {item.value}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-4 text-[11px] text-[var(--color-ink-faint)]">
+                                            <span>
+                                                Fecha: <strong>{formatBirthDate(birthdayHistory.date)}</strong>
+                                            </span>
+                                            <span>
+                                                Campañas: <strong>{birthdayHistory.campaigns_count}</strong>
+                                            </span>
+                                            <span>
+                                                Destinatarios: <strong>{birthdayHistory.recipients_count}</strong>
+                                            </span>
+                                        </div>
+
+                                        <div className="overflow-x-auto rounded-lg border border-[var(--color-line)]">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="border-b border-[var(--color-line)] bg-gray-50">
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Destinatario
+                                                        </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Celular
+                                                        </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Fecha de nacimiento
+                                                        </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Estado
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+
+                                                <tbody>
+                                                    {(birthdayHistory.recipients ?? []).length > 0 ? (
+                                                        birthdayHistory.recipients.map((recipient) => (
+                                                            <tr
+                                                                key={recipient.id}
+                                                                className="border-b border-[var(--color-line)] last:border-b-0"
+                                                            >
+                                                                <td className="px-4 py-3">
+                                                                    <p className="text-[12px] font-semibold text-[var(--color-ink)]">
+                                                                        {recipient.name}
+                                                                    </p>
+                                                                </td>
+
+                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">
+                                                                    {recipient.phone || 'Sin celular'}
+                                                                </td>
+
+                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">
+                                                                    {formatBirthDate(recipient.birth_date)}
+                                                                </td>
+
+                                                                <td className="px-4 py-3">
+                                                                    <span
+                                                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}
+                                                                    >
+                                                                        {getStatusLabel(recipient.status)}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    ) : (
+                                                        <tr>
+                                                            <td
+                                                                colSpan={4}
+                                                                className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]"
+                                                            >
+                                                                No hay destinatarios registrados para esta fecha.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

@@ -169,6 +169,9 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
         // WhatsApp
         Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
 
+        Route::get('/whatsapp/birthdays/history', [WhatsAppController::class, 'birthdayHistory'])
+            ->name('whatsapp.birthdays.history');
+
         Route::post('/whatsapp/prepare', [WhatsAppController::class, 'prepare'])
             ->name('whatsapp.prepare');
 

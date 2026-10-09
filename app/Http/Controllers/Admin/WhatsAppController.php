@@ -831,16 +831,39 @@ class WhatsAppController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Obtener los identificadores de todos los destinatarios del historial.
+        $personIds = $sends
+            ->flatMap(fn (WhatsAppSend $send) => $send->recipients->pluck('person_id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        // Consultar fechas de nacimiento en las dos fuentes posibles.
+        $personBirthDates = Person::query()
+            ->whereIn('id', $personIds)
+            ->pluck('birth_date', 'id');
+
+        $leaderBirthDates = Lider::query()
+            ->whereIn('id', $personIds)
+            ->pluck('fecha_nacimiento', 'id');
+
         $recipients = $sends
-            ->flatMap(function (WhatsAppSend $send) {
+            ->flatMap(function (WhatsAppSend $send) use (
+                $personBirthDates,
+                $leaderBirthDates
+            ) {
                 return $send->recipients->map(function (
                     WhatsAppSendRecipient $recipient
-                ) use ($send) {
+                ) use ($send, $personBirthDates, $leaderBirthDates) {
+                    $birthDate = $personBirthDates->get($recipient->person_id)
+                        ?? $leaderBirthDates->get($recipient->person_id);
+
                     return [
                         'id' => $recipient->id,
                         'send_id' => $send->id,
                         'name' => $recipient->name,
                         'phone' => $recipient->phone,
+                        'birth_date' => $this->dateValue($birthDate),
                         'status' => $recipient->status,
                         'campaign_date' => $this->dateValue(
                             $send->campaign_date
