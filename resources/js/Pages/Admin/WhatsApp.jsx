@@ -1,4 +1,3 @@
-
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
 import { useMemo, useState, useEffect } from 'react';
@@ -618,16 +617,7 @@ export default function WhatsApp({
                                     {isBirthdayTemplate && (
                                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                                             <p className="text-sm font-semibold text-amber-900">
-                                                Envío automático de cumpleaños
-                                            </p>
-
-                                            <p className="mt-1 text-xs leading-5 text-amber-800">
-                                                Aquí solo debes seleccionar los
-                                                destinatarios. El mensaje
-                                                personalizado y la imagen se
-                                                gestionarán desde n8n. No necesitas
-                                                escribir el mensaje ni adjuntar
-                                                archivos.
+                                                Envío manual
                                             </p>
                                         </div>
                                     )}
@@ -1140,7 +1130,7 @@ export default function WhatsApp({
                                         : isTrackingActive
                                           ? 'Envío en progreso...'
                                           : isBirthdayTemplate
-                                            ? 'Preparar campaña de cumpleaños'
+                                            ? 'Enviar'
                                             : 'Enviar'}
                                 </button>
 
