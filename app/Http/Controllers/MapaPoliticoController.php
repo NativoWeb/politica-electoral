@@ -515,6 +515,31 @@ class MapaPoliticoController extends Controller
             ->map(fn ($items) => $items->map(fn ($r) => ['partido' => $r->partido, 'votos' => (int) $r->votos])->values()->toArray())
             ->toArray();
 
+        if (! isset($partyTotals['Asamblea'])) {
+            $asambleaCorpId = $this->corporationId('Asamblea');
+            if ($asambleaCorpId) {
+                $aq = DB::table('electoral_results as er')
+                    ->join('candidacies as ca', 'er.candidacy_id', '=', 'ca.id')
+                    ->join('contests as con', 'ca.contest_id', '=', 'con.id')
+                    ->join('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'ca.id')->where('ce.is_primary', true))
+                    ->join('political_organizations as po', 'ce.organization_id', '=', 'po.id')
+                    ->where('con.corporation_id', $asambleaCorpId)
+                    ->whereIn('er.metric_type', ['votes', 'nominal_votes']);
+                if ($munId) {
+                    $aq->where('er.geographic_unit_id', $munId);
+                }
+                $asambleaTotals = $aq->select('po.canonical_name as partido', DB::raw('SUM(er.value) as votos'))
+                    ->groupBy('po.canonical_name')
+                    ->orderByDesc('votos')
+                    ->get()
+                    ->map(fn ($r) => ['partido' => $r->partido, 'votos' => (int) $r->votos])
+                    ->toArray();
+                if (! empty($asambleaTotals)) {
+                    $partyTotals['Asamblea'] = $asambleaTotals;
+                }
+            }
+        }
+
         return Inertia::render('MapaPolitico', [
             'data' => array_values($data),
             'municipios' => $municipios,

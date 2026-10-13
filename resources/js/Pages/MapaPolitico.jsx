@@ -724,6 +724,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                                 partyTotals={
                                     tipo === 'Cámara' ? partyTotals['Cámara de Representantes'] :
                                     tipo === 'Senado' ? partyTotals['Senado'] :
+                                    tipo === 'Asamblea' ? partyTotals['Asamblea'] :
                                     null
                                 }
                             />
