@@ -73,7 +73,7 @@ class OfflineController extends Controller
                     'c.outcome', 'ce.endorsement_type as tipo_aval',
                     DB::raw('COALESCE(res.votos, 0) as votos'),
                     DB::raw("'Concejo' as tipo_registro"),
-                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END as cargo")
+                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END as cargo")
                 )
                 ->orderByDesc('res.votos')
                 ->get()->map(fn ($r) => (array) $r)->toArray();

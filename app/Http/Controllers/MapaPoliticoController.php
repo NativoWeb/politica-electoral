@@ -54,13 +54,13 @@ class MapaPoliticoController extends Controller
 
         return [
             'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
-            'concejo' => ['Concejal Electo', 'Candidato Concejo'],
+            'concejo' => ['Concejal', 'Candidato Concejo'],
             'lideres' => $liderCargos,
             'directorio' => $liderCargos,
             'senado' => ['Senador', 'Candidato Senado'],
             'camara' => ['Representante', 'Candidato Cámara'],
             'asamblea' => ['Diputado', 'Candidato Asamblea'],
-            'todos' => collect(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal Electo', 'Candidato Concejo', 'Senador', 'Candidato Senado', 'Representante', 'Candidato Cámara', 'Diputado', 'Candidato Asamblea'])
+            'todos' => collect(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal', 'Candidato Concejo', 'Senador', 'Candidato Senado', 'Representante', 'Candidato Cámara', 'Diputado', 'Candidato Asamblea'])
                 ->merge($liderCargos)->unique()->sort()->values()->toArray(),
         ];
     }
@@ -187,7 +187,7 @@ class MapaPoliticoController extends Controller
                     'c.outcome', 'ce.endorsement_type as tipo_aval',
                     DB::raw('COALESCE(res.votos, 0) as votos'),
                     DB::raw("'Concejo' as tipo_registro"),
-                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END as cargo")
+                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END as cargo")
                 );
 
             if ($munId) {
@@ -199,7 +199,7 @@ class MapaPoliticoController extends Controller
                 $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
             }
             if (! empty($cargos)) {
-                $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END"), $cargos);
+                $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END"), $cargos);
             }
             if ($noGeoFilter) {
                 $query->where('c.outcome', 'elected');

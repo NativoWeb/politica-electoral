@@ -131,12 +131,12 @@ class ExportController extends Controller
                 ->leftJoinSub(clone $votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
                 ->select('p.full_name as nombre', 'g.canonical_name as municipio',
                     DB::raw("'Concejo' as tipo"),
-                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END as cargo"),
+                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END as cargo"),
                     'po.canonical_name as partido', DB::raw('NULL as telefono'),
                     DB::raw('COALESCE(res.votos, 0) as votos'));
             if ($munId) $query->where('con.geographic_unit_id', $munId);
             if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
-            if (!empty($cargos)) $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal Electo' ELSE 'Candidato Concejo' END"), $cargos);
+            if (!empty($cargos)) $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END"), $cargos);
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
         }
 
