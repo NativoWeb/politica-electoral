@@ -25,11 +25,11 @@ export default function SearchableDropdown({ label, options, selected, onChange,
 
     return (
         <div className="relative">
-            <label className="block text-[11px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">{label}</label>
+            <label className="block text-[11px] md:text-[13px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">{label}</label>
             <button
                 type="button"
                 onClick={() => { setOpen(!open); setSearch(''); }}
-                className="text-[13px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 lg:px-4 py-2.5 lg:py-3 w-full lg:w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold text-left flex items-center justify-between bg-white"
+                className="text-[13px] md:text-[15px] lg:text-[15px] border border-[var(--color-line)] rounded-lg px-3 md:px-4 lg:px-4 py-2.5 md:py-3 lg:py-3 w-full lg:w-[220px] focus:outline-none focus:border-[var(--color-primary)] font-semibold text-left flex items-center justify-between bg-white"
             >
                 <span className={`truncate ${(multi ? selectedArr.length > 0 : !!selected) ? 'text-[var(--color-ink)]' : 'text-gray-400'}`}>
                     {displayText}
@@ -46,11 +46,11 @@ export default function SearchableDropdown({ label, options, selected, onChange,
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                                 placeholder="Buscar..."
-                                className="w-full px-3 py-2 border border-[var(--color-line)] rounded-lg text-[13px] focus:outline-none focus:border-[var(--color-primary)]"
+                                className="w-full px-3 py-2 md:py-2.5 border border-[var(--color-line)] rounded-lg text-[13px] md:text-[15px] focus:outline-none focus:border-[var(--color-primary)]"
                                 autoFocus
                             />
                         </div>
-                        <button onClick={clear} className="w-full text-left px-4 py-2 text-[13px] text-[var(--color-primary)] font-semibold border-b border-[var(--color-line)] hover:bg-blue-50">
+                        <button onClick={clear} className="w-full text-left px-4 py-2 md:py-2.5 text-[13px] md:text-[15px] text-[var(--color-primary)] font-semibold border-b border-[var(--color-line)] hover:bg-blue-50">
                             Limpiar
                         </button>
                         <div className="overflow-y-auto flex-1">
@@ -58,14 +58,14 @@ export default function SearchableDropdown({ label, options, selected, onChange,
                             {filtered.map(opt => {
                                 const checked = multi ? selectedArr.includes(opt) : selected === opt;
                                 return (
-                                    <label key={opt} role="option" aria-selected={checked} className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-0 ${checked ? 'bg-blue-50' : ''}`}>
+                                    <label key={opt} role="option" aria-selected={checked} className={`flex items-center gap-3 px-4 py-2.5 md:py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-0 ${checked ? 'bg-blue-50' : ''}`}>
                                         <input
                                             type="checkbox"
                                             checked={checked}
                                             onChange={() => toggle(opt)}
-                                            className="w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                            className="w-5 h-5 md:w-6 md:h-6 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                         />
-                                        <span className={`text-[13px] ${checked ? 'font-bold text-[var(--color-primary)]' : highlightedSet.has(opt) ? 'font-bold text-[var(--color-ink)]' : 'text-[var(--color-ink-soft)]'}`}>{opt}</span>
+                                        <span className={`text-[13px] md:text-[15px] ${checked ? 'font-bold text-[var(--color-primary)]' : highlightedSet.has(opt) ? 'font-bold text-[var(--color-ink)]' : 'text-[var(--color-ink-soft)]'}`}>{opt}</span>
                                     </label>
                                 );
                             })}
