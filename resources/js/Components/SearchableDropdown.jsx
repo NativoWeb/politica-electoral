@@ -20,7 +20,7 @@ export default function SearchableDropdown({ label, options, selected, onChange,
     function clear() { onChange(undefined); setSearch(''); setOpen(false); }
 
     const displayText = multi
-        ? (selectedArr.length > 0 ? `${selectedArr.length} sel.` : placeholder)
+        ? (selectedArr.length > 0 ? selectedArr.join(', ') : placeholder)
         : (selected || placeholder);
 
     return (
