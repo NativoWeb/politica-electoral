@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
-export default function SearchableDropdown({ label, options, selected, onChange, placeholder = 'Todos', multi = true }) {
+export default function SearchableDropdown({ label, options, selected, onChange, placeholder = 'Todos', multi = true, highlightedOptions = [] }) {
+    const highlightedSet = new Set(highlightedOptions);
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
     const selectedArr = multi ? (selected ? selected.split(',') : []) : [];
@@ -64,7 +65,7 @@ export default function SearchableDropdown({ label, options, selected, onChange,
                                             onChange={() => toggle(opt)}
                                             className="w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                                         />
-                                        <span className={`text-[13px] ${checked ? 'font-bold text-[var(--color-primary)]' : 'text-[var(--color-ink-soft)]'}`}>{opt}</span>
+                                        <span className={`text-[13px] ${checked ? 'font-bold text-[var(--color-primary)]' : highlightedSet.has(opt) ? 'font-bold text-[var(--color-ink)]' : 'text-[var(--color-ink-soft)]'}`}>{opt}</span>
                                     </label>
                                 );
                             })}

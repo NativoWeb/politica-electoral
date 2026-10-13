@@ -607,6 +607,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
                                 multi={true}
+                                highlightedOptions={(cargoCategorias || []).filter(c => c.is_highlighted).map(c => c.name)}
                             />
                         </div>
                         <div className="col-span-1">
