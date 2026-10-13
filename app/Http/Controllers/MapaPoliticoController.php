@@ -822,7 +822,9 @@ class MapaPoliticoController extends Controller
             'destacado' => (bool) ($bestLider->destacado ?? false),
             'profesion' => $bestLider->profesion ?? null,
             'cedula' => $bestLider->cedula ?? $person->cedula ?? null,
-            'tipo_registro' => $source === 'lider' ? 'Líderes' : null,
+            'tipo_registro' => $source === 'lider'
+                ? (($person->tipo ?? '') === 'nuevo_lider' ? 'Nuevos Líderes' : 'Líderes')
+                : null,
             'votos' => $source === 'lider'
                 ? (int) ($bestLider->votos ?? 0)
                 : (int) DB::table('electoral_results as er')
@@ -896,6 +898,7 @@ class MapaPoliticoController extends Controller
             'telefono' => 'nullable|string|max:20',
             'email' => 'nullable|string|max:255',
             'cargo' => 'nullable|string|max:100',
+            'tipos' => 'nullable|array',
             'partido' => 'nullable|string|max:255',
             'observacion' => 'nullable|string|max:1000',
             'direccion' => 'nullable|string|max:255',
@@ -1014,7 +1017,7 @@ class MapaPoliticoController extends Controller
                             'geographic_unit_id' => $geoId,
                             'cargo' => $data['cargo'] ?? '',
                             'partido' => $data['partido'] ?? null,
-                            'tipo' => 'directorio',
+                            'tipo' => in_array('Nuevos Líderes', $data['tipos'] ?? []) ? 'nuevo_lider' : 'directorio',
                             'telefono' => $data['telefono'] ?? null,
                             'email' => $data['email'] ?? null,
                             'direccion' => $data['direccion'] ?? null,
@@ -1055,6 +1058,9 @@ class MapaPoliticoController extends Controller
                 ];
                 if ($partidoSent) {
                     $updateData['partido'] = $partidoValue;
+                }
+                if (array_key_exists('tipos', $data)) {
+                    $updateData['tipo'] = in_array('Nuevos Líderes', $data['tipos'] ?? []) ? 'nuevo_lider' : 'directorio';
                 }
 
                 // Extended fields — only update when explicitly sent
