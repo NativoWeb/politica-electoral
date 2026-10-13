@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
 use Illuminate\Http\Request;
@@ -49,8 +50,11 @@ class MapaPoliticoController extends Controller
     // #7: Cached cargos por tipo
     private function cargosPorTipo(): array
     {
-        $liderCargos = DB::table('lideres')->select('cargo')->distinct()->pluck('cargo')
-            ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
+        $catalogCargos = CargoCategory::active()->pluck('name')->toArray();
+        $liderCargos = collect($catalogCargos)
+            ->merge(DB::table('lideres')->select('cargo')->distinct()->pluck('cargo')
+                ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter())
+            ->unique()->values()->toArray();
 
         return [
             'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
@@ -547,6 +551,7 @@ class MapaPoliticoController extends Controller
             'municipioInfo' => $municipioInfo,
             'cargosDisponibles' => $cargosDisponibles,
             'cargosPorTipo' => $this->cargosPorTipo(),
+            'cargoCategorias' => CargoCategory::active()->get(['id', 'name', 'display_order', 'is_highlighted']),
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
             'partyTotals' => $partyTotals,

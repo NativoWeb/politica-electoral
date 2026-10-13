@@ -281,7 +281,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
 }
 
 /* ── MAIN ── */
-export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, barrios = [], sectionCounts = {}, partyTotals = {}, filters: serverFilters = {} }) {
+export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, cargoCategorias = [], barrios = [], sectionCounts = {}, partyTotals = {}, filters: serverFilters = {} }) {
     const [allData, setAllData] = useState(() => serverData);
     const [localFilters, setLocalFilters] = useState({});
     const [localSearch, setLocalSearch] = useState(serverFilters.search ?? '');
@@ -592,9 +592,17 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                                 label="Cargo"
                                 options={(() => {
                                     const selectedTipos = (filters.tipo && filters.tipo !== 'todos') ? filters.tipo.split(',') : ['todos'];
-                                    if (selectedTipos.includes('todos')) return cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
-                                    const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
-                                    return merged.length > 0 ? merged.sort() : CARGOS_DISPONIBLES;
+                                    let opts;
+                                    if (selectedTipos.includes('todos')) {
+                                        opts = cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
+                                    } else {
+                                        const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
+                                        opts = merged.length > 0 ? merged : CARGOS_DISPONIBLES;
+                                    }
+                                    const highlightedNames = new Set((cargoCategorias || []).filter(c => c.is_highlighted).map(c => c.name));
+                                    const highlighted = opts.filter(c => highlightedNames.has(c));
+                                    const normal = opts.filter(c => !highlightedNames.has(c));
+                                    return [...highlighted, ...normal.sort()];
                                 })()}
                                 selected={filters.cargo}
                                 onChange={val => { setSelectedCargos(val ? val.split(',') : []); applyFilters({ cargo: val }); }}
@@ -802,11 +810,11 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
 
             {/* Panel lateral de detalle */}
             {selectedPerson && (
-                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} fallbackData={data.find(d => d.id === selectedPerson)} />
+                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} cargoCategorias={cargoCategorias} fallbackData={data.find(d => d.id === selectedPerson)} />
             )}
 
             {/* Modal crear líder */}
-            <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} provincias={provincias} cargosPorTipo={cargosPorTipo} />
+            <CrearLiderModal open={showCrearLider} onClose={() => setShowCrearLider(false)} municipios={municipios} provincias={provincias} cargosPorTipo={cargosPorTipo} cargoCategorias={cargoCategorias} />
 
         </AppLayout>
     );

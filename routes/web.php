@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Admin\WhatsAppTemplateController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExportController;
@@ -186,6 +187,15 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
 
         Route::delete('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'destroy'])
             ->name('whatsapp.templates.destroy');
+
+        // Cargos CRUD
+        Route::get('/cargos', [CargoCategoryController::class, 'index'])->name('cargos');
+        Route::middleware('can.write')->group(function () {
+            Route::post('/cargos', [CargoCategoryController::class, 'store'])->name('cargos.store');
+            Route::put('/cargos/{id}', [CargoCategoryController::class, 'update'])->name('cargos.update');
+            Route::post('/cargos/reorder', [CargoCategoryController::class, 'reorder'])->name('cargos.reorder');
+            Route::post('/cargos/graduar', [CargoCategoryController::class, 'graduar'])->name('cargos.graduar');
+        });
 
         // Catálogos CRUD
         Route::post('/catalogos/partidos', [CatalogCrudController::class, 'storePartido'])->name('catalogs.partido.store');

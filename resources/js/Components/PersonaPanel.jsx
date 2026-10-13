@@ -101,7 +101,7 @@ function DataRow({ label, value }) {
     );
 }
 
-export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fallbackData = null }) {
+export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, cargoCategorias = [], fallbackData = null }) {
     const { confirm, Dialog: ConfirmDialog } = useConfirm();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -692,22 +692,25 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, fa
                                                     let opts = cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
                                                     if (selectedTipos.length > 0) {
                                                         const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
-                                                        if (merged.length > 0) opts = merged.sort();
+                                                        if (merged.length > 0) opts = merged;
                                                     }
-                                                    return opts;
-                                                })().map(c => {
-                                                    const isChecked = (form.cargos || []).includes(c);
-                                                    return (
-                                                        <label key={c} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${isChecked ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-700' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
-                                                            <input type="checkbox" checked={isChecked} onChange={() => {
-                                                                const cargos = form.cargos || [];
-                                                                const next = isChecked ? cargos.filter(x => x !== c) : [...cargos, c];
-                                                                setForm(prev => ({ ...prev, cargos: next, cargo: next.join(', ') }));
-                                                            }} className="w-4 h-4 rounded border-gray-300 text-emerald-500" />
-                                                            {c}
-                                                        </label>
-                                                    );
-                                                })}
+                                                    const highlightedNames = new Set((cargoCategorias || []).filter(cc => cc.is_highlighted).map(cc => cc.name));
+                                                    const hi = opts.filter(c => highlightedNames.has(c));
+                                                    const normal = opts.filter(c => !highlightedNames.has(c));
+                                                    return [...hi, ...normal.sort()].map(c => {
+                                                        const isChecked = (form.cargos || []).includes(c);
+                                                        return (
+                                                            <label key={c} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${isChecked ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-700' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'} ${highlightedNames.has(c) && !isChecked ? 'font-bold' : ''}`}>
+                                                                <input type="checkbox" checked={isChecked} onChange={() => {
+                                                                    const cargos = form.cargos || [];
+                                                                    const next = isChecked ? cargos.filter(x => x !== c) : [...cargos, c];
+                                                                    setForm(prev => ({ ...prev, cargos: next, cargo: next.join(', ') }));
+                                                                }} className="w-4 h-4 rounded border-gray-300 text-emerald-500" />
+                                                                {c}
+                                                            </label>
+                                                        );
+                                                    });
+                                                })()}
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

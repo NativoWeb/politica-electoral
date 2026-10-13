@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -13,10 +14,11 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
             CatalogSeeder::class,
             GeographySeeder::class,
+            CargoCategorySeeder::class,
         ]);
 
         // Create admin user with superadmin role
-        $superadminRole = \App\Models\Role::where('code', 'R01_SUPERADMIN')->first();
+        $superadminRole = Role::where('code', 'R01_SUPERADMIN')->first();
 
         User::create([
             'name' => 'Administrador',

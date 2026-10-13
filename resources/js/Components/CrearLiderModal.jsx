@@ -76,7 +76,7 @@ const EMPTY_FORM = {
     facebook: '', twitter: '', instagram: '',
 };
 
-export default function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPorTipo = {} }) {
+export default function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPorTipo = {}, cargoCategorias = [] }) {
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
@@ -231,22 +231,31 @@ export default function CrearLiderModal({ open, onClose, municipios, provincias 
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {(() => {
                                     const selectedTipos = (form.tipos || []).map(label => TIPO_OPTIONS.find(o => o.label === label)?.value).filter(Boolean);
-                                    if (selectedTipos.length === 0) return cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
-                                    const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
-                                    return merged.length > 0 ? merged.sort() : CARGOS_DISPONIBLES;
-                                })().map(c => {
-                                    const cargos = form.cargo ? form.cargo.split(', ').map(s => s.trim()) : [];
-                                    const checked = cargos.includes(c);
-                                    return (
-                                        <label key={c} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-700' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
-                                            <input type="checkbox" checked={checked} onChange={() => {
-                                                const next = checked ? cargos.filter(x => x !== c) : [...cargos, c];
-                                                set('cargo', next.join(', '));
-                                            }} className="w-4 h-4 rounded border-gray-300 text-emerald-500" />
-                                            {c}
-                                        </label>
-                                    );
-                                })}
+                                    let opts;
+                                    if (selectedTipos.length === 0) {
+                                        opts = cargosPorTipo['todos'] || CARGOS_DISPONIBLES;
+                                    } else {
+                                        const merged = [...new Set(selectedTipos.flatMap(t => cargosPorTipo[t] || []))];
+                                        opts = merged.length > 0 ? merged : CARGOS_DISPONIBLES;
+                                    }
+                                    const highlightedNames = new Set((cargoCategorias || []).filter(cc => cc.is_highlighted).map(cc => cc.name));
+                                    const hi = opts.filter(c => highlightedNames.has(c));
+                                    const normal = opts.filter(c => !highlightedNames.has(c));
+                                    const sorted = [...hi, ...normal.sort()];
+                                    return sorted.map(c => {
+                                        const cargos = form.cargo ? form.cargo.split(', ').map(s => s.trim()) : [];
+                                        const checked = cargos.includes(c);
+                                        return (
+                                            <label key={c} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-700' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'} ${highlightedNames.has(c) && !checked ? 'font-bold' : ''}`}>
+                                                <input type="checkbox" checked={checked} onChange={() => {
+                                                    const next = checked ? cargos.filter(x => x !== c) : [...cargos, c];
+                                                    set('cargo', next.join(', '));
+                                                }} className="w-4 h-4 rounded border-gray-300 text-emerald-500" />
+                                                {c}
+                                            </label>
+                                        );
+                                    });
+                                })()}
                             </div>
                         </div>
 
