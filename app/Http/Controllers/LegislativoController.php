@@ -243,22 +243,7 @@ class LegislativoController extends Controller
 
     public function asambleaMunicipio(?string $munId = null)
     {
-        $municipio = null;
-        if ($munId) {
-            $municipio = DB::table('geographic_units as g')
-                ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
-                ->where('g.id', $munId)->select('g.id', 'g.canonical_name as name', 'prov.canonical_name as provincia')->first();
-            abort_if(!$municipio, 404);
-        }
-
-        $allMunicipios = CachedQueries::allMunicipios();
-
-        return Inertia::render('Asamblea', [
-            'municipio' => $municipio,
-            'resultados' => $this->getResults('Asamblea'),
-            'porPartido' => $this->getPartyTotals('Asamblea'),
-            'allMunicipios' => $allMunicipios,
-        ]);
+        return $this->renderLegislativo('Asamblea', 'Asamblea', $munId);
     }
 
     public function consultas()

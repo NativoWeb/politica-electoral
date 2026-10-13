@@ -1,20 +1,8 @@
-import Spinner from '@/Components/Spinner';
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link } from '@inertiajs/react';
 import ProgressRing from '@/Components/ProgressRing';
 import GeoNavigator from '@/Components/GeoNavigator';
 import { partyColor, partyLogo, fmt } from '@/lib/electoral';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-
-function DonutTooltip({ active, payload }) {
-    if (!active || !payload?.length) return null;
-    return (
-        <div className="bg-[var(--color-ink)] text-white px-3 py-2 rounded text-xs font-semibold shadow-xl">
-            <p>{payload[0].name}</p>
-            <p className="font-[var(--font-mono)]">{fmt(payload[0].value)} votos</p>
-        </div>
-    );
-}
 
 function CandidatoCard({ c, index, totalVotos, maxVotos }) {
     const color = c.color || partyColor(c.partido, index);
@@ -44,16 +32,10 @@ function CandidatoCard({ c, index, totalVotos, maxVotos }) {
     );
 }
 
-export default function Asamblea({ municipio, resultados = [], porPartido = [], allMunicipios = [] }) {
-    const totalVotos = resultados.reduce((s, c) => s + c.votos, 0);
-    const maxVotos = resultados[0]?.votos ?? 1;
-    const topCandidato = resultados[0] ?? null;
-
-    const donutData = resultados.filter(c => c.votos > 0).map((c, i) => ({
-        name: c.acronym ?? c.partido ?? c.name,
-        value: c.votos,
-        fill: c.color || partyColor(c.partido, i),
-    }));
+export default function Asamblea({ municipio, resultados = [], porPartido = [], votosLista = [], allMunicipios = [] }) {
+    const totalVotosMpio = resultados.reduce((s, c) => s + c.votos, 0) + votosLista.reduce((s, p) => s + p.total, 0);
+    const maxVotos = resultados[0]?.votos || 1;
+    const totalListaVotos = votosLista.reduce((s, p) => s + p.total, 0);
 
     const munLabel = municipio?.name?.toUpperCase() ?? null;
 
@@ -70,60 +52,59 @@ export default function Asamblea({ municipio, resultados = [], porPartido = [], 
                     </>}
                     <GeoNavigator municipios={allMunicipios} currentMunicipio={municipio?.name} basePath="/asamblea" />
                 </div>
-                <p className="text-[11px] text-white/40 mt-1">Elecciones Territoriales 2023 · Preconteo</p>
+                <p className="text-[11px] text-white/40 mt-1">Elecciones Territoriales 2023 · Preconteo{munLabel ? '' : ' · Todos los municipios'}</p>
             </div>
 
             <div className="bg-[var(--color-primary)] text-white">
                 <div className="px-6 py-5 flex flex-wrap items-center justify-center gap-10 lg:gap-20">
                     <ProgressRing value={100} size={110} stroke={8} label="Mesas informadas" sub="100%" color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
-                    <ProgressRing value={totalVotos > 0 ? 59 : 0} size={110} stroke={8} label="Votantes" sub={fmt(totalVotos)} color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
+                    <ProgressRing value={totalVotosMpio > 0 ? 59 : 0} size={110} stroke={8} label="Votantes" sub={fmt(totalVotosMpio)} color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
                 </div>
             </div>
 
             <div className="flex flex-col xl:flex-row min-h-[60vh]">
                 <div className="flex-1 min-w-0 overflow-y-auto">
                     {resultados.length === 0 ? (
-                        <p className="px-5 py-12 text-center text-[14px] text-[var(--color-ink-faint)]">Sin datos disponibles.</p>
+                        <p className="px-5 py-12 text-center text-[14px] text-[var(--color-ink-faint)]">Sin candidatos con votos en este municipio.</p>
                     ) : resultados.map((c, i) => (
-                        <CandidatoCard key={c.id} c={c} index={i} totalVotos={totalVotos} maxVotos={maxVotos} />
+                        <CandidatoCard key={c.id} c={c} index={i} totalVotos={totalVotosMpio} maxVotos={maxVotos} />
                     ))}
                 </div>
 
-                <div className="w-full xl:w-[440px] xl:border-l border-[var(--color-line)] flex-shrink-0 p-5">
-                    {topCandidato && (
-                        <div className="bg-white rounded-lg border border-[var(--color-line)] overflow-hidden mb-5">
-                            <div className="px-5 py-3" style={{ background: topCandidato.color || partyColor(topCandidato.partido, 0) }}>
-                                <h3 className="text-[12px] font-bold uppercase tracking-wider text-white">Mayor votacion</h3>
+                <div className="w-full xl:w-[420px] xl:border-l border-[var(--color-line)] flex-shrink-0">
+                    {votosLista.length > 0 && (
+                        <div>
+                            <div className="px-5 py-3 bg-[var(--color-primary-dark)] text-white">
+                                <h3 className="text-[13px] font-bold uppercase tracking-wider">Votos por partido / lista</h3>
+                                <p className="text-[10px] text-white/50 mt-0.5">{municipio?.name ?? 'Santander'} · {fmt(totalListaVotos)} votos totales</p>
                             </div>
-                            <div className="p-5">
-                                <p className="text-[15px] font-extrabold text-[var(--color-ink)] uppercase">{topCandidato.name}</p>
-                                <p className="text-[11px] text-[var(--color-ink-faint)] mt-1">{topCandidato.partido ?? '—'}</p>
-                                <div className="flex items-baseline justify-between mt-3">
-                                    <span className="text-[28px] font-extrabold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(topCandidato.votos)}</span>
-                                    <span className="text-[14px] font-bold text-[var(--color-ink-faint)] font-[var(--font-mono)]">{totalVotos > 0 ? (topCandidato.votos / totalVotos * 100).toFixed(2).replace('.', ',') : '0'}%</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {donutData.length > 0 && (
-                        <>
-                            <div className="h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart><Pie data={donutData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="40%" outerRadius="85%" paddingAngle={0.3} stroke="none">
-                                        {donutData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                                    </Pie><Tooltip content={<DonutTooltip />} /></PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-4">
-                                {donutData.slice(0, 14).map((d, i) => (
-                                    <div key={i} className="flex items-center gap-2 text-[10px]">
-                                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: d.fill }} />
-                                        <span className="text-[var(--color-ink-soft)] truncate">{d.name}</span>
+                            {votosLista.map((p, i) => {
+                                const color = p.color || partyColor(p.name, i);
+                                const logo = partyLogo(p.name, p.acronym);
+                                const pctVal = totalListaVotos > 0 ? (p.total / totalListaVotos * 100) : 0;
+                                return (
+                                    <div key={p.id} className="px-5 py-3 border-b border-[var(--color-line)] last:border-0">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            {logo ? (
+                                                <div className="w-10 h-10 rounded-lg border border-[var(--color-line)] bg-white flex items-center justify-center overflow-hidden p-1 flex-shrink-0">
+                                                    <img src={logo} alt="" className="w-full h-full object-contain" />
+                                                </div>
+                                            ) : (
+                                                <span className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: color }} />
+                                            )}
+                                            <span className="text-[12px] font-semibold text-[var(--color-ink)] truncate flex-1">{p.acronym ?? p.name}</span>
+                                        </div>
+                                        <div className="h-[6px] bg-[var(--color-line)] rounded-full overflow-hidden">
+                                            <div className="h-full rounded-full" style={{ width: `${pctVal}%`, background: color }} />
+                                        </div>
+                                        <div className="flex items-baseline justify-between mt-1.5">
+                                            <span className="text-[18px] font-extrabold text-[var(--color-primary)] font-[var(--font-mono)]">{pctVal.toFixed(2).replace('.', ',')}%</span>
+                                            <span className="text-[14px] font-bold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(p.total)}</span>
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
-                        </>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             </div>
