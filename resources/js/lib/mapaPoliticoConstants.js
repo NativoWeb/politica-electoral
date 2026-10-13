@@ -3,6 +3,7 @@ export const TIPO_OPTIONS = [
     { value: 'alcaldia', label: 'Alcaldía' },
     { value: 'concejo', label: 'Concejo' },
     { value: 'lideres', label: 'Líderes' },
+    { value: 'nuevos_lideres', label: 'Nuevos Líderes' },
 
     { value: 'senado', label: 'Senado' },
     { value: 'camara', label: 'Cámara' },

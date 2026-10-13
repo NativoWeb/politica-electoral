@@ -60,6 +60,7 @@ class MapaPoliticoController extends Controller
             'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
             'concejo' => ['Concejal', 'Candidato Concejo'],
             'lideres' => $liderCargos,
+            'nuevos_lideres' => $liderCargos,
             'directorio' => $liderCargos,
             'senado' => ['Senador', 'Candidato Senado'],
             'camara' => ['Representante', 'Candidato Cámara'],
@@ -215,10 +216,55 @@ class MapaPoliticoController extends Controller
         // === LIDERES ===
         if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
+                ->where(function ($q) {
+                    $q->where('tipo', '!=', 'nuevo_lider')->orWhereNull('tipo');
+                })
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     'votos', DB::raw("'Líderes' as tipo_registro"),
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
+                );
+
+            if ($munId) {
+                $query->where('geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $query->whereIn('geographic_unit_id', $provinciaIds);
+            }
+            if ($searchEscaped) {
+                $query->where(function ($q) use ($searchEscaped) {
+                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
+                });
+            }
+            if (! empty($cargos)) {
+                $query->where(function ($q) use ($cargos) {
+                    foreach ($cargos as $c) {
+                        $q->orWhere('cargo', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], $c).'%');
+                    }
+                });
+            }
+            if (! empty($barrios_filter)) {
+                $query->where(function ($q) use ($barrios_filter) {
+                    foreach ($barrios_filter as $b) {
+                        $q->orWhere('barrio', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($b)).'%');
+                    }
+                });
+            }
+            if ($noGeoFilter) {
+                $query->limit(200);
+            }
+
+            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // === NUEVOS LIDERES ===
+        if ($tipoMatch('nuevos_lideres')) {
+            $query = DB::table('lideres')
+                ->where('tipo', 'nuevo_lider')
+                ->select(
+                    'id', 'nombre', 'municipio', 'provincia',
+                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
+                    'votos', DB::raw("'Nuevos Líderes' as tipo_registro"),
                     'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula'
                 );
 
@@ -631,7 +677,7 @@ class MapaPoliticoController extends Controller
             'municipio' => $mun->canonical_name ?? '',
             'provincia' => $mun->provincia ?? '',
             'cargo' => $data['cargo'] ?? '',
-            'tipo' => 'directorio',
+            'tipo' => in_array('Nuevos Líderes', $data['tipos'] ?? []) ? 'nuevo_lider' : 'directorio',
             'telefono' => $data['telefono'] ?? null,
             'email' => $data['email'] ?? null,
             'cedula' => $data['cedula'] ?? null,

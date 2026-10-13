@@ -13,6 +13,7 @@ const TIPO_COLORS = {
     'Alcaldía': 'bg-blue-100 text-blue-700',
     'Concejo': 'bg-purple-100 text-purple-700',
     'Líderes': 'bg-amber-100 text-amber-700',
+    'Nuevos Líderes': 'bg-green-100 text-green-700',
     'Directorio Municipal': 'bg-rose-100 text-rose-700',
     'Senado': 'bg-indigo-100 text-indigo-700',
     'Cámara': 'bg-cyan-100 text-cyan-700',
@@ -29,6 +30,9 @@ const TIPO_ICONS = {
     'Líderes': (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
     ),
+    'Nuevos Líderes': (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+    ),
     'Directorio Municipal': (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
     ),
@@ -43,7 +47,7 @@ const TIPO_ICONS = {
     ),
 };
 
-const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Directorio Municipal', 'Senado', 'Cámara', 'Asamblea'];
+const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Directorio Municipal', 'Senado', 'Cámara', 'Asamblea'];
 
 /* ── Acordeón por Partido (estilo Registraduría) ── */
 function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
@@ -215,7 +219,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                     <h3 className="text-[16px] font-extrabold text-[var(--color-ink)] uppercase">{tipo}</h3>
                     <p className="text-[12px] text-[var(--color-ink-faint)]">
                         {rows.length} {rows.length === 1 ? 'registro' : 'registros'}
-                        {byParty.length > 0 && tipo !== 'Líderes' && ` · ${byParty.length} partido${byParty.length > 1 ? 's' : ''}`}
+                        {byParty.length > 0 && tipo !== 'Líderes' && tipo !== 'Nuevos Líderes' && ` · ${byParty.length} partido${byParty.length > 1 ? 's' : ''}`}
                         {totalVotos > 0 && ` · ${fmt(totalVotos)} votos`}
                     </p>
                 </div>
@@ -251,7 +255,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                         </div>
                     )}
                     <div className="px-4 py-3 space-y-1">
-                        {tipo === 'Líderes' ? (
+                        {(tipo === 'Líderes' || tipo === 'Nuevos Líderes') ? (
                             <div className="space-y-1">
                                 {rows.map((row, i) => (
                                     <PersonRow
@@ -500,7 +504,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <h1 className="text-[18px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
-                    <p className="text-[10px] lg:text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Senado, Cámara y Asamblea</p>
+                    <p className="text-[10px] lg:text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Nuevos Líderes, Senado, Cámara y Asamblea</p>
                 </div>
                 <button onClick={() => setShowCrearLider(true)} className="px-3 lg:px-5 py-2.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
