@@ -221,6 +221,17 @@ class VotanteController extends Controller
             'instagram' => 'nullable|string|max:255',
         ]);
 
+        $cedula = $data['cedula'] ?? null;
+        if ($cedula !== null && $cedula !== '') {
+            $existente = DB::table('lideres')->where('cedula', $cedula)->first();
+            if ($existente) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                ], 422);
+            }
+        }
+
         $mun = DB::table('geographic_units as g')
             ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
             ->where('g.id', $data['municipio_id'])
@@ -341,6 +352,17 @@ class VotanteController extends Controller
 
         if (! $lider) {
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
+        }
+
+        $cedula = $data['cedula'] ?? null;
+        if ($cedula !== null && $cedula !== '' && $cedula !== $lider->cedula) {
+            $existente = DB::table('lideres')->where('cedula', $cedula)->where('id', '!=', $id)->first();
+            if ($existente) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                ], 422);
+            }
         }
 
         DB::transaction(function () use ($lider, $data) {

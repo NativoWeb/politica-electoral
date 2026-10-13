@@ -603,6 +603,17 @@ class MapaPoliticoController extends Controller
             'instagram' => 'nullable|string|max:255',
         ]);
 
+        $cedula = $data['cedula'] ?? null;
+        if ($cedula !== null && $cedula !== '') {
+            $existente = DB::table('lideres')->where('cedula', $cedula)->first();
+            if ($existente) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                ], 422);
+            }
+        }
+
         $mun = DB::table('geographic_units as g')
             ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
             ->where('g.id', $data['municipio_id'])
@@ -876,6 +887,40 @@ class MapaPoliticoController extends Controller
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
         ]);
+
+        $cedula = $data['cedula'] ?? null;
+        if ($cedula !== null && $cedula !== '') {
+            $currentLider = DB::table('lideres')->where('id', $id)->first();
+            $currentCedula = $currentLider?->cedula;
+
+            if (! $currentLider) {
+                $person = DB::table('persons')->where('id', $id)->first();
+                if ($person) {
+                    $linkedLider = DB::table('lideres')
+                        ->where('nombre', 'ilike', $person->full_name)
+                        ->first();
+                    $currentCedula = $linkedLider?->cedula;
+                    $currentLider = $linkedLider;
+                }
+            }
+
+            if ($cedula !== ($currentCedula ?? '')) {
+                $excludeIds = [$id];
+                if ($currentLider && $currentLider->id !== $id) {
+                    $excludeIds[] = $currentLider->id;
+                }
+                $existente = DB::table('lideres')
+                    ->where('cedula', $cedula)
+                    ->whereNotIn('id', $excludeIds)
+                    ->first();
+                if ($existente) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                    ], 422);
+                }
+            }
+        }
 
         // #15: Wrap in transaction to prevent race conditions
         DB::transaction(function () use ($id, $data) {
