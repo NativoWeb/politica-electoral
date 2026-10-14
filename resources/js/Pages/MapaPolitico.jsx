@@ -47,7 +47,7 @@ const TIPO_ICONS = {
     ),
 };
 
-const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Directorio Municipal', 'Senado', 'Cámara', 'Asamblea'];
+const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Senado', 'Cámara', 'Asamblea'];
 
 /* ── Acordeón por Partido (estilo Registraduría) ── */
 function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
@@ -726,8 +726,8 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                 /* ── Vista de secciones colapsables ── */
                 <div className="p-4 space-y-3">
                     {SECTION_ORDER.map(tipo => {
-                        const rows = groupedData[tipo];
-                        if (!rows || rows.length === 0) return null;
+                        const rows = groupedData[tipo] || [];
+                        if (rows.length === 0 && tipo !== 'Nuevos Líderes') return null;
                         return (
                             <CollapsibleSection
                                 key={tipo}
