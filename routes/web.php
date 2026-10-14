@@ -145,6 +145,8 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
         Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store');
         Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');
         Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store');
+        Route::put('/territorio/{id}', [TerritoryController::class, 'update'])->name('territory.update');
+        Route::post('/territorio/{id}/toggle', [TerritoryController::class, 'toggleActive'])->name('territory.toggle');
 
         Route::get('/partidos', [PartidoCrudController::class, 'index'])->name('partidos');
         Route::post('/partidos', [PartidoCrudController::class, 'store'])->name('partidos.store');
