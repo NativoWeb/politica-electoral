@@ -645,7 +645,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         )}
                         {/* Search visible only on desktop (mobile has it above) */}
                         <div className="hidden lg:block">
-                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">Buscar</label>
+                            <label className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Buscar</label>
                             <input type="text" value={localSearch} onChange={e => setLocalSearch(e.target.value)} onKeyDown={handleSearch} placeholder="Nombre..."
                                 className="text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 w-[240px] focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)]" />
                         </div>

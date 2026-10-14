@@ -25,7 +25,7 @@ export default function SearchableDropdown({ label, options, selected, onChange,
 
     return (
         <div className="relative">
-            <label className="block text-[11px] md:text-[13px] lg:text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1">{label}</label>
+            <label className="block text-[11px] md:text-[13px] lg:text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">{label}</label>
             <button
                 type="button"
                 onClick={() => { setOpen(!open); setSearch(''); }}
