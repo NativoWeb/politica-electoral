@@ -102,6 +102,7 @@ class AdminController extends Controller
                 ['key' => 'manage.users', 'label' => 'Gestionar usuarios', 'group' => 'Administración'],
                 ['key' => 'manage.territory', 'label' => 'Gestionar territorio', 'group' => 'Administración'],
                 ['key' => 'manage.partidos', 'label' => 'Gestionar partidos', 'group' => 'Administración'],
+                ['key' => 'audit.view', 'label' => 'Ver auditoría', 'group' => 'Administración'],
             ],
         ]);
     }

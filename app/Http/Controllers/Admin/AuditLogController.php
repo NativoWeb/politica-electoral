@@ -17,7 +17,7 @@ class AuditLogController extends Controller
 
     public function index(Request $request)
     {
-        if ($request->user()->role?->code !== 'R01_SUPERADMIN') {
+        if (! $request->user()->hasPermission('audit.view')) {
             abort(403);
         }
 
