@@ -11,12 +11,17 @@ use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 class ImportLandazuriYariguies extends Command
 {
     protected $signature = 'import:landazuri-yariguies {--path= : Base path for Excel files}';
+
     protected $description = 'Import líderes from LANDAZURY, LANDAZURI RESUMEN & DIRECTORIOS YARIGUIES CD';
 
     private array $municipios = [];
+
     private int $inserted = 0;
+
     private int $updated = 0;
+
     private int $skipped = 0;
+
     private string $basePath;
 
     public function handle(): int
@@ -38,7 +43,7 @@ class ImportLandazuriYariguies extends Command
 
         $total = $this->inserted + $this->updated + $this->skipped;
         $this->newLine();
-        $this->info("=== RESUMEN FINAL ===");
+        $this->info('=== RESUMEN FINAL ===');
         $this->info("Procesados: {$total} | Insertados: {$this->inserted} | Actualizados: {$this->updated} | Saltados: {$this->skipped}");
 
         return 0;
@@ -46,9 +51,10 @@ class ImportLandazuriYariguies extends Command
 
     private function importYariguiesCD(): void
     {
-        $file = $this->basePath . (PHP_OS_FAMILY === 'Windows' ? 'DIRECTORIOS YARIGUIES CD.xlsx' : 'DIRECTORIOS_YARIGUIES_CD.xlsx');
+        $file = $this->basePath.(PHP_OS_FAMILY === 'Windows' ? 'DIRECTORIOS YARIGUIES CD.xlsx' : 'DIRECTORIOS_YARIGUIES_CD.xlsx');
         if (! file_exists($file)) {
             $this->error("No encontrado: {$file}");
+
             return;
         }
 
@@ -59,6 +65,7 @@ class ImportLandazuriYariguies extends Command
         $ws = $spreadsheet->getSheetByName('Hoja1');
         if (! $ws) {
             $this->error('Hoja "Hoja1" no encontrada');
+
             return;
         }
 
@@ -66,10 +73,14 @@ class ImportLandazuriYariguies extends Command
         $counts = ['inserted' => 0, 'updated' => 0, 'skipped' => 0];
 
         foreach ($data as $rowNum => $row) {
-            if ($rowNum <= 2) continue;
+            if ($rowNum <= 2) {
+                continue;
+            }
             $nombre = trim($row['D'] ?? '');
             $municipio = trim($row['B'] ?? '');
-            if (! $nombre || ! $municipio) continue;
+            if (! $nombre || ! $municipio) {
+                continue;
+            }
 
             $cargo = $this->normalizeCargo(trim($row['E'] ?? 'MIEMBRO DIRECTORIO MUNICIPAL'));
             $cedula = $this->cleanCedula($row['C'] ?? '');
@@ -95,16 +106,18 @@ class ImportLandazuriYariguies extends Command
 
     private function importLandazuriResumen(): void
     {
-        $file = $this->basePath . (PHP_OS_FAMILY === 'Windows' ? 'MUNICIPIO LANDAZURI 2026 RESUMEN.xlsx' : 'MUNICIPIO_LANDAZURI_2026_RESUMEN.xlsx');
+        $file = $this->basePath.(PHP_OS_FAMILY === 'Windows' ? 'MUNICIPIO LANDAZURI 2026 RESUMEN.xlsx' : 'MUNICIPIO_LANDAZURI_2026_RESUMEN.xlsx');
         if (! file_exists($file)) {
             $this->error("No encontrado: {$file}");
+
             return;
         }
 
         $this->info('=== MUNICIPIO LANDAZURI RESUMEN ===');
         $reader = IOFactory::createReaderForFile($file);
         $reader->setReadDataOnly(true);
-        $reader->setReadFilter(new class implements IReadFilter {
+        $reader->setReadFilter(new class implements IReadFilter
+        {
             public function readCell($columnAddress, $row, $worksheetName = ''): bool
             {
                 return $row <= 100;
@@ -114,6 +127,7 @@ class ImportLandazuriYariguies extends Command
         $ws = $spreadsheet->getSheetByName('LANDAZURI');
         if (! $ws) {
             $this->error('Hoja "LANDAZURI" no encontrada');
+
             return;
         }
 
@@ -121,7 +135,7 @@ class ImportLandazuriYariguies extends Command
         $counts = ['inserted' => 0, 'updated' => 0, 'skipped' => 0];
         $munId = $this->findMunicipio('LANDAZURI');
 
-        // Row 13: Coordinador
+        // Row 13: Coordinador (col A empty, B=PROVINCIA, C=MUNICIPIO, D=CEDULA, E=NOMBRE, F=OBSERVACION, G=DIRECTORIO, H=TELEFONO, I=CORREO)
         if (! empty($data[13])) {
             $row = $data[13];
             $nombre = trim($row['E'] ?? '');
@@ -131,8 +145,8 @@ class ImportLandazuriYariguies extends Command
                     'provincia' => 'YARIGUIES',
                     'municipio' => 'LANDAZURI',
                     'cedula' => $this->cleanCedula($row['D'] ?? ''),
-                    'cargo' => 'COORDINADOR MUNICIPAL',
-                    'tipo' => 'directorio',
+                    'cargo' => 'LIDER',
+                    'tipo' => 'lider',
                     'telefono' => $this->cleanPhone($row['H'] ?? ''),
                     'email' => trim($row['I'] ?? '') ?: null,
                     'partido' => 'CENTRO DEMOCRATICO',
@@ -143,12 +157,16 @@ class ImportLandazuriYariguies extends Command
             }
         }
 
-        // Rows 18-24: Directorio Municipal
+        // Rows 18-24: Directorio Municipal (col A empty, B=PROVINCIA, C=MUNICIPIO, D=CEDULA, E=NOMBRE, F=CARGO, G=DIRECTORIO, H=TELEFONO, I=CORREO)
         for ($rowNum = 18; $rowNum <= 24; $rowNum++) {
-            if (empty($data[$rowNum])) continue;
+            if (empty($data[$rowNum])) {
+                continue;
+            }
             $row = $data[$rowNum];
             $nombre = trim($row['E'] ?? '');
-            if (! $nombre) continue;
+            if (! $nombre) {
+                continue;
+            }
 
             $cargo = $this->normalizeCargo(trim($row['F'] ?? 'MIEMBRO DIRECTORIO MUNICIPAL'));
 
@@ -173,9 +191,10 @@ class ImportLandazuriYariguies extends Command
 
     private function importLandazuryExcel(): void
     {
-        $file = $this->basePath . 'LANDAZURY.xlsx';
+        $file = $this->basePath.'LANDAZURY.xlsx';
         if (! file_exists($file)) {
             $this->error("No encontrado: {$file}");
+
             return;
         }
 
@@ -196,16 +215,22 @@ class ImportLandazuriYariguies extends Command
     private function importLideresSheet($spreadsheet): void
     {
         $ws = $spreadsheet->getSheetByName('LIDERES');
-        if (! $ws) return;
+        if (! $ws) {
+            return;
+        }
 
         $data = $ws->toArray(null, true, true, true);
         $counts = ['inserted' => 0, 'updated' => 0, 'skipped' => 0];
         $munId = $this->findMunicipio('LANDAZURI');
 
         foreach ($data as $rowNum => $row) {
-            if ($rowNum <= 1) continue;
+            if ($rowNum <= 1) {
+                continue;
+            }
             $nombre = trim($row['D'] ?? '');
-            if (! $nombre) continue;
+            if (! $nombre) {
+                continue;
+            }
 
             $cargo = trim($row['E'] ?? 'LIDER');
             $cargoNorm = $this->normalizeCargo($cargo);
@@ -232,16 +257,22 @@ class ImportLandazuriYariguies extends Command
     private function importDirectorioSheet($spreadsheet): void
     {
         $ws = $spreadsheet->getSheetByName('directorio');
-        if (! $ws) return;
+        if (! $ws) {
+            return;
+        }
 
         $data = $ws->toArray(null, true, true, true);
         $counts = ['inserted' => 0, 'updated' => 0, 'skipped' => 0];
         $munId = $this->findMunicipio('LANDAZURI');
 
         foreach ($data as $rowNum => $row) {
-            if ($rowNum <= 1) continue;
+            if ($rowNum <= 1) {
+                continue;
+            }
             $nombre = trim($row['B'] ?? '');
-            if (! $nombre) continue;
+            if (! $nombre) {
+                continue;
+            }
 
             $cargo = $this->normalizeCargo(trim($row['C'] ?? 'MIEMBRO DIRECTORIO'));
 
@@ -264,16 +295,22 @@ class ImportLandazuriYariguies extends Command
     private function importAlcaldiaSheet($spreadsheet): void
     {
         $ws = $spreadsheet->getSheetByName('ALCALDIA');
-        if (! $ws) return;
+        if (! $ws) {
+            return;
+        }
 
         $data = $ws->toArray(null, true, true, true);
         $counts = ['inserted' => 0, 'updated' => 0, 'skipped' => 0];
         $munId = $this->findMunicipio('LANDAZURI');
 
         foreach ($data as $rowNum => $row) {
-            if ($rowNum <= 1) continue;
+            if ($rowNum <= 1) {
+                continue;
+            }
             $nombre = trim($row['A'] ?? '');
-            if (! $nombre) continue;
+            if (! $nombre) {
+                continue;
+            }
 
             $cargoRaw = Str::upper(trim($row['C'] ?? ''));
             $cargo = $cargoRaw === 'ELECTO' ? 'ALCALDE ELECTO' : 'CANDIDATO ALCALDÍA';
@@ -298,16 +335,22 @@ class ImportLandazuriYariguies extends Command
     private function importConcejosSheet($spreadsheet): void
     {
         $ws = $spreadsheet->getSheetByName('CONCEJOS 2024');
-        if (! $ws) return;
+        if (! $ws) {
+            return;
+        }
 
         $data = $ws->toArray(null, true, true, true);
         $counts = ['inserted' => 0, 'updated' => 0, 'skipped' => 0];
 
         foreach ($data as $rowNum => $row) {
-            if ($rowNum <= 1) continue;
+            if ($rowNum <= 1) {
+                continue;
+            }
             $nombre = trim($row['E'] ?? '');
             $municipio = trim($row['B'] ?? '');
-            if (! $nombre || ! $municipio) continue;
+            if (! $nombre || ! $municipio) {
+                continue;
+            }
 
             $cargoRaw = Str::upper(trim($row['F'] ?? ''));
             $cargo = str_contains($cargoRaw, 'ELECTO') ? 'CONCEJAL ELECTO' : 'CONCEJAL';
@@ -335,7 +378,9 @@ class ImportLandazuriYariguies extends Command
         $nombre = trim($data['nombre'] ?? '');
         $municipio = trim($data['municipio'] ?? '');
 
-        if (! $nombre) return 'skipped';
+        if (! $nombre) {
+            return 'skipped';
+        }
 
         // 1. By cédula
         if ($cedula) {
@@ -351,19 +396,21 @@ class ImportLandazuriYariguies extends Command
                     $updates['updated_at'] = now();
                     DB::table('lideres')->where('id', $existing->id)->update($updates);
                     $this->updated++;
+
                     return 'updated';
                 }
                 $this->skipped++;
+
                 return 'skipped';
             }
         }
 
         // 2. By name+municipio (normalized)
-        $normalizedName = Str::upper(Str::ascii(Str::title(Str::lower($nombre))));
+        $normalizedName = Str::upper(Str::ascii($nombre));
         $normalizedMun = Str::upper(Str::ascii($municipio));
         $existing = DB::table('lideres')
-            ->whereRaw("UPPER(UNACCENT(nombre)) = ?", [$normalizedName])
-            ->whereRaw("UPPER(UNACCENT(municipio)) = ?", [$normalizedMun])
+            ->whereRaw('UPPER(UNACCENT(nombre)) = ?', [$normalizedName])
+            ->whereRaw('UPPER(UNACCENT(municipio)) = ?', [$normalizedMun])
             ->first();
 
         if ($existing) {
@@ -380,9 +427,11 @@ class ImportLandazuriYariguies extends Command
                 $updates['updated_at'] = now();
                 DB::table('lideres')->where('id', $existing->id)->update($updates);
                 $this->updated++;
+
                 return 'updated';
             }
             $this->skipped++;
+
             return 'skipped';
         }
 
@@ -406,12 +455,14 @@ class ImportLandazuriYariguies extends Command
             'updated_at' => now(),
         ]);
         $this->inserted++;
+
         return 'inserted';
     }
 
     private function normalizeCargo(string $cargo): string
     {
         $c = Str::upper(trim($cargo));
+
         return match (true) {
             str_contains($c, 'EXCONCEJAL') || str_contains($c, 'EX-CONCEJAL') || str_contains($c, 'EX CONCEJAL') || str_contains($c, 'EX -CONCEJAL') => 'EXCONCEJAL',
             str_contains($c, 'CONCEJAL') && str_contains($c, 'ELECTO') => 'CONCEJAL ELECTO',
@@ -435,6 +486,7 @@ class ImportLandazuriYariguies extends Command
     private function inferTipo(string $cargo): string
     {
         $c = Str::upper($cargo);
+
         return match (true) {
             str_contains($c, 'CONCEJAL') && ! str_contains($c, 'EX') => 'concejo',
             str_contains($c, 'DIRECTORIO') || str_contains($c, 'COORDINADOR') || str_contains($c, 'JOVEN') || str_contains($c, 'RESERVA') => 'directorio',
@@ -446,10 +498,15 @@ class ImportLandazuriYariguies extends Command
     private function findMunicipio(string $name): ?string
     {
         $key = Str::upper(Str::ascii(trim($name)));
-        if (isset($this->municipios[$key])) return $this->municipios[$key];
-        foreach ($this->municipios as $k => $id) {
-            if (str_contains($k, $key) || str_contains($key, $k)) return $id;
+        if (isset($this->municipios[$key])) {
+            return $this->municipios[$key];
         }
+        foreach ($this->municipios as $k => $id) {
+            if (str_contains($k, $key) || str_contains($key, $k)) {
+                return $id;
+            }
+        }
+
         return null;
     }
 
@@ -457,6 +514,7 @@ class ImportLandazuriYariguies extends Command
     {
         $s = trim((string) ($val ?? ''));
         $s = preg_replace('/[^0-9]/', '', $s);
+
         return $s ?: '';
     }
 
@@ -464,6 +522,7 @@ class ImportLandazuriYariguies extends Command
     {
         $s = trim((string) ($val ?? ''));
         $s = preg_replace('/[^0-9+]/', '', $s);
+
         return $s ?: null;
     }
 
@@ -471,6 +530,7 @@ class ImportLandazuriYariguies extends Command
     {
         $s = trim((string) ($val ?? ''));
         $n = (int) preg_replace('/[^0-9]/', '', $s);
+
         return $n > 0 ? $n : null;
     }
 
