@@ -501,6 +501,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         <AppLayout title="Mapa Político" breadcrumb={[{ label: 'SANTANDER', href: '/' }, { label: 'MAPA POLITICO' }]}>
             <Head title="Mapa Politico — Inteligencia Electoral" />
 
+            <div className="sticky top-0 z-20 bg-white shadow-sm">
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <h1 className="text-[18px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
@@ -719,6 +720,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         </span>
                     )}
                 </div>
+            </div>
             </div>
 
             {/* Contenido principal */}
