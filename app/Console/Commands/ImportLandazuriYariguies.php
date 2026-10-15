@@ -6,19 +6,26 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 
 class ImportLandazuriYariguies extends Command
 {
-    protected $signature = 'import:landazuri-yariguies';
+    protected $signature = 'import:landazuri-yariguies {--path= : Base path for Excel files}';
     protected $description = 'Import líderes from LANDAZURY, LANDAZURI RESUMEN & DIRECTORIOS YARIGUIES CD';
 
     private array $municipios = [];
     private int $inserted = 0;
     private int $updated = 0;
     private int $skipped = 0;
+    private string $basePath;
 
     public function handle(): int
     {
+        $this->basePath = $this->option('path')
+            ?: (PHP_OS_FAMILY === 'Windows'
+                ? 'C:\\Users\\Marly Rangel\\Downloads\\'
+                : '/tmp/');
+
         $this->municipios = DB::table('geographic_units')
             ->where('type', 'municipality')
             ->pluck('id', 'canonical_name')
@@ -39,7 +46,7 @@ class ImportLandazuriYariguies extends Command
 
     private function importYariguiesCD(): void
     {
-        $file = 'C:\\Users\\Marly Rangel\\Downloads\\DIRECTORIOS YARIGUIES CD.xlsx';
+        $file = $this->basePath . (PHP_OS_FAMILY === 'Windows' ? 'DIRECTORIOS YARIGUIES CD.xlsx' : 'DIRECTORIOS_YARIGUIES_CD.xlsx');
         if (! file_exists($file)) {
             $this->error("No encontrado: {$file}");
             return;
@@ -88,7 +95,7 @@ class ImportLandazuriYariguies extends Command
 
     private function importLandazuriResumen(): void
     {
-        $file = 'C:\\Users\\Marly Rangel\\Downloads\\MUNICIPIO LANDAZURI 2026 RESUMEN.xlsx';
+        $file = $this->basePath . (PHP_OS_FAMILY === 'Windows' ? 'MUNICIPIO LANDAZURI 2026 RESUMEN.xlsx' : 'MUNICIPIO_LANDAZURI_2026_RESUMEN.xlsx');
         if (! file_exists($file)) {
             $this->error("No encontrado: {$file}");
             return;
@@ -97,6 +104,12 @@ class ImportLandazuriYariguies extends Command
         $this->info('=== MUNICIPIO LANDAZURI RESUMEN ===');
         $reader = IOFactory::createReaderForFile($file);
         $reader->setReadDataOnly(true);
+        $reader->setReadFilter(new class implements IReadFilter {
+            public function readCell($columnAddress, $row, $worksheetName = ''): bool
+            {
+                return $row <= 100;
+            }
+        });
         $spreadsheet = $reader->load($file);
         $ws = $spreadsheet->getSheetByName('LANDAZURI');
         if (! $ws) {
@@ -120,8 +133,8 @@ class ImportLandazuriYariguies extends Command
                     'cedula' => $this->cleanCedula($row['D'] ?? ''),
                     'cargo' => 'COORDINADOR MUNICIPAL',
                     'tipo' => 'directorio',
-                    'telefono' => $this->cleanPhone($row['G'] ?? ''),
-                    'email' => trim($row['H'] ?? '') ?: null,
+                    'telefono' => $this->cleanPhone($row['H'] ?? ''),
+                    'email' => trim($row['I'] ?? '') ?: null,
                     'partido' => 'CENTRO DEMOCRATICO',
                     'observacion' => trim($row['F'] ?? '') ?: null,
                     'geographic_unit_id' => $munId,
@@ -146,8 +159,8 @@ class ImportLandazuriYariguies extends Command
                 'cedula' => $this->cleanCedula($row['D'] ?? ''),
                 'cargo' => $cargo,
                 'tipo' => $this->inferTipo($cargo),
-                'telefono' => $this->cleanPhone($row['G'] ?? ''),
-                'email' => trim($row['H'] ?? '') ?: null,
+                'telefono' => $this->cleanPhone($row['H'] ?? ''),
+                'email' => trim($row['I'] ?? '') ?: null,
                 'partido' => 'CENTRO DEMOCRATICO',
                 'geographic_unit_id' => $munId,
             ]);
@@ -160,7 +173,7 @@ class ImportLandazuriYariguies extends Command
 
     private function importLandazuryExcel(): void
     {
-        $file = 'C:\\Users\\Marly Rangel\\Downloads\\LANDAZURY.xlsx';
+        $file = $this->basePath . 'LANDAZURY.xlsx';
         if (! file_exists($file)) {
             $this->error("No encontrado: {$file}");
             return;
