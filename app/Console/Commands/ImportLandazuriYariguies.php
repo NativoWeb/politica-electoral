@@ -10,7 +10,7 @@ use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 
 class ImportLandazuriYariguies extends Command
 {
-    protected $signature = 'import:landazuri-yariguies {--path= : Base path for Excel files}';
+    protected $signature = 'import:landazuri-yariguies {--path= : Base path for Excel files} {--source= : Run only: yariguies, resumen, landazury}';
 
     protected $description = 'Import líderes from LANDAZURY, LANDAZURI RESUMEN & DIRECTORIOS YARIGUIES CD';
 
@@ -37,9 +37,10 @@ class ImportLandazuriYariguies extends Command
             ->mapWithKeys(fn ($id, $name) => [Str::upper(Str::ascii($name)) => $id])
             ->toArray();
 
-        $this->importYariguiesCD();
-        $this->importLandazuriResumen();
-        $this->importLandazuryExcel();
+        $source = $this->option('source');
+        if (!$source || $source === 'yariguies') $this->importYariguiesCD();
+        if (!$source || $source === 'resumen') $this->importLandazuriResumen();
+        if (!$source || $source === 'landazury') $this->importLandazuryExcel();
 
         $total = $this->inserted + $this->updated + $this->skipped;
         $this->newLine();
@@ -447,7 +448,7 @@ class ImportLandazuriYariguies extends Command
             'cedula' => $cedula ?: null,
             'email' => $data['email'] ?? null,
             'observacion' => $data['observacion'] ?? null,
-            'votos' => ! empty($data['votos']) ? (int) $data['votos'] : null,
+            'votos' => ! empty($data['votos']) ? (int) $data['votos'] : 0,
             'partido' => $data['partido'] ?? null,
             'geographic_unit_id' => $data['geographic_unit_id'] ?? null,
             'is_active' => true,
