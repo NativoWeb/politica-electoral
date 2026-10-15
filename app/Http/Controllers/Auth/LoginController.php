@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -27,11 +28,12 @@ class LoginController extends Controller
             'password' => 'required',
         ]);
 
-        $key = 'login:' . $request->ip();
+        $key = 'login:'.$request->ip();
         $maxAttempts = 5;
 
         if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
             $seconds = RateLimiter::availableIn($key);
+
             return back()->withErrors([
                 'email' => "Demasiados intentos. Intenta de nuevo en {$seconds} segundos.",
                 'lockout_seconds' => $seconds,
@@ -41,6 +43,19 @@ class LoginController extends Controller
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             RateLimiter::clear($key);
             $request->session()->regenerate();
+
+            try {
+                AuditLog::create([
+                    'user_id' => $request->user()->id,
+                    'action' => 'LOGIN',
+                    'entity_type' => 'session',
+                    'metadata' => ['email' => $request->user()->email],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]);
+            } catch (\Throwable) {
+                // Never block login
+            }
 
             if ($request->user()->must_change_password) {
                 return redirect()->route('password.force-change');
@@ -97,7 +112,7 @@ class LoginController extends Controller
 
         if ($user) {
             $token = Password::createToken($user);
-            $resetUrl = url("/resetear-password/{$token}?email=" . urlencode($user->email));
+            $resetUrl = url("/resetear-password/{$token}?email=".urlencode($user->email));
 
             Mail::send('emails.password-reset', [
                 'userName' => $user->name,
@@ -153,9 +168,27 @@ class LoginController extends Controller
 
     public function logout(Request $request)
     {
+        $user = $request->user();
+
+        if ($user) {
+            try {
+                AuditLog::create([
+                    'user_id' => $user->id,
+                    'action' => 'LOGOUT',
+                    'entity_type' => 'session',
+                    'metadata' => ['email' => $user->email],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]);
+            } catch (\Throwable) {
+                // Never block logout
+            }
+        }
+
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect('/login');
     }
 }

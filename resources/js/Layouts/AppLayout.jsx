@@ -227,6 +227,7 @@ const SIDEBAR_ITEMS = [
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
+    { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view' },
 ];
 
 const ICONS_EXTRA = {
@@ -246,6 +247,12 @@ const ICONS_EXTRA = {
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" />
             <circle cx="9" cy="7" r="4" />
             <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" />
+        </svg>
+    ),
+    AUDITORIA: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
 };

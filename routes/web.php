@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\CatalogCrudController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Route;
 // Auth routes (guest only)
 Route::get('/login', [LoginController::class, 'showLogin'])->name('login')->middleware('guest');
 Route::post('/login', [LoginController::class, 'login'])->middleware('guest');
-Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware('auth');
+Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware(['auth', 'audit']);
 
 // Password reset (guest only)
 Route::middleware('guest')->group(function () {
@@ -54,7 +55,7 @@ Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'c
 Route::middleware('auth')->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
 
 // Protected routes
-Route::middleware(['auth', 'password.changed'])->group(function () {
+Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/municipio/{id}', [MunicipioController::class, 'show'])->name('municipio.show');
     Route::get('/persona/{id}', [PersonaController::class, 'show'])->name('persona.show');
@@ -135,6 +136,7 @@ Route::middleware(['auth', 'password.changed'])->group(function () {
 
     // Admin panel — requires view.admin permission
     Route::prefix('admin')->name('admin.')->middleware('permission:view.admin')->group(function () {
+        Route::get('/auditoria', [AuditLogController::class, 'index'])->name('auditoria');
         Route::get('/', [AdminController::class, 'index'])->name('index');
         Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
         Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
