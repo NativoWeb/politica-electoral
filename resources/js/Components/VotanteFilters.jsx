@@ -16,6 +16,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
     const [municipio, setMunicipio] = useState(filters.municipio || '');
     const [partido, setPartido] = useState(filters.partido || '');
     const [nivelConfianza, setNivelConfianza] = useState(filters.nivel_confianza || '');
+    const [estado, setEstado] = useState(filters.estado || 'activos');
     const [verificado, setVerificado] = useState(filters.verificado === '1' || filters.verificado === true);
     const [granElector, setGranElector] = useState(filters.gran_elector === '1' || filters.gran_elector === true);
     const [militante, setMilitante] = useState(filters.militante === '1' || filters.militante === true);
@@ -49,6 +50,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
         const vals = {
             search, municipio, partido,
             nivel_confianza: nivelConfianza,
+            estado,
             ...(verificado ? { verificado: '1' } : {}),
             ...(granElector ? { gran_elector: '1' } : {}),
             ...(militante ? { militante: '1' } : {}),
@@ -62,6 +64,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
         setMunicipio('');
         setPartido('');
         setNivelConfianza('');
+        setEstado('activos');
         setVerificado(false);
         setGranElector(false);
         setMilitante(false);
@@ -163,6 +166,16 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
                     {NIVEL_OPTIONS.map(o => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
+                </select>
+            </div>
+
+            {/* Estado */}
+            <div>
+                <label className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Estado</label>
+                <select value={estado} onChange={e => setEstado(e.target.value)} className={inputCls}>
+                    <option value="activos">Activos</option>
+                    <option value="inactivos">Inactivos</option>
+                    <option value="todos">Todos</option>
                 </select>
             </div>
 

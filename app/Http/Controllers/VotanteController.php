@@ -22,7 +22,15 @@ class VotanteController extends Controller
     {
         $query = Lider::query()
             ->addSelect(['lideres.*'])
-            ->addSelect(DB::raw("(SELECT count(*) FROM lideres AS r WHERE r.referente_documento IS NOT NULL AND r.referente_documento != '' AND r.referente_documento = lideres.cedula) as referidos_count"));
+            ->addSelect(DB::raw("(SELECT count(*) FROM lideres AS r WHERE r.referente_documento IS NOT NULL AND r.referente_documento != '' AND r.is_active = true AND r.referente_documento = lideres.cedula) as referidos_count"));
+
+        // Estado filter (activos by default)
+        $estado = $request->input('estado', 'activos');
+        if ($estado === 'activos' || $estado === null) {
+            $query->where('is_active', true);
+        } elseif ($estado === 'inactivos') {
+            $query->where('is_active', false);
+        }
 
         // Territory scope restriction
         $user = $request->user();
@@ -68,8 +76,13 @@ class VotanteController extends Controller
 
         $paginated = $query->orderBy('nombre')->paginate(20)->withQueryString();
 
-        // Counters also respect territory scope
+        // Counters also respect territory scope and estado filter
         $counterBase = Lider::query();
+        if ($estado === 'activos' || $estado === null) {
+            $counterBase->where('is_active', true);
+        } elseif ($estado === 'inactivos') {
+            $counterBase->where('is_active', false);
+        }
         if ($allowedMunicipios) {
             $counterBase->whereIn('municipio', $allowedMunicipios);
         }
@@ -79,7 +92,8 @@ class VotanteController extends Controller
             $q->select('referente_documento')
                 ->from('lideres')
                 ->whereNotNull('referente_documento')
-                ->where('referente_documento', '!=', '');
+                ->where('referente_documento', '!=', '')
+                ->where('is_active', true);
         })->count();
 
         $municipios = CachedQueries::allMunicipios();
@@ -96,7 +110,7 @@ class VotanteController extends Controller
                 'con_referidos' => $conReferidos,
             ],
             'municipios' => $municipios,
-            'filters' => $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante']),
+            'filters' => $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado']),
         ]);
     }
 
@@ -132,6 +146,7 @@ class VotanteController extends Controller
         $referidosCount = 0;
         if ($lider->cedula) {
             $referidos = Lider::where('referente_documento', $lider->cedula)
+                ->where('is_active', true)
                 ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
                 ->orderBy('nombre')
                 ->get()
@@ -161,6 +176,7 @@ class VotanteController extends Controller
         }
 
         $referidos = Lider::where('referente_documento', $lider->cedula)
+            ->where('is_active', true)
             ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
             ->orderBy('nombre')
             ->get();
@@ -384,12 +400,9 @@ class VotanteController extends Controller
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
         }
 
-        DB::transaction(function () use ($lider) {
-            DB::table('nexos_familiares')->where('person_id', $lider->id)->delete();
-            $lider->delete();
-        });
+        $lider->update(['is_active' => false]);
 
-        return response()->json(['success' => true, 'message' => 'Votante eliminado.']);
+        return response()->json(['success' => true, 'message' => 'Votante desactivado.']);
     }
 
     // --- Contactos CRUD ---

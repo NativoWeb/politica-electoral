@@ -37,7 +37,7 @@ function useConfirm() {
                     </div>
                     <div className="px-6 pb-6 flex gap-3">
                         <button onClick={close} className="flex-1 px-4 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl active:bg-gray-100">Cancelar</button>
-                        <button onClick={() => { close(); state.onConfirm?.(); }} className={`flex-1 px-4 py-3 text-white text-[15px] font-bold rounded-xl ${state.danger ? 'bg-red-500 active:bg-red-600' : 'bg-[var(--color-primary)] active:bg-[var(--color-primary-dark)]'}`}>{state.danger ? 'Eliminar' : 'Confirmar'}</button>
+                        <button onClick={() => { close(); state.onConfirm?.(); }} className={`flex-1 px-4 py-3 text-white text-[15px] font-bold rounded-xl ${state.danger ? 'bg-red-500 active:bg-red-600' : 'bg-[var(--color-primary)] active:bg-[var(--color-primary-dark)]'}`}>Confirmar</button>
                     </div>
                 </div>
             </div>
@@ -357,6 +357,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 {data._offline && <span className="ml-2 px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded normal-case">Datos guardados</span>}
                             </p>
                             <h2 className="text-[18px] lg:text-[24px] font-extrabold uppercase mt-1 break-words">{data.nombre}</h2>
+                            {data.is_active === false && (
+                                <span className="inline-block px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded mt-1">INACTIVO</span>
+                            )}
                             <p className="text-[12px] lg:text-[14px] text-white/60 mt-1 truncate">{data.municipio ?? '—'} · {data.cargo ?? '—'}</p>
                         </div>
                         <button onClick={onClose} className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center text-white transition-colors flex-shrink-0">
@@ -384,14 +387,27 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                             PDF
                         </button>
                         <button onClick={() => {
-                            confirm('Eliminar persona', '¿Eliminar esta persona? Se borraran sus nexos familiares. Esta accion no se puede deshacer.', () => {
-                                apiFetch(`/mapa-politico/persona/${personId}`, { method: 'DELETE' })
+                            const isActive = data.is_active !== false;
+                            const title = isActive ? 'Desactivar persona' : 'Activar persona';
+                            const msg = isActive
+                                ? 'No aparecera en los listados pero sus datos se conservan.'
+                                : 'Volvera a aparecer en los listados.';
+                            confirm(title, msg, () => {
+                                apiFetch(`/mapa-politico/persona/${personId}/toggle`, { method: 'POST' })
                                     .then(r => r.json())
-                                    .then(() => { onClose(); router.get(window.location.href, {}, { preserveState: false }); })
-                                    .catch(() => setMessage('Error al eliminar'));
-                            });
-                        }} className="px-3 py-2.5 bg-red-50 text-red-600 text-[14px] font-bold rounded-lg hover:bg-red-100 transition-colors" title="Eliminar persona">
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    .then((res) => {
+                                        setMessage(res.message || (isActive ? 'Persona desactivada' : 'Persona activada'));
+                                        loadData();
+                                        setTimeout(() => setMessage(''), 3000);
+                                    })
+                                    .catch(() => setMessage('Error al cambiar estado'));
+                            }, isActive);
+                        }} className={`px-3 py-2.5 text-[14px] font-bold rounded-lg transition-colors ${data.is_active === false ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-red-50 text-red-600 hover:bg-red-100'}`} title={data.is_active === false ? 'Activar persona' : 'Desactivar persona'}>
+                            {data.is_active === false ? (
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            ) : (
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                            )}
                         </button>
                     </div>
 

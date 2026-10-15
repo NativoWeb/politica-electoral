@@ -216,6 +216,7 @@ class MapaPoliticoController extends Controller
         // === LIDERES ===
         if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
+                ->where('is_active', true)
                 ->where(function ($q) {
                     $q->where('tipo', '!=', 'nuevo_lider')->orWhereNull('tipo');
                 })
@@ -260,6 +261,7 @@ class MapaPoliticoController extends Controller
         // === NUEVOS LIDERES ===
         if ($tipoMatch('nuevos_lideres')) {
             $query = DB::table('lideres')
+                ->where('is_active', true)
                 ->where('tipo', 'nuevo_lider')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
@@ -302,6 +304,7 @@ class MapaPoliticoController extends Controller
         // === DIRECTORIO MUNICIPAL ===
         if ($tipoMatch('directorio')) {
             $query = DB::table('lideres')
+                ->where('is_active', true)
                 ->where('cargo', 'ilike', '%Directorio Municipal%')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
@@ -402,6 +405,7 @@ class MapaPoliticoController extends Controller
         $lideresLookup = [];
         if (! empty($relevantMunicipios)) {
             $lideresAll = DB::table('lideres')
+                ->where('is_active', true)
                 ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
@@ -532,7 +536,7 @@ class MapaPoliticoController extends Controller
 
         $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
 
-        $barriosQuery = DB::table('lideres')->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
+        $barriosQuery = DB::table('lideres')->where('is_active', true)->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
         if ($munId) {
             $barriosQuery->where('geographic_unit_id', $munId);
         }
@@ -837,6 +841,7 @@ class MapaPoliticoController extends Controller
 
         // Include extended lider fields when source is lider
         if ($source === 'lider' && $liderModel) {
+            $response['is_active'] = $liderModel->is_active ?? true;
             $response['tipo_documento'] = $liderModel->tipo_documento;
             $response['fecha_expedicion_doc'] = $liderModel->fecha_expedicion_doc;
             $response['genero'] = $liderModel->genero;
@@ -873,6 +878,7 @@ class MapaPoliticoController extends Controller
 
             if ($liderModel->cedula) {
                 $referidos = Lider::where('referente_documento', $liderModel->cedula)
+                    ->where('is_active', true)
                     ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
                     ->orderBy('nombre')
                     ->get()
@@ -1207,21 +1213,37 @@ class MapaPoliticoController extends Controller
             abort(404);
         }
 
-        // Delete nexos
-        DB::table('nexos_familiares')->where('person_id', $id)->delete();
-
-        // Try lideres first
-        $affected = DB::table('lideres')->where('id', $id)->delete();
+        $affected = DB::table('lideres')->where('id', $id)->update(['is_active' => false, 'updated_at' => now()]);
 
         if ($affected === 0) {
-            // Try finding líder by person name match
             $person = DB::table('persons')->where('id', $id)->first();
             if ($person) {
-                DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->delete();
+                DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->update(['is_active' => false, 'updated_at' => now()]);
             }
         }
 
-        return response()->json(['success' => true, 'message' => 'Persona eliminada.']);
+        return response()->json(['success' => true, 'message' => 'Persona desactivada.']);
+    }
+
+    public function toggleLider(string $id)
+    {
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+
+        $lider = DB::table('lideres')->where('id', $id)->first();
+        if (! $lider) {
+            abort(404);
+        }
+
+        $newState = ! $lider->is_active;
+        DB::table('lideres')->where('id', $id)->update(['is_active' => $newState, 'updated_at' => now()]);
+
+        return response()->json([
+            'success' => true,
+            'is_active' => $newState,
+            'message' => $newState ? 'Persona activada.' : 'Persona desactivada.',
+        ]);
     }
 
     public function searchLideres(Request $request)
@@ -1234,6 +1256,7 @@ class MapaPoliticoController extends Controller
         $excludeId = $request->input('exclude_id');
 
         $query = DB::table('lideres')
+            ->where('is_active', true)
             ->where(function ($qb) use ($q) {
                 $qb->where('nombre', 'ilike', "%{$q}%")
                     ->orWhere('cedula', 'like', "%{$q}%");

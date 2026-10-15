@@ -177,13 +177,14 @@ export default function VotanteDetail({
         }
     }
 
-    async function handleDelete() {
+    async function handleToggle() {
         setSaving(true);
         try {
-            await apiFetch(`/votantes/${data.id}`, { method: 'DELETE' });
+            const res = await apiFetch(`/mapa-politico/persona/${data.id}/toggle`, { method: 'POST' });
+            showToast(res.message || 'Estado actualizado');
             onDeleted();
         } catch (err) {
-            showToast(err.message || 'Error al eliminar', 'error');
+            showToast(err.message || 'Error al cambiar estado', 'error');
         } finally {
             setSaving(false);
             setConfirmDelete(false);
@@ -265,6 +266,9 @@ export default function VotanteDetail({
                 <div className="min-w-0">
                     <h3 className="text-[15px] font-bold text-[var(--color-ink)] truncate">
                         {creating ? 'Nuevo Votante' : (data?.nombre || '')}
+                        {!creating && data?.is_active === false && (
+                            <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded ml-1">INACTIVO</span>
+                        )}
                     </h3>
                     {!creating && data?.cedula && (
                         <p className="text-[12px] text-[var(--color-ink-faint)]">CC {data.cedula} &middot; {data.municipio}</p>
@@ -626,32 +630,44 @@ export default function VotanteDetail({
                     {!creating && (
                         <button
                             onClick={() => setConfirmDelete(true)}
-                            className="px-3 py-2.5 border border-red-300 text-red-500 rounded-lg text-[13px] font-bold hover:bg-red-50 transition-colors"
-                            title="Eliminar votante"
+                            className={`px-3 py-2.5 border rounded-lg text-[13px] font-bold transition-colors ${
+                                data?.is_active === false
+                                    ? 'border-emerald-300 text-emerald-500 hover:bg-emerald-50'
+                                    : 'border-red-300 text-red-500 hover:bg-red-50'
+                            }`}
+                            title={data?.is_active === false ? 'Activar votante' : 'Desactivar votante'}
                         >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            {data?.is_active === false ? (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            ) : (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                            )}
                         </button>
                     )}
                 </div>
             )}
 
-            {/* Delete confirmation */}
+            {/* Toggle active confirmation */}
             {confirmDelete && (
                 <>
                     <div className="fixed inset-0 bg-black/50 z-[60]" onClick={() => setConfirmDelete(false)} />
                     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[360px] p-6 text-center animate-slide-up">
-                            <div className="w-14 h-14 rounded-full bg-red-100 mx-auto mb-4 flex items-center justify-center">
-                                <svg className="w-7 h-7 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            <div className={`w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center ${data?.is_active === false ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                                {data?.is_active === false ? (
+                                    <svg className="w-7 h-7 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                ) : (
+                                    <svg className="w-7 h-7 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                )}
                             </div>
-                            <h4 className="text-[16px] font-bold text-[var(--color-ink)] mb-2">Eliminar votante</h4>
-                            <p className="text-[13px] text-[var(--color-ink-faint)] mb-5">Esta accion no se puede deshacer. Se eliminaran tambien los contactos y nexos familiares.</p>
+                            <h4 className="text-[16px] font-bold text-[var(--color-ink)] mb-2">{data?.is_active === false ? 'Activar votante' : 'Desactivar votante'}</h4>
+                            <p className="text-[13px] text-[var(--color-ink-faint)] mb-5">{data?.is_active === false ? 'Esta persona volvera a aparecer en los listados.' : 'No aparecera en los listados pero sus datos se conservan.'}</p>
                             <div className="flex gap-2">
                                 <button onClick={() => setConfirmDelete(false)} className="flex-1 px-4 py-2.5 border border-[var(--color-line)] rounded-lg text-[13px] font-semibold text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors">
                                     Cancelar
                                 </button>
-                                <button onClick={handleDelete} disabled={saving} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-lg text-[13px] font-bold hover:bg-red-600 disabled:opacity-50 transition-colors">
-                                    {saving ? 'Eliminando...' : 'Eliminar'}
+                                <button onClick={handleToggle} disabled={saving} className={`flex-1 px-4 py-2.5 text-white rounded-lg text-[13px] font-bold disabled:opacity-50 transition-colors ${data?.is_active === false ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-red-500 hover:bg-red-600'}`}>
+                                    {saving ? 'Procesando...' : (data?.is_active === false ? 'Activar' : 'Desactivar')}
                                 </button>
                             </div>
                         </div>

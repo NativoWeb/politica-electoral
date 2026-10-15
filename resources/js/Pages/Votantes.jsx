@@ -101,7 +101,7 @@ export default function Votantes({ votantes, counters, municipios, filters }) {
     }, [creating, selectedId, showToast]);
 
     const handleDeleted = useCallback(() => {
-        showToast('Votante eliminado');
+        showToast('Estado actualizado');
         handleCloseDetail();
         router.reload({ only: ['votantes', 'counters'] });
     }, [handleCloseDetail, showToast]);

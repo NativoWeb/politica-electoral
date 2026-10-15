@@ -24,7 +24,7 @@ class Lider extends Model
         // Original fields
         'nombre', 'provincia', 'municipio', 'cargo', 'tipo',
         'telefono', 'cedula', 'email', 'observacion', 'geographic_unit_id',
-        'partido', 'direccion', 'barrio', 'zona', 'destacado', 'profesion', 'votos',
+        'partido', 'direccion', 'barrio', 'zona', 'is_active', 'destacado', 'profesion', 'votos',
         // Identidad
         'tipo_documento', 'fecha_expedicion_doc', 'genero', 'fecha_nacimiento', 'foto',
         // Personal
@@ -49,6 +49,7 @@ class Lider extends Model
         'fecha_nacimiento' => 'date',
         'fecha_expedicion_doc' => 'date',
         'fecha_registro_hv' => 'date',
+        'is_active' => 'boolean',
         'destacado' => 'boolean',
         'militante' => 'boolean',
         'autoriza_datos' => 'boolean',
