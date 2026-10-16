@@ -553,14 +553,24 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                         {activeTab === 'ubicacion' && (
                             editMode ? (
                                 <div className="space-y-4">
-                                    <div>
-                                        <label className={labelCls}>Municipio</label>
-                                        <select className={fieldCls} value={f('municipio')} onChange={e => set('municipio', e.target.value)}>
-                                            <option value="">Seleccionar...</option>
-                                            {municipios.map(m => (
-                                                <option key={m.id} value={m.name}>{m.name}</option>
-                                            ))}
-                                        </select>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className={labelCls}>Departamento</label>
+                                            <select className={fieldCls} value="Santander" disabled>
+                                                <option value="Santander">Santander</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className={labelCls}>Municipio</label>
+                                            <select className={fieldCls} value={f('municipio')} onChange={e => set('municipio', e.target.value)}>
+                                                <option value="">Seleccionar...</option>
+                                                {Object.entries(municipios.reduce((acc, m) => { const p = m.provincia || 'Otro'; if (!acc[p]) acc[p] = []; acc[p].push(m); return acc; }, {})).sort(([a],[b]) => a.localeCompare(b)).map(([prov, munis]) => (
+                                                    <optgroup key={prov} label={prov}>
+                                                        {munis.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                                                    </optgroup>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div>
