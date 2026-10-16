@@ -920,6 +920,7 @@ class MapaPoliticoController extends Controller
             'tipos' => 'nullable|array',
             'partido' => 'nullable|string|max:255',
             'observacion' => 'nullable|string|max:1000',
+            'municipio' => 'nullable|string|max:100',
             'direccion' => 'nullable|string|max:255',
             'barrio' => 'nullable|string|max:100',
             'zona' => 'nullable|in:rural,urbana',
@@ -1069,6 +1070,7 @@ class MapaPoliticoController extends Controller
                     'direccion' => array_key_exists('direccion', $data) ? $data['direccion'] : $lider->direccion,
                     'barrio' => array_key_exists('barrio', $data) ? $data['barrio'] : $lider->barrio,
                     'zona' => array_key_exists('zona', $data) ? $data['zona'] : $lider->zona,
+                    'municipio' => array_key_exists('municipio', $data) ? $data['municipio'] : $lider->municipio,
                     'destacado' => array_key_exists('destacado', $data) ? (bool) $data['destacado'] : ($lider->destacado ?? false),
                     'profesion' => array_key_exists('profesion', $data) ? $data['profesion'] : $lider->profesion,
                     'cedula' => array_key_exists('cedula', $data) ? $data['cedula'] : $lider->cedula,
@@ -1077,6 +1079,17 @@ class MapaPoliticoController extends Controller
                 ];
                 if ($partidoSent) {
                     $updateData['partido'] = $partidoValue;
+                }
+                if (array_key_exists('municipio', $data) && $data['municipio'] && $data['municipio'] !== ($lider->municipio ?? '')) {
+                    $geo = DB::table('geographic_units')
+                        ->where('type', 'municipality')
+                        ->where('canonical_name', $data['municipio'])
+                        ->first();
+                    if ($geo) {
+                        $updateData['geographic_unit_id'] = $geo->id;
+                        $provName = DB::table('geographic_units')->where('id', $geo->parent_id)->value('canonical_name');
+                        $updateData['provincia'] = $provName ?? '';
+                    }
                 }
                 if (array_key_exists('tipos', $data)) {
                     $updateData['tipo'] = in_array('Nuevos Líderes', $data['tipos'] ?? []) ? 'nuevo_lider' : 'directorio';

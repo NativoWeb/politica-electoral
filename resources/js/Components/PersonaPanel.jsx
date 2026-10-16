@@ -58,7 +58,7 @@ function buildFormFromData(d) {
     return {
         telefono: d.telefono || '', email: d.email || '',
         cargo: splitCargos.join(', '), cargos: splitCargos, tipos,
-        observacion: d.observacion || '', direccion: d.direccion || '',
+        observacion: d.observacion || '', municipio: d.municipio || '', direccion: d.direccion || '',
         barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '',
         destacado: !!d.destacado, profesion: d.profesion || '',
         votos: d.votos || '', cedula: d.cedula || '',
@@ -523,7 +523,12 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 <div className="space-y-4">
                                     <div>
                                         <label className={labelCls}>Municipio</label>
-                                        <input className={`${fieldCls} bg-gray-50`} value={data.municipio || ''} disabled />
+                                        <select className={fieldCls} value={f('municipio')} onChange={e => set('municipio', e.target.value)}>
+                                            <option value="">Seleccionar...</option>
+                                            {municipios.map(m => (
+                                                <option key={m.id} value={m.name}>{m.name}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div>
