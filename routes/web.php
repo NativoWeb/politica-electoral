@@ -95,6 +95,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle');
         Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add');
         Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove');
+        Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store');
+        Route::delete('/mapa-politico/persona/{id}/municipios-influencia/{influenciaId}', [MapaPoliticoController::class, 'destroyMunicipioInfluencia'])->name('mapa-politico.influencia.destroy');
 
         // Votantes write
         Route::post('/votantes', [VotanteController::class, 'store']);

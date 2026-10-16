@@ -118,6 +118,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     const [referidoQuery, setReferidoQuery] = useState('');
     const [referidoResults, setReferidoResults] = useState([]);
     const [referidoSearching, setReferidoSearching] = useState(false);
+    const [influenciaSelId, setInfluenciaSelId] = useState('');
+    const [influenciaNota, setInfluenciaNota] = useState('');
+    const [savingInfluencia, setSavingInfluencia] = useState(false);
 
     function loadData() {
         return apiFetch(`/mapa-politico/persona/${personId}`, { method: 'GET' })
@@ -292,6 +295,35 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 setMessage('Error al eliminar referido');
                 setTimeout(() => setMessage(''), 5000);
             }
+        }, false);
+    }
+
+    async function addMunicipioInfluencia() {
+        if (!influenciaSelId) return;
+        setSavingInfluencia(true);
+        try {
+            const r = await apiFetch(`/mapa-politico/persona/${personId}/municipios-influencia`, {
+                method: 'POST',
+                body: JSON.stringify({ geographic_unit_id: influenciaSelId, nota: influenciaNota || null }),
+            });
+            const res = await r.json();
+            if (!r.ok) { showGlobalToast(res.message || 'Error', 'error'); return; }
+            setData(prev => ({ ...prev, municipios_influencia: res.municipios_influencia }));
+            setInfluenciaSelId('');
+            setInfluenciaNota('');
+            showGlobalToast('Municipio de influencia agregado');
+        } catch { showGlobalToast('Error al agregar', 'error'); }
+        finally { setSavingInfluencia(false); }
+    }
+
+    function removeMunicipioInfluencia(influenciaId) {
+        confirm('Quitar municipio', '¿Seguro que quieres quitar este municipio de influencia?', async () => {
+            try {
+                const r = await apiFetch(`/mapa-politico/persona/${personId}/municipios-influencia/${influenciaId}`, { method: 'DELETE' });
+                if (!r.ok) throw new Error();
+                setData(prev => ({ ...prev, municipios_influencia: (prev.municipios_influencia || []).filter(m => m.id !== influenciaId) }));
+                showGlobalToast('Municipio de influencia eliminado');
+            } catch { showGlobalToast('Error al eliminar', 'error'); }
         }, false);
     }
 
@@ -583,6 +615,38 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <input className={fieldCls} value={f('direccion_puesto')} onChange={e => set('direccion_puesto', e.target.value)} />
                                         </div>
                                     </div>
+                                    <div className="pt-2 border-t border-[var(--color-line)]">
+                                        <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-3">Municipios de influencia política</p>
+                                        {(data.municipios_influencia || []).length > 0 && (
+                                            <div className="space-y-2 mb-3">
+                                                {(data.municipios_influencia || []).map(mi => (
+                                                    <div key={mi.id} className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
+                                                        <div>
+                                                            <span className="font-medium text-sm">{mi.municipio_name}</span>
+                                                            {mi.provincia_name && <span className="text-xs text-gray-500 ml-2">({mi.provincia_name})</span>}
+                                                            {mi.nota && <p className="text-xs text-gray-500 mt-0.5">{mi.nota}</p>}
+                                                        </div>
+                                                        <button onClick={() => removeMunicipioInfluencia(mi.id)} className="text-red-500 hover:text-red-700 text-xs font-medium ml-2">✕</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="flex gap-2 items-end">
+                                            <div className="flex-1">
+                                                <label className={labelCls}>Agregar municipio</label>
+                                                <select className={fieldCls} value={influenciaSelId} onChange={e => setInfluenciaSelId(e.target.value)}>
+                                                    <option value="">Seleccionar municipio...</option>
+                                                    {municipios.filter(m => !(data.municipios_influencia || []).some(mi => mi.geographic_unit_id === m.id) && m.name !== data.municipio).map(m => (
+                                                        <option key={m.id} value={m.id}>{m.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <button onClick={addMunicipioInfluencia} disabled={!influenciaSelId || savingInfluencia}
+                                                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+                                                {savingInfluencia ? '...' : '+ Agregar'}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
@@ -598,6 +662,21 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <DataRow label="Puesto" value={data.puesto_votacion} />
                                             <DataRow label="Mesa" value={data.mesa_votacion} />
                                             <DataRow label="Dir. puesto" value={data.direccion_puesto} />
+                                        </>
+                                    )}
+                                    {(data.municipios_influencia || []).length > 0 && (
+                                        <>
+                                            <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] pt-3">Municipios de influencia política</p>
+                                            <div className="space-y-1.5">
+                                                {data.municipios_influencia.map(mi => (
+                                                    <div key={mi.id} className="flex items-center gap-2">
+                                                        <span className="inline-block w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+                                                        <span className="text-sm font-medium">{mi.municipio_name}</span>
+                                                        {mi.provincia_name && <span className="text-xs text-gray-400">({mi.provincia_name})</span>}
+                                                        {mi.nota && <span className="text-xs text-gray-400 italic">— {mi.nota}</span>}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </>
                                     )}
                                 </div>

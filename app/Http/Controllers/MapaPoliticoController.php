@@ -852,6 +852,23 @@ class MapaPoliticoController extends Controller
             'nexos' => $nexos,
         ];
 
+        $liderId = $source === 'lider' ? $id : ($bestLider->id ?? null);
+        if ($liderId) {
+            $response['municipios_influencia'] = DB::table('lider_municipios_influencia')
+                ->where('lider_id', $liderId)
+                ->orderBy('municipio_name')
+                ->get()
+                ->map(fn ($r) => [
+                    'id' => $r->id,
+                    'geographic_unit_id' => $r->geographic_unit_id,
+                    'municipio_name' => $r->municipio_name,
+                    'provincia_name' => $r->provincia_name,
+                    'nota' => $r->nota,
+                ])->toArray();
+        } else {
+            $response['municipios_influencia'] = [];
+        }
+
         // Include extended lider fields when source is lider
         if ($source === 'lider' && $liderModel) {
             $response['is_active'] = $liderModel->is_active ?? true;
@@ -1344,5 +1361,73 @@ class MapaPoliticoController extends Controller
         ]);
 
         return response()->json(['success' => true, 'message' => 'Referido eliminado.']);
+    }
+
+    public function storeMunicipioInfluencia(Request $request, string $id)
+    {
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+
+        $lider = DB::table('lideres')->where('id', $id)->first();
+        abort_if(! $lider, 404);
+
+        $data = $request->validate([
+            'geographic_unit_id' => 'required|uuid|exists:geographic_units,id',
+            'nota' => 'nullable|string|max:500',
+        ]);
+
+        $existing = DB::table('lider_municipios_influencia')
+            ->where('lider_id', $id)
+            ->where('geographic_unit_id', $data['geographic_unit_id'])
+            ->exists();
+
+        if ($existing) {
+            return response()->json(['success' => false, 'message' => 'Este municipio ya está agregado.'], 422);
+        }
+
+        $geo = DB::table('geographic_units')->where('id', $data['geographic_unit_id'])->first();
+        $provName = $geo->parent_id ? DB::table('geographic_units')->where('id', $geo->parent_id)->value('canonical_name') : null;
+
+        DB::table('lider_municipios_influencia')->insert([
+            'id' => Str::uuid(),
+            'lider_id' => $id,
+            'geographic_unit_id' => $data['geographic_unit_id'],
+            'municipio_name' => $geo->canonical_name,
+            'provincia_name' => $provName,
+            'nota' => $data['nota'] ?? null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $influencia = DB::table('lider_municipios_influencia')
+            ->where('lider_id', $id)
+            ->orderBy('municipio_name')
+            ->get()
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'geographic_unit_id' => $r->geographic_unit_id,
+                'municipio_name' => $r->municipio_name,
+                'provincia_name' => $r->provincia_name,
+                'nota' => $r->nota,
+            ])->toArray();
+
+        return response()->json(['success' => true, 'message' => 'Municipio de influencia agregado.', 'municipios_influencia' => $influencia]);
+    }
+
+    public function destroyMunicipioInfluencia(string $id, string $influenciaId)
+    {
+        if (! Str::isUuid($id) || ! Str::isUuid($influenciaId)) {
+            abort(404);
+        }
+
+        $deleted = DB::table('lider_municipios_influencia')
+            ->where('id', $influenciaId)
+            ->where('lider_id', $id)
+            ->delete();
+
+        abort_if(! $deleted, 404);
+
+        return response()->json(['success' => true, 'message' => 'Municipio de influencia eliminado.']);
     }
 }

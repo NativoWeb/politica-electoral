@@ -82,4 +82,9 @@ class Lider extends Model
     {
         return $this->belongsTo(GeographicUnit::class);
     }
+
+    public function municipiosInfluencia(): HasMany
+    {
+        return $this->hasMany(LiderMunicipioInfluencia::class);
+    }
 }
