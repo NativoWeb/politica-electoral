@@ -101,7 +101,7 @@ function DataRow({ label, value }) {
     );
 }
 
-export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, cargoCategorias = [], fallbackData = null }) {
+export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, cargoCategorias = [], fallbackData = null, municipios = [] }) {
     const { confirm, Dialog: ConfirmDialog } = useConfirm();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -548,11 +548,19 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             <div>
                                                 <label className={labelCls}>Departamento</label>
-                                                <input className={fieldCls} value={f('departamento_votacion')} onChange={e => set('departamento_votacion', e.target.value)} placeholder="Ej: Santander" />
+                                                <select className={fieldCls} value={f('departamento_votacion')} onChange={e => set('departamento_votacion', e.target.value)}>
+                                                    <option value="">Seleccionar...</option>
+                                                    <option value="Santander">Santander</option>
+                                                </select>
                                             </div>
                                             <div>
                                                 <label className={labelCls}>Municipio</label>
-                                                <input className={fieldCls} value={f('municipio_votacion')} onChange={e => set('municipio_votacion', e.target.value)} />
+                                                <select className={fieldCls} value={f('municipio_votacion')} onChange={e => set('municipio_votacion', e.target.value)}>
+                                                    <option value="">Seleccionar...</option>
+                                                    {municipios.map(m => (
+                                                        <option key={m.id} value={m.name}>{m.name}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">

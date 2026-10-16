@@ -817,7 +817,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
 
             {/* Panel lateral de detalle */}
             {selectedPerson && (
-                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} cargoCategorias={cargoCategorias} fallbackData={data.find(d => d.id === selectedPerson)} />
+                <PersonaPanel personId={selectedPerson} onClose={() => setSelectedPerson(null)} cargosPorTipo={cargosPorTipo} cargoCategorias={cargoCategorias} fallbackData={data.find(d => d.id === selectedPerson)} municipios={municipios} />
             )}
 
             {/* Modal crear líder */}
