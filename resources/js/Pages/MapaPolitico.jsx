@@ -320,7 +320,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     }, [serverData, isOnline]);
 
     const isOfflineFiltering = !isOnline && Object.keys(localFilters).length > 0;
-    const filters = isOfflineFiltering ? { ...serverFilters, ...localFilters } : serverFilters;
+    const filters = isOfflineFiltering ? localFilters : serverFilters;
 
     const data = useMemo(() => {
         const source = (!isOnline && offlineDataLoaded) ? allData : serverData;
@@ -481,6 +481,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             profesion: filters.profesion,
             search: localSearch || undefined,
             provincia: selectedProv || undefined,
+            estado: filters.estado && filters.estado !== 'activos' ? filters.estado : undefined,
             ...overrides,
         };
         Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
@@ -497,17 +498,35 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         if (e.key === 'Enter') applyFilters({ search: localSearch || undefined });
     }
 
+    function clearAllFilters() {
+        setLocalSearch(''); setSelectedProv(''); setSelectedCargos([]); setLocalFilters({}); setFiltersOpen(false);
+        if (isOnline) router.get('/mapa-politico', {}, { preserveState: false });
+    }
+
+    const removeFromList = (list, value) => list.split(',').filter(v => v !== value).join(',') || undefined;
+    const activeChips = [];
+    if (selectedProv) activeChips.push({ key: 'prov', label: selectedProv, onRemove: () => { setSelectedProv(''); applyFilters({ provincia: undefined, municipio: undefined }); } });
+    if (filters.municipio) activeChips.push({ key: 'mun', label: municipios.find(m => m.id === filters.municipio)?.name || 'Municipio', onRemove: () => applyFilters({ municipio: undefined }) });
+    if (filters.tipo && filters.tipo !== 'todos') filters.tipo.split(',').forEach(t => activeChips.push({ key: `tipo-${t}`, label: TIPO_OPTIONS.find(o => o.value === t)?.label || t, onRemove: () => applyFilters({ tipo: removeFromList(filters.tipo, t) || 'todos' }) }));
+    if (filters.cargo) filters.cargo.split(',').forEach(c => activeChips.push({ key: `cargo-${c}`, label: c, onRemove: () => { const next = removeFromList(filters.cargo, c); setSelectedCargos(next ? next.split(',') : []); applyFilters({ cargo: next }); } }));
+    if (filters.partido) activeChips.push({ key: 'partido', label: filters.partido, onRemove: () => applyFilters({ partido: undefined }) });
+    if (filters.profesion) activeChips.push({ key: 'profesion', label: filters.profesion, onRemove: () => applyFilters({ profesion: undefined }) });
+    if (filters.barrio) filters.barrio.split(',').forEach(b => activeChips.push({ key: `barrio-${b}`, label: b, onRemove: () => applyFilters({ barrio: removeFromList(filters.barrio, b) }) }));
+    if (isOnline && filters.estado && filters.estado !== 'activos') activeChips.push({ key: 'estado', label: filters.estado === 'inactivos' ? 'Inactivos' : 'Activos e inactivos', onRemove: () => applyFilters({ estado: undefined }) });
+    if (filters.destacado) activeChips.push({ key: 'destacado', label: 'Destacados', onRemove: () => applyFilters({ destacado: undefined }) });
+    if (filters.search) activeChips.push({ key: 'search', label: `"${filters.search}"`, onRemove: () => { setLocalSearch(''); applyFilters({ search: undefined }); } });
+
     return (
         <AppLayout title="Mapa Político" breadcrumb={[{ label: 'SANTANDER', href: '/' }, { label: 'MAPA POLITICO' }]}>
             <Head title="Mapa Politico — Inteligencia Electoral" />
 
             <div className="sticky top-0 z-20 bg-white shadow-sm">
-            <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-3">
+            <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-2 lg:py-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <h1 className="text-[18px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
-                    <p className="text-[10px] lg:text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Nuevos Líderes, Senado, Cámara y Asamblea</p>
+                    <h1 className="text-[16px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
+                    <p className="hidden lg:block text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Nuevos Líderes, Senado, Cámara y Asamblea</p>
                 </div>
-                <button onClick={() => setShowCrearLider(true)} className="px-3 lg:px-5 py-2.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => setShowCrearLider(true)} className="px-3 lg:px-5 py-1.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                     <span className="hidden sm:inline">Crear Líder</span>
                 </button>
@@ -532,18 +551,20 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             )}
 
             {/* Filtros */}
-            <div className="bg-white border-b border-[var(--color-line)] px-4 lg:px-5 py-3 space-y-3">
+            <div className="bg-white border-b border-[var(--color-line)] px-4 lg:px-5 py-2 lg:py-3 space-y-2 lg:space-y-3">
                 {/* Mobile: toggle + search inline */}
                 <div className="flex items-center gap-2 lg:hidden">
                     <button
                         onClick={() => setFiltersOpen(!filtersOpen)}
-                        className="flex items-center gap-2 px-3 md:px-5 py-2.5 md:py-3.5 bg-[var(--color-primary)] text-white rounded-lg text-[13px] md:text-[16px] font-bold hover:bg-[var(--color-primary-light)] transition-colors flex-shrink-0"
+                        aria-expanded={filtersOpen}
+                        className="flex items-center gap-2 px-3 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-[13px] md:text-[14px] font-bold hover:bg-[var(--color-primary-light)] transition-colors flex-shrink-0"
                     >
-                        <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                         Filtros
-                        {(filters.provincia || filters.municipio || filters.tipo !== 'todos' || filters.cargo || filters.partido || filters.barrio) && (
-                            <span className="w-2 h-2 bg-[var(--color-primary)] rounded-full" />
+                        {activeChips.length > 0 && (
+                            <span className="min-w-[20px] h-5 px-1.5 bg-amber-400 text-[var(--color-primary)] rounded-full text-[11px] font-extrabold flex items-center justify-center">{activeChips.length}</span>
                         )}
+                        <svg className={`w-4 h-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <input type="text" value={localSearch} onChange={e => setLocalSearch(e.target.value)} onKeyDown={handleSearch} placeholder="Buscar nombre..."
                         className="flex-1 min-w-0 text-[14px] border border-[var(--color-line)] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)]" />
@@ -551,6 +572,23 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     </button>
                 </div>
+
+                {/* Mobile/tablet: active filters as removable chips, visible while collapsed */}
+                {activeChips.length > 0 && (
+                    <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto -mx-4 px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {activeChips.map(chip => (
+                            <span key={chip.key} className="flex-shrink-0 inline-flex items-center gap-1 pl-2.5 pr-1 py-1 bg-blue-50 border border-blue-200 text-[var(--color-primary)] rounded-full text-[12px] font-semibold max-w-[200px]">
+                                <span className="truncate">{chip.label}</span>
+                                <button onClick={chip.onRemove} aria-label={`Quitar filtro ${chip.label}`} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-blue-100 flex-shrink-0">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </span>
+                        ))}
+                        <button onClick={clearAllFilters} className="flex-shrink-0 px-2 py-1 text-[12px] font-semibold text-red-600 underline">
+                            Limpiar
+                        </button>
+                    </div>
+                )}
 
                 {/* Filter grid — always visible on desktop, collapsible on mobile */}
                 <div className={`${filtersOpen ? 'block' : 'hidden'} lg:block`}>
@@ -664,7 +702,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         </div>
                         <div className="col-span-2 lg:col-span-1 flex gap-2 pt-1 lg:pt-4">
                             <button onClick={() => { applyFilters({ search: localSearch || undefined }); setFiltersOpen(false); }} className="flex-1 lg:flex-initial px-4 lg:px-6 py-2.5 lg:py-3 bg-[var(--color-primary)] text-white text-[13px] lg:text-[15px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">Filtrar</button>
-                            <button onClick={() => { setLocalSearch(''); setSelectedProv(''); setSelectedCargos([]); setLocalFilters({}); setFiltersOpen(false); if (isOnline) router.get('/mapa-politico', {}, { preserveState: false }); }} className="flex-1 lg:flex-initial px-3 lg:px-5 py-2.5 lg:py-3 border border-[var(--color-line)] text-[13px] lg:text-[15px] font-semibold text-[var(--color-ink-soft)] rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
+                            <button onClick={clearAllFilters} className="flex-1 lg:flex-initial px-3 lg:px-5 py-2.5 lg:py-3 border border-[var(--color-line)] text-[13px] lg:text-[15px] font-semibold text-[var(--color-ink-soft)] rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
                         </div>
                     </div>
                 </div>
