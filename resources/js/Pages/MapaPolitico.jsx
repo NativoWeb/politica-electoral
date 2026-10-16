@@ -644,6 +644,18 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                                 />
                             </div>
                         )}
+                        <div className="col-span-1">
+                            <label className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Estado</label>
+                            <select
+                                value={filters.estado || 'activos'}
+                                onChange={e => applyFilters({ estado: e.target.value === 'activos' ? undefined : e.target.value })}
+                                className="w-full text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)] bg-white"
+                            >
+                                <option value="activos">Activos</option>
+                                <option value="inactivos">Inactivos</option>
+                                <option value="todos">Todos</option>
+                            </select>
+                        </div>
                         {/* Search visible only on desktop (mobile has it above) */}
                         <div className="hidden lg:block">
                             <label className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Buscar</label>

@@ -87,6 +87,7 @@ class MapaPoliticoController extends Controller
         $barrio = $barrioRaw;
         $destacado = $request->input('destacado');
         $profesion = $request->input('profesion');
+        $estado = $request->input('estado', 'activos');
 
         // #3: Escape search for ILIKE
         $searchEscaped = $search ? $this->escapeLike($search) : null;
@@ -213,11 +214,20 @@ class MapaPoliticoController extends Controller
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
         }
 
+        $applyEstado = function ($query) use ($estado) {
+            if ($estado === 'inactivos') {
+                $query->where('is_active', false);
+            } elseif ($estado !== 'todos') {
+                $query->where('is_active', true);
+            }
+            return $query;
+        };
+
         // === LIDERES ===
         if ($tipoMatch('lideres')) {
-            $query = DB::table('lideres')
-                ->where('is_active', true)
-                ->where(function ($q) {
+            $query = DB::table('lideres');
+            $applyEstado($query);
+            $query->where(function ($q) {
                     $q->where('tipo', '!=', 'nuevo_lider')->orWhereNull('tipo');
                 })
                 ->select(
@@ -260,9 +270,9 @@ class MapaPoliticoController extends Controller
 
         // === NUEVOS LIDERES ===
         if ($tipoMatch('nuevos_lideres')) {
-            $query = DB::table('lideres')
-                ->where('is_active', true)
-                ->where('tipo', 'nuevo_lider')
+            $query = DB::table('lideres');
+            $applyEstado($query);
+            $query->where('tipo', 'nuevo_lider')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
@@ -303,9 +313,9 @@ class MapaPoliticoController extends Controller
 
         // === DIRECTORIO MUNICIPAL ===
         if ($tipoMatch('directorio')) {
-            $query = DB::table('lideres')
-                ->where('is_active', true)
-                ->where('cargo', 'ilike', '%Directorio Municipal%')
+            $query = DB::table('lideres');
+            $applyEstado($query);
+            $query->where('cargo', 'ilike', '%Directorio Municipal%')
                 ->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
@@ -404,8 +414,9 @@ class MapaPoliticoController extends Controller
         $relevantMunicipios = array_unique(array_filter(array_column($data, 'municipio')));
         $lideresLookup = [];
         if (! empty($relevantMunicipios)) {
-            $lideresAll = DB::table('lideres')
-                ->where('is_active', true)
+            $lideresAllQuery = DB::table('lideres');
+            $applyEstado($lideresAllQuery);
+            $lideresAll = $lideresAllQuery
                 ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
@@ -536,7 +547,9 @@ class MapaPoliticoController extends Controller
 
         $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
 
-        $barriosQuery = DB::table('lideres')->where('is_active', true)->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
+        $barriosQuery = DB::table('lideres');
+        $applyEstado($barriosQuery);
+        $barriosQuery->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
         if ($munId) {
             $barriosQuery->where('geographic_unit_id', $munId);
         }
@@ -605,7 +618,7 @@ class MapaPoliticoController extends Controller
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
             'partyTotals' => $partyTotals,
-            'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion']),
+            'filters' => $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion', 'estado']),
         ]);
     }
 
