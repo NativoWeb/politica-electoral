@@ -39,7 +39,7 @@ class ImportLandazuri extends Command
 
         $geo = DB::table('geographic_units')
             ->where('type', 'municipality')
-            ->where('canonical_name', 'ilike', '%landaz%')
+            ->whereRaw("unaccent(canonical_name) ilike unaccent(?)", ['%landaz%'])
             ->first();
 
         if (! $geo) {
@@ -55,7 +55,7 @@ class ImportLandazuri extends Command
         $this->info("Municipality: {$geo->canonical_name} (ID: {$geo->id}, Provincia: {$this->provincia})");
 
         $this->existingNames = DB::table('lideres')
-            ->where('municipio', 'ilike', '%landaz%')
+            ->whereRaw("unaccent(municipio) ilike unaccent(?)", ['%landaz%'])
             ->get(['id', 'nombre', 'telefono', 'votos', 'partido', 'cargo', 'observacion', 'cedula', 'email'])
             ->keyBy(fn ($r) => $this->normalize($r->nombre))
             ->toArray();
