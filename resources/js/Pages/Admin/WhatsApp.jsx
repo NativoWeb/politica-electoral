@@ -456,6 +456,7 @@ export default function WhatsApp({
             case 'pendiente': return 'Pendiente';
             case 'enviando': return 'Enviando';
             case 'enviado': return 'Enviado';
+            case 'leido': return 'Leído';  
             case 'error': return 'Error';
             default: return status || 'Sin estado';
         }
@@ -466,6 +467,7 @@ export default function WhatsApp({
             case 'pendiente': return 'bg-gray-100 text-gray-600';
             case 'enviando': return 'bg-blue-100 text-blue-700';
             case 'enviado': return 'bg-green-100 text-green-700';
+            case 'leido': return 'bg-purple-100 text-purple-700';
             case 'error': return 'bg-red-100 text-red-700';
             default: return 'bg-gray-100 text-gray-600';
         }
@@ -899,6 +901,7 @@ export default function WhatsApp({
                                                                 <td className="px-4 py-3">
                                                                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}>
                                                                         {status === 'enviado' && <span className="mr-1.5">✓</span>}
+                                                                        {status === 'leido' && <span className="mr-1.5">✓✓</span>}
                                                                         {status === 'error' && <span className="mr-1.5">!</span>}
                                                                         {getStatusLabel(recipient.status)}
                                                                     </span>
@@ -963,6 +966,7 @@ export default function WhatsApp({
                                         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                                             {[
                                                 { label: 'Enviados', value: birthdayHistory.summary?.enviado ?? 0, style: 'bg-green-50 text-green-700' },
+                                                { label: 'Leídos', value: birthdayHistory.summary?.leido ?? 0, style: 'bg-purple-50 text-purple-700' },
                                                 { label: 'Con error', value: birthdayHistory.summary?.error ?? 0, style: 'bg-red-50 text-red-700' },
                                                 { label: 'Pendientes', value: birthdayHistory.summary?.pendiente ?? 0, style: 'bg-gray-100 text-gray-700' },
                                                 { label: 'En curso', value: birthdayHistory.summary?.enviando ?? 0, style: 'bg-blue-50 text-blue-700' },
