@@ -7,9 +7,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\GenericExport;
+use App\Http\Controllers\Concerns\FiltersByCargo;
 
 class ExportController extends Controller
 {
+    use FiltersByCargo;
+
     private const PDF_MAX_ROWS = 500;
 
     public function excel(Request $request)
@@ -86,7 +89,7 @@ class ExportController extends Controller
 
     private function getMapaPoliticoData(?string $munId, string $tipo, ?string $cargo, ?string $search, ?string $partido, ?string $barrio): array
     {
-        $cargos = $cargo ? explode(',', $cargo) : [];
+        $cargos = $this->parseCargos($cargo);
         $tipos = $tipo ? explode(',', $tipo) : ['todos'];
         $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
         $barrios = $barrio ? explode(',', $barrio) : [];
@@ -110,11 +113,12 @@ class ExportController extends Controller
                 ->leftJoinSub(clone $votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
                 ->select('p.full_name as nombre', 'g.canonical_name as municipio',
                     DB::raw("'Alcaldía' as tipo"),
-                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato' END as cargo"),
+                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato Alcaldía' END as cargo"),
                     'po.canonical_name as partido', DB::raw('NULL as telefono'),
                     DB::raw('COALESCE(res.votos, 0) as votos'));
             if ($munId) $query->where('con.geographic_unit_id', $munId);
             if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
+            $this->whereOutcomeCargoIn($query, 'Alcalde Electo', 'Candidato Alcaldía', $cargos);
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
         }
 
@@ -149,9 +153,7 @@ class ExportController extends Controller
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
                 $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
             });
-            if (!empty($cargos)) $query->where(function ($q) use ($cargos) {
-                foreach ($cargos as $c) $q->orWhere('cargo', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], $c) . '%');
-            });
+            $this->whereCargoIn($query, $cargos);
             if (!empty($barrios)) $query->where(function ($q) use ($barrios) {
                 foreach ($barrios as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
             });
@@ -161,8 +163,9 @@ class ExportController extends Controller
         // Directorio Municipal
         if ($tipoMatch('directorio')) {
             $query = DB::table('lideres')
-                ->where('cargo', 'ilike', '%Directorio Municipal%')
                 ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
+            $this->whereCargoIn($query, ['Directorio Municipal']);
+            $this->whereCargoIn($query, $cargos);
             if ($munId) $query->where('geographic_unit_id', $munId);
             if ($search) $query->where(function ($q) use ($search) {
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
@@ -178,7 +181,7 @@ class ExportController extends Controller
         $corpMap = ['senado' => 'Senado', 'camara' => 'Cámara de Representantes', 'asamblea' => 'Asamblea'];
         foreach ($corpMap as $tipoKey => $corpName) {
             if ($tipoMatch($tipoKey)) {
-                $data = array_merge($data, $this->getCorporacionData($corpName, $munId));
+                $data = array_merge($data, $this->getCorporacionData($corpName, $munId, $cargos));
             }
         }
 
@@ -190,7 +193,8 @@ class ExportController extends Controller
         return $data;
     }
 
-    private function getCorporacionData(string $corpName, ?string $munId): array
+    // $cargos === null keeps the standalone corporation export (cargo = corporation name).
+    private function getCorporacionData(string $corpName, ?string $munId, ?array $cargos = null): array
     {
         $corpId = DB::table('corporations')->where('name', $corpName)->value('id');
         if (!$corpId) return [];
@@ -198,7 +202,7 @@ class ExportController extends Controller
         $resQuery = DB::table('electoral_results')->whereIn('metric_type', ['votes', 'nominal_votes'])->where('value', '>', 0);
         if ($munId) $resQuery->where('geographic_unit_id', $munId);
 
-        return DB::table('candidacies as c')
+        $query = DB::table('candidacies as c')
             ->join('persons as p', 'c.person_id', '=', 'p.id')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')
             ->where('con.corporation_id', $corpId)
@@ -206,9 +210,17 @@ class ExportController extends Controller
             ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
             ->joinSub($resQuery->select('candidacy_id', DB::raw('SUM(value) as votos'))->groupBy('candidacy_id'), 'res', 'res.candidacy_id', '=', 'c.id')
             ->select('p.full_name as nombre', DB::raw('NULL as municipio'), 'po.canonical_name as partido', DB::raw('NULL as telefono'), DB::raw('res.votos'))
-            ->selectRaw('? as tipo', [$corpName])
-            ->selectRaw('? as cargo', [$corpName])
-            ->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
+            ->selectRaw('? as tipo', [$corpName]);
+
+        if ($cargos === null || ! isset(self::CORP_CARGOS[$corpName])) {
+            $query->selectRaw('? as cargo', [$corpName]);
+        } else {
+            [$electo, $candidato] = array_values(self::CORP_CARGOS[$corpName]);
+            $query->selectRaw("CASE WHEN c.outcome = 'elected' THEN ? ELSE ? END as cargo", [$electo, $candidato]);
+            $this->whereOutcomeCargoIn($query, $electo, $candidato, $cargos);
+        }
+
+        return $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
     }
 
     private function getGobernadorData(): array

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
@@ -13,6 +14,8 @@ use Inertia\Inertia;
 
 class MapaPoliticoController extends Controller
 {
+    use FiltersByCargo;
+
     // #3: Escape LIKE wildcards to prevent wildcard injection
     private function escapeLike(string $value): string
     {
@@ -84,7 +87,7 @@ class MapaPoliticoController extends Controller
         $tipo = $tipoRaw; // keep for backward compat
         $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
         $cargoRaw = $request->input('cargo');
-        $cargos = $cargoRaw ? explode(',', $cargoRaw) : [];
+        $cargos = $this->parseCargos($cargoRaw);
         $cargo = $cargoRaw;
         $search = $request->input('search');
         $partido = $request->input('partido');
@@ -172,7 +175,10 @@ class MapaPoliticoController extends Controller
             if ($searchEscaped) {
                 $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
             }
-            if ($noGeoFilter) {
+            if (! empty($cargos)) {
+                $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato Alcaldía' END"), $cargos);
+            }
+            if ($noGeoFilter && empty($cargos)) {
                 $query->where('c.outcome', 'elected');
             }
 
@@ -213,7 +219,7 @@ class MapaPoliticoController extends Controller
             if (! empty($cargos)) {
                 $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END"), $cargos);
             }
-            if ($noGeoFilter) {
+            if ($noGeoFilter && empty($cargos)) {
                 $query->where('c.outcome', 'elected');
             }
 
@@ -254,11 +260,7 @@ class MapaPoliticoController extends Controller
                 });
             }
             if (! empty($cargos)) {
-                $query->where(function ($q) use ($cargos) {
-                    foreach ($cargos as $c) {
-                        $q->orWhere('cargo', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], $c).'%');
-                    }
-                });
+                $this->whereCargoIn($query, $cargos);
             }
             if (! empty($barrios_filter)) {
                 $query->where(function ($q) use ($barrios_filter) {
@@ -267,7 +269,7 @@ class MapaPoliticoController extends Controller
                     }
                 });
             }
-            if ($noGeoFilter) {
+            if ($noGeoFilter && empty($cargos)) {
                 $query->limit(200);
             }
 
@@ -297,11 +299,7 @@ class MapaPoliticoController extends Controller
                 });
             }
             if (! empty($cargos)) {
-                $query->where(function ($q) use ($cargos) {
-                    foreach ($cargos as $c) {
-                        $q->orWhere('cargo', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], $c).'%');
-                    }
-                });
+                $this->whereCargoIn($query, $cargos);
             }
             if (! empty($barrios_filter)) {
                 $query->where(function ($q) use ($barrios_filter) {
@@ -310,7 +308,7 @@ class MapaPoliticoController extends Controller
                     }
                 });
             }
-            if ($noGeoFilter) {
+            if ($noGeoFilter && empty($cargos)) {
                 $query->limit(200);
             }
 
@@ -321,8 +319,8 @@ class MapaPoliticoController extends Controller
         if ($tipoMatch('directorio')) {
             $query = DB::table('lideres');
             $applyEstado($query);
-            $query->where('cargo', 'ilike', '%Directorio Municipal%')
-                ->select(
+            $this->whereCargoIn($query, ['Directorio Municipal']);
+            $query->select(
                     'id', 'nombre', 'municipio', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     'votos', DB::raw("'Directorio Municipal' as tipo_registro"),
@@ -340,11 +338,7 @@ class MapaPoliticoController extends Controller
                 });
             }
             if (! empty($cargos)) {
-                $query->where(function ($q) use ($cargos) {
-                    foreach ($cargos as $c) {
-                        $q->orWhere('cargo', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], $c).'%');
-                    }
-                });
+                $this->whereCargoIn($query, $cargos);
             }
             if (! empty($barrios_filter)) {
                 $query->where(function ($q) use ($barrios_filter) {
@@ -353,7 +347,7 @@ class MapaPoliticoController extends Controller
                     }
                 });
             }
-            if ($noGeoFilter) {
+            if ($noGeoFilter && empty($cargos)) {
                 $query->limit(200);
             }
 
@@ -397,15 +391,17 @@ class MapaPoliticoController extends Controller
                     ->select(
                         'p.id', 'p.full_name as nombre', DB::raw("'Santander' as municipio"),
                         DB::raw('NULL as provincia'), 'po.canonical_name as partido',
-                        DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
+                        'c.outcome', DB::raw('NULL as tipo_aval'),
                         DB::raw('res.votos')
                     )
                     ->selectRaw('? as tipo_registro', [$label])
-                    ->selectRaw('? as cargo', [$label]);
+                    ->selectRaw("CASE WHEN c.outcome = 'elected' THEN ? ELSE ? END as cargo", array_values(self::CORP_CARGOS[$info['corp']]));
 
                 if ($searchEscaped) {
                     $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
                 }
+                [$electo, $candidato] = array_values(self::CORP_CARGOS[$info['corp']]);
+                $this->whereOutcomeCargoIn($query, $electo, $candidato, $cargos);
 
                 $rows = $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
                 if ($tipoKey === 'camara') {

@@ -364,10 +364,11 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             });
         }
         if (f.cargo) {
-            const cargos = f.cargo.split(',');
+            const norm = v => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+            const cargos = f.cargo.split(',').map(norm);
             result = result.filter(r => {
-                const rowCargos = (r.cargo || '').toLowerCase();
-                return cargos.some(c => rowCargos.includes(c.toLowerCase()));
+                const rowCargos = (r.cargo || '').split(',').map(norm);
+                return cargos.some(c => rowCargos.includes(c));
             });
         }
         if (f.partido) {
