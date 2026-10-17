@@ -743,7 +743,7 @@ class WhatsAppController extends Controller
         WhatsAppSendRecipient $recipient
     ) {
         $validated = $request->validate([
-            'status' => ['required', 'in:pendiente,enviando,enviado,error'],
+            'status' => ['required', 'in:pendiente,enviando,enviado,leido,error'],
         ]);
 
         $recipient->update([
@@ -760,6 +760,72 @@ class WhatsAppController extends Controller
     /**
      * Actualización de estado protegida para n8n.
      */
+
+    
+    /**
+     * Actualiza el estado de un destinatario usando el teléfono recibido desde Meta.
+     */
+    public function updateRecipientStatusByPhone(Request $request)
+    {
+        $validated = $request->validate([
+            'phone' => ['required', 'string', 'max:30'],
+            'status' => ['required', 'in:delivered,read,failed'],
+        ]);
+    
+        // Normalizar el teléfono recibido desde Meta.
+        $phoneDigits = preg_replace('/\D+/', '', $validated['phone']);
+    
+        if (strlen($phoneDigits) < 10) {
+            return response()->json([
+                'success' => false,
+                'message' => 'El número de teléfono no es válido.',
+            ], 422);
+        }
+    
+        // Comparar los últimos 10 dígitos para ignorar el indicativo 57.
+        $lastTenDigits = substr($phoneDigits, -10);
+    
+        // Buscar el destinatario pendiente más reciente que coincida.
+        $recipient = WhatsAppSendRecipient::query()
+    ->whereIn('status', ['pendiente', 'enviando', 'enviado'])
+            ->whereRaw(
+                "right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = ?",
+                [$lastTenDigits]
+            )
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+    
+        if (!$recipient) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se encontró un destinatario pendiente para ese teléfono.',
+            ], 404);
+        }
+    
+        // Mantener los estados actuales de la aplicación.
+
+        $newStatus = match ($validated['status']) {
+            'delivered' => 'enviado',
+            'read' => 'leido',
+            'failed' => 'error',
+        };
+
+        $recipient->update([
+            'status' => $newStatus,
+        ]);
+    
+        return response()->json([
+            'success' => true,
+            'recipient_id' => $recipient->id,
+            'send_id' => $recipient->whatsapp_send_id,
+            'phone' => $recipient->phone,
+            'meta_status' => $validated['status'],
+            'status' => $recipient->status,
+        ]);
+    }
+
+    
     public function updateBirthdayRecipientStatus(
         Request $request,
         WhatsAppSendRecipient $recipient
@@ -777,7 +843,7 @@ class WhatsAppController extends Controller
         }
 
         $validated = $request->validate([
-            'status' => ['required', 'in:pendiente,enviando,enviado,error'],
+            'status' => ['required', 'in:pendiente,enviando,enviado,leido,error'],
         ]);
 
         $recipient->update([
@@ -883,6 +949,7 @@ class WhatsAppController extends Controller
                 'pendiente' => $recipients->where('status', 'pendiente')->count(),
                 'enviando' => $recipients->where('status', 'enviando')->count(),
                 'enviado' => $recipients->where('status', 'enviado')->count(),
+                'leido' => $recipients->where('status', 'leido')->count(),                                
                 'error' => $recipients->where('status', 'error')->count(),
             ],
             'recipients' => $recipients,
