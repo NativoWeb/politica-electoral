@@ -25,6 +25,12 @@ class MapaPoliticoController extends Controller
         return Cache::remember("office_id:{$name}", 3600, fn () => DB::table('offices')->where('name', $name)->value('id'));
     }
 
+    // Cámara candidates endorsed by a party that ran inside a coalition list; votes are reported under the list name.
+    private const CAMARA_LIST_BY_PARTY = [
+        'Alianza Verde' => 'Verde / En Marcha',
+        'Nuevo Liberalismo' => 'Mira / Nuevo Liberal',
+    ];
+
     private function corporationId(string $name): ?string
     {
         return Cache::remember("corp_id:{$name}", 3600, fn () => DB::table('corporations')->where('name', $name)->value('id'));
@@ -401,7 +407,14 @@ class MapaPoliticoController extends Controller
                     $query->where('p.full_name', 'ilike', "%{$searchEscaped}%");
                 }
 
-                $data = array_merge($data, $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray());
+                $rows = $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
+                if ($tipoKey === 'camara') {
+                    foreach ($rows as &$row) {
+                        $row['partido'] = self::CAMARA_LIST_BY_PARTY[$row['partido'] ?? ''] ?? $row['partido'];
+                    }
+                    unset($row);
+                }
+                $data = array_merge($data, $rows);
             }
         }
 
@@ -557,54 +570,9 @@ class MapaPoliticoController extends Controller
 
         $sectionCounts = collect($data)->groupBy('tipo_registro')->map(fn ($items) => count($items))->toArray();
 
-        // Party totals (votos de partido, no de candidato) for Cámara and Senado
-        $partyTotalsQuery = DB::table('electoral_results as er')
-            ->join('political_organizations as po', 'er.organization_id', '=', 'po.id')
-            ->join('contests as c', 'er.contest_id', '=', 'c.id')
-            ->leftJoin('corporations as corp', 'c.corporation_id', '=', 'corp.id')
-            ->whereNull('er.candidacy_id')
-            ->whereNotNull('er.organization_id');
-
-        if ($munId) {
-            $partyTotalsQuery->where('er.geographic_unit_id', $munId)
-                ->select('po.canonical_name as partido', 'er.value as votos', 'corp.name as corporacion');
-        } else {
-            // General: sum across all municipios
-            $partyTotalsQuery->select('po.canonical_name as partido', DB::raw('SUM(er.value) as votos'), 'corp.name as corporacion')
-                ->groupBy('po.canonical_name', 'corp.name');
-        }
-
-        $partyTotals = $partyTotalsQuery
-            ->orderBy('corp.name')
-            ->orderByDesc('votos')
-            ->get()
-            ->groupBy('corporacion')
-            ->map(fn ($items) => $items->map(fn ($r) => ['partido' => $r->partido, 'votos' => (int) $r->votos])->values()->toArray())
-            ->toArray();
-
-        if (! isset($partyTotals['Asamblea'])) {
-            $asambleaCorpId = $this->corporationId('Asamblea');
-            if ($asambleaCorpId) {
-                $aq = DB::table('electoral_results as er')
-                    ->join('candidacies as ca', 'er.candidacy_id', '=', 'ca.id')
-                    ->join('contests as con', 'ca.contest_id', '=', 'con.id')
-                    ->join('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'ca.id')->where('ce.is_primary', true))
-                    ->join('political_organizations as po', 'ce.organization_id', '=', 'po.id')
-                    ->where('con.corporation_id', $asambleaCorpId)
-                    ->whereIn('er.metric_type', ['votes', 'nominal_votes']);
-                if ($munId) {
-                    $aq->where('er.geographic_unit_id', $munId);
-                }
-                $asambleaTotals = $aq->select('po.canonical_name as partido', DB::raw('SUM(er.value) as votos'))
-                    ->groupBy('po.canonical_name')
-                    ->orderByDesc('votos')
-                    ->get()
-                    ->map(fn ($r) => ['partido' => $r->partido, 'votos' => (int) $r->votos])
-                    ->toArray();
-                if (! empty($asambleaTotals)) {
-                    $partyTotals['Asamblea'] = $asambleaTotals;
-                }
-            }
+        $partyTotals = $this->partyTotalsWithLista($munId, $provinciaIds);
+        if ($partido) {
+            $partyTotals = array_map(fn ($list) => array_values(array_filter($list, fn ($p) => $p['partido'] === $partido)), $partyTotals);
         }
 
         return Inertia::render('MapaPolitico', [
@@ -1429,5 +1397,80 @@ class MapaPoliticoController extends Controller
         abort_if(! $deleted, 404);
 
         return response()->json(['success' => true, 'message' => 'Municipio de influencia eliminado.']);
+    }
+
+    // Asamblea party rows are list-only votes; Senado/Cámara party rows are "TOTAL PARTIDO" (list + candidates).
+    // Senado only has some candidates imported per municipio, so its list share cannot be derived.
+    private function partyTotalsWithLista(?string $munId, ?array $provinciaIds): array
+    {
+        $partyRowIsTotal = ['Senado' => true, 'Cámara de Representantes' => true, 'Asamblea' => false];
+        $listaDerivable = ['Senado' => false, 'Cámara de Representantes' => true, 'Asamblea' => true];
+        $corps = array_keys($partyRowIsTotal);
+
+        $scope = function ($q) use ($munId, $provinciaIds) {
+            if ($munId) {
+                $q->where('er.geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $q->whereIn('er.geographic_unit_id', $provinciaIds);
+            }
+
+            return $q;
+        };
+
+        $partyRows = $scope(DB::table('electoral_results as er')
+            ->join('contests as con', 'er.contest_id', '=', 'con.id')
+            ->join('corporations as corp', 'con.corporation_id', '=', 'corp.id')
+            ->join('political_organizations as po', 'er.organization_id', '=', 'po.id')
+            ->whereNull('er.candidacy_id')
+            ->whereIn('corp.name', $corps))
+            ->groupBy('corp.name', 'po.canonical_name')
+            ->select('corp.name as corp', 'po.canonical_name as partido', DB::raw('SUM(er.value) as votos'))
+            ->get();
+
+        $candidateRows = $scope(DB::table('electoral_results as er')
+            ->join('candidacies as ca', 'er.candidacy_id', '=', 'ca.id')
+            ->join('contests as con', 'ca.contest_id', '=', 'con.id')
+            ->join('corporations as corp', 'con.corporation_id', '=', 'corp.id')
+            ->join('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'ca.id')->where('ce.is_primary', true))
+            ->join('political_organizations as po', 'ce.organization_id', '=', 'po.id')
+            ->whereIn('er.metric_type', ['votes', 'nominal_votes'])
+            ->whereIn('corp.name', $corps))
+            ->groupBy('corp.name', 'po.canonical_name')
+            ->select('corp.name as corp', 'po.canonical_name as partido', DB::raw('SUM(er.value) as votos'))
+            ->get();
+
+        $acc = [];
+        foreach ($partyRows as $r) {
+            $acc[$r->corp][$r->partido]['party'] = (int) $r->votos;
+        }
+        foreach ($candidateRows as $r) {
+            $partido = $r->corp === 'Cámara de Representantes' ? (self::CAMARA_LIST_BY_PARTY[$r->partido] ?? $r->partido) : $r->partido;
+            $acc[$r->corp][$partido]['cand'] = ($acc[$r->corp][$partido]['cand'] ?? 0) + (int) $r->votos;
+        }
+
+        $result = [];
+        foreach ($acc as $corp => $parties) {
+            $list = [];
+            foreach ($parties as $partido => $v) {
+                $party = $v['party'] ?? 0;
+                $cand = $v['cand'] ?? 0;
+                if ($partyRowIsTotal[$corp]) {
+                    // A party row below its candidates' votes is bad source data; trust the candidates then.
+                    $total = max($party, $cand);
+                    $lista = ($listaDerivable[$corp] && $cand > 0 && $party >= $cand) ? $party - $cand : 0;
+                } else {
+                    $total = $party + $cand;
+                    $lista = $party;
+                }
+                if ($total <= 0) {
+                    continue;
+                }
+                $list[] = ['partido' => $partido, 'votos' => $total, 'lista' => $lista, 'candidatos' => $cand];
+            }
+            usort($list, fn ($a, $b) => $b['votos'] <=> $a['votos']);
+            $result[$corp] = $list;
+        }
+
+        return $result;
     }
 }

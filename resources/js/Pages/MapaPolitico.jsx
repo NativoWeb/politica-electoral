@@ -50,11 +50,12 @@ const TIPO_ICONS = {
 const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Senado', 'Cámara', 'Asamblea'];
 
 /* ── Acordeón por Partido (estilo Registraduría) ── */
-function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
+function PartyAccordion({ partyName, rows, index, onSelectPerson, partyTotal }) {
     const [open, setOpen] = useState(false);
     const logo = partyLogo(partyName);
     const color = partyColor(partyName, index);
-    const totalVotos = rows.reduce((sum, r) => sum + (r.votos || 0), 0);
+    const totalVotos = partyTotal ? partyTotal.votos : rows.reduce((sum, r) => sum + (r.votos || 0), 0);
+    const listaVotos = partyTotal?.lista || 0;
     const electos = rows.filter(r => r.outcome === 'elected' || (r.cargo && r.cargo.includes('Electo')));
 
     return (
@@ -95,6 +96,17 @@ function PartyAccordion({ partyName, rows, index, onSelectPerson }) {
 
             {open && (
                 <div className="border-t border-[var(--color-line)] bg-gray-50/50">
+                    {listaVotos > 0 && (
+                        <div className="flex items-center gap-3 px-5 py-2.5 border-b border-[var(--color-line)] bg-white">
+                            <span className="w-5 flex-shrink-0" />
+                            <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                            <div className="flex-1 min-w-0">
+                                <span className="text-[13px] font-extrabold text-[var(--color-ink)] uppercase">Lista</span>
+                                <p className="text-[11px] text-[var(--color-ink-faint)]">Votos por el partido, sin marcar candidato</p>
+                            </div>
+                            <span className="text-[12px] font-bold text-[var(--color-ink)] font-[var(--font-mono)] flex-shrink-0">{fmt(listaVotos)}</span>
+                        </div>
+                    )}
                     {rows.map((row, i) => {
                         const isElecto = row.outcome === 'elected' || (row.cargo && row.cargo.includes('Electo'));
                         return (
@@ -191,7 +203,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
     const [open, setOpen] = useState(false);
     const colorCls = TIPO_COLORS[tipo] ?? 'bg-gray-100 text-gray-600';
     const icon = TIPO_ICONS[tipo];
-    const totalVotos = rows.reduce((sum, r) => sum + (r.votos || 0), 0);
+    const totalsByParty = useMemo(() => Object.fromEntries((partyTotals || []).map(pt => [pt.partido, pt])), [partyTotals]);
     const byParty = useMemo(() => {
         const groups = {};
         rows.forEach(r => {
@@ -199,12 +211,10 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
             if (!groups[key]) groups[key] = [];
             groups[key].push(r);
         });
-        return Object.entries(groups).sort((a, b) => {
-            const votosA = a[1].reduce((s, r) => s + (r.votos || 0), 0);
-            const votosB = b[1].reduce((s, r) => s + (r.votos || 0), 0);
-            return votosB - votosA;
-        });
-    }, [rows]);
+        const partyVotes = ([name, list]) => totalsByParty[name]?.votos ?? list.reduce((s, r) => s + (r.votos || 0), 0);
+        return Object.entries(groups).sort((a, b) => partyVotes(b) - partyVotes(a));
+    }, [rows, totalsByParty]);
+    const totalVotos = byParty.reduce((sum, [name, list]) => sum + (totalsByParty[name]?.votos ?? list.reduce((s, r) => s + (r.votos || 0), 0)), 0);
 
     return (
         <div className="border border-[var(--color-line)] rounded-xl overflow-hidden bg-white">
@@ -274,6 +284,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                                     rows={partyRows}
                                     index={idx}
                                     onSelectPerson={onSelectPerson}
+                                    partyTotal={totalsByParty[party]}
                                 />
                             ))
                         )}
