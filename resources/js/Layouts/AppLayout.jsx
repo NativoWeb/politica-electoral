@@ -227,7 +227,7 @@ const SIDEBAR_ITEMS = [
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
-    { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view' },
+    { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
 ];
 
 const ICONS_EXTRA = {
@@ -560,7 +560,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
             {/* ══ Bottom Tab Bar — mobile only, BIG for elderly users ══ */}
             <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
                 <div className="flex items-stretch h-[72px]">
-                    {visibleItems.map((item) => {
+                    {visibleItems.filter(item => !item.desktopOnly).map((item) => {
                         const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
                         return (
                             <Link
