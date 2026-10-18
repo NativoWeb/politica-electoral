@@ -742,6 +742,12 @@ class WhatsAppController extends Controller
         Request $request,
         WhatsAppSendRecipient $recipient
     ) {
+        if (!$this->hasValidBirthdayToken($request)) {
+            return response()->json([
+                'message' => 'No autorizado.',
+            ], 401);
+        }
+
         $validated = $request->validate([
             'status' => ['required', 'in:pendiente,enviando,enviado,leido,error'],
         ]);
@@ -767,6 +773,12 @@ class WhatsAppController extends Controller
      */
     public function updateRecipientStatusByPhone(Request $request)
     {
+        if (!$this->hasValidBirthdayToken($request)) {
+            return response()->json([
+                'message' => 'No autorizado.',
+            ], 401);
+        }
+
         $validated = $request->validate([
             'phone' => ['required', 'string', 'max:30'],
             'status' => ['required', 'in:delivered,read,failed'],
