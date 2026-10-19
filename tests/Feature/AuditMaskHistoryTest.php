@@ -92,12 +92,38 @@ class AuditMaskHistoryTest extends TestCase
                 ['tipo' => 'fijo', 'value_last4' => '3210'],
                 ['type' => 'email', 'value' => 'l***@correo.com'],
                 ['type' => 'other', 'value' => '[omitido]'],
-                ['value' => '[omitido]'],
+                ['value' => 'sin tipo'],
             ],
             'birth_date' => '[omitido]', 'fecha_expedicion_doc' => '[omitido]',
             'whatsapp_verified_at' => '2026-10-19 10:00:00', 'whatsapp_phone_last4' => '2222',
         ], $masked);
         $this->assertSame($masked, $masker->mask($masked));
+    }
+
+    public function test_political_affiliation_is_omitted_but_untyped_values_are_kept(): void
+    {
+        $masker = new AuditDataMasker;
+
+        $this->assertSame([
+            'nombre' => 'Rosa', 'partido' => '[omitido]', 'militante' => '[omitido]', 'partido_id' => '[omitido]',
+            'afiliacion' => '[omitido]', 'militancia' => null, 'gran_elector' => true,
+        ], $masker->mask([
+            'nombre' => 'Rosa', 'partido' => 'Partido X', 'militante' => false, 'partido_id' => 'abc',
+            'afiliacion' => 'X', 'militancia' => null, 'gran_elector' => true,
+        ]));
+
+        $this->assertSame(['candidacy_id' => 'c1', 'metric_type' => 'votes', 'value' => 1234],
+            $masker->mask(['candidacy_id' => 'c1', 'metric_type' => 'votes', 'value' => 1234]));
+    }
+
+    public function test_history_leaves_result_values_untouched(): void
+    {
+        $id = $this->legacyRow(['candidacy_id' => 'c1', 'metric_type' => 'votes', 'value' => 1234]);
+
+        $this->artisan('audit:mask-history')
+            ->expectsOutputToContain('Scanned 1 audit_logs rows; 0 masked.')
+            ->assertSuccessful();
+        $this->assertSame(['candidacy_id' => 'c1', 'metric_type' => 'votes', 'value' => 1234], $this->metadataOf($id));
     }
 
     public function test_history_keeps_empty_objects_and_reports_rows_it_cannot_encode(): void

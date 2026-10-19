@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 // Electoral persons edited from /admin/personas: birth and document dates and contact values never reach audit_logs in full.
@@ -130,5 +131,26 @@ class AdminPersonasAuditTest extends TestCase
         $this->assertSame('[omitido]', $contacts['other']['value']);
         $this->assertSame('Principal', $contacts['other']['label']);
         $this->assertSame($personId, DB::table('audit_logs')->where('action', 'POST admin.personas.contact.store')->value('entity_id'));
+    }
+
+    public function test_result_vote_counts_stay_readable_in_the_audit(): void
+    {
+        Schema::create('electoral_results', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('candidacy_id')->nullable();
+            $t->string('metric_type');
+            $t->integer('value')->nullable();
+            $t->timestamps();
+        });
+        $id = (string) Str::uuid();
+        DB::table('electoral_results')->insert(['id' => $id, 'metric_type' => 'votes', 'value' => 10]);
+
+        $this->actingAs($this->admin)->put("/admin/elecciones/results/{$id}", ['value' => 1234, 'metric_type' => 'votes'])
+            ->assertRedirect();
+
+        $this->assertSame(1234, DB::table('electoral_results')->where('id', $id)->value('value'));
+        $log = DB::table('audit_logs')->where('action', 'PUT admin.elecciones.result.update')->sole();
+        $this->assertSame($id, $log->entity_id);
+        $this->assertEquals(['value' => 1234, 'metric_type' => 'votes'], json_decode($log->metadata, true));
     }
 }

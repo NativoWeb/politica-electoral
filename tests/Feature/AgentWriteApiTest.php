@@ -832,4 +832,27 @@ class AgentWriteApiTest extends TestCase
         $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana Renombrada Web']);
         $this->assertDatabaseHas('persons', ['id' => $linked, 'full_name' => 'Ana Renombrada Web']);
     }
+
+    public function test_political_affiliation_is_omitted_from_the_audit_on_web_and_agent(): void
+    {
+        $id = $this->agent('POST', '/api/agent/v1/votantes', [
+            'nombre' => 'Militante Agente', 'municipio_id' => $this->munA, 'partido' => 'Partido Sensible Uno', 'militante' => true,
+        ], $this->tokenFor($this->campo))->assertCreated()->json('data.id');
+        $this->assertDatabaseHas('lideres', ['id' => $id, 'partido' => 'Partido Sensible Uno', 'militante' => true]);
+
+        $this->app['auth']->forgetGuards();
+        $this->actingAs($this->campo)->putJson("/votantes/{$this->liderA}", [
+            'nombre' => 'Ana Territorio A', 'partido' => 'Partido Sensible Dos', 'militante' => false,
+        ])->assertOk();
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'partido' => 'Partido Sensible Dos', 'militante' => false]);
+
+        $this->assertAuditHasNoneOf(['Partido Sensible']);
+        $metas = DB::table('audit_logs')->orderBy('created_at')->pluck('metadata')->map(fn ($m) => json_decode($m, true))->all();
+        $this->assertCount(2, $metas);
+        foreach ($metas as $meta) {
+            $this->assertSame('[omitido]', $meta['partido']);
+            $this->assertSame('[omitido]', $meta['militante']);
+        }
+        $this->assertEqualsCanonicalizing(['Militante Agente', 'Ana Territorio A'], array_column($metas, 'nombre'));
+    }
 }

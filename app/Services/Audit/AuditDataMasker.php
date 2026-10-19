@@ -27,7 +27,7 @@ class AuditDataMasker
 
             if ($this->matches($name, 'omit')) {
                 $out[$key] = $value === null ? null : $this->placeholder();
-            } elseif ($this->isTypedValueKey($name)) {
+            } elseif ($this->isTypedValueKey($name) && $this->hasTypeSibling($data)) {
                 $kind = $this->siblingType($data);
                 if ($kind === 'last4') {
                     $out[$key.self::LAST4_SUFFIX] = $this->last4($value);
@@ -58,6 +58,18 @@ class AuditDataMasker
     private function isLast4Base(string $name): bool
     {
         return $this->matches($name, 'last4') || $this->isTypedValueKey($name);
+    }
+
+    // Without a type/tipo sibling a `value` is not a contact (e.g. vote counts) and is kept as is.
+    private function hasTypeSibling(array $siblings): bool
+    {
+        foreach (config('audit.mask.by_type.type_keys', []) as $typeKey) {
+            if (array_key_exists($typeKey, $siblings)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // 'last4', 'email' or null, from the sibling type/tipo key of a typed contact value.
