@@ -358,4 +358,119 @@ class TerritoryScopeTest extends TestCase
         $this->actingAs($this->campo)->get("/reporte/municipio/{$this->munB}")->assertForbidden();
         $this->actingAs($this->campo)->getJson("/api/offline/download/{$this->munB}")->assertForbidden();
     }
+
+    public function test_duplicate_cedula_message_does_not_reveal_names_from_other_territories(): void
+    {
+        $create = $this->actingAs($this->campo)
+            ->postJson('/votantes', ['nombre' => 'Duplicado', 'municipio_id' => $this->munA, 'cedula' => '222'])
+            ->assertStatus(422);
+        $this->assertStringNotContainsString('Beto', $create->json('message'));
+
+        $update = $this->actingAs($this->campo)
+            ->putJson("/votantes/{$this->liderA}", ['cedula' => '222'])
+            ->assertStatus(422);
+        $this->assertStringNotContainsString('Beto', $update->json('message'));
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'cedula' => '111']);
+
+        $admin = $this->actingAs($this->admin)
+            ->postJson('/votantes', ['nombre' => 'Duplicado', 'municipio_id' => $this->munA, 'cedula' => '222'])
+            ->assertStatus(422);
+        $this->assertStringContainsString('Beto Territorio B', $admin->json('message'));
+    }
+
+    public function test_scoped_user_with_wildcard_permission_cannot_escape_scope_through_user_admin(): void
+    {
+        $this->campo->update(['permissions' => ['*']]);
+        $r01 = Role::where('code', 'R01_SUPERADMIN')->value('id');
+        $r09 = $this->campo->role_id;
+        $base = ['name' => 'Campo A', 'email' => 'campo@test.local', 'role_id' => $r09];
+
+        $this->actingAs($this->campo)
+            ->put("/admin/usuarios/{$this->campo->id}", $base + ['territory_scope' => []])
+            ->assertForbidden();
+        $this->actingAs($this->campo)
+            ->put("/admin/usuarios/{$this->campo->id}", ['role_id' => $r01] + $base + ['territory_scope' => [$this->munA]])
+            ->assertForbidden();
+        $this->actingAs($this->campo)
+            ->post('/admin/usuarios', ['name' => 'Libre', 'email' => 'libre@test.local', 'role_id' => $r09])
+            ->assertForbidden();
+        $this->actingAs($this->campo)->post("/admin/usuarios/{$this->admin->id}/toggle")->assertForbidden();
+
+        $fresh = $this->campo->fresh();
+        $this->assertSame([$this->munA], $fresh->territory_scope);
+        $this->assertSame($r09, $fresh->role_id);
+        $this->assertDatabaseMissing('users', ['email' => 'libre@test.local']);
+        $this->assertTrue($this->admin->fresh()->is_active);
+    }
+
+    public function test_unrestricted_non_superadmin_cannot_grant_superadmin_or_wildcard(): void
+    {
+        $operador = User::create([
+            'name' => 'Operador admin', 'email' => 'op@test.local', 'password' => 'secret123',
+            'role_id' => $this->campo->role_id, 'permissions' => ['view.admin'],
+        ]);
+        $r01 = Role::where('code', 'R01_SUPERADMIN')->value('id');
+        $base = ['name' => 'Operador admin', 'email' => 'op@test.local'];
+
+        $this->actingAs($operador)->put("/admin/usuarios/{$operador->id}", $base + ['role_id' => $r01])->assertForbidden();
+        $this->actingAs($operador)->put("/admin/usuarios/{$operador->id}", $base + ['role_id' => $this->campo->role_id, 'permissions' => ['*']])->assertForbidden();
+        $this->actingAs($operador)->put("/admin/usuarios/{$this->admin->id}", ['name' => 'X', 'email' => 'admin@test.local', 'password' => 'hijacked1'])->assertForbidden();
+
+        $this->assertSame($this->campo->role_id, $operador->fresh()->role_id);
+        $this->assertSame(['view.admin'], $operador->fresh()->permissions);
+        $this->assertSame('Admin', $this->admin->fresh()->name);
+    }
+
+    public function test_superadmin_can_change_a_users_scope_and_role(): void
+    {
+        $r01 = Role::where('code', 'R01_SUPERADMIN')->value('id');
+
+        $this->actingAs($this->admin)
+            ->put("/admin/usuarios/{$this->campo->id}", [
+                'name' => 'Campo A', 'email' => 'campo@test.local', 'role_id' => $this->campo->role_id,
+                'territory_scope' => [$this->munA, $this->munB],
+            ])
+            ->assertRedirect();
+        $this->assertSame([$this->munA, $this->munB], $this->campo->fresh()->territory_scope);
+
+        $this->actingAs($this->admin)
+            ->put("/admin/usuarios/{$this->campo->id}", ['name' => 'Campo A', 'email' => 'campo@test.local', 'role_id' => $r01])
+            ->assertRedirect();
+        $this->assertSame($r01, $this->campo->fresh()->role_id);
+    }
+
+    public function test_lideres_page_totals_only_count_the_users_territory(): void
+    {
+        $this->actingAs($this->campo)->get("/lideres/{$this->munA}")
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Lideres')
+                ->where('totalLideres', 1)
+                ->where('totalMunicipios', 1));
+
+        $this->actingAs($this->admin)->get("/lideres/{$this->munA}")
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('totalLideres', 2)
+                ->where('totalMunicipios', 2));
+    }
+
+    public function test_referidos_count_ignores_referidos_outside_territory(): void
+    {
+        DB::table('lideres')->where('id', $this->liderB)->update(['referente_documento' => '111']);
+        $this->lider($this->munA, 'Zoe Referida A', '333');
+        DB::table('lideres')->where('cedula', '333')->update(['referente_documento' => '111']);
+
+        $this->actingAs($this->campo)->get('/votantes')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('votantes.data.0.id', $this->liderA)
+                ->where('votantes.data.0.referidos_count', 1));
+
+        $this->actingAs($this->admin)->get('/votantes')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('votantes.data.0.id', $this->liderA)
+                ->where('votantes.data.0.referidos_count', 2));
+    }
 }

@@ -54,8 +54,8 @@ class LiderController extends Controller
             ->toArray();
 
         // Stats globales
-        $totalLideres = DB::table('lideres')->count();
-        $totalMunicipios = DB::table('lideres')->distinct('geographic_unit_id')->count('geographic_unit_id');
+        $totalLideres = $this->scopeToTerritory(DB::table('lideres'))->count();
+        $totalMunicipios = $this->scopeToTerritory(DB::table('lideres'))->distinct('geographic_unit_id')->count('geographic_unit_id');
 
         $allMunicipios = DB::table('geographic_units as g')
             ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')

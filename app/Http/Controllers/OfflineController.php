@@ -45,14 +45,13 @@ class OfflineController extends Controller
                 ->leftJoinSub($votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
                 ->select(
                     'p.id', 'p.full_name as nombre',
-                    DB::raw("'{$mun->name}' as municipio"),
-                    DB::raw("'{$mun->provincia}' as provincia"),
                     'po.canonical_name as partido',
                     'c.outcome', 'ce.endorsement_type as tipo_aval',
                     DB::raw('COALESCE(res.votos, 0) as votos'),
                     DB::raw("'Alcaldía' as tipo_registro"),
                     DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato Alcaldía' END as cargo")
                 )
+                ->selectRaw('? as municipio, ? as provincia', [$mun->name, $mun->provincia])
                 ->orderByDesc('res.votos')
                 ->get()->map(fn ($r) => (array) $r)->toArray();
         }
@@ -71,14 +70,13 @@ class OfflineController extends Controller
                 ->leftJoinSub($votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
                 ->select(
                     'p.id', 'p.full_name as nombre',
-                    DB::raw("'{$mun->name}' as municipio"),
-                    DB::raw("'{$mun->provincia}' as provincia"),
                     'po.canonical_name as partido',
                     'c.outcome', 'ce.endorsement_type as tipo_aval',
                     DB::raw('COALESCE(res.votos, 0) as votos'),
                     DB::raw("'Concejo' as tipo_registro"),
                     DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END as cargo")
                 )
+                ->selectRaw('? as municipio, ? as provincia', [$mun->name, $mun->provincia])
                 ->orderByDesc('res.votos')
                 ->get()->map(fn ($r) => (array) $r)->toArray();
         }
@@ -134,12 +132,11 @@ class OfflineController extends Controller
                 ->joinSub($resSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
                 ->select(
                     'p.id', 'p.full_name as nombre',
-                    DB::raw("'{$mun->name}' as municipio"),
-                    DB::raw("'{$mun->provincia}' as provincia"),
                     'po.canonical_name as partido',
                     DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
                     DB::raw('res.votos')
                 )
+                ->selectRaw('? as municipio, ? as provincia', [$mun->name, $mun->provincia])
                 ->selectRaw('? as tipo_registro', [$label])
                 ->selectRaw('? as cargo', [$label])
                 ->orderByDesc('res.votos')

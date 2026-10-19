@@ -65,6 +65,16 @@ trait ScopesTerritory
         }
     }
 
+    protected function duplicateCedulaMessage(string $cedula, object $existente): string
+    {
+        $allowed = $this->allowedGeoIds();
+        if ($allowed !== null && ! in_array($existente->geographic_unit_id ?? null, $allowed, true)) {
+            return "Ya existe un líder con cédula {$cedula} en otro territorio.";
+        }
+
+        return "Ya existe un líder con cédula {$cedula}: {$existente->nombre}";
+    }
+
     protected function scopeToTerritory($query, string $column = 'geographic_unit_id')
     {
         $allowed = $this->allowedGeoIds();

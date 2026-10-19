@@ -107,6 +107,19 @@ class AdminController extends Controller
         ]);
     }
 
+    // Only a superadmin may grant superadmin or '*', or touch a superadmin; territory-restricted users cannot manage users at all.
+    private function authorizeUserWrite(?User $target = null, ?string $roleId = null, ?array $permissions = null): void
+    {
+        $actor = request()->user();
+        if ($actor->role?->code === 'R01_SUPERADMIN') {
+            return;
+        }
+        abort_if($actor->hasTerritoryScopeRestriction(), 403, 'Un usuario con territorio restringido no puede gestionar usuarios.');
+        abort_if($target?->role?->code === 'R01_SUPERADMIN', 403, 'Solo un superadministrador puede modificar a otro superadministrador.');
+        abort_if($roleId && Role::where('id', $roleId)->value('code') === 'R01_SUPERADMIN', 403, 'Solo un superadministrador puede asignar ese rol.');
+        abort_if(in_array('*', $permissions ?? [], true), 403, 'Solo un superadministrador puede otorgar todos los permisos.');
+    }
+
     public function storeUser(Request $request)
     {
         $data = $request->validate([
@@ -118,6 +131,7 @@ class AdminController extends Controller
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
         ]);
+        $this->authorizeUserWrite(null, $data['role_id'] ?? null, $data['permissions'] ?? null);
 
         $plainPassword = \Illuminate\Support\Str::random(10);
 
@@ -155,6 +169,7 @@ class AdminController extends Controller
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
         ]);
+        $this->authorizeUserWrite($user, $data['role_id'] ?? null, $data['permissions'] ?? null);
 
         $user->name = $data['name'];
         $user->email = $data['email'];
@@ -172,6 +187,7 @@ class AdminController extends Controller
     public function toggleUser(string $id)
     {
         $user = User::findOrFail($id);
+        $this->authorizeUserWrite($user);
         $user->update(['is_active' => !$user->is_active]);
         return back();
     }
@@ -179,6 +195,7 @@ class AdminController extends Controller
     public function destroyUser(string $id)
     {
         $user = User::findOrFail($id);
+        $this->authorizeUserWrite($user);
         if ($user->id === request()->user()->id) {
             return back()->withErrors(['delete' => 'No puedes eliminar tu propia cuenta']);
         }

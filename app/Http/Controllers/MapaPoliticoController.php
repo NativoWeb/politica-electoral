@@ -46,16 +46,6 @@ class MapaPoliticoController extends Controller
         ]);
     }
 
-    private function duplicateCedulaMessage(string $cedula, object $existente): string
-    {
-        $allowed = $this->allowedGeoIds();
-        if ($allowed !== null && ! in_array($existente->geographic_unit_id ?? null, $allowed, true)) {
-            return "Ya existe un líder con cédula {$cedula} en otro territorio.";
-        }
-
-        return "Ya existe un líder con cédula {$cedula}: {$existente->nombre}";
-    }
-
     private function corporationId(string $name): ?string
     {
         return Cache::remember("corp_id:{$name}", 3600, fn () => DB::table('corporations')->where('name', $name)->value('id'));
@@ -583,6 +573,8 @@ class MapaPoliticoController extends Controller
         $barriosQuery->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
         if ($munId) {
             $barriosQuery->where('geographic_unit_id', $munId);
+        } else {
+            $this->scopeToTerritory($barriosQuery);
         }
         $barrios = $barriosQuery->pluck('barrio')->sort()->values()->toArray();
 

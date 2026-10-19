@@ -23,9 +23,15 @@ class VotanteController extends Controller
 
     public function index(Request $request)
     {
+        $referidosCount = $this->scopeToTerritory(DB::table('lideres as r'), 'r.geographic_unit_id')
+            ->selectRaw('count(*)')
+            ->whereNotNull('r.referente_documento')
+            ->where('r.referente_documento', '!=', '')
+            ->where('r.is_active', true)
+            ->whereColumn('r.referente_documento', 'lideres.cedula');
         $query = Lider::query()
             ->addSelect(['lideres.*'])
-            ->addSelect(DB::raw("(SELECT count(*) FROM lideres AS r WHERE r.referente_documento IS NOT NULL AND r.referente_documento != '' AND r.is_active = true AND r.referente_documento = lideres.cedula) as referidos_count"));
+            ->addSelect(['referidos_count' => $referidosCount]);
 
         // Estado filter (activos by default)
         $estado = $request->input('estado', 'activos');
@@ -85,6 +91,7 @@ class VotanteController extends Controller
         $total = (clone $counterBase)->count();
         $granElectorCount = (clone $counterBase)->where('gran_elector', true)->count();
         $conReferidos = (clone $counterBase)->whereIn('cedula', function ($q) {
+            $this->scopeToTerritory($q);
             $q->select('referente_documento')
                 ->from('lideres')
                 ->whereNotNull('referente_documento')
@@ -245,7 +252,7 @@ class VotanteController extends Controller
             if ($existente) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                    'message' => $this->duplicateCedulaMessage($cedula, $existente),
                 ], 422);
             }
         }
@@ -379,7 +386,7 @@ class VotanteController extends Controller
             if ($existente) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                    'message' => $this->duplicateCedulaMessage($cedula, $existente),
                 ], 422);
             }
         }

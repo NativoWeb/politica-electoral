@@ -52,7 +52,7 @@ Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'
 Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
 
 // Offline API (auth required)
-Route::middleware('auth')->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
+Route::middleware(['auth', 'password.changed', 'audit'])->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
 
 // Protected routes
 Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
