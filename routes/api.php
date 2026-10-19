@@ -7,8 +7,6 @@ Route::post('/whatsapp/recipients/{recipient}/status', [WhatsAppController::clas
 
 Route::post('/whatsapp/recipients/status-by-phone', [WhatsAppController::class, 'updateRecipientStatusByPhone']);
 
-Route::get('/whatsapp/sends/{send}/status', [WhatsAppController::class, 'status']);
-
 Route::get('/whatsapp/birthdays/today', [WhatsAppController::class, 'birthdayRecipients']);
 
 Route::post('/whatsapp/birthdays/recipients/{recipient}/status', [WhatsAppController::class, 'updateBirthdayRecipientStatus']);

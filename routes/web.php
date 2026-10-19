@@ -177,6 +177,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         // WhatsApp
         Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
 
+        Route::get('/whatsapp/sends/{send}/status', [WhatsAppController::class, 'status'])
+            ->name('whatsapp.sends.status');
+
         Route::get('/whatsapp/birthdays/history', [WhatsAppController::class, 'birthdayHistory'])
             ->name('whatsapp.birthdays.history');
 

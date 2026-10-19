@@ -108,7 +108,7 @@ export default function WhatsApp({
         const fetchTrackingStatus = async () => {
             try {
                 const response = await fetch(
-                    `/api/whatsapp/sends/${currentSendId}/status`,
+                    `/admin/whatsapp/sends/${currentSendId}/status`,
                     {
                         method: 'GET',
                         headers: {
