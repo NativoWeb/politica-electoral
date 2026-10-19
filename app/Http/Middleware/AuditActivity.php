@@ -28,8 +28,6 @@ class AuditActivity
         'seguimientos' => 'seguimiento',
     ];
 
-    private const MASKED_PHONE_KEYS = ['phone', 'whatsapp_phone'];
-
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
@@ -83,15 +81,7 @@ class AuditActivity
             unset($data['code']);
         }
 
-        foreach (self::MASKED_PHONE_KEYS as $key) {
-            if (! array_key_exists($key, $data)) {
-                continue;
-            }
-            $digits = is_scalar($data[$key]) ? preg_replace('/\D/', '', (string) $data[$key]) : '';
-            unset($data[$key]);
-            $data[$key.'_last4'] = $digits === '' ? null : substr($digits, -4);
-        }
-
+        // Personal data (cedula, phones, email, address...) is masked by AuditLog on insert, see config/audit.php.
         return $data;
     }
 

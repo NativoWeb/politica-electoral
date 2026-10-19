@@ -630,4 +630,143 @@ class AgentWriteApiTest extends TestCase
 
         $this->agent('GET', "/api/agent/v1/votantes/{$this->liderA}/seguimientos", null, $this->tokenFor($this->consulta))->assertOk();
     }
+
+    private function auditJson(): string
+    {
+        return DB::table('audit_logs')->pluck('metadata')->implode("\n");
+    }
+
+    private function assertAuditHasNoneOf(array $values): void
+    {
+        $json = $this->auditJson();
+        foreach ($values as $value) {
+            $this->assertStringNotContainsString($value, $json);
+        }
+    }
+
+    public function test_agent_writes_leave_audit_metadata_without_personal_data(): void
+    {
+        $token = $this->tokenFor($this->campo);
+
+        $id = $this->agent('POST', '/api/agent/v1/votantes', [
+            'nombre' => 'Pedro Auditado', 'municipio_id' => $this->munA, 'cedula' => '1098765432',
+            'telefono' => '3001234567', 'email' => 'pedro.perez@correo.com', 'direccion' => 'Calle 45 # 12-30',
+            'barrio' => 'La Esmeralda', 'fecha_nacimiento' => '1990-05-17', 'observacion' => 'Vive con la mamá',
+        ], $token)->assertCreated()->json('data.id');
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$id}", [
+            'telefono' => '3157654321', 'email' => 'otro.correo@mail.com', 'observacion' => 'Cambió de casa', 'verificado' => true,
+        ], $token)->assertOk();
+
+        $this->agent('POST', "/api/agent/v1/votantes/{$id}/contactos", ['tipo' => 'celular', 'valor' => '3209998877'], $token)
+            ->assertCreated();
+        $this->agent('POST', "/api/agent/v1/votantes/{$id}/nexos", [
+            'nombre' => 'Hermano', 'cedula' => '1095551234', 'telefono' => '3114443322', 'edad' => 41,
+            'gustos' => 'Fútbol', 'observaciones' => 'Trabaja en la alcaldía',
+        ], $token)->assertCreated();
+        $this->agent('POST', "/api/agent/v1/votantes/{$id}/seguimientos", ['tipo' => 'llamada', 'nota' => 'Dijo que vota por nosotros'], $token)
+            ->assertCreated();
+
+        $this->assertDatabaseHas('lideres', ['id' => $id, 'cedula' => '1098765432', 'telefono' => '3157654321', 'direccion' => 'Calle 45 # 12-30']);
+        $this->assertAuditHasNoneOf(['1098765432', '3001234567', 'pedro.perez', 'Calle 45', 'La Esmeralda', '1990-05-17',
+            'Vive con', '3157654321', 'otro.correo', 'Cambi', '3209998877', '1095551234', '3114443322',
+            'tbol', 'alcald', 'vota por nosotros']);
+
+        $logs = DB::table('audit_logs')->where('user_id', $this->campo->id)->get()
+            ->keyBy('action')->map(fn ($l) => json_decode($l->metadata, true));
+
+        $store = $logs['POST agent.votantes.store'];
+        $this->assertSame('Pedro Auditado', $store['nombre']);
+        $this->assertSame('5432', $store['cedula_last4']);
+        $this->assertSame('4567', $store['telefono_last4']);
+        $this->assertSame('p***@correo.com', $store['email']);
+        $this->assertSame('[omitido]', $store['direccion']);
+        $this->assertSame('[omitido]', $store['barrio']);
+        $this->assertSame('[omitido]', $store['fecha_nacimiento']);
+        $this->assertSame('[omitido]', $store['observacion']);
+        $this->assertArrayNotHasKey('cedula', $store);
+        $this->assertArrayNotHasKey('telefono', $store);
+
+        $this->assertSame(['telefono_last4' => '4321', 'email' => 'o***@mail.com', 'observacion' => '[omitido]', 'verificado' => true],
+            $logs['PATCH agent.votantes.update']);
+        $this->assertSame(['tipo' => 'celular', 'valor' => '[omitido]'], $logs['POST agent.votantes.contactos.store']);
+        $this->assertSame(['nombre' => 'Hermano', 'cedula_last4' => '1234', 'telefono_last4' => '3322', 'edad' => '[omitido]',
+            'gustos' => '[omitido]', 'observaciones' => '[omitido]'], $logs['POST agent.votantes.nexo.store']);
+        $this->assertSame('[omitido]', $logs['POST agent.votantes.seguimientos.store']['nota']);
+    }
+
+    public function test_web_votante_update_masks_personal_data_including_nested_lists(): void
+    {
+        $this->actingAs($this->campo)->putJson("/votantes/{$this->liderA}", [
+            'nombre' => 'Ana Territorio A', 'cedula' => '1098700001', 'telefono' => '3001112233',
+            'email' => 'ana@correo.co', 'direccion' => 'Carrera 7 # 8-9', 'direccion_puesto' => 'Colegio Sur, Calle 3',
+            'fecha_nacimiento' => '1985-01-02', 'referente_documento' => '1091112222',
+            'contactos' => [
+                ['tipo' => 'celular', 'valor' => '3105556677'],
+                ['tipo' => 'email', 'valor' => 'ana.alt@correo.co', 'detalle' => ['telefono' => '3201239876']],
+            ],
+        ])->assertOk()->assertJson(['success' => true]);
+
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'cedula' => '1098700001', 'telefono' => '3001112233']);
+        $this->assertAuditHasNoneOf(['1098700001', '3001112233', 'ana@', 'Carrera 7', 'Colegio Sur', '1985-01-02',
+            '1091112222', '3105556677', 'ana.alt', '3201239876']);
+
+        $log = DB::table('audit_logs')->where('user_id', $this->campo->id)->sole();
+        $this->assertSame('votante', $log->entity_type);
+        $this->assertSame($this->liderA, $log->entity_id);
+        $meta = json_decode($log->metadata, true);
+        $this->assertSame('Ana Territorio A', $meta['nombre']);
+        $this->assertSame('0001', $meta['cedula_last4']);
+        $this->assertSame('2233', $meta['telefono_last4']);
+        $this->assertSame('2222', $meta['referente_documento_last4']);
+        $this->assertSame('a***@correo.co', $meta['email']);
+        $this->assertSame('[omitido]', $meta['direccion']);
+        $this->assertSame('[omitido]', $meta['direccion_puesto']);
+        $this->assertSame('[omitido]', $meta['fecha_nacimiento']);
+        $this->assertSame([
+            ['tipo' => 'celular', 'valor' => '[omitido]'],
+            ['tipo' => 'email', 'valor' => '[omitido]', 'detalle' => ['telefono_last4' => '9876']],
+        ], $meta['contactos']);
+    }
+
+    public function test_admin_roles_can_rename_a_votante_through_the_agent(): void
+    {
+        $r02 = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573004440000', [$this->munA], ['view.votantes', 'write.data']);
+        $r01 = $this->linkedUser('R01_SUPERADMIN', '+573005550000', null, []);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nombre' => '  Ana   María Territorio  '], $this->tokenFor($r02))
+            ->assertOk()
+            ->assertJsonPath('data.nombre', 'Ana María Territorio');
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana María Territorio', 'cedula' => '111']);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderB}", ['nombre' => 'Beto Renombrado'], $this->tokenFor($r01))
+            ->assertOk();
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderB, 'nombre' => 'Beto Renombrado']);
+
+        $this->assertDatabaseHas('audit_logs', ['user_id' => $r02->id, 'entity_id' => $this->liderA, 'action' => 'PATCH agent.votantes.update']);
+    }
+
+    public function test_rename_through_the_agent_is_validated_and_scoped(): void
+    {
+        $r02 = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573004440000', [$this->munA], ['view.votantes', 'write.data']);
+        $token = $this->tokenFor($r02);
+
+        foreach (['Al', '   ', str_repeat('a', 151), null, 123] as $nombre) {
+            $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nombre' => $nombre], $token)
+                ->assertStatus(422)
+                ->assertJsonValidationErrors('nombre');
+        }
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderB}", ['nombre' => 'Fuera de territorio'], $token)
+            ->assertForbidden()
+            ->assertJson(['success' => false]);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nombre' => 'Nombre por campo'], $this->tokenFor($this->campo))
+            ->assertStatus(422)
+            ->assertJsonPath('errors.nombre.0', 'Campo no permitido.');
+
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana Territorio A']);
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderB, 'nombre' => 'Beto Territorio B']);
+        $this->assertSame(0, DB::table('audit_logs')->count());
+    }
 }

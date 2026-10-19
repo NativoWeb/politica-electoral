@@ -4,7 +4,7 @@ namespace App\Http\Requests\Agent;
 
 use Illuminate\Validation\Rule;
 
-// Fields the agent may write on a votante; cedula, municipio and nombre are create-only.
+// Fields the agent may write on a votante; cedula and municipio are create-only (nombre: see AgentUpdateVotanteRequest).
 final class AgentVotanteRules
 {
     public const NIVELES_CONFIANZA = ['sin_llamar', 'contactado', 'confirmado', 'comprometido', 'no_responde'];

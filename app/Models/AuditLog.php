@@ -1,5 +1,8 @@
 <?php
+
 namespace App\Models;
+
+use App\Services\Audit\AuditDataMasker;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -22,6 +25,19 @@ class AuditLog extends Model
         'after_state' => 'array',
         'created_at' => 'datetime',
     ];
+
+    // Every writer goes through the same personal-data masking (config/audit.php).
+    protected static function booted(): void
+    {
+        static::creating(function (AuditLog $log) {
+            $masker = app(AuditDataMasker::class);
+            foreach (['metadata', 'before_state', 'after_state'] as $column) {
+                if (is_array($log->{$column})) {
+                    $log->{$column} = $masker->mask($log->{$column});
+                }
+            }
+        });
+    }
 
     public function user(): BelongsTo
     {
