@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ScopesTerritory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class OfflineController extends Controller
 {
+    use ScopesTerritory;
+
     /**
      * Download all data for a municipio for offline use.
      * Returns: personas (alcalde+concejales), lideres, nexos, gobernador candidates.
@@ -20,6 +23,7 @@ class OfflineController extends Controller
             ->first();
 
         abort_if(!$mun, 404, 'Municipio no encontrado');
+        $this->authorizeGeo($mun->id);
 
         $votesSubQuery = DB::table('electoral_results')
             ->whereIn('metric_type', ['votes', 'nominal_votes'])

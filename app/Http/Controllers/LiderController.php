@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ScopesTerritory;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class LiderController extends Controller
 {
+    use ScopesTerritory;
+
     public function index()
     {
-        $first = DB::table('geographic_units')->where('type', 'municipality')->orderBy('canonical_name')->value('id');
+        $first = $this->scopeToTerritory(DB::table('geographic_units'), 'id')->where('type', 'municipality')->orderBy('canonical_name')->value('id');
         if ($first) return redirect("/lideres/{$first}");
         return Inertia::render('Lideres', ['municipio' => null, 'lideres' => [], 'allMunicipios' => []]);
     }
@@ -23,6 +26,7 @@ class LiderController extends Controller
             ->first();
 
         abort_if(!$municipio, 404);
+        $this->authorizeGeo($municipio->id);
 
         $lideres = DB::table('lideres')
             ->where('geographic_unit_id', $munId)

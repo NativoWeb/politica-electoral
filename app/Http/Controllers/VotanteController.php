@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Models\LiderContacto;
 use App\Models\LiderInfoPolitica;
@@ -13,6 +14,8 @@ use Inertia\Inertia;
 
 class VotanteController extends Controller
 {
+    use ScopesTerritory;
+
     private function escapeLike(string $value): string
     {
         return str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $value);
@@ -35,9 +38,7 @@ class VotanteController extends Controller
         // Territory scope restriction
         $user = $request->user();
         $allowedMunicipios = $user?->allowedMunicipioNames();
-        if ($allowedMunicipios) {
-            $query->whereIn('municipio', $allowedMunicipios);
-        }
+        $this->scopeToTerritory($query, 'lideres.geographic_unit_id');
 
         if ($search = $request->input('search')) {
             $escaped = $this->escapeLike($search);
@@ -83,9 +84,7 @@ class VotanteController extends Controller
         } elseif ($estado === 'inactivos') {
             $counterBase->where('is_active', false);
         }
-        if ($allowedMunicipios) {
-            $counterBase->whereIn('municipio', $allowedMunicipios);
-        }
+        $this->scopeToTerritory($counterBase);
         $total = (clone $counterBase)->count();
         $granElectorCount = (clone $counterBase)->where('gran_elector', true)->count();
         $conReferidos = (clone $counterBase)->whereIn('cedula', function ($q) {
@@ -125,6 +124,7 @@ class VotanteController extends Controller
         if (! $lider) {
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
         }
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $nexos = DB::table('nexos_familiares')
             ->where('person_id', $id)
@@ -145,7 +145,7 @@ class VotanteController extends Controller
         $referidos = [];
         $referidosCount = 0;
         if ($lider->cedula) {
-            $referidos = Lider::where('referente_documento', $lider->cedula)
+            $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $lider->cedula))
                 ->where('is_active', true)
                 ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
                 ->orderBy('nombre')
@@ -171,11 +171,14 @@ class VotanteController extends Controller
         }
 
         $lider = Lider::find($id);
+        if ($lider) {
+            $this->authorizeGeo($lider->geographic_unit_id);
+        }
         if (! $lider || ! $lider->cedula) {
             return response()->json(['success' => true, 'data' => [], 'total' => 0]);
         }
 
-        $referidos = Lider::where('referente_documento', $lider->cedula)
+        $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $lider->cedula))
             ->where('is_active', true)
             ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
             ->orderBy('nombre')
@@ -236,6 +239,8 @@ class VotanteController extends Controller
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
         ]);
+
+        $this->authorizeGeo($data['municipio_id']);
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
@@ -369,6 +374,7 @@ class VotanteController extends Controller
         if (! $lider) {
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
         }
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '' && $cedula !== $lider->cedula) {
@@ -399,6 +405,7 @@ class VotanteController extends Controller
         if (! $lider) {
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
         }
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $lider->update(['is_active' => false]);
 
@@ -417,6 +424,7 @@ class VotanteController extends Controller
         if (! $lider) {
             return response()->json(['success' => false, 'message' => 'Lider no encontrado.'], 404);
         }
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $data = $request->validate([
             'tipo' => 'required|string|max:30',
@@ -445,6 +453,7 @@ class VotanteController extends Controller
         if (! $contacto) {
             return response()->json(['success' => false, 'message' => 'Contacto no encontrado.'], 404);
         }
+        $this->authorizeLider($contacto->lider_id);
 
         $data = $request->validate([
             'tipo' => 'nullable|string|max:30',
@@ -468,6 +477,7 @@ class VotanteController extends Controller
         if (! $contacto) {
             return response()->json(['success' => false, 'message' => 'Contacto no encontrado.'], 404);
         }
+        $this->authorizeLider($contacto->lider_id);
 
         $contacto->delete();
 
@@ -486,6 +496,7 @@ class VotanteController extends Controller
         if (! $lider) {
             return response()->json(['success' => false, 'message' => 'Lider no encontrado.'], 404);
         }
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $data = $request->validate([
             'cargo_politico' => 'nullable|string|max:200',
@@ -522,6 +533,7 @@ class VotanteController extends Controller
         if (! $info) {
             return response()->json(['success' => false, 'message' => 'Info politica no encontrada.'], 404);
         }
+        $this->authorizeLider($info->lider_id);
 
         $data = $request->validate([
             'cargo_politico' => 'nullable|string|max:200',
@@ -549,6 +561,7 @@ class VotanteController extends Controller
         if (! $info) {
             return response()->json(['success' => false, 'message' => 'Info politica no encontrada.'], 404);
         }
+        $this->authorizeLider($info->lider_id);
 
         $info->delete();
 

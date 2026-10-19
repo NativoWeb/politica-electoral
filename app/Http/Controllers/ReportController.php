@@ -2,15 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ScopesTerritory;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
+    use ScopesTerritory;
+
     public function persona(string $id)
     {
         $persona = DB::table('persons')->where('id', $id)->first();
         abort_if(!$persona, 404);
+        $this->authorizePersonOrLider($id);
 
         $candidaturas = DB::table('candidacies as c')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')
@@ -69,6 +73,7 @@ class ReportController extends Controller
             ->select('g.id', 'g.canonical_name as name', 'prov.canonical_name as provincia')
             ->first();
         abort_if(!$municipio, 404);
+        $this->authorizeGeo($municipio->id);
 
         $officeId = DB::table('offices')->where('name', 'Alcaldía')->value('id');
 

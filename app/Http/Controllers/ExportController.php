@@ -8,10 +8,11 @@ use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\GenericExport;
 use App\Http\Controllers\Concerns\FiltersByCargo;
+use App\Http\Controllers\Concerns\ScopesTerritory;
 
 class ExportController extends Controller
 {
-    use FiltersByCargo;
+    use FiltersByCargo, ScopesTerritory;
 
     private const PDF_MAX_ROWS = 500;
 
@@ -67,6 +68,10 @@ class ExportController extends Controller
         $partido = $request->input('partido');
         $barrio = $request->input('barrio');
 
+        if ($munId) {
+            $this->authorizeGeo($munId);
+        }
+
         if ($source === 'mapa-politico') {
             return $this->getMapaPoliticoData($munId, $tipo, $cargo, $search, $partido, $barrio);
         }
@@ -116,7 +121,7 @@ class ExportController extends Controller
                     DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato Alcaldía' END as cargo"),
                     'po.canonical_name as partido', DB::raw('NULL as telefono'),
                     DB::raw('COALESCE(res.votos, 0) as votos'));
-            if ($munId) $query->where('con.geographic_unit_id', $munId);
+            if ($munId) $query->where('con.geographic_unit_id', $munId); else $this->scopeToTerritory($query, 'con.geographic_unit_id');
             if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
             $this->whereOutcomeCargoIn($query, 'Alcalde Electo', 'Candidato Alcaldía', $cargos);
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
@@ -138,7 +143,7 @@ class ExportController extends Controller
                     DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END as cargo"),
                     'po.canonical_name as partido', DB::raw('NULL as telefono'),
                     DB::raw('COALESCE(res.votos, 0) as votos'));
-            if ($munId) $query->where('con.geographic_unit_id', $munId);
+            if ($munId) $query->where('con.geographic_unit_id', $munId); else $this->scopeToTerritory($query, 'con.geographic_unit_id');
             if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
             if (!empty($cargos)) $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END"), $cargos);
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
@@ -148,7 +153,7 @@ class ExportController extends Controller
         if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
                 ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
-            if ($munId) $query->where('geographic_unit_id', $munId);
+            if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
             if ($search) $query->where(function ($q) use ($search) {
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
                 $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
@@ -166,7 +171,7 @@ class ExportController extends Controller
                 ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
             $this->whereCargoIn($query, ['Directorio Municipal']);
             $this->whereCargoIn($query, $cargos);
-            if ($munId) $query->where('geographic_unit_id', $munId);
+            if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
             if ($search) $query->where(function ($q) use ($search) {
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
                 $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
@@ -200,7 +205,7 @@ class ExportController extends Controller
         if (!$corpId) return [];
 
         $resQuery = DB::table('electoral_results')->whereIn('metric_type', ['votes', 'nominal_votes'])->where('value', '>', 0);
-        if ($munId) $resQuery->where('geographic_unit_id', $munId);
+        if ($munId) $resQuery->where('geographic_unit_id', $munId); else $this->scopeToTerritory($resQuery);
 
         $query = DB::table('candidacies as c')
             ->join('persons as p', 'c.person_id', '=', 'p.id')

@@ -2,15 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ScopesTerritory;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class PersonaController extends Controller
 {
+    use ScopesTerritory;
+
     public function show(string $id)
     {
         $persona = DB::table('persons')->where('id', $id)->first();
         abort_if(!$persona, 404);
+        $this->authorizePersonOrLider($id);
 
         return Inertia::render('Persona', [
             'persona' => [

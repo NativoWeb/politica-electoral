@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\FiltersByCargo;
+use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
@@ -15,7 +16,7 @@ use Inertia\Inertia;
 
 class MapaPoliticoController extends Controller
 {
-    use FiltersByCargo;
+    use FiltersByCargo, ScopesTerritory;
 
     // #3: Escape LIKE wildcards to prevent wildcard injection
     private function escapeLike(string $value): string
@@ -645,6 +646,7 @@ class MapaPoliticoController extends Controller
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
         ]);
+        $this->authorizeGeo($data['municipio_id']);
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
@@ -724,6 +726,7 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
+        $this->authorizePersonOrLider($id);
 
         $person = DB::table('persons')->where('id', $id)->first();
         $source = 'persona';
@@ -904,6 +907,7 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
+        $this->authorizePersonOrLider($id);
 
         $data = $request->validate([
             'nombre' => 'sometimes|required|string|max:255',
@@ -1109,6 +1113,7 @@ class MapaPoliticoController extends Controller
                         ->where('canonical_name', $data['municipio'])
                         ->first();
                     if ($geo) {
+                        $this->authorizeGeo($geo->id);
                         $updateData['geographic_unit_id'] = $geo->id;
                         $provName = DB::table('geographic_units')->where('id', $geo->parent_id)->value('canonical_name');
                         $updateData['provincia'] = $provName ?? '';
@@ -1200,6 +1205,7 @@ class MapaPoliticoController extends Controller
         $exists = DB::table('persons')->where('id', $personId)->exists()
             || DB::table('lideres')->where('id', $personId)->exists();
         abort_if(! $exists, 404);
+        $this->authorizePersonOrLider($personId);
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -1232,6 +1238,9 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
+        $nexoOwner = DB::table('nexos_familiares')->where('id', $id)->value('person_id');
+        abort_if(! $nexoOwner, 404);
+        $this->authorizePersonOrLider($nexoOwner);
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -1254,6 +1263,9 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
+        $nexoOwner = DB::table('nexos_familiares')->where('id', $id)->value('person_id');
+        abort_if(! $nexoOwner, 404);
+        $this->authorizePersonOrLider($nexoOwner);
 
         DB::table('nexos_familiares')->where('id', $id)->delete();
 
@@ -1265,13 +1277,15 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
+        $this->authorizePersonOrLider($id);
 
         $affected = DB::table('lideres')->where('id', $id)->update(['is_active' => false, 'updated_at' => now()]);
 
         if ($affected === 0) {
             $person = DB::table('persons')->where('id', $id)->first();
             if ($person) {
-                DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->update(['is_active' => false, 'updated_at' => now()]);
+                $this->scopeToTerritory(DB::table('lideres')->where('nombre', 'ilike', $this->escapeLike($person->full_name)))
+                    ->update(['is_active' => false, 'updated_at' => now()]);
             }
         }
 
@@ -1288,6 +1302,7 @@ class MapaPoliticoController extends Controller
         if (! $lider) {
             abort(404);
         }
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $newState = ! $lider->is_active;
         DB::table('lideres')->where('id', $id)->update(['is_active' => $newState, 'updated_at' => now()]);
@@ -1308,11 +1323,12 @@ class MapaPoliticoController extends Controller
 
         $excludeId = $request->input('exclude_id');
 
-        $query = DB::table('lideres')
+        $qe = $this->escapeLike($q);
+        $query = $this->scopeToTerritory(DB::table('lideres'))
             ->where('is_active', true)
-            ->where(function ($qb) use ($q) {
-                $qb->where('nombre', 'ilike', "%{$q}%")
-                    ->orWhere('cedula', 'like', "%{$q}%");
+            ->where(function ($qb) use ($qe) {
+                $qb->where('nombre', 'ilike', "%{$qe}%")
+                    ->orWhere('cedula', 'like', "%{$qe}%");
             })
             ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
             ->orderBy('nombre')
@@ -1344,6 +1360,8 @@ class MapaPoliticoController extends Controller
         if (! $referido) {
             return response()->json(['success' => false, 'message' => 'Persona no encontrada.'], 404);
         }
+        $this->authorizeGeo($referente->geographic_unit_id);
+        $this->authorizeGeo($referido->geographic_unit_id);
 
         $nameParts = explode(' ', $referente->nombre, 2);
 
@@ -1362,6 +1380,11 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id) || ! Str::isUuid($referidoId)) {
             abort(404);
         }
+        $referente = DB::table('lideres')->where('id', $id)->first(['cedula', 'geographic_unit_id']);
+        $referido = DB::table('lideres')->where('id', $referidoId)->first(['referente_documento', 'geographic_unit_id']);
+        abort_if(! $referente || ! $referido || ! $referente->cedula || $referido->referente_documento !== $referente->cedula, 404);
+        $this->authorizeGeo($referente->geographic_unit_id);
+        $this->authorizeGeo($referido->geographic_unit_id);
 
         DB::table('lideres')->where('id', $referidoId)->update([
             'referente_documento' => null,
@@ -1381,6 +1404,7 @@ class MapaPoliticoController extends Controller
 
         $lider = DB::table('lideres')->where('id', $id)->first();
         abort_if(! $lider, 404);
+        $this->authorizeGeo($lider->geographic_unit_id);
 
         $data = $request->validate([
             'geographic_unit_id' => 'required|uuid|exists:geographic_units,id',
@@ -1430,6 +1454,7 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id) || ! Str::isUuid($influenciaId)) {
             abort(404);
         }
+        $this->authorizeLider($id);
 
         $deleted = DB::table('lider_municipios_influencia')
             ->where('id', $influenciaId)
