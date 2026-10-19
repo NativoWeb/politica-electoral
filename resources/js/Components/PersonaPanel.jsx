@@ -56,7 +56,7 @@ function buildFormFromData(d) {
     const splitCargos = [...new Set((Array.isArray(rawCargos) ? rawCargos : [rawCargos]).flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))];
     const tipos = d.tipo_registro ? d.tipo_registro.split(',').map(s => s.trim()) : [];
     return {
-        telefono: d.telefono || '', email: d.email || '',
+        nombre: d.nombre || '', telefono: d.telefono || '', email: d.email || '',
         cargo: splitCargos.join(', '), cargos: splitCargos, tipos,
         observacion: d.observacion || '', municipio: d.municipio || '', direccion: d.direccion || '',
         barrio: d.barrio || '', zona: d.zona || '', partido: d.partido || '',
@@ -167,7 +167,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 setMessage(res.message || 'Guardado');
                 setEditMode(false);
                 loadData();
-                if (form.partido) {
+                if (form.partido || form.nombre !== data.nombre) {
                     setTimeout(() => router.reload({ only: ['data'] }), 500);
                 }
                 setTimeout(() => setMessage(''), 3000);
@@ -465,6 +465,10 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                         {activeTab === 'basicos' && (
                             editMode ? (
                                 <div className="space-y-4">
+                                    <div>
+                                        <label className={labelCls}>Nombres y apellidos</label>
+                                        <input className={fieldCls} value={f('nombre')} onChange={e => set('nombre', e.target.value)} placeholder="Nombres y apellidos completos" maxLength={255} />
+                                    </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div>
                                             <label className={labelCls}>Cedula</label>

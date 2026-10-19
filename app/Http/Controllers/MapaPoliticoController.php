@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
+use App\Services\Import\TextNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,16 @@ class MapaPoliticoController extends Controller
         'Alianza Verde' => 'Verde / En Marcha',
         'Nuevo Liberalismo' => 'Mira / Nuevo Liberal',
     ];
+
+    private function renamePerson(string $personId, string $fullName): void
+    {
+        DB::table('persons')->where('id', $personId)->update([
+            ...TextNormalizer::splitName($fullName),
+            'full_name' => $fullName,
+            'normalized_name' => TextNormalizer::normalizeName($fullName),
+            'updated_at' => now(),
+        ]);
+    }
 
     private function corporationId(string $name): ?string
     {
@@ -895,6 +906,7 @@ class MapaPoliticoController extends Controller
         }
 
         $data = $request->validate([
+            'nombre' => 'sometimes|required|string|max:255',
             'telefono' => 'nullable|string|max:20',
             'email' => 'nullable|string|max:255',
             'cargo' => 'nullable|string|max:100',
@@ -978,12 +990,38 @@ class MapaPoliticoController extends Controller
         }
 
         // #15: Wrap in transaction to prevent race conditions
-        DB::transaction(function () use ($id, $data) {
+        $nuevoNombre = isset($data['nombre']) ? preg_replace('/\s+/', ' ', trim($data['nombre'])) : null;
+        if ($nuevoNombre !== null) {
+            $actual = DB::table('lideres')->where('id', $id)->value('nombre')
+                ?? DB::table('persons')->where('id', $id)->value('full_name');
+            if ($actual !== null && $nuevoNombre === preg_replace('/\s+/', ' ', trim($actual))) {
+                $nuevoNombre = null;
+            }
+        }
+
+        DB::transaction(function () use ($id, $data, $nuevoNombre) {
             $lider = DB::table('lideres')->where('id', $id)->first();
+            // A namesake found only by the global fallback may be another person: never rename it.
+            $liderVinculado = (bool) $lider;
+            $personaARenombrar = null;
+
+            if ($lider && $nuevoNombre && $lider->geographic_unit_id) {
+                // Merged rows keep the lider id: rename the electoral person of the same municipio too.
+                $candidatos = DB::table('persons as p')
+                    ->join('candidacies as c', 'c.person_id', '=', 'p.id')
+                    ->join('contests as con', 'c.contest_id', '=', 'con.id')
+                    ->where('p.full_name', 'ilike', $this->escapeLike($lider->nombre))
+                    ->where('con.geographic_unit_id', $lider->geographic_unit_id)
+                    ->distinct()->pluck('p.id');
+                if ($candidatos->count() === 1) {
+                    $personaARenombrar = $candidatos->first();
+                }
+            }
 
             if (! $lider) {
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
+                    $personaARenombrar = $person->id;
                     $personMunicipio = DB::table('candidacies as c')
                         ->join('contests as con', 'c.contest_id', '=', 'con.id')
                         ->join('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
@@ -999,6 +1037,7 @@ class MapaPoliticoController extends Controller
                             ->where('nombre', 'ilike', $person->full_name)
                             ->where('municipio', 'ilike', $munName)
                             ->first();
+                        $liderVinculado = (bool) $lider;
                     }
                     if (! $lider) {
                         $lider = DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->first();
@@ -1012,7 +1051,7 @@ class MapaPoliticoController extends Controller
 
                         DB::table('lideres')->insert([
                             'id' => Str::uuid(),
-                            'nombre' => $person->full_name,
+                            'nombre' => $nuevoNombre ?? $person->full_name,
                             'municipio' => $munName,
                             'provincia' => $provName ?? '',
                             'geographic_unit_id' => $geoId,
@@ -1061,6 +1100,9 @@ class MapaPoliticoController extends Controller
                 if ($partidoSent) {
                     $updateData['partido'] = $partidoValue;
                 }
+                if ($nuevoNombre && $liderVinculado) {
+                    $updateData['nombre'] = $nuevoNombre;
+                }
                 if (array_key_exists('municipio', $data) && $data['municipio'] && $data['municipio'] !== ($lider->municipio ?? '')) {
                     $geo = DB::table('geographic_units')
                         ->where('type', 'municipality')
@@ -1097,6 +1139,10 @@ class MapaPoliticoController extends Controller
                 }
 
                 DB::table('lideres')->where('id', $lider->id)->update($updateData);
+            }
+
+            if ($nuevoNombre && $personaARenombrar) {
+                $this->renamePerson($personaARenombrar, $nuevoNombre);
             }
 
             // Update partido via candidacy endorsement
