@@ -27,7 +27,16 @@ class AuditDataMasker
 
             if ($this->matches($name, 'omit')) {
                 $out[$key] = $value === null ? null : $this->placeholder();
-            } elseif (str_ends_with($name, self::LAST4_SUFFIX) && $this->matches(substr($name, 0, -strlen(self::LAST4_SUFFIX)), 'last4')) {
+            } elseif ($this->isTypedValueKey($name)) {
+                $kind = $this->siblingType($data);
+                if ($kind === 'last4') {
+                    $out[$key.self::LAST4_SUFFIX] = $this->last4($value);
+                } elseif ($kind === 'email') {
+                    $out[$key] = $this->email($value);
+                } else {
+                    $out[$key] = $value === null ? null : $this->placeholder();
+                }
+            } elseif (str_ends_with($name, self::LAST4_SUFFIX) && $this->isLast4Base(substr($name, 0, -strlen(self::LAST4_SUFFIX)))) {
                 $out[$key] = $this->last4($value);
             } elseif ($this->matches($name, 'last4')) {
                 $out[$key.self::LAST4_SUFFIX] = $this->last4($value);
@@ -39,6 +48,36 @@ class AuditDataMasker
         }
 
         return $out;
+    }
+
+    private function isTypedValueKey(string $name): bool
+    {
+        return in_array($name, array_map('strtolower', config('audit.mask.by_type.keys', [])), true);
+    }
+
+    private function isLast4Base(string $name): bool
+    {
+        return $this->matches($name, 'last4') || $this->isTypedValueKey($name);
+    }
+
+    // 'last4', 'email' or null, from the sibling type/tipo key of a typed contact value.
+    private function siblingType(array $siblings): ?string
+    {
+        foreach (config('audit.mask.by_type.type_keys', []) as $typeKey) {
+            $type = $siblings[$typeKey] ?? null;
+            if (! is_string($type)) {
+                continue;
+            }
+            $type = strtolower(trim($type));
+            if (in_array($type, config('audit.mask.by_type.last4_types', []), true)) {
+                return 'last4';
+            }
+            if (in_array($type, config('audit.mask.by_type.email_types', []), true)) {
+                return 'email';
+            }
+        }
+
+        return null;
     }
 
     private function matches(string $name, string $group): bool

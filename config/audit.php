@@ -11,6 +11,8 @@
  *  - last4: the key becomes "<key>_last4" with the last 4 digits of the value (null if it has none).
  *  - email: "p***@dominio.com" (first character of the local part + domain).
  *  - omit:  the value becomes "[omitido]".
+ *  - by_type: contact values whose kind lives in a sibling key (person contacts send {type, value}):
+ *    a phone-like type gives "<key>_last4", an email type the email mask, anything else "[omitido]".
  *
  * Rows written before this masking existed are fixed once with `php artisan audit:mask-history`
  * (see app/Console/Commands/MaskAuditHistory.php).
@@ -27,7 +29,9 @@ return [
             'telefono',
             'phone',
             'celular',
-            'whatsapp*',
+            'whatsapp',
+            'whatsapp_phone',
+            'whatsapp_number',
         ],
 
         'email' => [
@@ -39,6 +43,8 @@ return [
             'direccion_puesto',
             'barrio',
             'fecha_nacimiento',
+            'birth_date',
+            'fecha_expedicion_doc',
             'edad',
             'gustos',
             'observacion',
@@ -46,6 +52,13 @@ return [
             'nota',
             'valor',
             '*password*',
+        ],
+
+        'by_type' => [
+            'keys' => ['value'],
+            'type_keys' => ['type', 'tipo'],
+            'last4_types' => ['phone', 'telefono', 'celular', 'movil', 'fijo', 'whatsapp'],
+            'email_types' => ['email', 'correo'],
         ],
 
     ],

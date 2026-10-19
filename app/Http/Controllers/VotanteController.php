@@ -310,7 +310,9 @@ class VotanteController extends Controller
 
         $updateVotante->handle($id, $data);
 
-        return response()->json(['success' => true, 'message' => 'Votante actualizado.']);
+        return response()->json(array_filter([
+            'success' => true, 'message' => 'Votante actualizado.', 'warning' => $updateVotante->warning,
+        ], fn ($v) => $v !== null));
     }
 
     public function destroy(string $id, DeactivateVotante $deactivateVotante)

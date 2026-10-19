@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Actions\Votantes\AddNexo;
 use App\Actions\Votantes\AddReferido;
+use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
-use App\Services\Import\TextNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -40,12 +40,7 @@ class MapaPoliticoController extends Controller
 
     private function renamePerson(string $personId, string $fullName): void
     {
-        DB::table('persons')->where('id', $personId)->update([
-            ...TextNormalizer::splitName($fullName),
-            'full_name' => $fullName,
-            'normalized_name' => TextNormalizer::normalizeName($fullName),
-            'updated_at' => now(),
-        ]);
+        UpdateVotante::renamePerson($personId, $fullName);
     }
 
     private function corporationId(string $name): ?string
@@ -998,11 +993,11 @@ class MapaPoliticoController extends Controller
         }
 
         // #15: Wrap in transaction to prevent race conditions
-        $nuevoNombre = isset($data['nombre']) ? preg_replace('/\s+/', ' ', trim($data['nombre'])) : null;
+        $nuevoNombre = isset($data['nombre']) ? UpdateVotante::normalizeName($data['nombre']) : null;
         if ($nuevoNombre !== null) {
             $actual = DB::table('lideres')->where('id', $id)->value('nombre')
                 ?? DB::table('persons')->where('id', $id)->value('full_name');
-            if ($actual !== null && $nuevoNombre === preg_replace('/\s+/', ' ', trim($actual))) {
+            if ($actual !== null && $nuevoNombre === UpdateVotante::normalizeName($actual)) {
                 $nuevoNombre = null;
             }
         }
@@ -1015,12 +1010,7 @@ class MapaPoliticoController extends Controller
 
             if ($lider && $nuevoNombre && $lider->geographic_unit_id) {
                 // Merged rows keep the lider id: rename the electoral person of the same municipio too.
-                $candidatos = DB::table('persons as p')
-                    ->join('candidacies as c', 'c.person_id', '=', 'p.id')
-                    ->join('contests as con', 'c.contest_id', '=', 'con.id')
-                    ->where('p.full_name', 'ilike', $this->escapeLike($lider->nombre))
-                    ->where('con.geographic_unit_id', $lider->geographic_unit_id)
-                    ->distinct()->pluck('p.id');
+                $candidatos = app(UpdateVotante::class)->linkedPersonIds($lider);
                 if ($candidatos->count() === 1) {
                     $personaARenombrar = $candidatos->first();
                 }

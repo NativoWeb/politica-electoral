@@ -36,7 +36,9 @@ class AgentVotanteController extends Controller
     {
         $lider = $action->handle($id, $request->validated());
 
-        return $this->ok('Votante actualizado.', $this->summary($lider));
+        return response()->json(array_filter([
+            'success' => true, 'message' => 'Votante actualizado.', 'data' => $this->summary($lider), 'warning' => $action->warning,
+        ], fn ($v) => $v !== null));
     }
 
     public function desactivar(string $id, DeactivateVotante $action): JsonResponse

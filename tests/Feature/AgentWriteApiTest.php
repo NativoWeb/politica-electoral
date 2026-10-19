@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Actions\Votantes\UpdateVotante;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Agent\AgentIdentityService;
@@ -130,6 +131,9 @@ class AgentWriteApiTest extends TestCase
         Schema::create('persons', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->string('full_name');
+            $t->string('first_name')->nullable();
+            $t->string('last_name')->nullable();
+            $t->string('normalized_name')->nullable();
             $t->date('birth_date')->nullable();
             $t->string('gender')->nullable();
             $t->timestamps();
@@ -768,5 +772,64 @@ class AgentWriteApiTest extends TestCase
         $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana Territorio A']);
         $this->assertDatabaseHas('lideres', ['id' => $this->liderB, 'nombre' => 'Beto Territorio B']);
         $this->assertSame(0, DB::table('audit_logs')->count());
+    }
+
+    private function candidateNamed(string $nombre, string $geoId): string
+    {
+        $personId = (string) Str::uuid();
+        $contestId = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $personId, 'full_name' => $nombre]);
+        DB::table('contests')->insert(['id' => $contestId, 'geographic_unit_id' => $geoId]);
+        DB::table('candidacies')->insert(['id' => (string) Str::uuid(), 'person_id' => $personId, 'contest_id' => $contestId]);
+
+        return $personId;
+    }
+
+    public function test_rename_propagates_to_the_single_linked_electoral_person(): void
+    {
+        $r02 = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573004440000', [$this->munA], ['view.votantes', 'write.data']);
+        $linked = $this->candidateNamed('ANA TERRITORIO A', $this->munA);
+        $otherMunicipio = $this->candidateNamed('Ana Territorio A', $this->munB);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nombre' => 'Ana María Territorio'], $this->tokenFor($r02))
+            ->assertOk()
+            ->assertJsonMissingPath('warning');
+
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana María Territorio']);
+        $this->assertDatabaseHas('persons', ['id' => $linked, 'full_name' => 'Ana María Territorio',
+            'first_name' => 'Ana', 'last_name' => 'María Territorio', 'normalized_name' => 'ANA MARIA TERRITORIO']);
+        $this->assertDatabaseHas('persons', ['id' => $otherMunicipio, 'full_name' => 'Ana Territorio A']);
+    }
+
+    public function test_ambiguous_rename_only_renames_the_votante_and_warns(): void
+    {
+        $r02 = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573004440000', [$this->munA], ['view.votantes', 'write.data']);
+        $first = $this->candidateNamed('Ana Territorio A', $this->munA);
+        $second = $this->candidateNamed('Ana Territorio A', $this->munA);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nombre' => 'Ana María Territorio'], $this->tokenFor($r02))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('warning', UpdateVotante::AMBIGUOUS_RENAME_WARNING);
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana María Territorio']);
+        $this->assertSame(2, DB::table('persons')->whereIn('id', [$first, $second])->where('full_name', 'Ana Territorio A')->count());
+
+        $this->app['auth']->forgetGuards();
+        $this->actingAs($this->campo)->putJson("/votantes/{$this->liderA}", ['nombre' => 'Ana Territorio A'])
+            ->assertOk()
+            ->assertJsonMissingPath('warning');
+        $this->assertSame(2, DB::table('persons')->where('full_name', 'Ana Territorio A')->count());
+    }
+
+    public function test_web_votante_rename_propagates_like_the_mapa_politico_edit(): void
+    {
+        $linked = $this->candidateNamed('Ana Territorio A', $this->munA);
+
+        $this->actingAs($this->campo)->putJson("/votantes/{$this->liderA}", ['nombre' => 'Ana  Renombrada Web'])
+            ->assertOk()
+            ->assertExactJson(['success' => true, 'message' => 'Votante actualizado.']);
+
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana Renombrada Web']);
+        $this->assertDatabaseHas('persons', ['id' => $linked, 'full_name' => 'Ana Renombrada Web']);
     }
 }

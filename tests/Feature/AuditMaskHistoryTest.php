@@ -69,6 +69,65 @@ class AuditMaskHistoryTest extends TestCase
         $this->assertSame(['email' => '[omitido]', 'telefono_last4' => null], $masker->mask(['email' => 'sin-arroba', 'telefono' => 'n/a']));
     }
 
+    public function test_contact_values_are_masked_by_their_sibling_type(): void
+    {
+        $masker = new AuditDataMasker;
+        $masked = $masker->mask([
+            'contacts' => [
+                ['type' => 'phone', 'value' => '+57 300 123 4567', 'label' => 'Casa'],
+                ['type' => 'WhatsApp', 'value' => '3109876543'],
+                ['tipo' => 'fijo', 'value' => '6076543210'],
+                ['type' => 'email', 'value' => 'luz@correo.com'],
+                ['type' => 'other', 'value' => '@luz_twitter'],
+                ['value' => 'sin tipo'],
+            ],
+            'birth_date' => '1970-03-04', 'fecha_expedicion_doc' => '1990-01-01',
+            'whatsapp_verified_at' => '2026-10-19 10:00:00', 'whatsapp_phone' => '+573001112222',
+        ]);
+
+        $this->assertSame([
+            'contacts' => [
+                ['type' => 'phone', 'value_last4' => '4567', 'label' => 'Casa'],
+                ['type' => 'WhatsApp', 'value_last4' => '6543'],
+                ['tipo' => 'fijo', 'value_last4' => '3210'],
+                ['type' => 'email', 'value' => 'l***@correo.com'],
+                ['type' => 'other', 'value' => '[omitido]'],
+                ['value' => '[omitido]'],
+            ],
+            'birth_date' => '[omitido]', 'fecha_expedicion_doc' => '[omitido]',
+            'whatsapp_verified_at' => '2026-10-19 10:00:00', 'whatsapp_phone_last4' => '2222',
+        ], $masked);
+        $this->assertSame($masked, $masker->mask($masked));
+    }
+
+    public function test_history_keeps_empty_objects_and_reports_rows_it_cannot_encode(): void
+    {
+        $id = (string) Str::uuid();
+        DB::table('audit_logs')->insert([
+            'id' => $id, 'action' => 'PUT votantes',
+            'metadata' => '{"filtros":{},"cedula":"1098123456","lista":[]}',
+        ]);
+
+        $this->artisan('audit:mask-history')->assertSuccessful();
+
+        $this->assertSame('{"filtros":{},"cedula_last4":"3456","lista":[]}',
+            str_replace(' ', '', (string) DB::table('audit_logs')->where('id', $id)->value('metadata')));
+
+        $this->app->instance(AuditDataMasker::class, new class extends AuditDataMasker
+        {
+            public function mask(?array $data): ?array
+            {
+                return ['valor' => NAN];
+            }
+        });
+
+        $this->artisan('audit:mask-history')
+            ->expectsOutputToContain("Row {$id} skipped: metadata could not be re-encoded")
+            ->expectsOutputToContain('Scanned 1 audit_logs rows; 0 masked.')
+            ->assertFailed();
+        $this->assertStringContainsString('cedula_last4', DB::table('audit_logs')->where('id', $id)->value('metadata'));
+    }
+
     public function test_every_audit_insert_is_masked_even_outside_the_middleware(): void
     {
         $log = AuditLog::create(['action' => 'LOGIN', 'entity_type' => 'session', 'metadata' => ['email' => 'operador@campana.co']]);

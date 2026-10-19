@@ -25,23 +25,33 @@ class MaskAuditHistory extends Command
         $dryRun = (bool) $this->option('dry-run');
         $scanned = 0;
         $changed = 0;
+        $failed = 0;
 
         DB::table('audit_logs')
             ->select(['id', ...self::COLUMNS])
-            ->chunkById(500, function ($rows) use ($masker, $dryRun, &$scanned, &$changed) {
+            ->chunkById(500, function ($rows) use ($masker, $dryRun, &$scanned, &$changed, &$failed) {
                 $updates = [];
                 foreach ($rows as $row) {
                     $scanned++;
                     $values = [];
                     foreach (self::COLUMNS as $column) {
-                        $original = is_string($row->{$column}) ? json_decode($row->{$column}, true) : null;
+                        $original = is_string($row->{$column}) ? $this->decode($row->{$column}) : null;
                         if (! is_array($original)) {
                             continue;
                         }
                         $masked = $masker->mask($original);
-                        if ($masked !== $original) {
-                            $values[$column] = json_encode($masked, JSON_UNESCAPED_UNICODE);
+                        if ($masked === $original) {
+                            continue;
                         }
+                        $encoded = json_encode($masked, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+                        if ($encoded === false) {
+                            $this->error("Row {$row->id} skipped: {$column} could not be re-encoded (".json_last_error_msg().').');
+                            $failed++;
+                            $values = [];
+
+                            continue 2;
+                        }
+                        $values[$column] = $encoded;
                     }
                     if ($values !== []) {
                         $updates[$row->id] = $values;
@@ -62,7 +72,30 @@ class MaskAuditHistory extends Command
 
         $verb = $dryRun ? 'would be masked (dry run, nothing written)' : 'masked';
         $this->info("Scanned {$scanned} audit_logs rows; {$changed} {$verb}.");
+        if ($failed > 0) {
+            $this->error("{$failed} rows were left untouched because of encoding errors.");
+
+            return self::FAILURE;
+        }
 
         return self::SUCCESS;
+    }
+
+    // Objects become arrays so they can be masked, except empty ones, which stay {} when written back.
+    private function decode(string $json): mixed
+    {
+        return $this->objectsToArrays(json_decode($json));
+    }
+
+    private function objectsToArrays(mixed $value): mixed
+    {
+        if ($value instanceof \stdClass) {
+            if (get_object_vars($value) === []) {
+                return $value;
+            }
+            $value = get_object_vars($value);
+        }
+
+        return is_array($value) ? array_map(fn ($item) => $this->objectsToArrays($item), $value) : $value;
     }
 }
