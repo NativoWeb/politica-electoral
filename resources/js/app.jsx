@@ -2,6 +2,9 @@ import '../css/app.css';
 import 'leaflet/dist/leaflet.css';
 import { createInertiaApp, router } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
+import { syncServiceWorkerSession } from './lib/swSession';
+
+let currentUser = null;
 
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
@@ -9,19 +12,8 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').then((registration) => {
             setInterval(() => registration.update(), 60 * 60 * 1000);
 
-            // Pre-cache key pages so they work on offline reload
-            if (registration.active) {
-                registration.active.postMessage({
-                    type: 'PRECACHE_PAGES',
-                    urls: ['/mapa-politico', '/gobernador'],
-                });
-            }
-            navigator.serviceWorker.ready.then(reg => {
-                reg.active.postMessage({
-                    type: 'PRECACHE_PAGES',
-                    urls: ['/mapa-politico', '/gobernador'],
-                });
-            });
+            // The SW precaches protected pages only once the session is confirmed (see swSession).
+            navigator.serviceWorker.ready.then(() => syncServiceWorkerSession(currentUser));
         }).catch(() => {});
     });
 
@@ -41,6 +33,11 @@ function showOfflineToast() {
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
 }
+
+router.on('navigate', (event) => {
+    currentUser = event.detail.page.props.auth?.user ?? null;
+    syncServiceWorkerSession(currentUser);
+});
 
 // Inertia v3: "networkError" fires when XHR fails (e.g. offline)
 // - Same page (filtering) → show toast, keep current data
@@ -68,6 +65,7 @@ createInertiaApp({
         return pages[`./Pages/${name}.jsx`];
     },
     setup({ el, App, props }) {
+        currentUser = props.initialPage.props.auth?.user ?? null;
         createRoot(el).render(<App {...props} />);
     },
     progress: false,

@@ -189,6 +189,7 @@ class LoginController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/login');
+        // Drops the HTTP cache and back/forward cache of the previous user's pages.
+        return redirect('/login')->header('Clear-Site-Data', '"cache"');
     }
 }

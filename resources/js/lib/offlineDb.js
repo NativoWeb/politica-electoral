@@ -194,6 +194,16 @@ export async function deleteDownload(municipioId) {
     });
 }
 
+// ─── Wipe every downloaded region (logout / account switch) ───
+// The pendingChanges queue is kept: it holds unsynced edits, not downloaded data.
+
+export async function clearDownloadedData() {
+    const tables = [db.municipios, db.downloads, db.personas, db.lideres, db.nexos, db.gobernador];
+    await db.transaction('rw', tables, async () => {
+        await Promise.all(tables.map(table => table.clear()));
+    });
+}
+
 // ─── Pending Changes (offline edits queue) ───
 
 export async function addPendingChange(type, action, data) {

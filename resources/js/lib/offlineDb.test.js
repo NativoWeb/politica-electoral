@@ -291,4 +291,23 @@ describe('offlineDb', () => {
             );
         });
     });
+
+    describe('clearDownloadedData', () => {
+        it('vacía las regiones descargadas y conserva la cola de cambios pendientes', async () => {
+            const { db } = offlineDb;
+
+            await offlineDb.clearDownloadedData();
+
+            for (const table of ['municipios', 'downloads', 'personas', 'lideres', 'nexos', 'gobernador']) {
+                expect(db[table].clear).toHaveBeenCalledTimes(1);
+            }
+            expect(db.pendingChanges.clear).not.toHaveBeenCalled();
+        });
+
+        it('propaga el error si IndexedDB falla', async () => {
+            offlineDb.db.personas.clear.mockRejectedValueOnce(new Error('QuotaExceeded'));
+
+            await expect(offlineDb.clearDownloadedData()).rejects.toThrow('QuotaExceeded');
+        });
+    });
 });
