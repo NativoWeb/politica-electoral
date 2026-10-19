@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 class EnsureCanWrite
 {
     // Roles that can write data (level >= 2 or specific codes)
-    private const WRITE_ROLES = [
+    public const WRITE_ROLES = [
         'R01_SUPERADMIN',
         'R02_ADMIN_FUNCIONAL',
         'R03_ADMIN_DATOS',

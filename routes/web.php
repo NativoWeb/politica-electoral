@@ -24,6 +24,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\TerritoryController;
 use App\Http\Controllers\VotanteController;
+use App\Http\Controllers\WhatsAppLinkController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
@@ -125,6 +126,11 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         return back()->with('success', 'Contraseña actualizada');
     })->name('password.update');
+
+    // WhatsApp agent linking (the one-time code is returned once, as JSON)
+    Route::post('/perfil/whatsapp/codigo', [WhatsAppLinkController::class, 'store'])
+        ->middleware('throttle:10,1')->name('perfil.whatsapp.codigo');
+    Route::delete('/perfil/whatsapp', [WhatsAppLinkController::class, 'destroy'])->name('perfil.whatsapp.destroy');
 
     Route::get('/analisis', [ComparadorController::class, 'index'])->name('comparador');
 
