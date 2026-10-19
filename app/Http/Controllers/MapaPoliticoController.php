@@ -764,7 +764,7 @@ class MapaPoliticoController extends Controller
         $liderRows = collect();
         $personMunicipio = null;
         if ($source === 'persona') {
-            $personMunicipio = DB::table('candidacies as c')
+            $personMunicipio = $this->scopeToTerritory(DB::table('candidacies as c'), 'con.geographic_unit_id')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
                 ->join('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
                 ->where('c.person_id', $id)
@@ -1036,7 +1036,7 @@ class MapaPoliticoController extends Controller
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
                     $personaARenombrar = $person->id;
-                    $personMunicipio = DB::table('candidacies as c')
+                    $personMunicipio = $this->scopeToTerritory(DB::table('candidacies as c'), 'con.geographic_unit_id')
                         ->join('contests as con', 'c.contest_id', '=', 'con.id')
                         ->join('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
                         ->where('c.person_id', $id)
@@ -1364,6 +1364,9 @@ class MapaPoliticoController extends Controller
         ]);
 
         $referente = DB::table('lideres')->where('id', $id)->first();
+        if ($referente) {
+            $this->authorizeGeo($referente->geographic_unit_id);
+        }
         if (! $referente || ! $referente->cedula) {
             return response()->json(['success' => false, 'message' => 'El referente debe tener cédula registrada.'], 422);
         }
@@ -1372,7 +1375,6 @@ class MapaPoliticoController extends Controller
         if (! $referido) {
             return response()->json(['success' => false, 'message' => 'Persona no encontrada.'], 404);
         }
-        $this->authorizeGeo($referente->geographic_unit_id);
         $this->authorizeGeo($referido->geographic_unit_id);
 
         $nameParts = explode(' ', $referente->nombre, 2);
