@@ -26,8 +26,10 @@ Route::prefix('agent/v1')->middleware(['throttle:agent', 'agent.hmac'])->group(f
 
         Route::middleware(['throttle:agent-user', 'audit'])->name('agent.')->whereUuid('id')->group(function () {
             Route::get('/votantes/{id}/seguimientos', [AgentVotanteController::class, 'seguimientos'])->name('votantes.seguimientos.index');
-            Route::get('/reportes/municipio/{id}', [ReportController::class, 'municipio'])->name('reportes.municipio');
-            Route::get('/reportes/persona/{id}', [ReportController::class, 'persona'])->name('reportes.persona');
+            Route::middleware('throttle:agent-reports')->group(function () {
+                Route::get('/reportes/municipio/{id}', [ReportController::class, 'municipio'])->name('reportes.municipio');
+                Route::get('/reportes/persona/{id}', [ReportController::class, 'persona'])->name('reportes.persona');
+            });
 
             Route::middleware('agent.can_write')->group(function () {
                 Route::post('/votantes', [AgentVotanteController::class, 'store'])->name('votantes.store');

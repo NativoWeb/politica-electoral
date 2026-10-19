@@ -24,6 +24,9 @@ class AppServiceProvider extends ServiceProvider
         ]);
         RateLimiter::for('agent-user', fn (Request $request) => Limit::perMinute(60)
             ->by('agent-user|'.($request->user()?->id ?? $request->ip())));
+        // PDF rendering is expensive: a tighter quota on top of agent-user.
+        RateLimiter::for('agent-reports', fn (Request $request) => Limit::perMinute(10)
+            ->by('agent-reports|'.($request->user()?->id ?? $request->ip())));
 
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {

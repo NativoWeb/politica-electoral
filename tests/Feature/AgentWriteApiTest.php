@@ -570,6 +570,24 @@ class AgentWriteApiTest extends TestCase
         $this->agent('GET', '/api/agent/v1/reportes/persona/'.Str::uuid(), null, $token)->assertNotFound();
     }
 
+    public function test_pdf_reports_have_their_own_tighter_limit(): void
+    {
+        $token = $this->tokenFor($this->campo);
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->agent('GET', "/api/agent/v1/reportes/municipio/{$this->munA}", null, $token)->assertOk();
+        }
+        $this->agent('GET', "/api/agent/v1/reportes/municipio/{$this->munA}", null, $token)
+            ->assertStatus(429)
+            ->assertJson(['success' => false]);
+        $this->agent('GET', '/api/agent/v1/reportes/persona/'.$this->electoralPersonIn($this->munA), null, $token)
+            ->assertStatus(429);
+
+        // Other agent routes keep working for this user, and other users keep their own report quota.
+        $this->agent('GET', "/api/agent/v1/votantes/{$this->liderA}/seguimientos", null, $token)->assertOk();
+        $this->agent('GET', "/api/agent/v1/reportes/municipio/{$this->munA}", null, $this->tokenFor($this->consulta))->assertOk();
+    }
+
     public function test_signature_token_and_user_state_are_enforced(): void
     {
         $body = ['nombre' => 'Sin firma', 'municipio_id' => $this->munA];

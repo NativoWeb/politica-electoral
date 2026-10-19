@@ -101,7 +101,7 @@ class AgentWriteApiPostgresTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.id', $id);
 
-        $row = DB::selectOne('SELECT lider_id, user_id, user_name, tipo, nota FROM agent_ro.v_lider_seguimientos WHERE id = ?', [$id]);
+        $row = DB::selectOne('SELECT lider_id, user_id, user_name, tipo FROM agent_ro.v_lider_seguimientos WHERE id = ?', [$id]);
         $this->assertNotNull($row);
         $this->assertSame($this->lider, $row->lider_id);
         $this->assertSame($this->campo->id, $row->user_id);

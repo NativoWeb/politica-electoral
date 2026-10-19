@@ -147,6 +147,9 @@ class AgentReadOnlyViewsPostgresTest extends TestCase
         foreach (['doc_hash', 'doc_last4', 'birth_date'] as $col) {
             $this->assertNotContains($col, $columns('v_persons'));
         }
+        $seguimientos = $columns('v_lider_seguimientos');
+        $this->assertNotEmpty($seguimientos);
+        $this->assertNotContains('nota', $seguimientos, 'v_lider_seguimientos exposes nota');
         $this->assertNotContains('geom', $columns('v_geo'));
         $this->assertSame(['id', 'name', 'role_code'], $columns('v_users_min'));
     }
