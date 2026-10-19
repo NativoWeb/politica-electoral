@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Votantes\AddNexo;
+use App\Actions\Votantes\AddReferido;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\CargoCategory;
@@ -1199,17 +1201,13 @@ class MapaPoliticoController extends Controller
         return back()->with('success', 'Datos actualizados.');
     }
 
-    public function storeNexo(Request $request, string $personId)
+    public function storeNexo(Request $request, string $personId, AddNexo $addNexo)
     {
         if (! Str::isUuid($personId)) {
             abort(404);
         }
 
-        // #16: Verify personId exists in either persons OR lideres
-        $exists = DB::table('persons')->where('id', $personId)->exists()
-            || DB::table('lideres')->where('id', $personId)->exists();
-        abort_if(! $exists, 404);
-        $this->authorizePersonOrLider($personId);
+        $addNexo->authorizeFor($personId);
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -1222,13 +1220,7 @@ class MapaPoliticoController extends Controller
             'telefono' => 'nullable|string|max:20',
         ]);
 
-        DB::table('nexos_familiares')->insert([
-            'id' => Str::uuid(),
-            'person_id' => $personId,
-            ...$data,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $addNexo->handle($personId, $data);
 
         if ($request->wantsJson()) {
             return response()->json(['success' => true, 'message' => 'Nexo familiar agregado.']);
@@ -1345,7 +1337,7 @@ class MapaPoliticoController extends Controller
         return response()->json(['data' => $query->get()]);
     }
 
-    public function addReferido(Request $request, string $id)
+    public function addReferido(Request $request, string $id, AddReferido $addReferido)
     {
         if (! Str::isUuid($id)) {
             abort(404);
@@ -1355,28 +1347,7 @@ class MapaPoliticoController extends Controller
             'lider_id' => 'required|uuid',
         ]);
 
-        $referente = DB::table('lideres')->where('id', $id)->first();
-        if ($referente) {
-            $this->authorizeGeo($referente->geographic_unit_id);
-        }
-        if (! $referente || ! $referente->cedula) {
-            return response()->json(['success' => false, 'message' => 'El referente debe tener cédula registrada.'], 422);
-        }
-
-        $referido = DB::table('lideres')->where('id', $data['lider_id'])->first();
-        if (! $referido) {
-            return response()->json(['success' => false, 'message' => 'Persona no encontrada.'], 404);
-        }
-        $this->authorizeGeo($referido->geographic_unit_id);
-
-        $nameParts = explode(' ', $referente->nombre, 2);
-
-        DB::table('lideres')->where('id', $data['lider_id'])->update([
-            'referente_documento' => $referente->cedula,
-            'referente_nombre' => $nameParts[0] ?? '',
-            'referente_apellido' => $nameParts[1] ?? '',
-            'updated_at' => now(),
-        ]);
+        $addReferido->handle($id, $data['lider_id']);
 
         return response()->json(['success' => true, 'message' => 'Referido agregado.']);
     }

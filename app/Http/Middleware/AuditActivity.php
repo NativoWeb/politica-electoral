@@ -25,6 +25,7 @@ class AuditActivity
         'contactos' => 'contacto',
         'whatsapp' => 'whatsapp',
         'cargos' => 'cargo',
+        'seguimientos' => 'seguimiento',
     ];
 
     public function handle(Request $request, Closure $next): Response
@@ -62,12 +63,21 @@ class AuditActivity
                 ]),
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
+                'correlation_id' => $this->correlationId($request),
             ]);
         } catch (\Throwable) {
             // Never interrupt the response
         }
 
         return $response;
+    }
+
+    // Only a well-formed UUID is stored, so callers cannot write arbitrary text into the audit trail.
+    private function correlationId(Request $request): ?string
+    {
+        $value = $request->header('X-Correlation-Id');
+
+        return is_string($value) && Str::isUuid($value) ? strtolower($value) : null;
     }
 
     private function resolveEntityType(?string $routeName, string $path): string

@@ -45,7 +45,7 @@ class AgentIdentityTest extends TestCase
 
         $this->campo = User::create([
             'name' => 'Campo A', 'email' => 'campo@test.local', 'password' => 'secret123',
-            'role_id' => $campoRole->id, 'territory_scope' => [$this->munA], 'permissions' => ['view.mapa'],
+            'role_id' => $campoRole->id, 'territory_scope' => [$this->munA], 'permissions' => ['view.mapa', 'write.data'],
         ]);
         $this->otro = User::create([
             'name' => 'Otro', 'email' => 'otro@test.local', 'password' => 'secret123',
@@ -369,7 +369,7 @@ class AgentIdentityTest extends TestCase
             'id' => $this->campo->id,
             'name' => 'Campo A',
             'role_code' => 'R09_CAMPO',
-            'permissions' => ['view.mapa'],
+            'permissions' => ['view.mapa', 'write.data'],
             'territory' => ['restricted' => true, 'municipios' => [['id' => $this->munA, 'name' => 'Girón']]],
             'can_write' => true,
         ]);

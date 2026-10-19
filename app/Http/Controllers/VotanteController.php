@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Votantes\AddContacto;
+use App\Actions\Votantes\CreateVotante;
+use App\Actions\Votantes\DeactivateVotante;
+use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Models\LiderContacto;
@@ -195,7 +199,7 @@ class VotanteController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, CreateVotante $createVotante)
     {
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -244,81 +248,12 @@ class VotanteController extends Controller
             'instagram' => 'nullable|string|max:255',
         ]);
 
-        $this->authorizeGeo($data['municipio_id']);
-
-        $cedula = $data['cedula'] ?? null;
-        if ($cedula !== null && $cedula !== '') {
-            $existente = DB::table('lideres')->where('cedula', $cedula)->first();
-            if ($existente) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $this->duplicateCedulaMessage($cedula, $existente),
-                ], 422);
-            }
-        }
-
-        $mun = DB::table('geographic_units as g')
-            ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
-            ->where('g.id', $data['municipio_id'])
-            ->select('g.canonical_name', 'prov.canonical_name as provincia')
-            ->first();
-
-        $lider = DB::transaction(function () use ($data, $mun) {
-            return Lider::create([
-                'nombre' => $data['nombre'],
-                'municipio' => $mun->canonical_name ?? '',
-                'provincia' => $mun->provincia ?? '',
-                'geographic_unit_id' => $data['municipio_id'],
-                'cargo' => $data['cargo'] ?? '',
-                'tipo' => $data['tipo'] ?? 'directorio',
-                'telefono' => $data['telefono'] ?? null,
-                'cedula' => $data['cedula'] ?? null,
-                'email' => $data['email'] ?? null,
-                'observacion' => $data['observacion'] ?? null,
-                'partido' => $data['partido'] ?? null,
-                'direccion' => $data['direccion'] ?? null,
-                'barrio' => $data['barrio'] ?? null,
-                'zona' => $data['zona'] ?? null,
-                'profesion' => $data['profesion'] ?? null,
-                'destacado' => false,
-                'votos' => 0,
-                'tipo_documento' => $data['tipo_documento'] ?? null,
-                'fecha_expedicion_doc' => $data['fecha_expedicion_doc'] ?? null,
-                'genero' => $data['genero'] ?? null,
-                'fecha_nacimiento' => $data['fecha_nacimiento'] ?? null,
-                'estado_civil' => $data['estado_civil'] ?? null,
-                'referente_documento' => $data['referente_documento'] ?? null,
-                'referente_nombre' => $data['referente_nombre'] ?? null,
-                'referente_apellido' => $data['referente_apellido'] ?? null,
-                'departamento_votacion' => $data['departamento_votacion'] ?? null,
-                'municipio_votacion' => $data['municipio_votacion'] ?? null,
-                'puesto_votacion' => $data['puesto_votacion'] ?? null,
-                'direccion_puesto' => $data['direccion_puesto'] ?? null,
-                'mesa_votacion' => $data['mesa_votacion'] ?? null,
-                'militante' => $data['militante'] ?? false,
-                'autoriza_datos' => $data['autoriza_datos'] ?? false,
-                'verificado' => $data['verificado'] ?? false,
-                'fallecido' => $data['fallecido'] ?? false,
-                'empresario' => $data['empresario'] ?? false,
-                'reservista' => $data['reservista'] ?? false,
-                'funcionario' => $data['funcionario'] ?? false,
-                'exfuncionario' => $data['exfuncionario'] ?? false,
-                'gran_elector' => $data['gran_elector'] ?? false,
-                'nivel_confianza' => $data['nivel_confianza'] ?? 'sin_llamar',
-                'convenio' => $data['convenio'] ?? null,
-                'escolaridad' => $data['escolaridad'] ?? null,
-                'tipo_hoja_vida' => $data['tipo_hoja_vida'] ?? null,
-                'fecha_registro_hv' => $data['fecha_registro_hv'] ?? null,
-                'facebook' => $data['facebook'] ?? null,
-                'twitter' => $data['twitter'] ?? null,
-                'instagram' => $data['instagram'] ?? null,
-            ]);
-        });
+        $lider = $createVotante->handle($data);
 
         return response()->json(['success' => true, 'message' => 'Votante creado.', 'id' => $lider->id], 201);
     }
 
-    public function update(Request $request, string $id)
+    public function update(Request $request, string $id, UpdateVotante $updateVotante)
     {
         if (! Str::isUuid($id)) {
             abort(404);
@@ -373,62 +308,31 @@ class VotanteController extends Controller
             'instagram' => 'nullable|string|max:255',
         ]);
 
-        $lider = Lider::find($id);
-
-        if (! $lider) {
-            return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
-        }
-        $this->authorizeGeo($lider->geographic_unit_id);
-
-        $cedula = $data['cedula'] ?? null;
-        if ($cedula !== null && $cedula !== '' && $cedula !== $lider->cedula) {
-            $existente = DB::table('lideres')->where('cedula', $cedula)->where('id', '!=', $id)->first();
-            if ($existente) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $this->duplicateCedulaMessage($cedula, $existente),
-                ], 422);
-            }
-        }
-
-        DB::transaction(function () use ($lider, $data) {
-            $lider->update($data);
-        });
+        $updateVotante->handle($id, $data);
 
         return response()->json(['success' => true, 'message' => 'Votante actualizado.']);
     }
 
-    public function destroy(string $id)
+    public function destroy(string $id, DeactivateVotante $deactivateVotante)
     {
         if (! Str::isUuid($id)) {
             abort(404);
         }
 
-        $lider = Lider::find($id);
-
-        if (! $lider) {
-            return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
-        }
-        $this->authorizeGeo($lider->geographic_unit_id);
-
-        $lider->update(['is_active' => false]);
+        $deactivateVotante->handle($id);
 
         return response()->json(['success' => true, 'message' => 'Votante desactivado.']);
     }
 
     // --- Contactos CRUD ---
 
-    public function storeContacto(Request $request, string $liderId)
+    public function storeContacto(Request $request, string $liderId, AddContacto $addContacto)
     {
         if (! Str::isUuid($liderId)) {
             abort(404);
         }
 
-        $lider = Lider::find($liderId);
-        if (! $lider) {
-            return response()->json(['success' => false, 'message' => 'Lider no encontrado.'], 404);
-        }
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $lider = $addContacto->authorizeFor($liderId);
 
         $data = $request->validate([
             'tipo' => 'required|string|max:30',
@@ -437,12 +341,7 @@ class VotanteController extends Controller
             'estado' => 'nullable|string|max:20',
         ]);
 
-        $contacto = $lider->contactos()->create([
-            'tipo' => $data['tipo'],
-            'valor' => $data['valor'],
-            'principal' => $data['principal'] ?? false,
-            'estado' => $data['estado'] ?? 'activo',
-        ]);
+        $contacto = $addContacto->handle($lider, $data);
 
         return response()->json(['success' => true, 'message' => 'Contacto creado.', 'data' => $contacto], 201);
     }

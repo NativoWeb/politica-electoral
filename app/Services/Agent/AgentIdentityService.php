@@ -43,9 +43,11 @@ class AgentIdentityService
         return $this->isEligible($user) ? $user : null;
     }
 
+    // Same rule enforced by agent.can_write, so what /me reports is what the write endpoints allow.
     public function canWrite(User $user): bool
     {
-        return in_array($user->role?->code, EnsureCanWrite::WRITE_ROLES, true);
+        return in_array($user->role?->code, EnsureCanWrite::WRITE_ROLES, true)
+            && $user->hasPermission('write.data');
     }
 
     public function profile(User $user): array

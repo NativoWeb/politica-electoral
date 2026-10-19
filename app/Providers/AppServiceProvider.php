@@ -22,6 +22,8 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(60)->by('agent-link|'.$request->ip()),
             Limit::perMinute(10)->by('agent-link-phone|'.(is_string($request->input('phone')) ? $request->input('phone') : '')),
         ]);
+        RateLimiter::for('agent-user', fn (Request $request) => Limit::perMinute(60)
+            ->by('agent-user|'.($request->user()?->id ?? $request->ip())));
 
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {

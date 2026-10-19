@@ -1,18 +1,22 @@
 <?php
 
+use App\Exceptions\BusinessRuleException;
 use App\Http\Middleware\AuditActivity;
+use App\Http\Middleware\EnsureAgentCanWrite;
 use App\Http\Middleware\EnsureAgentUserEligible;
 use App\Http\Middleware\EnsureCanWrite;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\VerifyAgentHmac;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -35,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'audit' => AuditActivity::class,
             'agent.hmac' => VerifyAgentHmac::class,
             'agent.user' => EnsureAgentUserEligible::class,
+            'agent.can_write' => EnsureAgentCanWrite::class,
             'abilities' => CheckAbilities::class,
         ]);
     })
@@ -42,4 +47,19 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/agent/*') || $request->expectsJson()
         );
+        $exceptions->dontReport(BusinessRuleException::class);
+
+        // The agent API always answers {success: false, message}; 5xx keep Laravel's generic message.
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if ($request->is('api/agent/*')) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+            }
+        });
+        $exceptions->render(function (HttpExceptionInterface $e, Request $request) {
+            if ($request->is('api/agent/*') && $e->getStatusCode() < 500) {
+                $message = $e->getStatusCode() === 404 ? 'No encontrado.' : ($e->getMessage() ?: 'Solicitud no permitida.');
+
+                return response()->json(['success' => false, 'message' => $message], $e->getStatusCode(), $e->getHeaders());
+            }
+        });
     })->create();
