@@ -38,7 +38,8 @@ sed -i 's|DB_HOST=.*|DB_HOST=127.0.0.1|' .env
 sed -i 's|DB_PORT=.*|DB_PORT=5432|' .env
 sed -i 's|DB_DATABASE=.*|DB_DATABASE=politica_electoral|' .env
 sed -i 's|DB_USERNAME=.*|DB_USERNAME=electoral|' .env
-sed -i 's|DB_PASSWORD=.*|DB_PASSWORD=Elec2024!Sntdr|' .env
+: "${DB_PASSWORD:?Define DB_PASSWORD con la clave de la BD (no se guarda en el repositorio)}"
+sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASSWORD}|" .env
 sed -i 's|REDIS_HOST=.*|REDIS_HOST=127.0.0.1|' .env
 sed -i 's|REDIS_PORT=.*|REDIS_PORT=6379|' .env
 sed -i 's|CACHE_STORE=.*|CACHE_STORE=redis|' .env

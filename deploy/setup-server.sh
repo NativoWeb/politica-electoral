@@ -32,7 +32,9 @@ curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin
 echo "[4/8] Instalando PostgreSQL 16 + PostGIS..."
 apt install -y postgresql-16 postgresql-16-postgis-3
 
-sudo -u postgres psql -c "CREATE USER electoral WITH PASSWORD 'Elec2024!Sntdr';"
+# La clave se genera en el servidor y nunca se guarda en el repositorio.
+DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-32)}"
+printf "CREATE USER electoral WITH PASSWORD '%s';\n" "$DB_PASSWORD" | sudo -u postgres psql -v ON_ERROR_STOP=1 -q
 sudo -u postgres psql -c "CREATE DATABASE politica_electoral OWNER electoral;"
 sudo -u postgres psql -d politica_electoral -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
 sudo -u postgres psql -d politica_electoral -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
@@ -116,7 +118,7 @@ echo ""
 echo "  PostgreSQL: localhost:5432"
 echo "  DB: politica_electoral"
 echo "  User: electoral"
-echo "  Pass: Elec2024!Sntdr"
+echo "  Pass: (generada; guardala ahora y ponla en DB_PASSWORD del .env) $DB_PASSWORD"
 echo ""
 echo "  Redis: localhost:6379"
 echo "  Nginx: configurado en puerto 80"
