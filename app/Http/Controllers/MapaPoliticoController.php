@@ -46,6 +46,16 @@ class MapaPoliticoController extends Controller
         ]);
     }
 
+    private function duplicateCedulaMessage(string $cedula, object $existente): string
+    {
+        $allowed = $this->allowedGeoIds();
+        if ($allowed !== null && ! in_array($existente->geographic_unit_id ?? null, $allowed, true)) {
+            return "Ya existe un líder con cédula {$cedula} en otro territorio.";
+        }
+
+        return "Ya existe un líder con cédula {$cedula}: {$existente->nombre}";
+    }
+
     private function corporationId(string $name): ?string
     {
         return Cache::remember("corp_id:{$name}", 3600, fn () => DB::table('corporations')->where('name', $name)->value('id'));
@@ -654,7 +664,7 @@ class MapaPoliticoController extends Controller
             if ($existente) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                    'message' => $this->duplicateCedulaMessage($cedula, $existente),
                 ], 422);
             }
         }
@@ -761,17 +771,17 @@ class MapaPoliticoController extends Controller
                 ->value('g.canonical_name');
 
             if ($personMunicipio) {
-                $liderRows = DB::table('lideres')
+                $liderRows = $this->scopeToTerritory(DB::table('lideres'))
                     ->where('nombre', 'ilike', $person->full_name)
                     ->where('municipio', 'ilike', $personMunicipio)
                     ->get();
             }
             if ($liderRows->isEmpty()) {
-                $liderRows = DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->get();
+                $liderRows = $this->scopeToTerritory(DB::table('lideres'))->where('nombre', 'ilike', $person->full_name)->get();
             }
             if ($liderRows->isEmpty() && $personMunicipio) {
                 $nameParts = explode(' ', $person->full_name);
-                $query = DB::table('lideres')->where('municipio', 'ilike', $personMunicipio);
+                $query = $this->scopeToTerritory(DB::table('lideres'))->where('municipio', 'ilike', $personMunicipio);
                 foreach ($nameParts as $part) {
                     if (mb_strlen($part) >= 3) {
                         $query->where('nombre', 'ilike', '%'.$this->escapeLike($part).'%');
@@ -885,7 +895,7 @@ class MapaPoliticoController extends Controller
             $response['info_politica'] = $liderModel->infoPolitica;
 
             if ($liderModel->cedula) {
-                $referidos = Lider::where('referente_documento', $liderModel->cedula)
+                $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $liderModel->cedula))
                     ->where('is_active', true)
                     ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
                     ->orderBy('nombre')
@@ -967,7 +977,7 @@ class MapaPoliticoController extends Controller
             if (! $currentLider) {
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
-                    $linkedLider = DB::table('lideres')
+                    $linkedLider = $this->scopeToTerritory(DB::table('lideres'))
                         ->where('nombre', 'ilike', $person->full_name)
                         ->first();
                     $currentCedula = $linkedLider?->cedula;
@@ -987,7 +997,7 @@ class MapaPoliticoController extends Controller
                 if ($existente) {
                     return response()->json([
                         'success' => false,
-                        'message' => "Ya existe un líder con cédula {$cedula}: {$existente->nombre}",
+                        'message' => $this->duplicateCedulaMessage($cedula, $existente),
                     ], 422);
                 }
             }
@@ -1037,18 +1047,19 @@ class MapaPoliticoController extends Controller
                     $geoId = $personMunicipio->geo_id ?? null;
 
                     if ($munName) {
-                        $lider = DB::table('lideres')
+                        $lider = $this->scopeToTerritory(DB::table('lideres'))
                             ->where('nombre', 'ilike', $person->full_name)
                             ->where('municipio', 'ilike', $munName)
                             ->first();
                         $liderVinculado = (bool) $lider;
                     }
                     if (! $lider) {
-                        $lider = DB::table('lideres')->where('nombre', 'ilike', $person->full_name)->first();
+                        $lider = $this->scopeToTerritory(DB::table('lideres'))->where('nombre', 'ilike', $person->full_name)->first();
                     }
 
                     // #14: Create lider only when user explicitly edits — with correct municipio
                     if (! $lider) {
+                        $this->authorizeGeo($geoId);
                         $provName = $geoId ? DB::table('geographic_units as g')
                             ->join('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
                             ->where('g.id', $geoId)->value('prov.canonical_name') : '';
@@ -1143,6 +1154,7 @@ class MapaPoliticoController extends Controller
                     }
                 }
 
+                $this->authorizeGeo($lider->geographic_unit_id);
                 DB::table('lideres')->where('id', $lider->id)->update($updateData);
             }
 

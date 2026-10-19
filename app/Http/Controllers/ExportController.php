@@ -62,6 +62,7 @@ class ExportController extends Controller
     {
         $source = $request->input('source', 'mapa-politico');
         $munId = $request->input('municipio');
+        abort_if($munId !== null && ! is_string($munId), 422);
         $tipo = $request->input('tipo', 'todos');
         $cargo = $request->input('cargo');
         $search = $request->input('search');

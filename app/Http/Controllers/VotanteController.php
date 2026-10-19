@@ -37,7 +37,6 @@ class VotanteController extends Controller
 
         // Territory scope restriction
         $user = $request->user();
-        $allowedMunicipios = $user?->allowedMunicipioNames();
         $this->scopeToTerritory($query, 'lideres.geographic_unit_id');
 
         if ($search = $request->input('search')) {
@@ -49,9 +48,7 @@ class VotanteController extends Controller
         }
 
         if ($municipio = $request->input('municipio')) {
-            if (! $allowedMunicipios || in_array($municipio, $allowedMunicipios)) {
-                $query->where('municipio', $municipio);
-            }
+            $query->where('municipio', $municipio);
         }
 
         if ($partido = $request->input('partido')) {
