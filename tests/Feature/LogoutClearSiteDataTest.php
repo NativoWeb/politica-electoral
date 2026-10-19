@@ -58,6 +58,19 @@ class LogoutClearSiteDataTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_pages_encrypt_history_and_logout_rotates_the_key(): void
+    {
+        $page = $this->actingAs($this->user)->get('/perfil')->viewData('page');
+        $this->assertTrue($page['encryptHistory'] ?? false);
+        $this->assertArrayNotHasKey('clearHistory', $page);
+
+        $this->post('/logout');
+        $login = $this->get('/login')->viewData('page');
+
+        $this->assertTrue($login['clearHistory'] ?? false);
+        $this->assertTrue($login['encryptHistory'] ?? false);
+    }
+
     public function test_guest_logout_is_rejected_before_reaching_the_controller(): void
     {
         $response = $this->post('/logout');

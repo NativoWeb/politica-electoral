@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import { createInertiaApp, router } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
 import { syncServiceWorkerSession } from './lib/swSession';
+import { handleLogoutNetworkError, resumePendingLogout } from './lib/logout';
 
 let currentUser = null;
 
@@ -37,6 +38,7 @@ function showOfflineToast() {
 router.on('navigate', (event) => {
     currentUser = event.detail.page.props.auth?.user ?? null;
     syncServiceWorkerSession(currentUser);
+    resumePendingLogout(currentUser);
 });
 
 // Inertia v3: "networkError" fires when XHR fails (e.g. offline)
@@ -48,6 +50,12 @@ router.on('networkError', (event) => {
     const targetUrl = error?.url || window.location.href;
 
     const target = new URL(targetUrl, window.location.origin);
+
+    // Never turn a failed logout POST into a GET navigation: the session would stay alive.
+    if (target.pathname === '/logout') {
+        handleLogoutNetworkError();
+        return false;
+    }
 
     if (target.pathname === window.location.pathname) {
         showOfflineToast();
@@ -66,6 +74,8 @@ createInertiaApp({
     },
     setup({ el, App, props }) {
         currentUser = props.initialPage.props.auth?.user ?? null;
+        syncServiceWorkerSession(currentUser);
+        resumePendingLogout(currentUser);
         createRoot(el).render(<App {...props} />);
     },
     progress: false,

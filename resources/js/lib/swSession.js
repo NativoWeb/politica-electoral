@@ -1,10 +1,12 @@
 /**
- * Bridge between the Inertia session and the service worker.
+ * Bridge between the Inertia session and the service worker / offline storage.
  *
  * The SW only keeps authenticated pages for the user it was told about, and only
  * precaches protected pages once the app has confirmed there is a logged-in user.
+ * Browser storage only ever holds userKey() hashes, never the account UUID.
  */
-import { clearDownloadedData } from './offlineDb';
+import { clearDownloadedData, clearPendingChanges, discardForeignPendingChanges, setOfflineOwner } from './offlineDb';
+import { userKey } from './userKey';
 
 export const PRECACHE_URLS = ['/mapa-politico', '/gobernador'];
 const LAST_USER_KEY = 'electoral:offline-user';
@@ -42,22 +44,29 @@ function readLastUser() {
     }
 }
 
-function writeLastUser(id) {
+function writeLastUser(key) {
     try {
-        if (id) localStorage.setItem(LAST_USER_KEY, id);
+        if (key) localStorage.setItem(LAST_USER_KEY, key);
         else localStorage.removeItem(LAST_USER_KEY);
     } catch {
         // Private mode / blocked storage: the SW still purges pages on its own.
     }
 }
 
-// Offline downloads belong to whoever downloaded them; never hand them to another account.
-async function forgetPreviousUserData(currentId) {
+// Offline downloads and queued edits belong to whoever made them; never hand them to another account.
+// `previous` may still be a raw UUID written by the first v18 build.
+async function forgetPreviousUserData(userId, key) {
     const previous = readLastUser();
-    if (currentId && previous && previous !== currentId) {
-        await clearDownloadedData().catch((err) => console.warn('No se pudieron borrar los datos offline del usuario anterior', err));
+    const sameAccount = previous === key || previous === userId;
+
+    try {
+        if (previous && !sameAccount) await clearDownloadedData();
+        // No previous owner at all = first run after the update: the queue can only be this device's user.
+        await discardForeignPendingChanges(key, { adoptLegacy: sameAccount || !previous });
+        writeLastUser(key);
+    } catch (err) {
+        console.warn('No se pudieron borrar los datos offline del usuario anterior', err);
     }
-    if (currentId) writeLastUser(currentId);
 }
 
 export async function syncServiceWorkerSession(user) {
@@ -65,17 +74,30 @@ export async function syncServiceWorkerSession(user) {
     if (id === lastUserId) return;
     lastUserId = id;
 
-    forgetPreviousUserData(id);
-    const reply = await postToServiceWorker({ type: 'SESSION', user: id, precache: id ? PRECACHE_URLS : [] });
+    // The owner switches right away, so nothing is queued or synced under the previous user meanwhile.
+    const pendingKey = userKey(id);
+    setOfflineOwner(pendingKey);
+    const key = await pendingKey;
+    if (key) forgetPreviousUserData(id, key);
+
+    const reply = await postToServiceWorker({ type: 'SESSION', user: key, precache: key ? PRECACHE_URLS : [] });
     // No active SW yet (first install): let the next call retry.
     if (reply === null && lastUserId === id) lastUserId = undefined;
 }
 
+// Purges everything this device keeps for the session. The device mark is only removed when the
+// local data really went away, so a later login still detects and wipes leftovers.
 export async function clearUserOfflineState() {
     lastUserId = undefined;
+    setOfflineOwner(null);
     await postToServiceWorker({ type: 'LOGOUT' });
-    await clearDownloadedData().catch((err) => console.warn('No se pudieron borrar los datos offline al cerrar sesión', err));
-    writeLastUser(null);
+    try {
+        await clearDownloadedData();
+        await clearPendingChanges();
+        writeLastUser(null);
+    } catch (err) {
+        console.warn('No se pudieron borrar los datos offline al cerrar sesión', err);
+    }
 }
 
 export function resetSwSessionForTests() {

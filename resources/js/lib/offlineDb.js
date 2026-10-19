@@ -205,23 +205,59 @@ export async function clearDownloadedData() {
 }
 
 // ─── Pending Changes (offline edits queue) ───
+// Every change records its owner (userKey of the session that made it). Only the owner's
+// changes are listed, counted or synced, so another account never sends or sees them.
+
+let ownerKey = Promise.resolve(null);
+
+// Accepts the key or a promise of it (hashing is async).
+export function setOfflineOwner(key) {
+    ownerKey = Promise.resolve(key).then(value => value || null);
+}
 
 export async function addPendingChange(type, action, data) {
+    const owner = await ownerKey;
+    if (!owner) throw new Error('No hay una sesión activa para guardar cambios sin conexión.');
+
     return db.pendingChanges.add({
         type,       // 'lider', 'persona', 'nexo'
         action,     // 'create', 'update', 'delete'
         data,       // the payload
+        owner,
         synced: 0,
         createdAt: new Date().toISOString(),
     });
 }
 
 export async function getPendingChanges() {
-    return db.pendingChanges.where('synced').equals(0).toArray();
+    const owner = await ownerKey;
+    if (!owner) return [];
+    return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner).toArray();
 }
 
 export async function getPendingCount() {
-    return db.pendingChanges.where('synced').equals(0).count();
+    const owner = await ownerKey;
+    if (!owner) return 0;
+    return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner).count();
+}
+
+// Deletes every change that does not belong to `owner`. Changes saved before owners existed are
+// adopted only when `adoptLegacy` is true (the device's last user is this same account).
+export async function discardForeignPendingChanges(owner, { adoptLegacy = false } = {}) {
+    const all = await db.pendingChanges.toArray();
+    const foreign = all.filter(c => c.owner ? c.owner !== owner : !adoptLegacy).map(c => c.id);
+    const legacy = adoptLegacy ? all.filter(c => !c.owner).map(c => c.id) : [];
+
+    await db.transaction('rw', db.pendingChanges, async () => {
+        if (foreign.length) await db.pendingChanges.bulkDelete(foreign);
+        for (const id of legacy) await db.pendingChanges.update(id, { owner });
+    });
+
+    return { discarded: foreign.length, adopted: legacy.length };
+}
+
+export async function clearPendingChanges() {
+    await db.pendingChanges.clear();
 }
 
 export async function markSynced(id) {
@@ -231,6 +267,7 @@ export async function markSynced(id) {
 // ─── Sync Engine ───
 
 export async function syncPendingChanges() {
+    const owner = await ownerKey;
     const pending = await getPendingChanges();
     if (pending.length === 0) return { synced: 0, failed: 0 };
 
@@ -242,6 +279,8 @@ export async function syncPendingChanges() {
     const csrfToken = cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
 
     for (const change of pending) {
+        // The session changed mid-sync (logout / other account): stop, never send with someone else's cookie.
+        if ((await ownerKey) !== owner) break;
         try {
             let url, method, body;
 

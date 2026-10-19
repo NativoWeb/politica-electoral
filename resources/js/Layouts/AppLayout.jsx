@@ -3,12 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
 import { OfflineIndicator } from '@/Components/OfflineManager';
-import { clearUserOfflineState } from '@/lib/swSession';
-
-// Purge this user's offline pages and downloads first; the logout goes ahead even if the purge fails.
-function logout() {
-    clearUserOfflineState().finally(() => router.post('/logout'));
-}
+import { logout } from '@/lib/logout';
 
 const TYPE_LABELS = { persona: 'Persona', municipio: 'Municipio', partido: 'Partido' };
 const TYPE_COLORS = {
@@ -462,7 +457,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 <button onClick={() => setShowPasswordModal(true)} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors border-b border-gray-100">
                                     Cambiar contraseña
                                 </button>
-                                <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors">
+                                <button onClick={() => logout(auth)} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors">
                                     Cerrar sesión
                                 </button>
                             </div>
@@ -521,7 +516,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 <svg className="w-6 h-6 text-[var(--color-ink-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                                 <span className="text-[16px] font-semibold text-[var(--color-ink)]">Cambiar contraseña</span>
                             </button>
-                            <button onClick={() => { setMobileUserMenu(false); logout(); }} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-red-50 transition-colors">
+                            <button onClick={() => { setMobileUserMenu(false); logout(auth); }} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-red-50 transition-colors">
                                 <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                                 <span className="text-[16px] font-semibold text-red-600">Cerrar sesión</span>
                             </button>

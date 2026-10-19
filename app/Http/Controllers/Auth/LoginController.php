@@ -189,7 +189,10 @@ class LoginController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        // Drops the HTTP cache and back/forward cache of the previous user's pages.
+        // Rotates the history encryption key, so Back cannot restore the previous user's pages.
+        Inertia::clearHistory();
+
+        // Drops the HTTP cache of the previous user's pages (not Cache Storage: the SW purges that on logout).
         return redirect('/login')->header('Clear-Site-Data', '"cache"');
     }
 }

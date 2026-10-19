@@ -44,6 +44,7 @@ describe('offlineDb', () => {
         vi.clearAllMocks();
         global.fetch.mockReset();
         offlineDb = await import('./offlineDb.js');
+        offlineDb.setOfflineOwner('owner-test');
     });
 
     describe('downloadProvincia', () => {

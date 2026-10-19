@@ -3,7 +3,9 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use Closure;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -16,6 +18,14 @@ class HandleInertiaRequests extends Middleware
      * @var string
      */
     protected $rootView = 'app';
+
+    // Page props carry personal data: keep them encrypted in history.state so they die with the session.
+    public function handle(Request $request, Closure $next)
+    {
+        Inertia::encryptHistory();
+
+        return parent::handle($request, $next);
+    }
 
     /**
      * Determines the current asset version.
