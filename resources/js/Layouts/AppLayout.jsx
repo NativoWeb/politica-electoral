@@ -445,7 +445,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     <p className="text-[9px] text-white/40">{auth?.role || auth?.email || ''}</p>
                                 </div>
                             </button>
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all z-50">
                                 <div className="px-4 py-3 border-b border-gray-100">
                                     <p className="text-[12px] font-semibold text-[var(--color-ink)] truncate">{auth?.name}</p>
                                     <p className="text-[10px] text-[var(--color-ink-faint)] truncate">{auth?.email}</p>

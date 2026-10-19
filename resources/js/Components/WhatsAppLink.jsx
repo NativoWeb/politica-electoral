@@ -35,6 +35,23 @@ export function buildWhatsAppUrl(agentNumber, code) {
     return `https://wa.me/${digits}?text=${encodeURIComponent(`VINCULAR ${code}`)}`;
 }
 
+// Accepts the number typed alone, with its country code ("57 300…") or as a full "+57 300…" / "0057…" number.
+export function composePhone(prefix, number) {
+    const raw = (number || '').trim();
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return { error: 'Escribe tu número de WhatsApp.', field: 'number' };
+    if (raw.startsWith('+')) return { phone: `+${digits}` };
+    if (digits.startsWith('00')) return { phone: `+${digits.slice(2)}` };
+
+    const code = (prefix || '').replace(/\D/g, '');
+    if (!code) return { error: 'Escribe el indicativo del país, por ejemplo +57.', field: 'prefix' };
+
+    const national = digits.length > 10 && digits.startsWith(code) && digits.length - code.length >= 7
+        ? digits.slice(code.length)
+        : digits;
+    return { phone: `+${code}${national}` };
+}
+
 function requestErrorMessage(error) {
     const status = error?.response?.status;
     if (!error?.response) return 'No hay conexión con el servidor. Revisa tu internet e inténtalo de nuevo.';
@@ -137,6 +154,11 @@ function CodeState({ pending, agentNumber, onRegenerate, onReset, regenerating }
     const [checking, setChecking] = useState(false);
     const [notYet, setNotYet] = useState(false);
     const waUrl = buildWhatsAppUrl(agentNumber, pending.code);
+    const panelRef = useRef(null);
+
+    useEffect(() => {
+        panelRef.current?.focus();
+    }, [pending.code]);
 
     function checkLinked() {
         setChecking(true);
@@ -152,21 +174,22 @@ function CodeState({ pending, agentNumber, onRegenerate, onReset, regenerating }
 
     return (
         <div className="space-y-5">
-            <div aria-live="polite" aria-atomic="true">
+            <div ref={panelRef} tabIndex={-1} className="rounded-xl focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--color-primary-light)]/30">
                 {expired ? (
-                    <div className="p-5 rounded-xl border-2 border-dashed border-[var(--color-line-strong)] text-center">
+                    <div role="status" className="p-5 rounded-xl border-2 border-dashed border-[var(--color-line-strong)] text-center">
                         <p className="text-[16px] font-bold text-[var(--color-ink)]">El código venció</p>
                         <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Genera uno nuevo para {pending.phone}.</p>
                     </div>
                 ) : (
                     <div className="p-5 rounded-xl bg-[var(--color-primary)] text-white text-center">
                         <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-white/60">Tu código</p>
-                        <p className="mt-2 font-mono font-bold text-[44px] sm:text-[52px] leading-none tracking-[0.18em] tabular-nums" aria-label={`Código ${pending.code.split('').join(' ')}`}>
-                            {pending.code.slice(0, 3)}<span className="inline-block w-3" aria-hidden="true" />{pending.code.slice(3)}
+                        <p className="mt-2 font-mono font-bold text-[44px] sm:text-[52px] leading-none tracking-[0.18em] tabular-nums">
+                            <span aria-hidden="true">{pending.code.slice(0, 3)}<span className="inline-block w-3" />{pending.code.slice(3)}</span>
+                            <span className="sr-only">{pending.code.split('').join(' ')}</span>
                         </p>
                         <p className="mt-3 text-[14px] text-white/80">
                             Vence en <span className="font-bold text-[var(--color-accent)] tabular-nums" aria-hidden="true">{formatRemaining(remaining)}</span>
-                            <span className="sr-only">{Math.ceil(remaining / 60)} minutos</span>
+                            <span className="sr-only" aria-live="polite">{Math.ceil(remaining / 60)} minutos</span>
                         </p>
                     </div>
                 )}
@@ -232,6 +255,7 @@ export default function WhatsAppLink({ whatsapp, agentNumber }) {
     const [busy, setBusy] = useState(false);
     const [pending, setPending] = useState(null);
     const numberRef = useRef(null);
+    const prefixRef = useRef(null);
     const ids = useId();
 
     const linked = Boolean(whatsapp?.linked);
@@ -258,7 +282,7 @@ export default function WhatsAppLink({ whatsapp, agentNumber }) {
             const phoneErrors = e?.response?.status === 422 ? e.response.data?.errors?.phone : null;
             if (phoneErrors?.length) {
                 setPending(null);
-                setFieldError(phoneErrors[0]);
+                setFieldError({ message: phoneErrors[0], field: 'number' });
                 requestAnimationFrame(() => numberRef.current?.focus());
             } else {
                 setFormError(requestErrorMessage(e));
@@ -270,14 +294,13 @@ export default function WhatsAppLink({ whatsapp, agentNumber }) {
 
     function handleSubmit(e) {
         e.preventDefault();
-        const cleanPrefix = `+${prefix.replace(/\D/g, '')}`;
-        const digits = number.replace(/\D/g, '');
-        if (!digits) {
-            setFieldError('Escribe tu número de WhatsApp.');
-            numberRef.current?.focus();
+        const result = composePhone(prefix, number);
+        if (result.error) {
+            setFieldError({ message: result.error, field: result.field });
+            (result.field === 'prefix' ? prefixRef : numberRef).current?.focus();
             return;
         }
-        generate(`${cleanPrefix}${digits}`);
+        generate(result.phone);
     }
 
     function reset() {
@@ -320,32 +343,35 @@ export default function WhatsAppLink({ whatsapp, agentNumber }) {
                     <label htmlFor={`${ids}-prefix`} className="sr-only">Indicativo del país</label>
                     <input
                         id={`${ids}-prefix`}
+                        ref={prefixRef}
                         type="tel"
                         inputMode="tel"
                         autoComplete="tel-country-code"
                         value={prefix}
-                        onChange={(e) => setPrefix(e.target.value.replace(/[^\d+]/g, '').slice(0, 4))}
+                        onChange={(e) => { setPrefix(e.target.value.replace(/[^\d+]/g, '').slice(0, 4)); if (fieldError) setFieldError(null); }}
+                        aria-invalid={fieldError?.field === 'prefix' ? 'true' : 'false'}
+                        aria-describedby={fieldError?.field === 'prefix' ? errorId : undefined}
                         className="w-[4.5rem] px-3 py-3 text-[16px] font-semibold text-[var(--color-ink)] bg-gray-50 border-r-2 border-[var(--color-line)] focus:outline-none focus:bg-white"
                     />
                     <input
                         id={`${ids}-number`}
                         ref={numberRef}
                         type="tel"
-                        inputMode="numeric"
+                        inputMode="tel"
                         autoComplete="tel-national"
                         placeholder="300 123 4567"
                         value={number}
                         onChange={(e) => { setNumber(e.target.value); if (fieldError) setFieldError(null); }}
-                        aria-invalid={fieldError ? 'true' : 'false'}
-                        aria-describedby={fieldError ? `${errorId} ${hintId}` : hintId}
+                        aria-invalid={fieldError?.field === 'number' ? 'true' : 'false'}
+                        aria-describedby={fieldError?.field === 'number' ? `${errorId} ${hintId}` : hintId}
                         className="flex-1 min-w-0 px-3 py-3 text-[16px] text-[var(--color-ink)] placeholder:text-gray-400 focus:outline-none"
                     />
                 </div>
                 <p id={hintId} className="text-[12px] text-[var(--color-ink-faint)] mt-1.5">
-                    Cambia el indicativo si tu número no es de Colombia.
+                    Cambia el indicativo si tu número no es de Colombia. También puedes pegarlo completo, con +.
                 </p>
                 {fieldError && (
-                    <p id={errorId} role="alert" className="text-[13px] font-semibold text-[var(--color-danger)] mt-1">{fieldError}</p>
+                    <p id={errorId} role="alert" className="text-[13px] font-semibold text-[var(--color-danger)] mt-1">{fieldError.message}</p>
                 )}
             </div>
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -53,12 +54,7 @@ class HandleInertiaRequests extends Middleware
                     'territoryScope' => $user->territory_scope,
                     'permissions' => $permissions,
                     'canWrite' => in_array('*', $permissions) || in_array('write.data', $permissions),
-                    // Only the last 4 digits travel in the shared props; the full number stays server side.
-                    'whatsapp' => [
-                        'linked' => $user->whatsapp_phone !== null && $user->whatsapp_verified_at !== null,
-                        'phoneLast4' => $user->whatsapp_phone ? substr($user->whatsapp_phone, -4) : null,
-                        'verifiedAt' => $user->whatsapp_verified_at?->toIso8601String(),
-                    ],
+                    'whatsapp' => $this->whatsappLink($user),
                 ] : null,
             ],
             'agent' => $user ? [
@@ -69,6 +65,18 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
                 'status' => fn () => $request->session()->get('status'),
             ],
+        ];
+    }
+
+    // Only the last 4 digits travel in the shared props, and only once the link is verified.
+    private function whatsappLink(User $user): array
+    {
+        $linked = $user->whatsapp_phone !== null && $user->whatsapp_verified_at !== null;
+
+        return [
+            'linked' => $linked,
+            'phoneLast4' => $linked ? substr($user->whatsapp_phone, -4) : null,
+            'verifiedAt' => $linked ? $user->whatsapp_verified_at->toIso8601String() : null,
         ];
     }
 }

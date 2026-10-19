@@ -28,6 +28,8 @@ class AuditActivity
         'seguimientos' => 'seguimiento',
     ];
 
+    private const MASKED_PHONE_KEYS = ['phone', 'whatsapp_phone'];
+
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
@@ -57,10 +59,7 @@ class AuditActivity
                 'action' => Str::limit($action, 80, ''),
                 'entity_type' => Str::limit($entityType, 80, ''),
                 'entity_id' => $entityId,
-                'metadata' => $request->except([
-                    'password', 'password_confirmation', '_token', '_method',
-                    'current_password', 'new_password', 'new_password_confirmation',
-                ]),
+                'metadata' => $this->metadata($request),
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'correlation_id' => $this->correlationId($request),
@@ -70,6 +69,30 @@ class AuditActivity
         }
 
         return $response;
+    }
+
+    private function metadata(Request $request): array
+    {
+        $data = $request->except([
+            'password', 'password_confirmation', '_token', '_method',
+            'current_password', 'new_password', 'new_password_confirmation',
+        ]);
+
+        // WhatsApp linking: the one-time code is a credential and is never stored.
+        if ($request->is('perfil/whatsapp*', 'api/agent/*/link')) {
+            unset($data['code']);
+        }
+
+        foreach (self::MASKED_PHONE_KEYS as $key) {
+            if (! array_key_exists($key, $data)) {
+                continue;
+            }
+            $digits = is_scalar($data[$key]) ? preg_replace('/\D/', '', (string) $data[$key]) : '';
+            unset($data[$key]);
+            $data[$key.'_last4'] = $digits === '' ? null : substr($digits, -4);
+        }
+
+        return $data;
     }
 
     // Only a well-formed UUID is stored, so callers cannot write arbitrary text into the audit trail.

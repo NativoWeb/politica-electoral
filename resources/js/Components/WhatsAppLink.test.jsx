@@ -16,7 +16,7 @@ vi.mock('@inertiajs/react', () => ({
     router: { reload: (...args) => mockReload(...args) },
 }));
 
-import WhatsAppLink, { buildWhatsAppUrl } from './WhatsAppLink';
+import WhatsAppLink, { buildWhatsAppUrl, composePhone } from './WhatsAppLink';
 
 const UNLINKED = { linked: false, phoneLast4: null, verifiedAt: null };
 
@@ -37,16 +37,41 @@ describe('WhatsAppLink', () => {
         expect(buildWhatsAppUrl('', '012345')).toBeNull();
     });
 
+    it('normalizes numbers pasted with their country code', () => {
+        expect(composePhone('+57', '300 123 4567')).toEqual({ phone: '+573001234567' });
+        expect(composePhone('+57', '+57 300 123 4567')).toEqual({ phone: '+573001234567' });
+        expect(composePhone('+57', '57 300 123 4567')).toEqual({ phone: '+573001234567' });
+        expect(composePhone('+57', '0057 300 123 4567')).toEqual({ phone: '+573001234567' });
+        expect(composePhone('+57', '+1 202 555 0123')).toEqual({ phone: '+12025550123' });
+        expect(composePhone('', '+57 300 123 4567')).toEqual({ phone: '+573001234567' });
+        expect(composePhone('+1', '1 202 555 0123')).toEqual({ phone: '+12025550123' });
+        expect(composePhone('+57', '5712345678')).toEqual({ phone: '+575712345678' });
+    });
+
+    it('rejects an empty country code or number before calling the server', () => {
+        expect(composePhone('', '300 123 4567')).toEqual({ error: expect.stringContaining('indicativo'), field: 'prefix' });
+        expect(composePhone('+57', '  -- ')).toEqual({ error: 'Escribe tu número de WhatsApp.', field: 'number' });
+
+        render(<WhatsAppLink whatsapp={UNLINKED} agentNumber="+573134459145" />);
+        fireEvent.change(screen.getByLabelText('Indicativo del país'), { target: { value: '' } });
+        fillAndSubmit('3001234567');
+
+        expect(screen.getByRole('alert')).toHaveTextContent('indicativo');
+        expect(screen.getByLabelText('Indicativo del país')).toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByLabelText('Indicativo del país')).toHaveFocus();
+        expect(mockPost).not.toHaveBeenCalled();
+    });
+
     it('sends the E.164 phone and shows the code with the WhatsApp link', async () => {
         const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         mockPost.mockResolvedValue({ data: { success: true, code: '048213', expires_at: expires }, headers: {} });
 
         render(<WhatsAppLink whatsapp={UNLINKED} agentNumber="+573134459145" />);
-        fillAndSubmit('300 123 4567');
+        fillAndSubmit('+57 300 123 4567');
 
         await waitFor(() => expect(screen.getByText('Tu código')).toBeInTheDocument());
         expect(mockPost).toHaveBeenCalledWith('/perfil/whatsapp/codigo', { phone: '+573001234567' }, expect.any(Object));
-        expect(screen.getByLabelText('Código 0 4 8 2 1 3')).toBeInTheDocument();
+        expect(screen.getByText('0 4 8 2 1 3')).toHaveClass('sr-only');
         expect(screen.getByRole('link', { name: /Abrir WhatsApp/ })).toHaveAttribute(
             'href',
             'https://wa.me/573134459145?text=VINCULAR%20048213',
