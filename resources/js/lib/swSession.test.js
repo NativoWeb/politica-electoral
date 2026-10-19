@@ -3,12 +3,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const offline = vi.hoisted(() => ({
     clearDownloadedData: vi.fn(),
     clearPendingChanges: vi.fn(),
-    discardForeignPendingChanges: vi.fn(),
+    countLegacyPendingChanges: vi.fn(),
+    reconcilePendingChanges: vi.fn(),
+    getOfflineOwnerKey: vi.fn(),
+    getPendingCount: vi.fn(),
+    syncPendingChanges: vi.fn(),
     setOfflineOwner: vi.fn(),
 }));
 vi.mock('./offlineDb', () => offline);
 
-import { syncServiceWorkerSession, clearUserOfflineState, resetSwSessionForTests, PRECACHE_URLS } from './swSession';
+import { syncServiceWorkerSession, clearUserOfflineState, resetSwSessionForTests, PRECACHE_URLS, writePendingLogout } from './swSession';
 import { userKey } from './userKey';
 
 function installWorker({ reply = { ok: true } } = {}) {
@@ -30,6 +34,8 @@ describe('swSession', () => {
     beforeEach(() => {
         resetSwSessionForTests();
         Object.values(offline).forEach(fn => fn.mockReset().mockResolvedValue(undefined));
+        offline.countLegacyPendingChanges.mockResolvedValue(0);
+        offline.getPendingCount.mockResolvedValue(0);
         localStorage.clear();
     });
 
@@ -61,7 +67,7 @@ describe('swSession', () => {
         expect(JSON.stringify(localStorage)).not.toContain('user-a');
     });
 
-    it('al entrar otro usuario borra descargas y cambios ajenos', async () => {
+    it('al entrar otro usuario borra descargas y oculta (no adopta) los cambios ajenos', async () => {
         installWorker();
         localStorage.setItem('electoral:offline-user', await userKey('user-a'));
 
@@ -70,7 +76,7 @@ describe('swSession', () => {
 
         const keyB = await userKey('user-b');
         expect(offline.clearDownloadedData).toHaveBeenCalledTimes(1);
-        expect(offline.discardForeignPendingChanges).toHaveBeenCalledWith(keyB, { adoptLegacy: false });
+        expect(offline.reconcilePendingChanges).toHaveBeenCalledWith(keyB, { adoptLegacy: false });
         expect(localStorage.getItem('electoral:offline-user')).toBe(keyB);
     });
 
@@ -82,7 +88,67 @@ describe('swSession', () => {
         await flush();
 
         expect(offline.clearDownloadedData).not.toHaveBeenCalled();
-        expect(offline.discardForeignPendingChanges).toHaveBeenCalledWith(await userKey('user-a'), { adoptLegacy: true });
+        expect(offline.reconcilePendingChanges).toHaveBeenCalledWith(await userKey('user-a'), { adoptLegacy: true });
+    });
+
+    it('sin marca previa y con cambios sin dueño pregunta si son suyos', async () => {
+        installWorker();
+        offline.countLegacyPendingChanges.mockResolvedValue(2);
+        const ask = vi.fn(() => false);
+
+        await syncServiceWorkerSession({ id: 'user-a' }, { confirm: ask });
+        await flush();
+
+        expect(ask).toHaveBeenCalledWith(expect.stringContaining('Hay 2 cambio(s) guardado(s) antes en este equipo'));
+        expect(offline.reconcilePendingChanges).toHaveBeenCalledWith(await userKey('user-a'), { adoptLegacy: false });
+
+        resetSwSessionForTests();
+        localStorage.clear();
+        await syncServiceWorkerSession({ id: 'user-a' }, { confirm: () => true });
+        await flush();
+        expect(offline.reconcilePendingChanges).toHaveBeenLastCalledWith(await userKey('user-a'), { adoptLegacy: true });
+    });
+
+    it('cuando el dueño vuelve a entrar con red sincroniza su cola recuperada', async () => {
+        installWorker();
+        offline.getPendingCount.mockResolvedValue(1);
+
+        await syncServiceWorkerSession({ id: 'user-a' }, { confirm: () => false });
+        await flush();
+
+        expect(offline.reconcilePendingChanges).toHaveBeenCalled();
+        expect(offline.syncPendingChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('sin cambios sin dueño no pregunta nada', async () => {
+        installWorker();
+        const ask = vi.fn(() => true);
+
+        await syncServiceWorkerSession({ id: 'user-a' }, { confirm: ask });
+        await flush();
+
+        expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('una página de un usuario con logout pendiente no lo vuelve a registrar', async () => {
+        const worker = installWorker();
+        writePendingLogout(await userKey('user-a'));
+
+        await syncServiceWorkerSession({ id: 'user-a' });
+        await flush();
+
+        expect(worker.postMessage).not.toHaveBeenCalled();
+        expect(offline.setOfflineOwner).not.toHaveBeenCalled();
+        expect(localStorage.getItem('electoral:offline-user')).toBeNull();
+    });
+
+    it('una página sin sesión borra la marca de logout pendiente', async () => {
+        installWorker();
+        writePendingLogout('k');
+
+        await syncServiceWorkerSession(null);
+
+        expect(localStorage.getItem('electoral:pending-logout')).toBeNull();
     });
 
     it('si falla el borrado conserva la marca del usuario anterior para reintentar', async () => {
@@ -113,8 +179,9 @@ describe('swSession', () => {
         expect(worker.postMessage).toHaveBeenCalledTimes(1);
     });
 
-    it('al cerrar sesión purga el SW, las descargas y la cola', async () => {
+    it('al cerrar sesión purga el SW, las descargas y la cola del propio usuario', async () => {
         const worker = installWorker();
+        offline.getOfflineOwnerKey.mockResolvedValue('owner-key');
         localStorage.setItem('electoral:offline-user', 'x');
 
         await clearUserOfflineState();
@@ -122,7 +189,7 @@ describe('swSession', () => {
         expect(worker.postMessage.mock.calls[0][0]).toEqual({ type: 'LOGOUT' });
         expect(offline.setOfflineOwner).toHaveBeenCalledWith(null);
         expect(offline.clearDownloadedData).toHaveBeenCalledTimes(1);
-        expect(offline.clearPendingChanges).toHaveBeenCalledTimes(1);
+        expect(offline.clearPendingChanges).toHaveBeenCalledWith('owner-key');
         expect(localStorage.getItem('electoral:offline-user')).toBeNull();
     });
 

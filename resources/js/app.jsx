@@ -2,8 +2,9 @@ import '../css/app.css';
 import 'leaflet/dist/leaflet.css';
 import { createInertiaApp, router } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
-import { syncServiceWorkerSession } from './lib/swSession';
-import { handleLogoutNetworkError, resumePendingLogout } from './lib/logout';
+import { isLogoutPendingFor, readPendingLogout, syncServiceWorkerSession } from './lib/swSession';
+import { finishPendingLogout, handleLogoutNetworkError, resetPendingLogoutAttempts } from './lib/logout';
+import { FullScreenSpinner } from './Components/Spinner';
 
 let currentUser = null;
 
@@ -38,7 +39,6 @@ function showOfflineToast() {
 router.on('navigate', (event) => {
     currentUser = event.detail.page.props.auth?.user ?? null;
     syncServiceWorkerSession(currentUser);
-    resumePendingLogout(currentUser);
 });
 
 // Inertia v3: "networkError" fires when XHR fails (e.g. offline)
@@ -74,9 +74,23 @@ createInertiaApp({
     },
     setup({ el, App, props }) {
         currentUser = props.initialPage.props.auth?.user ?? null;
-        syncServiceWorkerSession(currentUser);
-        resumePendingLogout(currentUser);
-        createRoot(el).render(<App {...props} />);
+        const root = createRoot(el);
+        const mount = () => {
+            syncServiceWorkerSession(currentUser);
+            root.render(<App {...props} />);
+        };
+
+        if (!currentUser) resetPendingLogoutAttempts();
+        if (!currentUser || !readPendingLogout()) {
+            mount();
+            return;
+        }
+
+        // This user already logged out on this device: never show their pages, finish the logout instead.
+        root.render(<FullScreenSpinner message="Cerrando sesión..." />);
+        isLogoutPendingFor(currentUser)
+            .then(pending => (pending ? finishPendingLogout() : false))
+            .then(handled => { if (!handled) mount(); });
     },
     progress: false,
 });

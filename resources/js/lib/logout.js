@@ -1,45 +1,34 @@
 import { router } from '@inertiajs/react';
 import { getPendingCount, syncPendingChanges } from './offlineDb';
-import { clearUserOfflineState } from './swSession';
+import { clearUserOfflineState, writePendingLogout } from './swSession';
 import { userKey } from './userKey';
-
-// Set before every logout attempt and removed by the first page without a session. If the server
-// never got the logout (no network), the next online page of that same user retries it.
-const PENDING_LOGOUT_KEY = 'electoral:pending-logout';
 
 export const OFFLINE_LOGOUT_MESSAGE = 'No se pudo cerrar la sesión en el servidor porque no hay conexión. '
     + 'Los datos guardados en este equipo ya se borraron; conéctate para cerrarla (se cerrará sola al abrir la app con internet).';
 
-function readPendingLogout() {
-    try {
-        return localStorage.getItem(PENDING_LOGOUT_KEY);
-    } catch {
-        return null;
-    }
+function xsrfToken() {
+    const cookie = document.cookie.split('; ').find(c => c.startsWith('XSRF-TOKEN='));
+    return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
 }
-
-function writePendingLogout(key) {
-    try {
-        if (key) localStorage.setItem(PENDING_LOGOUT_KEY, key);
-        else localStorage.removeItem(PENDING_LOGOUT_KEY);
-    } catch {
-        // Blocked storage: the logout itself still runs, only the offline retry is lost.
-    }
-}
-
-let resuming = false;
 
 const defaults = {
     isOnline: () => navigator.onLine,
     confirm: (message) => window.confirm(message),
     alert: (message) => window.alert(message),
-    goTo: (url) => window.location.assign(url),
+    goTo: (url) => window.location.replace(url),
     post: () => router.post('/logout'),
+    clearHistory: () => router.clearHistory(),
+    serverLogout: () => fetch('/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        redirect: 'manual',
+        headers: { 'X-XSRF-TOKEN': xsrfToken(), 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' },
+    }),
 };
 
 // Returns false when the user cancels because of unsynced changes.
 export async function logout(user, deps = {}) {
-    const { isOnline, confirm, alert, goTo, post } = { ...defaults, ...deps };
+    const { isOnline, confirm, alert, goTo, post, clearHistory } = { ...defaults, ...deps };
 
     let pending = await getPendingCount().catch(() => 0);
     if (pending > 0 && isOnline()) {
@@ -54,6 +43,7 @@ export async function logout(user, deps = {}) {
     await clearUserOfflineState();
 
     if (!isOnline()) {
+        clearHistory();
         alert(OFFLINE_LOGOUT_MESSAGE);
         goTo('/login');
         return true;
@@ -63,35 +53,54 @@ export async function logout(user, deps = {}) {
     return true;
 }
 
-// Called on every Inertia navigation.
-export async function resumePendingLogout(user, deps = {}) {
-    const { isOnline, post } = { ...defaults, ...deps };
-    const pendingFor = readPendingLogout();
-    if (!pendingFor) return false;
+const ATTEMPTS_KEY = 'electoral:pending-logout-attempts';
 
-    if (!user) {
-        writePendingLogout(null);
-        return false;
-    }
-    if (pendingFor !== (await userKey(user.id))) {
-        writePendingLogout(null);
-        return false;
-    }
-    if (!isOnline() || resuming) return false;
-
-    resuming = true;
+export function resetPendingLogoutAttempts() {
     try {
-        await clearUserOfflineState();
-        post();
-    } finally {
-        resuming = false;
+        sessionStorage.removeItem(ATTEMPTS_KEY);
+    } catch {
+        // Blocked storage: the counter just starts over.
     }
+}
+
+function bumpAttempts() {
+    try {
+        const n = Number(sessionStorage.getItem(ATTEMPTS_KEY) || 0) + 1;
+        sessionStorage.setItem(ATTEMPTS_KEY, String(n));
+        return n;
+    } catch {
+        return 1;
+    }
+}
+
+// Used instead of mounting the app when the page belongs to a user whose logout is still pending.
+// With network the server session is closed right away; without it the user lands on the offline
+// page and the next online page retries. Returns false (mount the app) after 2 failed attempts in
+// this tab, so a server that keeps rejecting the logout cannot cause a redirect loop.
+export async function finishPendingLogout(deps = {}) {
+    const { isOnline, goTo, serverLogout } = { ...defaults, ...deps };
+
+    if (bumpAttempts() > 2) {
+        writePendingLogout(null);
+        return false;
+    }
+
+    await clearUserOfflineState();
+    if (isOnline()) {
+        try {
+            await serverLogout();
+        } catch {
+            // Server unreachable: the mark stays, the next online page retries.
+        }
+    }
+    goTo('/login');
     return true;
 }
 
 // A logout POST that never reached the server: keep the local purge and leave the page.
 export function handleLogoutNetworkError(deps = {}) {
-    const { alert, goTo } = { ...defaults, ...deps };
+    const { alert, goTo, clearHistory } = { ...defaults, ...deps };
+    clearHistory();
     alert(OFFLINE_LOGOUT_MESSAGE);
     goTo('/login');
 }

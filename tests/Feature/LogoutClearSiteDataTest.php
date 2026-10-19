@@ -71,6 +71,25 @@ class LogoutClearSiteDataTest extends TestCase
         $this->assertTrue($login['encryptHistory'] ?? false);
     }
 
+    public function test_authenticated_pages_are_never_stored_by_the_browser(): void
+    {
+        $html = $this->actingAs($this->user)->get('/perfil');
+        $this->assertStringContainsString('no-store', $html->headers->get('Cache-Control'));
+
+        $version = (string) ($html->viewData('page')['version'] ?? '');
+        $inertia = $this->get('/perfil', ['X-Inertia' => 'true', 'X-Inertia-Version' => $version, 'X-Requested-With' => 'XMLHttpRequest']);
+        $inertia->assertOk()->assertHeader('X-Inertia', 'true');
+        $this->assertStringContainsString('no-store', $inertia->headers->get('Cache-Control'));
+    }
+
+    public function test_guest_pages_keep_the_default_cache_policy(): void
+    {
+        $response = $this->get('/login');
+
+        $response->assertOk();
+        $this->assertStringNotContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+    }
+
     public function test_guest_logout_is_rejected_before_reaching_the_controller(): void
     {
         $response = $this->post('/logout');

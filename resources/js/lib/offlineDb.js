@@ -215,6 +215,10 @@ export function setOfflineOwner(key) {
     ownerKey = Promise.resolve(key).then(value => value || null);
 }
 
+export function getOfflineOwnerKey() {
+    return ownerKey;
+}
+
 export async function addPendingChange(type, action, data) {
     const owner = await ownerKey;
     if (!owner) throw new Error('No hay una sesión activa para guardar cambios sin conexión.');
@@ -241,23 +245,46 @@ export async function getPendingCount() {
     return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner).count();
 }
 
-// Deletes every change that does not belong to `owner`. Changes saved before owners existed are
-// adopted only when `adoptLegacy` is true (the device's last user is this same account).
-export async function discardForeignPendingChanges(owner, { adoptLegacy = false } = {}) {
-    const all = await db.pendingChanges.toArray();
-    const foreign = all.filter(c => c.owner ? c.owner !== owner : !adoptLegacy).map(c => c.id);
-    const legacy = adoptLegacy ? all.filter(c => !c.owner).map(c => c.id) : [];
+// Changes of other accounts (or saved before owners existed and not claimed) are kept hidden for
+// FOREIGN_RETENTION_MS from the moment they were hidden, then deleted. They are never listed, counted
+// or sent while hidden; when their owner logs in again on this device they become visible and sync.
+export const FOREIGN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-    await db.transaction('rw', db.pendingChanges, async () => {
-        if (foreign.length) await db.pendingChanges.bulkDelete(foreign);
-        for (const id of legacy) await db.pendingChanges.update(id, { owner });
-    });
-
-    return { discarded: foreign.length, adopted: legacy.length };
+export async function countLegacyPendingChanges() {
+    return db.pendingChanges.filter(c => !c.owner && !c.hiddenSince && c.synced === 0).count();
 }
 
-export async function clearPendingChanges() {
-    await db.pendingChanges.clear();
+export async function reconcilePendingChanges(owner, { adoptLegacy = false, now = Date.now() } = {}) {
+    const result = { adopted: 0, restored: 0, hidden: 0, expired: 0 };
+    const all = await db.pendingChanges.toArray();
+
+    await db.transaction('rw', db.pendingChanges, async () => {
+        for (const change of all) {
+            if (change.owner && change.owner === owner) {
+                if (change.hiddenSince) {
+                    await db.pendingChanges.update(change.id, { hiddenSince: undefined });
+                    result.restored++;
+                }
+            } else if (!change.owner && !change.hiddenSince && adoptLegacy) {
+                await db.pendingChanges.update(change.id, { owner });
+                result.adopted++;
+            } else if (!change.hiddenSince) {
+                await db.pendingChanges.update(change.id, { hiddenSince: new Date(now).toISOString() });
+                result.hidden++;
+            } else if (now - Date.parse(change.hiddenSince) > FOREIGN_RETENTION_MS) {
+                await db.pendingChanges.delete(change.id);
+                result.expired++;
+            }
+        }
+    });
+
+    return result;
+}
+
+// Removes the given owner's queue (logout after the user accepted to discard it).
+export async function clearPendingChanges(owner) {
+    if (!owner) return;
+    await db.pendingChanges.filter(c => c.owner === owner).delete();
 }
 
 export async function markSynced(id) {
@@ -266,7 +293,17 @@ export async function markSynced(id) {
 
 // ─── Sync Engine ───
 
-export async function syncPendingChanges() {
+// Callers (auto-sync, manual button, login of the owner) share one run, so a change is never sent twice.
+let syncInFlight = null;
+
+export function syncPendingChanges() {
+    if (!syncInFlight) {
+        syncInFlight = runSync().finally(() => { syncInFlight = null; });
+    }
+    return syncInFlight;
+}
+
+async function runSync() {
     const owner = await ownerKey;
     const pending = await getPendingChanges();
     if (pending.length === 0) return { synced: 0, failed: 0 };

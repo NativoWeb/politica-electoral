@@ -19,12 +19,22 @@ class HandleInertiaRequests extends Middleware
      */
     protected $rootView = 'app';
 
-    // Page props carry personal data: keep them encrypted in history.state so they die with the session.
+    // Page props carry personal data: keep them encrypted in history.state so they die with the session,
+    // and keep authenticated pages out of the HTTP cache / bfcache so Back cannot replay them after logout.
+    // The service worker keeps its own offline copies in Cache Storage, which ignores these headers.
     public function handle(Request $request, Closure $next)
     {
         Inertia::encryptHistory();
 
-        return parent::handle($request, $next);
+        $response = parent::handle($request, $next);
+
+        $isPage = $response->headers->has('X-Inertia')
+            || str_contains((string) $response->headers->get('Content-Type'), 'text/html');
+        if ($request->user() && $isPage) {
+            $response->headers->set('Cache-Control', 'no-store, private');
+        }
+
+        return $response;
     }
 
     /**
