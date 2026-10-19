@@ -53,8 +53,17 @@ class HandleInertiaRequests extends Middleware
                     'territoryScope' => $user->territory_scope,
                     'permissions' => $permissions,
                     'canWrite' => in_array('*', $permissions) || in_array('write.data', $permissions),
+                    // Only the last 4 digits travel in the shared props; the full number stays server side.
+                    'whatsapp' => [
+                        'linked' => $user->whatsapp_phone !== null && $user->whatsapp_verified_at !== null,
+                        'phoneLast4' => $user->whatsapp_phone ? substr($user->whatsapp_phone, -4) : null,
+                        'verifiedAt' => $user->whatsapp_verified_at?->toIso8601String(),
+                    ],
                 ] : null,
             ],
+            'agent' => $user ? [
+                'whatsappNumber' => (string) config('agent.whatsapp_number', ''),
+            ] : null,
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

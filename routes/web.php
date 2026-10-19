@@ -28,6 +28,7 @@ use App\Http\Controllers\WhatsAppLinkController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // Auth routes (guest only)
 Route::get('/login', [LoginController::class, 'showLogin'])->name('login')->middleware('guest');
@@ -126,6 +127,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         return back()->with('success', 'Contraseña actualizada');
     })->name('password.update');
+
+    Route::get('/perfil', fn () => Inertia::render('Perfil'))->name('perfil');
 
     // WhatsApp agent linking (the one-time code is returned once, as JSON)
     Route::post('/perfil/whatsapp/codigo', [WhatsAppLinkController::class, 'store'])

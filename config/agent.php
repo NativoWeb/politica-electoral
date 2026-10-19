@@ -5,6 +5,9 @@ return [
     // Shared secret with the WhatsApp agent service. Empty means every /api/agent request is rejected.
     'hmac_secret' => env('AGENT_HMAC_SECRET', ''),
 
+    // Public WhatsApp number of the assistant (E.164) users write to when linking their phone.
+    'whatsapp_number' => env('AGENT_WHATSAPP_NUMBER', ''),
+
     'max_clock_skew' => 300,
 
     'nonce_ttl' => 600,

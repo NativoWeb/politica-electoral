@@ -450,6 +450,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     <p className="text-[12px] font-semibold text-[var(--color-ink)] truncate">{auth?.name}</p>
                                     <p className="text-[10px] text-[var(--color-ink-faint)] truncate">{auth?.email}</p>
                                 </div>
+                                <Link href="/perfil" className="block w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors border-b border-gray-100">
+                                    Mi perfil y WhatsApp
+                                </Link>
                                 <button onClick={() => setShowPasswordModal(true)} className="w-full text-left px-4 py-2.5 text-[12px] text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors border-b border-gray-100">
                                     Cambiar contraseña
                                 </button>
@@ -504,6 +507,10 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             <p className="text-[13px] text-[var(--color-ink-faint)]">{auth?.email}</p>
                         </div>
                         <div className="px-4 pb-6 space-y-2">
+                            <Link href="/perfil" onClick={() => setMobileUserMenu(false)} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-gray-100 transition-colors">
+                                <svg className="w-6 h-6 text-[#128C4A]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0a12 12 0 0 0-10.4 18L0 24l6.2-1.6A12 12 0 1 0 12 0Zm0 21.8a9.8 9.8 0 0 1-5-1.4l-.4-.2-3.7 1 1-3.7-.2-.4A9.8 9.8 0 1 1 12 21.8Z" /></svg>
+                                <span className="text-[16px] font-semibold text-[var(--color-ink)]">Mi perfil y WhatsApp</span>
+                            </Link>
                             <button onClick={() => { setMobileUserMenu(false); setShowPasswordModal(true); }} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-gray-100 transition-colors">
                                 <svg className="w-6 h-6 text-[var(--color-ink-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                                 <span className="text-[16px] font-semibold text-[var(--color-ink)]">Cambiar contraseña</span>
