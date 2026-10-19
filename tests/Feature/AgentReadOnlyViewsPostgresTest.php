@@ -10,7 +10,8 @@ use Tests\TestCase;
 
 // Opt-in checks of schema agent_ro on a LOCAL database (the views only exist on PostgreSQL):
 // RUN_PGSQL_TESTS=1 DB_CONNECTION=pgsql DB_DATABASE=politica_electoral php artisan test --filter=AgentReadOnlyViewsPostgresTest
-// A throw-away role gets the same grants as deploy/sql/agent_ro_role.sql; role and data are rolled back.
+// A throw-away role gets the grants of deploy/sql/agent_ro_role.sql (its plain SQL statements are replayed);
+// role, grants and data are rolled back. Checks run WITHOUT forcing read-only: only the role's privileges count.
 class AgentReadOnlyViewsPostgresTest extends TestCase
 {
     use DatabaseTransactions;
@@ -27,15 +28,37 @@ class AgentReadOnlyViewsPostgresTest extends TestCase
 
         $this->role = 'agent_ro_test_'.Str::lower(Str::random(8));
         DB::statement("CREATE ROLE {$this->role} NOLOGIN");
-        DB::statement("GRANT USAGE ON SCHEMA agent_ro TO {$this->role}");
-        DB::statement("GRANT SELECT ON ALL TABLES IN SCHEMA agent_ro TO {$this->role}");
+        foreach ($this->roleScriptStatements() as $sql) {
+            DB::statement($sql);
+        }
+    }
+
+    // Plain statements of the deploy script; psql meta-commands and \if blocks (password handling) are skipped.
+    private function roleScriptStatements(): array
+    {
+        $statements = [];
+        $depth = 0;
+        foreach (file(base_path('deploy/sql/agent_ro_role.sql'), FILE_IGNORE_NEW_LINES) as $line) {
+            $line = trim($line);
+            if (str_starts_with($line, '\if')) {
+                $depth++;
+            } elseif (str_starts_with($line, '\endif')) {
+                $depth--;
+            } elseif ($depth === 0 && $line !== '' && ! str_starts_with($line, '--') && ! str_starts_with($line, chr(92))
+                && ! str_contains($line, '\gset')) {
+                $line = str_replace(':"DBNAME"', '"'.DB::connection()->getDatabaseName().'"', $line);
+                $statements[] = preg_replace('/\b(ROLE|TO|FROM)\s+agent_ro\b/', '$1 '.$this->role, rtrim($line, ';'));
+            }
+        }
+        $this->assertNotEmpty($statements);
+
+        return $statements;
     }
 
     private function asRole(callable $fn): mixed
     {
         DB::statement('SAVEPOINT agent_ro_check');
         DB::statement("SET LOCAL ROLE {$this->role}");
-        DB::statement('SET LOCAL transaction_read_only = on');
         try {
             return $fn();
         } finally {
@@ -79,12 +102,26 @@ class AgentReadOnlyViewsPostgresTest extends TestCase
         }
     }
 
-    public function test_writes_through_views_fail(): void
+    public function test_role_cannot_write_or_create_anything_even_in_a_read_write_transaction(): void
     {
         $this->assertDenied(
             "insert into agent_ro.v_lider_info_politica (id, lider_id) values ('".Str::uuid()."', '".Str::uuid()."')",
-            'read-only transaction'
+            'permission denied for view'
         );
+        $this->assertDenied('create temp table agent_tmp (i int)', 'permission denied to create temporary tables');
+        $this->assertDenied('create function pg_temp.agent_fn() returns int language sql as $$ select 1 $$', 'permission denied to create temporary tables');
+        $this->assertDenied('create table public.agent_x (i int)', 'permission denied for schema public');
+        $this->assertDenied('create table agent_ro.agent_x (i int)', 'permission denied for schema agent_ro');
+    }
+
+    public function test_script_keeps_temporary_for_the_app_user_only(): void
+    {
+        $db = DB::connection()->getDatabaseName();
+        $temp = fn (string $role) => DB::selectOne('select has_database_privilege(?, ?, ?) as ok', [$role, $db, 'TEMPORARY'])->ok;
+
+        $this->assertTrue($temp(DB::selectOne('select current_user as u')->u));
+        $this->assertFalse($temp($this->role));
+        $this->assertFalse($temp('public'));
     }
 
     public function test_sensitive_columns_are_not_exposed(): void

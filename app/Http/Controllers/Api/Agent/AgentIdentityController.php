@@ -13,21 +13,34 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AgentIdentityController extends Controller
 {
+    private const GLOBAL_FAIL_KEY = 'agent_link_fail:global';
+
     public function __construct(private readonly AgentIdentityService $identity) {}
 
     public function link(AgentLinkRequest $request): JsonResponse
     {
         $phone = $request->validated('phone');
         $hash = WhatsAppLinkCode::hashCode($request->validated('code'));
+        $phoneHash = WhatsAppLinkCode::hashPhone($phone);
         $failKey = 'agent_link_fail:'.hash('sha256', $phone);
         $maxFailures = (int) config('agent.link_max_failed_attempts', 5);
 
+        if ((int) Cache::get(self::GLOBAL_FAIL_KEY, 0) > (int) config('agent.link_global_max_failures', 100)) {
+            return response()->json(['success' => false, 'message' => 'Demasiados intentos. Intenta más tarde.'], 429);
+        }
+
         try {
-            return DB::transaction(function () use ($phone, $hash, $failKey, $maxFailures) {
-                $link = WhatsAppLinkCode::active()->where('code_hash', $hash)->lockForUpdate()->first();
+            return DB::transaction(function () use ($phone, $hash, $phoneHash, $failKey, $maxFailures) {
+                // A right code sent from a phone other than the one declared on the web is a failure.
+                $link = WhatsAppLinkCode::active()
+                    ->where('code_hash', $hash)
+                    ->where('phone_hash', $phoneHash)
+                    ->lockForUpdate()
+                    ->first();
 
                 if ($link && (int) Cache::get($failKey, 0) > $maxFailures) {
                     // A phone that already failed too often burns the code it finally hits.
@@ -37,7 +50,7 @@ class AgentIdentityController extends Controller
                 }
 
                 if (! $link) {
-                    $this->registerFailure($failKey, $hash);
+                    $this->registerFailure($failKey);
 
                     return $this->invalidCode();
                 }
@@ -48,11 +61,13 @@ class AgentIdentityController extends Controller
                 }
 
                 if (User::where('whatsapp_phone', $phone)->whereKeyNot($user->id)->exists()) {
-                    return response()->json(['success' => false, 'message' => 'El número ya está vinculado a otro usuario.'], 409);
+                    $this->registerFailure($failKey);
+
+                    return $this->phoneTaken();
                 }
 
                 if ($user->whatsapp_phone !== null && $user->whatsapp_phone !== $phone) {
-                    $user->tokens()->delete();
+                    $user->tokens()->where('name', AgentIdentityService::TOKEN_NAME)->delete();
                 }
 
                 $user->forceFill(['whatsapp_phone' => $phone, 'whatsapp_verified_at' => now()])->save();
@@ -62,7 +77,9 @@ class AgentIdentityController extends Controller
                 return response()->json(['success' => true, 'user_id' => $user->id, 'name' => $user->name]);
             });
         } catch (UniqueConstraintViolationException) {
-            return response()->json(['success' => false, 'message' => 'El número ya está vinculado a otro usuario.'], 409);
+            $this->registerFailure($failKey);
+
+            return $this->phoneTaken();
         }
     }
 
@@ -84,10 +101,10 @@ class AgentIdentityController extends Controller
             return $this->notFound();
         }
 
-        $user->tokens()->where('name', 'whatsapp-agent')->where('expires_at', '<=', now())->delete();
+        $user->tokens()->where('name', AgentIdentityService::TOKEN_NAME)->where('expires_at', '<=', now())->delete();
 
         $expiresAt = now()->addMinutes((int) config('agent.token_ttl_minutes', 15));
-        $token = $user->createToken('whatsapp-agent', ['agent'], $expiresAt);
+        $token = $user->createToken(AgentIdentityService::TOKEN_NAME, ['agent'], $expiresAt);
 
         return response()->json([
             'success' => true,
@@ -98,23 +115,27 @@ class AgentIdentityController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user()->loadMissing('role');
-
-        if (! $this->identity->isEligible($user)) {
-            $user->currentAccessToken()?->delete();
-
-            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
-        }
-
-        return response()->json(['success' => true, ...$this->identity->profile($user)]);
+        return response()->json(['success' => true, ...$this->identity->profile($request->user())]);
     }
 
-    private function registerFailure(string $failKey, string $hash): void
+    // Counts per phone (lockout of that phone) and globally (lockout of /link for everyone).
+    private function registerFailure(string $failKey): void
     {
-        Cache::add($failKey, 0, now()->addMinutes((int) config('agent.link_code_ttl_minutes', 10)));
+        $window = now()->addMinutes((int) config('agent.link_code_ttl_minutes', 10));
+
+        Cache::add($failKey, 0, $window);
         Cache::increment($failKey);
 
-        WhatsAppLinkCode::where('code_hash', $hash)->increment('attempts');
+        Cache::add(self::GLOBAL_FAIL_KEY, 0, $window);
+        $global = (int) Cache::increment(self::GLOBAL_FAIL_KEY);
+        if ($global === (int) config('agent.link_global_max_failures', 100) + 1) {
+            Log::warning('Agent /link failure threshold exceeded; linking paused for all phones.', ['failures' => $global]);
+        }
+    }
+
+    private function phoneTaken(): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => 'El número ya está vinculado a otro usuario.'], 409);
     }
 
     private function invalidCode(): JsonResponse

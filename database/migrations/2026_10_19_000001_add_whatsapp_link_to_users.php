@@ -17,6 +17,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->uuid('user_id');
             $table->string('code_hash', 64)->index();
+            $table->string('phone_hash', 64);
             $table->timestamp('expires_at');
             $table->timestamp('used_at')->nullable();
             $table->unsignedSmallInteger('attempts')->default(0);

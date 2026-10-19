@@ -13,9 +13,9 @@ class WhatsAppLinkCode extends Model
 
     protected $table = 'whatsapp_link_codes';
 
-    protected $fillable = ['user_id', 'code_hash', 'expires_at', 'used_at', 'attempts'];
+    protected $fillable = ['user_id', 'code_hash', 'phone_hash', 'expires_at', 'used_at', 'attempts'];
 
-    protected $hidden = ['code_hash'];
+    protected $hidden = ['code_hash', 'phone_hash'];
 
     protected function casts(): array
     {
@@ -30,6 +30,12 @@ class WhatsAppLinkCode extends Model
     public static function hashCode(string $code): string
     {
         return hash_hmac('sha256', 'whatsapp-link:'.$code, (string) config('app.key'));
+    }
+
+    // The code only links the phone the user declared when generating it.
+    public static function hashPhone(string $phone): string
+    {
+        return hash_hmac('sha256', 'whatsapp-phone:'.$phone, (string) config('app.key'));
     }
 
     public function scopeActive(Builder $query): Builder

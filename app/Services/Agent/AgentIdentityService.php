@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 
 class AgentIdentityService
 {
+    public const TOKEN_NAME = 'whatsapp-agent';
+
     public const PHONE_REGEX = '/^\+[1-9]\d{7,14}$/';
 
     // A '+' sent unencoded in a query string arrives as a space; restore it before matching.

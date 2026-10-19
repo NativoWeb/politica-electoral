@@ -2,19 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\WhatsAppLinkCodeRequest;
 use App\Models\WhatsAppLinkCode;
+use App\Services\Agent\AgentIdentityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class WhatsAppLinkController extends Controller
 {
-    public function store(Request $request): JsonResponse
+    public function store(WhatsAppLinkCodeRequest $request): JsonResponse
     {
         $user = $request->user();
         $ttl = (int) config('agent.link_code_ttl_minutes', 10);
+        $phoneHash = WhatsAppLinkCode::hashPhone($request->validated('phone'));
 
-        [$code, $link] = DB::transaction(function () use ($user, $ttl) {
+        [$code, $link] = DB::transaction(function () use ($user, $ttl, $phoneHash) {
             WhatsAppLinkCode::active()->where('user_id', $user->id)->update(['expires_at' => now()]);
 
             do {
@@ -25,6 +28,7 @@ class WhatsAppLinkController extends Controller
             $link = WhatsAppLinkCode::create([
                 'user_id' => $user->id,
                 'code_hash' => $hash,
+                'phone_hash' => $phoneHash,
                 'expires_at' => now()->addMinutes($ttl),
             ]);
 
@@ -44,7 +48,7 @@ class WhatsAppLinkController extends Controller
 
         DB::transaction(function () use ($user) {
             $user->forceFill(['whatsapp_phone' => null, 'whatsapp_verified_at' => null])->save();
-            $user->tokens()->delete();
+            $user->tokens()->where('name', AgentIdentityService::TOKEN_NAME)->delete();
             WhatsAppLinkCode::active()->where('user_id', $user->id)->update(['expires_at' => now()]);
         });
 

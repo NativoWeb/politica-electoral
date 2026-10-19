@@ -15,4 +15,7 @@ return [
 
     'link_max_failed_attempts' => 5,
 
+    // Failed /link attempts across all phones within the code window before /link answers 429 to everyone.
+    'link_global_max_failures' => 100,
+
 ];

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 // They do NOT apply territory_scope: the agent must filter with the user's whoami territory.
 return new class extends Migration
 {
+    private const FILTERED_VIEWS = ['v_persons'];
+
     public function up(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
@@ -17,7 +19,9 @@ return new class extends Migration
         DB::statement('CREATE SCHEMA IF NOT EXISTS agent_ro');
 
         foreach ($this->views() as $name => $sql) {
-            DB::statement("CREATE OR REPLACE VIEW agent_ro.{$name} AS {$sql}");
+            // security_barrier keeps the WHERE filter from being bypassed with leaky functions.
+            $options = in_array($name, self::FILTERED_VIEWS, true) ? ' WITH (security_barrier = true)' : '';
+            DB::statement("CREATE OR REPLACE VIEW agent_ro.{$name}{$options} AS {$sql}");
         }
     }
 

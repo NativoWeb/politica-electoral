@@ -5,9 +5,14 @@ namespace Tests\Feature;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\WhatsAppLinkCode;
+use App\Services\Agent\AgentIdentityService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -84,6 +89,17 @@ class AgentIdentityTest extends TestCase
             $t->timestamps();
         });
 
+        Schema::create('cache', function (Blueprint $t) {
+            $t->string('key')->primary();
+            $t->mediumText('value');
+            $t->integer('expiration');
+        });
+        Schema::create('cache_locks', function (Blueprint $t) {
+            $t->string('key')->primary();
+            $t->string('owner');
+            $t->integer('expiration');
+        });
+
         foreach (glob(database_path('migrations/2026_10_19_*.php')) as $file) {
             (require $file)->up();
         }
@@ -117,9 +133,9 @@ class AgentIdentityTest extends TestCase
         return $this->agent('GET', '/api/agent/v1/whoami?phone='.rawurlencode($phone));
     }
 
-    private function generateCode(User $user): string
+    private function generateCode(User $user, string $phone = self::PHONE): string
     {
-        return $this->actingAs($user)->postJson('/perfil/whatsapp/codigo')
+        return $this->actingAs($user)->postJson('/perfil/whatsapp/codigo', ['phone' => $phone])
             ->assertOk()
             ->assertHeader('Cache-Control', 'no-store, private')
             ->json('code');
@@ -240,6 +256,19 @@ class AgentIdentityTest extends TestCase
 
         $this->link($this->generateCode($this->otro))->assertStatus(409)->assertJson(['success' => false]);
         $this->assertNull($this->otro->refresh()->whatsapp_phone);
+        $this->assertSame(1, Cache::get('agent_link_fail:'.hash('sha256', self::PHONE)), '409 counts as a failure of the phone');
+    }
+
+    public function test_right_code_from_another_phone_is_422_and_counts_as_failure(): void
+    {
+        $code = $this->generateCode($this->campo, self::PHONE);
+        $intruder = '+573110000000';
+
+        $this->link($code, $intruder)->assertStatus(422);
+        $this->assertSame(1, Cache::get('agent_link_fail:'.hash('sha256', $intruder)));
+        $this->assertNull($this->campo->refresh()->whatsapp_phone);
+
+        $this->link($code, self::PHONE)->assertOk();
     }
 
     public function test_link_validates_phone_and_code_format(): void
@@ -248,10 +277,87 @@ class AgentIdentityTest extends TestCase
         $this->link('123456', '3001234567')->assertStatus(422)->assertJsonValidationErrors('phone');
     }
 
-    public function test_generating_a_code_requires_login(): void
+    public function test_generating_a_code_requires_login_and_a_valid_phone(): void
     {
-        $this->postJson('/perfil/whatsapp/codigo')->assertUnauthorized();
+        $this->postJson('/perfil/whatsapp/codigo', ['phone' => self::PHONE])->assertUnauthorized();
         $this->deleteJson('/perfil/whatsapp')->assertUnauthorized();
+
+        $this->actingAs($this->campo)->postJson('/perfil/whatsapp/codigo')->assertStatus(422)->assertJsonValidationErrors('phone');
+        $this->actingAs($this->campo)->postJson('/perfil/whatsapp/codigo', ['phone' => '3001234567'])
+            ->assertStatus(422)->assertJsonValidationErrors('phone');
+        $this->assertSame(0, WhatsAppLinkCode::count());
+    }
+
+    public function test_global_failure_threshold_pauses_link_for_everyone(): void
+    {
+        config(['agent.link_global_max_failures' => 3]);
+        Log::spy();
+        $code = $this->generateCode($this->campo);
+
+        foreach (['+573110000001', '+573110000002', '+573110000003', '+573110000004'] as $phone) {
+            $this->link('000000', $phone)->assertStatus(422);
+        }
+
+        $this->link($code)->assertStatus(429)->assertJson(['success' => false]);
+        Log::shouldHaveReceived('warning')->once();
+        $this->assertNull($this->campo->refresh()->whatsapp_phone);
+    }
+
+    public function test_unsigned_bursts_do_not_consume_the_signed_quota(): void
+    {
+        $code = $this->generateCode($this->campo);
+
+        for ($i = 0; $i < 15; $i++) {
+            $this->withServerVariables(['HTTP_X_FORWARDED_FOR' => "10.0.0.{$i}"])
+                ->postJson('/api/agent/v1/link', ['phone' => self::PHONE, 'code' => '000000'])
+                ->assertUnauthorized();
+        }
+        $this->link($code)->assertOk();
+
+        for ($i = 0; $i < 301; $i++) {
+            $this->getJson('/api/agent/v1/whoami?phone=%2B573001234567')->assertUnauthorized();
+        }
+        $this->whoami()->assertOk();
+    }
+
+    public function test_forwarded_for_is_ignored_without_trusted_proxies(): void
+    {
+        Route::get('/_ip-probe', fn (Request $request) => $request->ip());
+
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1', 'HTTP_X_FORWARDED_FOR' => '203.0.113.9'])
+            ->get('/_ip-probe')->assertSee('127.0.0.1');
+
+        config(['trustedproxy.proxies' => '127.0.0.1']);
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1', 'HTTP_X_FORWARDED_FOR' => '203.0.113.9'])
+            ->get('/_ip-probe')->assertSee('203.0.113.9');
+    }
+
+    public function test_agent_token_does_not_open_any_other_route(): void
+    {
+        $user = $this->linkedCampo();
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->json('token');
+        $bearer = ['Authorization' => 'Bearer '.$token];
+
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/search?q=ana', $bearer)->assertUnauthorized();
+        $this->getJson('/api/comparar', $bearer)->assertUnauthorized();
+        $this->getJson('/api/offline/download/'.$this->munA, $bearer)->assertUnauthorized();
+        $this->get('/mapa-politico', $bearer)->assertRedirect('/login');
+        $this->assertGuest();
+        $this->assertSame(1, $user->tokens()->count());
+    }
+
+    public function test_cache_prune_command_deletes_only_expired_rows(): void
+    {
+        config(['cache.default' => 'database']);
+        DB::table('cache')->insert([
+            ['key' => 'old', 'value' => 'x', 'expiration' => now()->subMinute()->getTimestamp()],
+            ['key' => 'live', 'value' => 'x', 'expiration' => now()->addMinute()->getTimestamp()],
+        ]);
+
+        $this->artisan('cache:prune-expired')->assertSuccessful();
+
+        $this->assertSame(['live'], DB::table('cache')->pluck('key')->all());
     }
 
     public function test_whoami_returns_identity_for_linked_phone(): void
@@ -333,12 +439,35 @@ class AgentIdentityTest extends TestCase
         $user->forceFill(['is_active' => false])->save();
 
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
+        $this->assertSame(0, $user->tokens()->count(), 'agent.user deletes the token of an ineligible user');
+
+        $user->forceFill(['is_active' => true, 'must_change_password' => true])->save();
+        $token = $user->createToken(AgentIdentityService::TOKEN_NAME, ['agent'], now()->addMinutes(15))->plainTextToken;
+        $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
+    }
+
+    public function test_me_checks_the_signature_before_the_token(): void
+    {
+        $this->linkedCampo();
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->json('token');
+
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/agent/v1/me', ['Authorization' => 'Bearer '.$token])
+            ->assertUnauthorized()
+            ->assertExactJson(['success' => false, 'message' => 'Unauthorized.']);
+
+        // With a bogus token the answer still comes from the HMAC check, not from Sanctum.
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/agent/v1/me', ['Authorization' => 'Bearer 999|nope'])
+            ->assertUnauthorized()
+            ->assertExactJson(['success' => false, 'message' => 'Unauthorized.']);
     }
 
     public function test_unlink_makes_whoami_404_and_revokes_tokens(): void
     {
         $user = $this->linkedCampo();
         $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->json('token');
+        $user->createToken('otra-integracion', ['reports']);
 
         $this->actingAs($user)->deleteJson('/perfil/whatsapp')->assertOk()->assertJson(['success' => true]);
 
@@ -346,7 +475,7 @@ class AgentIdentityTest extends TestCase
         $this->assertNull($user->whatsapp_phone);
         $this->assertNull($user->whatsapp_verified_at);
         $this->whoami()->assertNotFound();
-        $this->assertSame(0, $user->tokens()->count());
+        $this->assertSame(['otra-integracion'], $user->tokens()->pluck('name')->all(), 'only agent tokens are revoked');
 
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
     }

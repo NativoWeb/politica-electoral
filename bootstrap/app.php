@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Middleware\AuditActivity;
+use App\Http\Middleware\EnsureAgentUserEligible;
 use App\Http\Middleware\EnsureCanWrite;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\VerifyAgentHmac;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,7 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->trustProxies(at: '*');
+        // Trusted proxies come from config/trustedproxy.php (env TRUSTED_PROXIES, empty = none).
+        // The agent signature is checked before any limiter or auth, so unsigned traffic consumes nothing.
+        $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: VerifyAgentHmac::class);
         $middleware->web(append: [
             HandleInertiaRequests::class,
         ]);
@@ -30,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => EnsureHasPermission::class,
             'audit' => AuditActivity::class,
             'agent.hmac' => VerifyAgentHmac::class,
+            'agent.user' => EnsureAgentUserEligible::class,
             'abilities' => CheckAbilities::class,
         ]);
     })

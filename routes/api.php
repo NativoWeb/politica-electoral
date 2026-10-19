@@ -17,5 +17,9 @@ Route::prefix('agent/v1')->middleware(['throttle:agent', 'agent.hmac'])->group(f
     Route::post('/link', [AgentIdentityController::class, 'link'])->middleware('throttle:agent-link');
     Route::get('/whoami', [AgentIdentityController::class, 'whoami']);
     Route::post('/token', [AgentIdentityController::class, 'token']);
-    Route::get('/me', [AgentIdentityController::class, 'me'])->middleware(['auth:sanctum', 'abilities:agent']);
+
+    // Acting-as-user routes (future write endpoints go here too): agent token + user still eligible.
+    Route::middleware(['auth:sanctum', 'abilities:agent', 'agent.user'])->group(function () {
+        Route::get('/me', [AgentIdentityController::class, 'me']);
+    });
 });
