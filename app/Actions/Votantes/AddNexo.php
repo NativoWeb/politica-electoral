@@ -3,6 +3,7 @@
 namespace App\Actions\Votantes;
 
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -19,17 +20,30 @@ class AddNexo
         $this->authorizePersonOrLider($personId);
     }
 
+    // An offline create carries the id generated on the device ($data['client_id']): sending it twice stores it once.
     public function handle(string $personId, array $data): string
     {
-        $id = (string) Str::uuid();
+        $id = $data['client_id'] ?? (string) Str::uuid();
+        unset($data['client_id']);
 
-        DB::table('nexos_familiares')->insert([
-            'id' => $id,
-            'person_id' => $personId,
-            ...$data,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $exists = fn () => DB::table('nexos_familiares')->where('id', $id)->exists();
+        if ($exists()) {
+            return $id;
+        }
+
+        try {
+            DB::table('nexos_familiares')->insert([
+                'id' => $id,
+                'person_id' => $personId,
+                ...$data,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            if (! $exists()) {
+                throw $e;
+            }
+        }
 
         return $id;
     }

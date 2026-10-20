@@ -53,6 +53,15 @@ export async function logout(user, deps = {}) {
     return true;
 }
 
+export const PENDING_LOGOUT_TIMEOUT_MS = 10000;
+
+// Resolves with `fallback` if `promise` has not settled after `ms` (a hung IndexedDB or fetch never blocks the user).
+export function withTimeout(promise, ms, fallback) {
+    let timer;
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 const ATTEMPTS_KEY = 'electoral:pending-logout-attempts';
 
 export function resetPendingLogoutAttempts() {
@@ -78,21 +87,24 @@ function bumpAttempts() {
 // page and the next online page retries. Returns false (mount the app) after 2 failed attempts in
 // this tab, so a server that keeps rejecting the logout cannot cause a redirect loop.
 export async function finishPendingLogout(deps = {}) {
-    const { isOnline, goTo, serverLogout } = { ...defaults, ...deps };
+    const { isOnline, goTo, serverLogout, timeoutMs = PENDING_LOGOUT_TIMEOUT_MS } = { ...defaults, ...deps };
 
     if (bumpAttempts() > 2) {
         writePendingLogout(null);
         return false;
     }
 
-    await clearUserOfflineState();
-    if (isOnline()) {
-        try {
-            await serverLogout();
-        } catch {
-            // Server unreachable: the mark stays, the next online page retries.
+    // After the timeout the user goes to the login anyway; the mark stays and the attempt counter prevents a loop.
+    await withTimeout((async () => {
+        await clearUserOfflineState();
+        if (isOnline()) {
+            try {
+                await serverLogout();
+            } catch {
+                // Server unreachable: the mark stays, the next online page retries.
+            }
         }
-    }
+    })(), timeoutMs);
     goTo('/login');
     return true;
 }

@@ -386,7 +386,8 @@ export async function offlineCreateLider(liderData) {
     const record = { ...liderData, id, _offline: true };
 
     await db.lideres.put(record);
-    await addPendingChange('lider', 'create', liderData);
+    // client_id becomes the server id: a create sent twice (two tabs, a retry) is only stored once.
+    await addPendingChange('lider', 'create', { ...liderData, client_id: id });
 
     return record;
 }
@@ -426,7 +427,7 @@ export async function offlineCreateNexo(personId, nexoData) {
     const record = { ...nexoData, id, personId, _offline: true };
 
     await db.nexos.put(record);
-    await addPendingChange('nexo', 'create', { ...nexoData, personId });
+    await addPendingChange('nexo', 'create', { ...nexoData, personId, client_id: id });
 
     return record;
 }

@@ -235,6 +235,36 @@ describe('offlineDb', () => {
 
             vi.unstubAllGlobals();
         });
+
+        it('encola el id del dispositivo como client_id para que el servidor no lo duplique', async () => {
+            const { db } = offlineDb;
+            const mockUUID = '550e8400-e29b-41d4-a716-446655440001';
+            vi.stubGlobal('crypto', { randomUUID: () => mockUUID });
+
+            await offlineDb.offlineCreateLider({ nombre: 'Pedro Gómez', municipio_id: 'mun-1' });
+
+            expect(db.pendingChanges.add).toHaveBeenCalledWith(expect.objectContaining({
+                type: 'lider',
+                action: 'create',
+                data: { nombre: 'Pedro Gómez', municipio_id: 'mun-1', client_id: mockUUID },
+            }));
+            vi.unstubAllGlobals();
+        });
+
+        it('el nexo creado sin internet también lleva su client_id', async () => {
+            const { db } = offlineDb;
+            const mockUUID = '550e8400-e29b-41d4-a716-446655440002';
+            vi.stubGlobal('crypto', { randomUUID: () => mockUUID });
+
+            await offlineDb.offlineCreateNexo('lid-9', { nombre: 'Ana', parentesco: 'Hija' });
+
+            expect(db.pendingChanges.add).toHaveBeenCalledWith(expect.objectContaining({
+                type: 'nexo',
+                action: 'create',
+                data: { nombre: 'Ana', parentesco: 'Hija', personId: 'lid-9', client_id: mockUUID },
+            }));
+            vi.unstubAllGlobals();
+        });
     });
 
     describe('offlineUpdatePersona (regresión)', () => {

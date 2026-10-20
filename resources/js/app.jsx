@@ -3,7 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import { createInertiaApp, router } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
 import { isLogoutPendingFor, readPendingLogout, syncServiceWorkerSession } from './lib/swSession';
-import { finishPendingLogout, handleLogoutNetworkError, resetPendingLogoutAttempts } from './lib/logout';
+import { finishPendingLogout, handleLogoutNetworkError, PENDING_LOGOUT_TIMEOUT_MS, resetPendingLogoutAttempts, withTimeout } from './lib/logout';
 import { FullScreenSpinner } from './Components/Spinner';
 
 let currentUser = null;
@@ -88,7 +88,8 @@ createInertiaApp({
 
         // This user already logged out on this device: never show their pages, finish the logout instead.
         root.render(<FullScreenSpinner message="Cerrando sesión..." />);
-        isLogoutPendingFor(currentUser)
+        // If the check hangs, treat the logout as pending: finishPendingLogout has its own timeout and loop guard.
+        withTimeout(isLogoutPendingFor(currentUser), PENDING_LOGOUT_TIMEOUT_MS, true)
             .then(pending => (pending ? finishPendingLogout() : false))
             .then(handled => { if (!handled) mount(); });
     },

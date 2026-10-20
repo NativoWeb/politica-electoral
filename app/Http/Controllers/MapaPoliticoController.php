@@ -10,6 +10,7 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -644,8 +645,27 @@ class MapaPoliticoController extends Controller
             'facebook' => 'nullable|string|max:255',
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
+            'client_id' => 'nullable|uuid',
         ]);
         $this->authorizeGeo($data['municipio_id']);
+
+        // Offline creates carry the id generated on the device: a repeated send must not create a second lider.
+        $clientId = $data['client_id'] ?? null;
+        $respond = function (string $message) use ($request, $data) {
+            if ($request->wantsJson()) {
+                return response()->json(['success' => true, 'message' => $message]);
+            }
+
+            return redirect()->route('mapa-politico', [
+                'municipio' => $data['municipio_id'],
+                'tipo' => 'lideres',
+                'search' => $data['nombre'],
+            ])->with('success', $message);
+        };
+        $alreadyCreated = fn () => $clientId && DB::table('lideres')->where('id', $clientId)->exists();
+        if ($alreadyCreated()) {
+            return $respond('Este líder ya estaba registrado.');
+        }
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
@@ -665,7 +685,7 @@ class MapaPoliticoController extends Controller
             ->first();
 
         $insertData = [
-            'id' => Str::uuid(),
+            'id' => $clientId ?? (string) Str::uuid(),
             'nombre' => $data['nombre'],
             'municipio' => $mun->canonical_name ?? '',
             'provincia' => $mun->provincia ?? '',
@@ -704,19 +724,19 @@ class MapaPoliticoController extends Controller
             $insertData[$field] = $data[$field] ?? false;
         }
 
-        DB::table('lideres')->insert($insertData);
+        try {
+            DB::table('lideres')->insert($insertData);
+        } catch (UniqueConstraintViolationException $e) {
+            // Two tabs sent the same offline create at once: the other request already stored it.
+            if ($alreadyCreated()) {
+                return $respond('Este líder ya estaba registrado.');
+            }
+            throw $e;
+        }
 
         Cache::forget('cargos_por_tipo');
 
-        if ($request->wantsJson()) {
-            return response()->json(['success' => true, 'message' => "Líder «{$data['nombre']}» creado."]);
-        }
-
-        return redirect()->route('mapa-politico', [
-            'municipio' => $data['municipio_id'],
-            'tipo' => 'lideres',
-            'search' => $data['nombre'],
-        ])->with('success', "Líder «{$data['nombre']}» creado.");
+        return $respond("Líder «{$data['nombre']}» creado.");
     }
 
     public function persona(string $id)
@@ -1209,6 +1229,7 @@ class MapaPoliticoController extends Controller
             'observaciones' => 'nullable|string|max:500',
             'cedula' => 'nullable|string|max:20',
             'telefono' => 'nullable|string|max:20',
+            'client_id' => 'nullable|uuid',
         ]);
 
         $addNexo->handle($personId, $data);

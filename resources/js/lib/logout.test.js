@@ -6,7 +6,7 @@ vi.mock('@inertiajs/react', () => ({ router: { post: vi.fn(), clearHistory: vi.f
 vi.mock('./offlineDb', () => offline);
 vi.mock('./swSession', async (importOriginal) => ({ ...(await importOriginal()), ...session }));
 
-import { logout, finishPendingLogout, handleLogoutNetworkError, resetPendingLogoutAttempts, OFFLINE_LOGOUT_MESSAGE } from './logout';
+import { logout, finishPendingLogout, handleLogoutNetworkError, resetPendingLogoutAttempts, withTimeout, OFFLINE_LOGOUT_MESSAGE } from './logout';
 import { userKey } from './userKey';
 
 const userA = { id: 'user-a' };
@@ -111,6 +111,37 @@ describe('logout', () => {
 
         expect(d.goTo).toHaveBeenCalledTimes(2);
         expect(localStorage.getItem('electoral:pending-logout')).toBeNull();
+    });
+
+    it('si el servidor no responde, a los 10 s manda al login igual (sin spinner infinito)', async () => {
+        vi.useFakeTimers();
+        localStorage.setItem('electoral:pending-logout', 'k');
+        const d = deps({ serverLogout: vi.fn(() => new Promise(() => {})) });
+
+        const done = finishPendingLogout(d);
+        await vi.advanceTimersByTimeAsync(9999);
+        expect(d.goTo).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+
+        await expect(done).resolves.toBe(true);
+        expect(d.goTo).toHaveBeenCalledWith('/login');
+        expect(localStorage.getItem('electoral:pending-logout')).toBe('k');
+        vi.useRealTimers();
+    });
+
+    it('si borrar los datos locales se cuelga, también sale al login al vencer el tiempo', async () => {
+        session.clearUserOfflineState.mockImplementationOnce(() => new Promise(() => {}));
+        localStorage.setItem('electoral:pending-logout', 'k');
+        const d = deps({ timeoutMs: 20 });
+
+        await expect(finishPendingLogout(d)).resolves.toBe(true);
+        expect(d.goTo).toHaveBeenCalledWith('/login');
+        expect(d.serverLogout).not.toHaveBeenCalled();
+    });
+
+    it('withTimeout devuelve el valor de respaldo si la promesa no termina', async () => {
+        await expect(withTimeout(new Promise(() => {}), 10, true)).resolves.toBe(true);
+        await expect(withTimeout(Promise.resolve(false), 10, true)).resolves.toBe(false);
     });
 
     it('si el POST de logout falla por red, borra el historial, avisa y sale de la página', () => {
