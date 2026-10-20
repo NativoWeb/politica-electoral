@@ -957,6 +957,7 @@ class MapaPoliticoController extends Controller
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
         ]);
+        $data = UpdateVotante::withoutNulls($data);
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {

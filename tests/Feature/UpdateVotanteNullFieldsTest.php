@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Actions\Votantes\UpdateVotante;
+use App\Http\Controllers\MapaPoliticoController;
+use App\Support\DatabaseErrorLog;
+use Illuminate\Http\Request;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -30,10 +33,15 @@ class UpdateVotanteNullFieldsTest extends TestCase
             $t->string('nivel_confianza')->default('sin_llamar');
             $t->boolean('destacado')->default(false);
             $t->boolean('gran_elector')->default(false);
-            $t->string('telefono')->nullable();
-            $t->string('cedula')->nullable();
+            foreach (['telefono', 'cedula', 'email', 'observacion', 'direccion', 'barrio', 'zona', 'profesion', 'partido'] as $col) {
+                $t->string($col)->nullable();
+            }
             $t->uuid('geographic_unit_id')->nullable();
             $t->timestamps();
+        });
+        Schema::create('candidacies', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('person_id');
         });
 
         $this->id = (string) Str::uuid();
@@ -89,5 +97,52 @@ class UpdateVotanteNullFieldsTest extends TestCase
                 && ! str_contains($logged, 'Dato Personal Secreto')
                 && str_contains($context['sql'] ?? '', '?');
         })->once();
+    }
+
+    public function test_mapa_politico_profile_saves_with_empty_cargo(): void
+    {
+        $request = Request::create('/mapa-politico/persona/'.$this->id, 'PUT', [], [], [], ['HTTP_ACCEPT' => 'application/json']);
+        $request->merge(['cargo' => null, 'votos' => null, 'destacado' => null, 'telefono' => '3009998877']);
+        $this->app->instance('request', $request);
+
+        $response = app(MapaPoliticoController::class)->updatePersona($request, $this->id);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $row = DB::table('lideres')->where('id', $this->id)->first();
+        $this->assertSame('', $row->cargo);
+        $this->assertSame(0, (int) $row->votos);
+        $this->assertSame('3009998877', $row->telefono);
+    }
+
+    /** @dataProvider postgresMessages */
+    public function test_log_line_masks_values_but_keeps_object_names(string $driverMessage, string $expected): void
+    {
+        $this->assertSame($expected, DatabaseErrorLog::redact($driverMessage));
+    }
+
+    public static function postgresMessages(): array
+    {
+        return [
+            'not null' => [
+                "SQLSTATE[23502]: Not null violation: 7 ERROR:  null value in column \"cargo\" of relation \"lideres\" violates not-null constraint\nDETAIL:  Failing row contains (Ana Prueba, 3001234567).",
+                'SQLSTATE[23502]: Not null violation: 7 ERROR:  null value in column "cargo" of relation "lideres" violates not-null constraint',
+            ],
+            'unique' => [
+                "SQLSTATE[23505]: Unique violation: 7 ERROR:  duplicate key value violates unique constraint \"lideres_cedula_unique\"\nDETAIL:  Key (cedula)=(1098765432) already exists.",
+                'SQLSTATE[23505]: Unique violation: 7 ERROR:  duplicate key value violates unique constraint "lideres_cedula_unique"',
+            ],
+            'invalid uuid' => [
+                'SQLSTATE[22P02]: Invalid text representation: 7 ERROR:  invalid input syntax for type uuid: "Juan Perez 3001234567"',
+                'SQLSTATE[22P02]: Invalid text representation: 7 ERROR:  invalid input syntax for type uuid: "?"',
+            ],
+            'invalid date' => [
+                'SQLSTATE[22007]: Invalid datetime format: 7 ERROR:  invalid input syntax for type date: "1985-13-45"',
+                'SQLSTATE[22007]: Invalid datetime format: 7 ERROR:  invalid input syntax for type date: "?"',
+            ],
+            'out of range' => [
+                'SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "99999999999" is out of range for type integer',
+                'SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "?" is out of range for type integer',
+            ],
+        ];
     }
 }

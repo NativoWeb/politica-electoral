@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\VerifyAgentHmac;
+use App\Support\DatabaseErrorLog;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Database\QueryException;
@@ -51,9 +52,9 @@ return Application::configure(basePath: dirname(__DIR__))
         );
         $exceptions->dontReport(BusinessRuleException::class);
 
-        // PostgreSQL errors carry the bound values and a "Failing row contains (...)" detail with personal data: log only the first line and the SQL with placeholders.
+        // PostgreSQL errors carry bound values and a "Failing row contains (...)" detail with personal data.
         $exceptions->report(function (QueryException $e) {
-            Log::error('Database error: '.strtok($e->getPrevious()?->getMessage() ?? 'unknown', "\n"), [
+            Log::error(DatabaseErrorLog::message($e), [
                 'sqlstate' => $e->errorInfo[0] ?? null,
                 'sql' => $e->getSql(),
             ]);
