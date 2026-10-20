@@ -119,7 +119,7 @@ export async function syncServiceWorkerSession(user, { confirm: confirmFn = (m) 
         // session never loses its unsynced queue.
         const pendingFor = readPendingLogout();
         writePendingLogout(null);
-        if (pendingFor && pendingFor === readLastUser()) purgeLeftovers(pendingFor);
+        if (pendingFor && pendingFor === readLastUser()) await purgeLeftovers(pendingFor);
     }
     lastUserId = id;
 
