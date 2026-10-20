@@ -11,10 +11,12 @@ use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\VerifyAgentHmac;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -48,6 +50,16 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/agent/*') || $request->expectsJson()
         );
         $exceptions->dontReport(BusinessRuleException::class);
+
+        // PostgreSQL errors carry the bound values and a "Failing row contains (...)" detail with personal data: log only the first line and the SQL with placeholders.
+        $exceptions->report(function (QueryException $e) {
+            Log::error('Database error: '.strtok($e->getPrevious()?->getMessage() ?? 'unknown', "\n"), [
+                'sqlstate' => $e->errorInfo[0] ?? null,
+                'sql' => $e->getSql(),
+            ]);
+
+            return false;
+        });
 
         // The agent API always answers {success: false, message}; 5xx keep Laravel's generic message.
         $exceptions->render(function (AuthenticationException $e, Request $request) {

@@ -170,7 +170,9 @@ export default function VotanteDetail({
                 onSaved();
             }
         } catch (err) {
-            const msg = err.message || err.data?.message || 'Error al guardar';
+            const msg = err.status >= 500 || !err.status
+                ? 'No se pudieron guardar los cambios. Intenta de nuevo y, si sigue fallando, avisa al administrador.'
+                : err.message || err.data?.message || 'Error al guardar';
             showToast(msg, 'error');
         } finally {
             setSaving(false);

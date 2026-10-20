@@ -19,10 +19,37 @@ class UpdateVotante
     // Set by handle() when a rename could not be propagated to the linked electoral person.
     public ?string $warning = null;
 
+    // NOT NULL columns of lideres: an emptied form field arrives as null and must not reach the database.
+    private const NOT_NULL_DEFAULTS = [
+        'cargo' => '', 'votos' => 0, 'nivel_confianza' => 'sin_llamar', 'tipo' => 'directorio',
+        'destacado' => false, 'militante' => false, 'autoriza_datos' => false, 'verificado' => false,
+        'fallecido' => false, 'empresario' => false, 'reservista' => false, 'funcionario' => false,
+        'exfuncionario' => false, 'gran_elector' => false,
+    ];
+
+    private const NOT_CLEARABLE = ['nombre', 'municipio'];
+
+    public static function withoutNulls(array $data): array
+    {
+        foreach ($data as $key => $value) {
+            if ($value !== null) {
+                continue;
+            }
+            if (in_array($key, self::NOT_CLEARABLE, true)) {
+                unset($data[$key]);
+            } elseif (array_key_exists($key, self::NOT_NULL_DEFAULTS)) {
+                $data[$key] = self::NOT_NULL_DEFAULTS[$key];
+            }
+        }
+
+        return $data;
+    }
+
     // $data must already be restricted to the fields the caller may change.
     public function handle(string $id, array $data): Lider
     {
         $this->warning = null;
+        $data = self::withoutNulls($data);
 
         $lider = Lider::find($id);
         if (! $lider) {
