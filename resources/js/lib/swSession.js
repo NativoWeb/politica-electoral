@@ -114,7 +114,13 @@ export async function syncServiceWorkerSession(user, { confirm: confirmFn = (m) 
 
     // A page of a user who already logged out (restored from cache) must not register them again.
     if (id && readPendingLogout() && await isLogoutPendingFor(user)) return;
-    if (!id) writePendingLogout(null);
+    if (!id) {
+        // A logout whose local purge timed out: retry it now. Only for that logout, so an expired
+        // session never loses its unsynced queue.
+        const pendingFor = readPendingLogout();
+        writePendingLogout(null);
+        if (pendingFor && pendingFor === readLastUser()) purgeLeftovers(pendingFor);
+    }
     lastUserId = id;
 
     // The owner switches right away, so nothing is queued or synced under the previous user meanwhile.
@@ -141,6 +147,16 @@ export async function clearUserOfflineState() {
         writeLastUser(null);
     } catch (err) {
         console.warn('No se pudieron borrar los datos offline al cerrar sesión', err);
+    }
+}
+
+async function purgeLeftovers(owner) {
+    try {
+        await clearDownloadedData();
+        await clearPendingChanges(owner);
+        writeLastUser(null);
+    } catch (err) {
+        console.warn('No se pudieron borrar los datos offline pendientes del cierre de sesión', err);
     }
 }
 

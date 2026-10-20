@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Actions\Votantes\AddNexo;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\MapaPoliticoController;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 // Offline creates are retried (two tabs, lost responses): the device id makes them idempotent.
@@ -47,6 +49,10 @@ class OfflineCreateIdempotencyTest extends TestCase
                 $t->boolean($col)->default(false);
             }
             $t->timestamps();
+        });
+        Schema::create('persons', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->string('full_name');
         });
         Schema::create('nexos_familiares', function (Blueprint $t) {
             $t->uuid('id')->primary();
@@ -101,5 +107,47 @@ class OfflineCreateIdempotencyTest extends TestCase
         $this->assertSame($clientId, $first);
         $this->assertSame($clientId, $second);
         $this->assertSame(1, DB::table('nexos_familiares')->count());
+    }
+
+    public function test_a_client_id_cannot_reuse_an_electoral_person_id(): void
+    {
+        $personId = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $personId, 'full_name' => 'Candidato de otro municipio']);
+
+        $this->expectException(ValidationException::class);
+        try {
+            $this->storeLider(['nombre' => 'Suplantador', 'municipio_id' => $this->municipio, 'client_id' => $personId]);
+        } finally {
+            $this->assertSame(0, DB::table('lideres')->where('id', $personId)->count());
+        }
+    }
+
+    public function test_a_new_lider_with_another_liders_cedula_still_gets_the_duplicate_message(): void
+    {
+        $this->storeLider(['nombre' => 'Original', 'municipio_id' => $this->municipio, 'cedula' => '1111111111']);
+
+        $request = Request::create('/mapa-politico/crear-lider', 'POST',
+            ['nombre' => 'Otro', 'municipio_id' => $this->municipio, 'cedula' => '1111111111', 'client_id' => (string) Str::uuid()],
+            [], [], ['HTTP_ACCEPT' => 'application/json']);
+        $this->app->instance('request', $request);
+        $response = app(MapaPoliticoController::class)->storeLider($request);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertStringContainsString('Ya existe un líder con cédula', $response->getData()->message);
+        $this->assertSame(1, DB::table('lideres')->count());
+    }
+
+    public function test_a_nexo_id_owned_by_someone_else_is_a_conflict(): void
+    {
+        $clientId = (string) Str::uuid();
+        app(AddNexo::class)->handle((string) Str::uuid(), ['nombre' => 'Ana', 'client_id' => $clientId]);
+
+        try {
+            app(AddNexo::class)->handle((string) Str::uuid(), ['nombre' => 'Intruso', 'client_id' => $clientId]);
+            $this->fail('Expected a conflict.');
+        } catch (BusinessRuleException $e) {
+            $this->assertSame(409, $e->status());
+        }
+        $this->assertSame('Ana', DB::table('nexos_familiares')->where('id', $clientId)->value('nombre'));
     }
 }

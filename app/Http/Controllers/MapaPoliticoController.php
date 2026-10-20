@@ -645,7 +645,8 @@ class MapaPoliticoController extends Controller
             'facebook' => 'nullable|string|max:255',
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
-            'client_id' => 'nullable|uuid',
+            // Reusing an electoral person's id would make authorizePersonOrLider treat it as this lider.
+            'client_id' => 'nullable|uuid|unique:persons,id',
         ]);
         $this->authorizeGeo($data['municipio_id']);
 
@@ -730,6 +731,10 @@ class MapaPoliticoController extends Controller
             // Two tabs sent the same offline create at once: the other request already stored it.
             if ($alreadyCreated()) {
                 return $respond('Este líder ya estaba registrado.');
+            }
+            $existente = $cedula ? DB::table('lideres')->where('cedula', $cedula)->first() : null;
+            if ($existente) {
+                return response()->json(['success' => false, 'message' => $this->duplicateCedulaMessage($cedula, $existente)], 422);
             }
             throw $e;
         }

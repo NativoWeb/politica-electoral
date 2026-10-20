@@ -151,6 +151,34 @@ describe('swSession', () => {
         expect(localStorage.getItem('electoral:pending-logout')).toBeNull();
     });
 
+    it('en el login reintenta la purga de un cierre de sesión que no alcanzó a terminar', async () => {
+        installWorker();
+        const keyA = await userKey('user-a');
+        localStorage.setItem('electoral:offline-user', keyA);
+        writePendingLogout(keyA);
+
+        await syncServiceWorkerSession(null);
+        await flush();
+
+        expect(offline.clearDownloadedData).toHaveBeenCalled();
+        expect(offline.clearPendingChanges).toHaveBeenCalledWith(keyA);
+        expect(localStorage.getItem('electoral:offline-user')).toBeNull();
+        expect(localStorage.getItem('electoral:pending-logout')).toBeNull();
+    });
+
+    it('una sesión vencida (sin logout pendiente) no borra la cola sin sincronizar al llegar al login', async () => {
+        installWorker();
+        const keyA = await userKey('user-a');
+        localStorage.setItem('electoral:offline-user', keyA);
+
+        await syncServiceWorkerSession(null);
+        await flush();
+
+        expect(offline.clearPendingChanges).not.toHaveBeenCalled();
+        expect(offline.clearDownloadedData).not.toHaveBeenCalled();
+        expect(localStorage.getItem('electoral:offline-user')).toBe(keyA);
+    });
+
     it('si falla el borrado conserva la marca del usuario anterior para reintentar', async () => {
         installWorker();
         const keyA = await userKey('user-a');

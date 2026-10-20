@@ -2,6 +2,7 @@
 
 namespace App\Actions\Votantes;
 
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +27,16 @@ class AddNexo
         $id = $data['client_id'] ?? (string) Str::uuid();
         unset($data['client_id']);
 
-        $exists = fn () => DB::table('nexos_familiares')->where('id', $id)->exists();
-        if ($exists()) {
+        $owner = fn () => DB::table('nexos_familiares')->where('id', $id)->value('person_id');
+        $alreadyStored = function () use ($owner, $personId) {
+            $current = $owner();
+            if ($current !== null && $current !== $personId) {
+                throw new BusinessRuleException('Ese identificador ya pertenece a otro nexo.', 409);
+            }
+
+            return $current !== null;
+        };
+        if ($alreadyStored()) {
             return $id;
         }
 
@@ -40,7 +49,7 @@ class AddNexo
                 'updated_at' => now(),
             ]);
         } catch (UniqueConstraintViolationException $e) {
-            if (! $exists()) {
+            if (! $alreadyStored()) {
                 throw $e;
             }
         }
