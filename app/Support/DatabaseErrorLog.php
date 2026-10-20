@@ -17,6 +17,9 @@ final class DatabaseErrorLog
     public static function redact(string $driverMessage): string
     {
         $firstLine = strtok($driverMessage, "\n") ?: '';
+        // A typed value may itself contain quotes, so mask from where it starts to the end of the line.
+        $firstLine = preg_replace('/:\s*".*$/', ': "?"', $firstLine);
+        $firstLine = preg_replace('/\bvalue ".*" is out of range/', 'value "?" is out of range', $firstLine);
 
         return preg_replace_callback('/(\b[A-Za-z_]+\s+)?"[^"]*"/', function ($m) {
             $kind = strtolower(trim($m[1] ?? ''));

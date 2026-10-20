@@ -139,6 +139,14 @@ class UpdateVotanteNullFieldsTest extends TestCase
                 'SQLSTATE[22007]: Invalid datetime format: 7 ERROR:  invalid input syntax for type date: "1985-13-45"',
                 'SQLSTATE[22007]: Invalid datetime format: 7 ERROR:  invalid input syntax for type date: "?"',
             ],
+            'value with quotes' => [
+                'SQLSTATE[22P02]: Invalid text representation: 7 ERROR:  invalid input syntax for type uuid: "a" column "Juan Perez"',
+                'SQLSTATE[22P02]: Invalid text representation: 7 ERROR:  invalid input syntax for type uuid: "?"',
+            ],
+            'out of range with quotes' => [
+                'SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "12"3" is out of range for type integer',
+                'SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "?" is out of range for type integer',
+            ],
             'out of range' => [
                 'SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "99999999999" is out of range for type integer',
                 'SQLSTATE[22003]: Numeric value out of range: 7 ERROR:  value "?" is out of range for type integer',
