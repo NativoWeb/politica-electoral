@@ -125,9 +125,8 @@ class MapaPoliticoController extends Controller
             }
         }
 
+        // Only the provinces of the municipios the user can see ("Area Metropolitana" is a real province now).
         $provincias = collect($municipios)->pluck('provincia')->unique()->filter()->sort()->values()->toArray();
-        array_unshift($provincias, 'Área Metropolitana');
-        $provincias = array_unique($provincias);
 
         $provincia = $request->input('provincia');
         $provinciaIds = null;
