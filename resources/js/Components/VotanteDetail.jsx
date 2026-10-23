@@ -309,6 +309,15 @@ export default function VotanteDetail({
                                 {editing ? <input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.nombre || '-'}</p>}
                             </Field>
                         </div>
+                        <div className="col-span-2">
+                            <Field label="Observacion">
+                                {editing ? (
+                                    <textarea value={form.observacion} onChange={e => setField('observacion', e.target.value)} maxLength={1000} className={inputCls + ' min-h-[80px] resize-y'} />
+                                ) : (
+                                    <p className={readCls + ' whitespace-pre-wrap'}>{form.observacion || '-'}</p>
+                                )}
+                            </Field>
+                        </div>
                         <Field label="Tipo documento">
                             {editing ? (
                                 <select value={form.tipo_documento} onChange={e => setField('tipo_documento', e.target.value)} className={inputCls}>
@@ -587,13 +596,6 @@ export default function VotanteDetail({
                             </label>
                         ))}
                     </div>
-                    <Field label="Observacion">
-                        {editing ? (
-                            <textarea value={form.observacion} onChange={e => setField('observacion', e.target.value)} className={inputCls + ' min-h-[60px] resize-none'} />
-                        ) : (
-                            <p className={readCls + ' whitespace-pre-wrap'}>{form.observacion || '-'}</p>
-                        )}
-                    </Field>
                 </Accordion>
 
                 {/* Nexos Familiares (read-only) */}

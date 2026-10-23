@@ -44,6 +44,21 @@ class MapaPoliticoController extends Controller
         UpdateVotante::renamePerson($personId, $fullName);
     }
 
+    // The single lider with the candidate's exact name in a municipio where they ran, inside the user's territory.
+    private function linkedLiderId(object $person): ?string
+    {
+        $ids = $this->scopeToTerritory(DB::table('lideres as l'), 'l.geographic_unit_id')
+            ->join('contests as con', 'con.geographic_unit_id', '=', 'l.geographic_unit_id')
+            ->join('candidacies as c', function ($j) use ($person) {
+                $j->on('c.contest_id', '=', 'con.id')->where('c.person_id', '=', $person->id);
+            })
+            ->whereRaw('LOWER(l.nombre) = LOWER(?)', [$person->full_name])
+            ->distinct()
+            ->pluck('l.id');
+
+        return $ids->count() === 1 ? $ids->first() : null;
+    }
+
     private function corporationId(string $name): ?string
     {
         return Cache::remember("corp_id:{$name}", 3600, fn () => DB::table('corporations')->where('name', $name)->value('id'));
@@ -755,6 +770,12 @@ class MapaPoliticoController extends Controller
         $source = 'persona';
         $liderModel = null;
 
+        // A candidate who already has a lider record in their municipio opens as that lider, so the
+        // panel shows and saves the lider fields (historial politico, contactos, datos personales).
+        if ($person && ($linkedLiderId = $this->linkedLiderId($person))) {
+            return $this->persona($linkedLiderId);
+        }
+
         if (! $person) {
             $liderModel = Lider::with(['contactos', 'infoPolitica'])->find($id);
             $person = $liderModel;
@@ -763,8 +784,12 @@ class MapaPoliticoController extends Controller
 
         abort_if(! $person, 404);
 
+        $nexoOwners = [$id];
+        if ($source === 'lider') {
+            $nexoOwners = array_merge($nexoOwners, app(UpdateVotante::class)->linkedPersonIds($person)->all());
+        }
         $nexos = DB::table('nexos_familiares')
-            ->where('person_id', $id)
+            ->whereIn('person_id', $nexoOwners)
             ->orderBy('nombre')
             ->get()
             ->map(fn ($n) => [

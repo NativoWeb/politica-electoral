@@ -122,6 +122,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     const [influenciaNota, setInfluenciaNota] = useState('');
     const [savingInfluencia, setSavingInfluencia] = useState(false);
 
+    // The server may answer a candidate with their linked lider record: every write goes to that id.
+    const targetId = data?.id || personId;
+
     function loadData() {
         return apiFetch(`/mapa-politico/persona/${personId}`, { method: 'GET' })
             .then(r => {
@@ -158,7 +161,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
         setSaving(true);
         setMessage('');
         const payload = { ...form, votos: form.votos ? parseInt(form.votos, 10) : 0 };
-        apiFetch(`/mapa-politico/persona/${personId}`, {
+        apiFetch(`/mapa-politico/persona/${targetId}`, {
             method: 'PUT',
             body: JSON.stringify(payload),
         })
@@ -175,7 +178,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             .catch(async () => {
                 if (!navigator.onLine) {
                     try {
-                        await offlineUpdatePersona(personId, form);
+                        await offlineUpdatePersona(targetId, form);
                         setMessage('Guardado localmente');
                         showGlobalToast('Guardado sin internet. Se sincronizará automáticamente.');
                         setEditMode(false);
@@ -195,7 +198,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
     function addNexo(e) {
         e.preventDefault();
-        apiFetch(`/mapa-politico/persona/${personId}/nexos`, {
+        apiFetch(`/mapa-politico/persona/${targetId}/nexos`, {
             method: 'POST',
             body: JSON.stringify(nexoForm),
         })
@@ -210,7 +213,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             .catch(async () => {
                 if (!navigator.onLine) {
                     try {
-                        const newNexo = await offlineCreateNexo(personId, nexoForm);
+                        const newNexo = await offlineCreateNexo(targetId, nexoForm);
                         setNexoForm({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
                         setShowNexoForm(false);
                         setMessage('Nexo guardado localmente');
@@ -255,7 +258,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
         setReferidoQuery(q);
         if (q.length < 2) { setReferidoResults([]); return; }
         setReferidoSearching(true);
-        apiFetch(`/mapa-politico/search-lideres?q=${encodeURIComponent(q)}&exclude_id=${personId}`)
+        apiFetch(`/mapa-politico/search-lideres?q=${encodeURIComponent(q)}&exclude_id=${targetId}`)
             .then(r => r.json())
             .then(res => setReferidoResults(res.data || []))
             .catch(() => setReferidoResults([]))
@@ -264,7 +267,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
     async function addReferido(liderId) {
         try {
-            const r = await apiFetch(`/mapa-politico/persona/${personId}/add-referido`, {
+            const r = await apiFetch(`/mapa-politico/persona/${targetId}/add-referido`, {
                 method: 'POST',
                 body: JSON.stringify({ lider_id: liderId }),
             });
@@ -285,7 +288,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     function removeReferido(referidoId) {
         confirm('Quitar referido', '¿Seguro que quieres quitar esta persona de tus referidos?', async () => {
             try {
-                const r = await apiFetch(`/mapa-politico/persona/${personId}/referido/${referidoId}`, { method: 'DELETE' });
+                const r = await apiFetch(`/mapa-politico/persona/${targetId}/referido/${referidoId}`, { method: 'DELETE' });
                 if (!r.ok) throw new Error();
                 setMessage('Referido eliminado');
                 await loadData();
@@ -302,7 +305,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
         if (!influenciaSelId) return;
         setSavingInfluencia(true);
         try {
-            const r = await apiFetch(`/mapa-politico/persona/${personId}/municipios-influencia`, {
+            const r = await apiFetch(`/mapa-politico/persona/${targetId}/municipios-influencia`, {
                 method: 'POST',
                 body: JSON.stringify({ geographic_unit_id: influenciaSelId, nota: influenciaNota || null }),
             });
@@ -319,7 +322,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     function removeMunicipioInfluencia(influenciaId) {
         confirm('Quitar municipio', '¿Seguro que quieres quitar este municipio de influencia?', async () => {
             try {
-                const r = await apiFetch(`/mapa-politico/persona/${personId}/municipios-influencia/${influenciaId}`, { method: 'DELETE' });
+                const r = await apiFetch(`/mapa-politico/persona/${targetId}/municipios-influencia/${influenciaId}`, { method: 'DELETE' });
                 if (!r.ok) throw new Error();
                 setData(prev => ({ ...prev, municipios_influencia: (prev.municipios_influencia || []).filter(m => m.id !== influenciaId) }));
                 showGlobalToast('Municipio de influencia eliminado');
@@ -425,7 +428,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 ? 'No aparecera en los listados pero sus datos se conservan.'
                                 : 'Volvera a aparecer en los listados.';
                             confirm(title, msg, () => {
-                                apiFetch(`/mapa-politico/persona/${personId}/toggle`, { method: 'POST' })
+                                apiFetch(`/mapa-politico/persona/${targetId}/toggle`, { method: 'POST' })
                                     .then(r => r.json())
                                     .then((res) => {
                                         setMessage(res.message || (isActive ? 'Persona desactivada' : 'Persona activada'));
@@ -468,6 +471,10 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                     <div>
                                         <label className={labelCls}>Nombres y apellidos</label>
                                         <input className={fieldCls} value={f('nombre')} onChange={e => set('nombre', e.target.value)} placeholder="Nombres y apellidos completos" maxLength={255} />
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>Observaciones</label>
+                                        <textarea className={fieldCls} rows={4} maxLength={1000} value={f('observacion')} onChange={e => set('observacion', e.target.value)} placeholder="Información clave del registro" />
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div>
@@ -535,6 +542,10 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 </div>
                             ) : (
                                 <div className="space-y-3">
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                                        <p className="text-[12px] font-bold uppercase tracking-wider text-amber-700 mb-1">Observaciones</p>
+                                        <p className="text-[15px] text-[var(--color-ink)] whitespace-pre-line break-words">{data.observacion || 'Sin observaciones.'}</p>
+                                    </div>
                                     <DataRow label="Cedula" value={data.cedula} />
                                     <DataRow label="Tipo doc." value={data.tipo_documento} />
                                     <DataRow label="Fec. expedicion" value={dateVal(data.fecha_expedicion_doc)} />
@@ -733,7 +744,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
                                 {/* Contactos CRUD - only for lideres */}
                                 {isLider ? (
-                                    <ContactosManager personId={personId} contactos={data.contactos || []} onUpdate={loadData} />
+                                    <ContactosManager personId={targetId} contactos={data.contactos || []} onUpdate={loadData} />
                                 ) : (
                                     <p className="text-[13px] text-[var(--color-ink-faint)] text-center py-3 bg-gray-50 rounded-lg">Guarda los datos para habilitar contactos adicionales.</p>
                                 )}
@@ -987,7 +998,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 {/* Info Politica CRUD */}
                                 <div className="pt-4 border-t border-[var(--color-line)]">
                                     {isLider ? (
-                                        <InfoPoliticaManager personId={personId} infoPolitica={data.info_politica || []} onUpdate={loadData} />
+                                        <InfoPoliticaManager personId={targetId} infoPolitica={data.info_politica || []} onUpdate={loadData} />
                                     ) : (
                                         <p className="text-[13px] text-[var(--color-ink-faint)] text-center py-3 bg-gray-50 rounded-lg">Guarda los datos para habilitar historial politico.</p>
                                     )}
@@ -1157,14 +1168,6 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         onChange={(field, value) => set(field, value)}
                                         disabled={!editMode}
                                     />
-                                </div>
-                                <div>
-                                    <label className={labelCls}>Observaciones</label>
-                                    {editMode ? (
-                                        <textarea className={fieldCls} rows={3} value={f('observacion')} onChange={e => set('observacion', e.target.value)} />
-                                    ) : (
-                                        <p className="text-[16px] text-[var(--color-ink)] py-2">{data.observacion || '—'}</p>
-                                    )}
                                 </div>
                             </div>
                         )}
