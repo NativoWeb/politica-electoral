@@ -65,6 +65,12 @@ class GenericExport implements FromArray, WithHeadings, WithTitle, WithStyles
         foreach (range('A', $lastCol) as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
+        $obsIndex = array_search('observacion', $this->columns, true);
+        if ($obsIndex !== false) {
+            $obsCol = chr(65 + $obsIndex);
+            $sheet->getColumnDimension($obsCol)->setAutoSize(false)->setWidth(60);
+            $sheet->getStyle("{$obsCol}2:{$obsCol}{$lastRow}")->getAlignment()->setWrapText(true)->setVertical('top');
+        }
 
         return [
             1 => [

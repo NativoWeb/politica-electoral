@@ -19,6 +19,7 @@
         .footer { text-align: center; padding: 10px; font-size: 8px; color: #999; border-top: 1px solid #003B71; margin-top: 5px; }
         .truncated-notice { background: #fff3cd; border: 1px solid #ffc107; padding: 8px 15px; margin: 10px 20px; font-size: 10px; color: #856404; }
         .page-break { page-break-after: always; }
+        .obs { width: 30%; white-space: normal; word-wrap: break-word; font-size: 8px; }
     </style>
 </head>
 <body>
@@ -42,7 +43,7 @@
             <tr>
                 <th>#</th>
                 @foreach($columns as $col)
-                    <th>{{ strtoupper(str_replace('_', ' ', $col)) }}</th>
+                    <th @if($col === 'observacion') class="obs" @endif>{{ $col === 'observacion' ? 'OBSERVACIONES' : strtoupper(str_replace('_', ' ', $col)) }}</th>
                 @endforeach
             </tr>
         </thead>
@@ -57,7 +58,9 @@
                     <td>{{ $rowNum + 1 }}</td>
                     @foreach($columns as $col)
                         @if($col === 'nombre')
-                            <td class="b">{{ $row[$col] ?? '—' }}@if($isElecto) ✓@endif</td>
+                            <td class="b">{{ $row[$col] ?? '—' }}@if($isElecto) (electo)@endif</td>
+                        @elseif($col === 'observacion')
+                            <td class="obs">{{ $row[$col] ?? '—' }}</td>
                         @elseif($col === 'votos')
                             <td class="r">{{ ($row[$col] ?? 0) > 0 ? number_format($row[$col], 0, ',', '.') : '—' }}</td>
                         @else

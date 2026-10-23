@@ -16,11 +16,19 @@ class ExportController extends Controller
 
     private const PDF_MAX_ROWS = 500;
 
+    // Mapa Politico rows (leaders, candidates 2027) carry key notes in observacion.
+    private function defaultColumns(Request $request): string
+    {
+        $columns = 'nombre,municipio,tipo,cargo,partido,telefono,votos';
+
+        return $request->input('source', 'mapa-politico') === 'mapa-politico' ? $columns.',observacion' : $columns;
+    }
+
     public function excel(Request $request)
     {
         $data = $this->getData($request);
         $title = $request->input('title', 'Exportacion');
-        $columns = $request->input('columns', 'nombre,municipio,tipo,cargo,partido,telefono,votos');
+        $columns = $request->input('columns', $this->defaultColumns($request));
 
         return Excel::download(
             new GenericExport($data, explode(',', $columns), $title),
@@ -35,7 +43,7 @@ class ExportController extends Controller
 
         $data = $this->getData($request);
         $title = $request->input('title', 'Exportacion');
-        $columns = explode(',', $request->input('columns', 'nombre,municipio,tipo,cargo,partido,telefono,votos'));
+        $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
 
         $totalCount = count($data);
         $truncated = false;
@@ -153,7 +161,7 @@ class ExportController extends Controller
         // Líderes
         if ($tipoMatch('lideres')) {
             $query = DB::table('lideres')
-                ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
+                ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
             if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
             if ($search) $query->where(function ($q) use ($search) {
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
@@ -169,7 +177,7 @@ class ExportController extends Controller
         // Directorio Municipal
         if ($tipoMatch('directorio')) {
             $query = DB::table('lideres')
-                ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos');
+                ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
             $this->whereCargoIn($query, ['Directorio Municipal']);
             $this->whereCargoIn($query, $cargos);
             if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
@@ -196,7 +204,33 @@ class ExportController extends Controller
             $data = array_values(array_filter($data, fn ($row) => ($row['partido'] ?? '') === $partido));
         }
 
-        return $data;
+        return $this->withLiderObservations($data);
+    }
+
+    // Electoral candidates have no notes of their own: take them from their lider record (same name and municipio).
+    private function withLiderObservations(array $data): array
+    {
+        $key = fn ($nombre, $municipio) => mb_strtolower(trim((string) $nombre)).'|'.mb_strtolower(trim((string) $municipio));
+        $missing = array_filter($data, fn ($r) => ! array_key_exists('observacion', $r) && ! empty($r['nombre']));
+        if (! $missing) {
+            return $data;
+        }
+
+        $notes = $this->scopeToTerritory(DB::table('lideres'))
+            ->whereIn(DB::raw('LOWER(nombre)'), array_values(array_unique(array_map(fn ($r) => mb_strtolower(trim($r['nombre'])), $missing))))
+            ->whereNotNull('observacion')->where('observacion', '!=', '')
+            ->get(['nombre', 'municipio', 'observacion'])
+            ->groupBy(fn ($l) => $key($l->nombre, $l->municipio))
+            ->filter(fn ($group) => $group->count() === 1)
+            ->map(fn ($group) => $group->first()->observacion);
+
+        return array_map(function ($r) use ($notes, $key) {
+            if (! array_key_exists('observacion', $r)) {
+                $r['observacion'] = $notes[$key($r['nombre'] ?? '', $r['municipio'] ?? '')] ?? null;
+            }
+
+            return $r;
+        }, $data);
     }
 
     // $cargos === null keeps the standalone corporation export (cargo = corporation name).
