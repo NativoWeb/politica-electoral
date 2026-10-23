@@ -59,6 +59,24 @@ class MapaPoliticoController extends Controller
         return $ids->count() === 1 ? $ids->first() : null;
     }
 
+    private function candidatePartido(string $personId): ?string
+    {
+        return DB::table('candidacies as c')
+            ->join('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
+            ->join('political_organizations as po', 'ce.organization_id', '=', 'po.id')
+            ->where('c.person_id', $personId)
+            ->value('po.canonical_name');
+    }
+
+    private function candidateVotos(string $personId): int
+    {
+        return (int) DB::table('electoral_results as er')
+            ->join('candidacies as c', 'er.candidacy_id', '=', 'c.id')
+            ->where('c.person_id', $personId)
+            ->where('er.metric_type', 'votes')
+            ->sum('er.value');
+    }
+
     private function corporationId(string $name): ?string
     {
         return Cache::remember("corp_id:{$name}", 3600, fn () => DB::table('corporations')->where('name', $name)->value('id'));
@@ -785,8 +803,11 @@ class MapaPoliticoController extends Controller
         abort_if(! $person, 404);
 
         $nexoOwners = [$id];
+        $candidatePersonId = null;
         if ($source === 'lider') {
-            $nexoOwners = array_merge($nexoOwners, app(UpdateVotante::class)->linkedPersonIds($person)->all());
+            $linkedPersons = app(UpdateVotante::class)->linkedPersonIds($person);
+            $nexoOwners = array_merge($nexoOwners, $linkedPersons->all());
+            $candidatePersonId = $linkedPersons->count() === 1 ? $linkedPersons->first() : null;
         }
         $nexos = DB::table('nexos_familiares')
             ->whereIn('person_id', $nexoOwners)
@@ -833,13 +854,9 @@ class MapaPoliticoController extends Controller
 
         $partido = null;
         if ($source === 'persona') {
-            $partido = DB::table('candidacies as c')
-                ->join('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
-                ->join('political_organizations as po', 'ce.organization_id', '=', 'po.id')
-                ->where('c.person_id', $id)
-                ->value('po.canonical_name');
+            $partido = $this->candidatePartido($id);
         } elseif ($source === 'lider') {
-            $partido = $person->partido ?? null;
+            $partido = ($person->partido ?? null) ?: ($candidatePersonId ? $this->candidatePartido($candidatePersonId) : null);
         }
 
         $partidos = Cache::remember('all_partidos', 3600, fn () => DB::table('political_organizations')->orderBy('canonical_name')->pluck('canonical_name')->toArray()
@@ -869,12 +886,8 @@ class MapaPoliticoController extends Controller
                 ? (($person->tipo ?? '') === 'nuevo_lider' ? 'Nuevos Líderes' : 'Líderes')
                 : null,
             'votos' => $source === 'lider'
-                ? (int) ($bestLider->votos ?? 0)
-                : (int) DB::table('electoral_results as er')
-                    ->join('candidacies as c', 'er.candidacy_id', '=', 'c.id')
-                    ->where('c.person_id', $id)
-                    ->where('er.metric_type', 'votes')
-                    ->sum('er.value'),
+                ? ((int) ($bestLider->votos ?? 0) ?: ($candidatePersonId ? $this->candidateVotos($candidatePersonId) : 0))
+                : $this->candidateVotos($id),
             'nexos' => $nexos,
         ];
 
@@ -1197,6 +1210,8 @@ class MapaPoliticoController extends Controller
             }
 
             // Update partido via candidacy endorsement
+            // Only when editing the electoral person itself: from a lider, partido is the current affiliation
+            // (lideres.partido) and must never rewrite the party a past candidacy ran with.
             $candidacyId = DB::table('candidacies')->where('person_id', $id)->value('id');
             if ($candidacyId && $partidoSent) {
                 if ($partidoValue) {

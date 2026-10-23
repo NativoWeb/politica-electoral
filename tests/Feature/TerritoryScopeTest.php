@@ -473,4 +473,79 @@ class TerritoryScopeTest extends TestCase
                 ->where('votantes.data.0.id', $this->liderA)
                 ->where('votantes.data.0.referidos_count', 2));
     }
+
+    // A candidate who also has a lider record in their municipio (same name).
+    private function candidateLinkedToLiderA(): string
+    {
+        if (! Schema::hasTable('candidacy_endorsements')) {
+            Schema::create('candidacy_endorsements', function (Blueprint $t) {
+                $t->uuid('id')->primary();
+                $t->uuid('candidacy_id');
+                $t->uuid('organization_id');
+                $t->boolean('is_primary')->default(true);
+                $t->string('endorsement_type')->nullable();
+                $t->timestamps();
+            });
+        }
+        $personId = (string) Str::uuid();
+        $contestId = (string) Str::uuid();
+        $candidacyId = (string) Str::uuid();
+        $orgId = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $personId, 'full_name' => 'Ana Territorio A']);
+        DB::table('contests')->insert(['id' => $contestId, 'geographic_unit_id' => $this->munA]);
+        DB::table('candidacies')->insert(['id' => $candidacyId, 'person_id' => $personId, 'contest_id' => $contestId]);
+        DB::table('electoral_results')->insert(['id' => (string) Str::uuid(), 'candidacy_id' => $candidacyId, 'geographic_unit_id' => $this->munA, 'metric_type' => 'votes', 'value' => 120]);
+        DB::table('political_organizations')->insert([['id' => $orgId, 'canonical_name' => 'Partido 2023'], ['id' => (string) Str::uuid(), 'canonical_name' => 'Partido Actual']]);
+        DB::table('candidacy_endorsements')->insert(['id' => (string) Str::uuid(), 'candidacy_id' => $candidacyId, 'organization_id' => $orgId, 'is_primary' => true]);
+
+        return $personId;
+    }
+
+    public function test_a_candidate_with_a_lider_record_opens_as_that_lider_keeping_votes_and_party(): void
+    {
+        $personId = $this->candidateLinkedToLiderA();
+
+        $this->actingAs($this->admin)->getJson("/mapa-politico/persona/{$personId}")
+            ->assertOk()
+            ->assertJsonPath('id', $this->liderA)
+            ->assertJsonPath('source', 'lider')
+            ->assertJsonPath('votos', 120)
+            ->assertJsonPath('partido', 'Partido 2023')
+            ->assertJsonStructure(['info_politica', 'contactos']);
+    }
+
+    public function test_an_ambiguous_candidate_keeps_opening_as_the_electoral_person(): void
+    {
+        $personId = $this->candidateLinkedToLiderA();
+        $this->lider($this->munA, 'Ana Territorio A', '333');
+
+        // The persona-mode response itself uses ILIKE (PostgreSQL only), so the decision is checked directly.
+        $this->actingAs($this->admin);
+        $controller = app(\App\Http\Controllers\MapaPoliticoController::class);
+        $linked = (new \ReflectionMethod($controller, 'linkedLiderId'))->invoke($controller, DB::table('persons')->find($personId));
+
+        $this->assertNull($linked);
+    }
+
+    public function test_nexos_saved_under_the_candidate_stay_visible_from_the_lider(): void
+    {
+        $personId = $this->candidateLinkedToLiderA();
+        DB::table('nexos_familiares')->insert(['id' => (string) Str::uuid(), 'person_id' => $personId, 'nombre' => 'Hija de Ana']);
+
+        $nexos = $this->actingAs($this->admin)->getJson("/mapa-politico/persona/{$this->liderA}")->assertOk()->json('nexos');
+
+        $this->assertContains('Hija de Ana', array_column($nexos, 'nombre'));
+    }
+
+    public function test_saving_the_party_from_the_lider_never_rewrites_the_past_candidacy_endorsement(): void
+    {
+        $this->candidateLinkedToLiderA();
+
+        $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$this->liderA}", ['partido' => 'Partido Actual'])->assertOk();
+
+        $this->assertSame('Partido Actual', DB::table('lideres')->where('id', $this->liderA)->value('partido'));
+        $endorsed = DB::table('candidacy_endorsements as ce')->join('political_organizations as po', 'po.id', '=', 'ce.organization_id')->value('po.canonical_name');
+        $this->assertSame('Partido 2023', $endorsed);
+    }
 }
+
