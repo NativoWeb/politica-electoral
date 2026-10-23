@@ -10,100 +10,16 @@ const emptyPagination = {
     total: 0,
 };
 
-const filterDefinitions = [
-    { key: 'provincia', label: 'Provincia' },
-    { key: 'municipio', label: 'Municipio' },
-    { key: 'tipo', label: 'Tipo' },
-    { key: 'cargo', label: 'Cargo' },
-    { key: 'partido', label: 'Partido' },
-    { key: 'profesion', label: 'Profesión' },
-    { key: 'barrio', label: 'Barrio' },
-    { key: 'estado', label: 'Estado' },
-];
-
-const emptyFilterValues = {
-    provincia: '',
-    municipio: '',
-    tipo: '',
-    cargo: '',
-    partido: '',
-    profesion: '',
-    barrio: '',
-    estado: 'todos',
-};
-
-function normalizeStatus(status) {
-    return String(status ?? '').toLowerCase();
-}
-
-function getStatusLabel(status) {
-    switch (normalizeStatus(status)) {
-        case 'pendiente': return 'Pendiente';
-        case 'enviando': return 'Enviando';
-        case 'enviado': return 'Enviado';
-        case 'leido': return 'Leído';
-        case 'error': return 'Error';
-        default: return status || 'Sin estado';
-    }
-}
-
-function getStatusClass(status) {
-    switch (normalizeStatus(status)) {
-        case 'pendiente': return 'bg-gray-100 text-gray-600';
-        case 'enviando': return 'bg-blue-100 text-blue-700';
-        case 'enviado': return 'bg-green-100 text-green-700';
-        case 'leido': return 'bg-purple-100 text-purple-700';
-        case 'error': return 'bg-red-100 text-red-700';
-        default: return 'bg-gray-100 text-gray-600';
-    }
-}
-
-function normalizeOptions(options) {
-    if (!Array.isArray(options)) return [];
-
-    return options
-        .map((option) => {
-            if (typeof option === 'string' || typeof option === 'number') {
-                return {
-                    value: String(option),
-                    label: String(option),
-                };
-            }
-
-            if (option && option.value !== undefined) {
-                return {
-                    value: String(option.value),
-                    label: String(option.label ?? option.value),
-                };
-            }
-
-            return null;
-        })
-        .filter(Boolean);
-}
-
 export default function WhatsApp({
     contacts = emptyPagination,
     templates = [],
     filters = {},
-    matchingContactIds = [],
-    filterOptions = {},
 }) {
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [selectedContactIds, setSelectedContactIds] = useState([]);
     const [search, setSearch] = useState(filters.search ?? '');
     const [variableValues, setVariableValues] = useState({});
     const [source, setSource] = useState(filters.source ?? 'todos');
-
-    const [filterValues, setFilterValues] = useState({
-        ...emptyFilterValues,
-        ...Object.fromEntries(
-            filterDefinitions.map(({ key }) => [
-                key,
-                filters[key] ?? (key === 'estado' ? 'todos' : ''),
-            ])
-        ),
-    });
 
     const [imageFile, setImageFile] = useState(null);
     const [imageUrl, setImageUrl] = useState('');
@@ -113,8 +29,7 @@ export default function WhatsApp({
     const [sendMessage, setSendMessage] = useState('');
     const [sendError, setSendError] = useState('');
 
-    // Se conserva la consulta de estado para saber cuándo termina el envío.
-    // Los estados individuales ya no se muestran debajo del formulario.
+    const [sendTracking, setSendTracking] = useState([]);
     const [isTrackingActive, setIsTrackingActive] = useState(false);
     const [currentSendId, setCurrentSendId] = useState(null);
 
@@ -137,34 +52,6 @@ export default function WhatsApp({
 
     const contactData = contacts?.data ?? [];
 
-    const selectableContactData = contactData.filter(
-        (contact) => Boolean(contact.phone)
-    );
-
-    const allMatchingIds = useMemo(
-        () => [...new Set(
-            (matchingContactIds ?? [])
-                .filter(Boolean)
-                .map((id) => String(id))
-        )],
-        [matchingContactIds]
-    );
-
-    const selectedIdSet = useMemo(
-        () => new Set(selectedContactIds.map((id) => String(id))),
-        [selectedContactIds]
-    );
-
-    const allMatchingSelected =
-        allMatchingIds.length > 0 &&
-        allMatchingIds.every((id) => selectedIdSet.has(id));
-
-    const allVisibleSelected =
-        selectableContactData.length > 0 &&
-        selectableContactData.every((contact) =>
-            selectedIdSet.has(String(contact.id))
-        );
-
     const selectedTemplate = useMemo(
         () => templates.find(
             (template) => String(template.id) === String(selectedTemplateId)
@@ -177,7 +64,6 @@ export default function WhatsApp({
 
     const sortedVariables = useMemo(() => {
         if (!selectedTemplate?.variables?.length) return [];
-
         return [...selectedTemplate.variables].sort(
             (a, b) => Number(a.position) - Number(b.position)
         );
@@ -185,7 +71,6 @@ export default function WhatsApp({
 
     const previewContact = useMemo(() => {
         if (selectedContactIds.length !== 1) return null;
-
         return contactData.find(
             (contact) => String(contact.id) === String(selectedContactIds[0])
         ) ?? null;
@@ -216,42 +101,6 @@ export default function WhatsApp({
     }, [selectedTemplate, sortedVariables, previewName, variableValues]);
 
     useEffect(() => {
-        setSearch(filters.search ?? '');
-        setSource(filters.source ?? 'todos');
-
-        setFilterValues({
-            ...emptyFilterValues,
-            ...Object.fromEntries(
-                filterDefinitions.map(({ key }) => [
-                    key,
-                    filters[key] ?? (key === 'estado' ? 'todos' : ''),
-                ])
-            ),
-        });
-
-        if (filters.birth_month && filters.birth_day) {
-            setBirthdayDate(
-                `${new Date().getFullYear()}-${String(filters.birth_month).padStart(2, '0')}-${String(filters.birth_day).padStart(2, '0')}`
-            );
-        } else {
-            setBirthdayDate('');
-        }
-    }, [
-        filters.search,
-        filters.source,
-        filters.provincia,
-        filters.municipio,
-        filters.tipo,
-        filters.cargo,
-        filters.partido,
-        filters.profesion,
-        filters.barrio,
-        filters.estado,
-        filters.birth_month,
-        filters.birth_day,
-    ]);
-
-    useEffect(() => {
         if (!currentSendId || !isTrackingActive) return;
 
         let cancelled = false;
@@ -269,16 +118,19 @@ export default function WhatsApp({
                     }
                 );
 
-                if (!response.ok) return;
+                if (!response.ok) {
+                    throw new Error('No fue posible consultar el estado del envío.');
+                }
 
                 const data = await response.json();
                 if (cancelled) return;
 
                 const recipients = data?.recipients ?? [];
+                setSendTracking(recipients);
 
                 const hasPendingRecipients = recipients.some((recipient) =>
                     ['pendiente', 'enviando'].includes(
-                        normalizeStatus(recipient.status)
+                        String(recipient.status).toLowerCase()
                     )
                 );
 
@@ -301,46 +153,6 @@ export default function WhatsApp({
         };
     }, [currentSendId, isTrackingActive]);
 
-    const buildFilterParams = ({
-        searchValue = search,
-        sourceValue = source,
-        filterOverrides = {},
-        birthdayValue = birthdayDate,
-    } = {}) => {
-        const params = {};
-        const nextFilters = { ...filterValues, ...filterOverrides };
-
-        if (searchValue.trim()) params.search = searchValue.trim();
-        if (sourceValue) params.source = sourceValue;
-
-        for (const { key } of filterDefinitions) {
-            const value = nextFilters[key];
-
-            if (value && value !== 'todos') {
-                params[key] = value;
-            }
-        }
-
-        if (isBirthdayTemplate && birthdayValue) {
-            const [, month, day] = birthdayValue.split('-');
-
-            if (month && day) {
-                params.birth_month = month;
-                params.birth_day = day;
-            }
-        }
-
-        return params;
-    };
-
-    const applyFilters = (options = {}) => {
-        router.get('/admin/whatsapp', buildFilterParams(options), {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
-        });
-    };
-
     const handleTemplateChange = (event) => {
         setSelectedTemplateId(event.target.value);
         setBirthdayMode('manual');
@@ -351,6 +163,7 @@ export default function WhatsApp({
         setBirthdayDate('');
         setSendMessage('');
         setSendError('');
+        setSendTracking([]);
         setIsTrackingActive(false);
         setCurrentSendId(null);
         setImageFile(null);
@@ -358,40 +171,43 @@ export default function WhatsApp({
         setImagePreview('');
     };
 
+    const applyFilters = ({
+        searchValue = search,
+        birthdayValue = birthdayDate,
+        sourceValue = source,
+    } = {}) => {
+        const params = {};
+
+        if (searchValue.trim()) params.search = searchValue.trim();
+        if (sourceValue) params.source = sourceValue;
+
+        if (isBirthdayTemplate && birthdayValue) {
+            const [, month, day] = birthdayValue.split('-');
+            if (month && day) {
+                params.birth_month = month;
+                params.birth_day = day;
+            }
+        }
+
+        router.get('/admin/whatsapp', params, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
     const handleSourceChange = (event) => {
         const value = event.target.value;
-
         setSource(value);
         setSelectedContactIds([]);
         setSendMessage('');
         setSendError('');
-
-        applyFilters({
-            sourceValue: value,
-            filterOverrides: filterValues,
-        });
-    };
-
-    const handleFilterChange = (key, value) => {
-        const nextFilters = { ...filterValues, [key]: value };
-
-        setFilterValues(nextFilters);
-        setSelectedContactIds([]);
-        setSendMessage('');
-        setSendError('');
-
-        applyFilters({
-            filterOverrides: nextFilters,
-        });
+        applyFilters({ sourceValue: value });
     };
 
     const handleVariableChange = (position, value) => {
         if (Number(position) === 1) return;
-
-        setVariableValues((current) => ({
-            ...current,
-            [position]: value,
-        }));
+        setVariableValues((current) => ({ ...current, [position]: value }));
     };
 
     const handleImageFileChange = (event) => {
@@ -412,7 +228,6 @@ export default function WhatsApp({
 
     const handleImageUrlChange = (event) => {
         const value = event.target.value;
-
         setImageUrl(value);
         setImageFile(null);
         setImagePreview(value.trim());
@@ -430,9 +245,7 @@ export default function WhatsApp({
         const contactId = String(contact.id);
 
         setSelectedContactIds((current) => {
-            const alreadySelected = current.some(
-                (id) => String(id) === contactId
-            );
+            const alreadySelected = current.some((id) => String(id) === contactId);
 
             return alreadySelected
                 ? current.filter((id) => String(id) !== contactId)
@@ -440,33 +253,38 @@ export default function WhatsApp({
         });
     };
 
-    const toggleAllContacts = () => {
-        // Selecciona o deselecciona TODOS los contactos que coinciden
-        // con los filtros, incluyendo los que están en otras páginas.
-        const idsToToggle = allMatchingIds.length > 0
-            ? allMatchingIds
-            : selectableContactData.map((contact) => String(contact.id));
+    const selectableContactData = contactData.filter(
+        (contact) => Boolean(contact.phone)
+    );
 
-        if (!idsToToggle.length) return;
-
-        const shouldDeselect = idsToToggle.every(
-            (id) => selectedIdSet.has(id)
+    const allVisibleSelected =
+        selectableContactData.length > 0 &&
+        selectableContactData.every((contact) =>
+            selectedContactIds.some((id) => String(id) === String(contact.id))
         );
 
+    const toggleAllContacts = () => {
+        const visibleIds = selectableContactData
+            .map((contact) => contact.id)
+            .filter(Boolean);
+
+        if (!visibleIds.length) return;
+
+        if (allVisibleSelected) {
+            setSelectedContactIds((current) =>
+                current.filter((id) =>
+                    !visibleIds.some((visibleId) => String(visibleId) === String(id))
+                )
+            );
+            return;
+        }
+
         setSelectedContactIds((current) => {
-            if (shouldDeselect) {
-                return current.filter(
-                    (id) => !idsToToggle.includes(String(id))
-                );
-            }
-
             const result = [...current];
-            const existing = new Set(result.map((id) => String(id)));
 
-            for (const id of idsToToggle) {
-                if (!existing.has(id)) {
+            for (const id of visibleIds) {
+                if (!result.some((existingId) => String(existingId) === String(id))) {
                     result.push(id);
-                    existing.add(id);
                 }
             }
 
@@ -487,6 +305,7 @@ export default function WhatsApp({
         setIsSending(true);
         setSendMessage('');
         setSendError('');
+        setSendTracking([]);
         setIsTrackingActive(false);
         setCurrentSendId(null);
 
@@ -509,9 +328,7 @@ export default function WhatsApp({
                     formData.append('image_url', imageUrl.trim());
                 }
 
-                if (imageFile) {
-                    formData.append('image', imageFile);
-                }
+                if (imageFile) formData.append('image', imageFile);
             }
 
             const response = await fetch('/admin/whatsapp/prepare', {
@@ -529,26 +346,24 @@ export default function WhatsApp({
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(
-                    data?.message ?? 'No fue posible preparar el envío.'
-                );
+                throw new Error(data?.message ?? 'No fue posible preparar el envío.');
             }
 
             const sendId = data?.send_id;
-
             if (!sendId) {
-                throw new Error(
-                    'Laravel no devolvió el identificador del envío.'
-                );
+                throw new Error('Laravel no devolvió el identificador del envío.');
             }
 
             setCurrentSendId(sendId);
-            setSendMessage('Envío en progreso, revise el historial.');
+            setSendMessage(
+                data?.message ??
+                (isBirthdayTemplate
+                    ? 'Campaña de cumpleaños preparada. El envío se gestionará mediante n8n.'
+                    : 'Datos enviados correctamente a n8n.')
+            );
             setIsTrackingActive(true);
         } catch (error) {
-            setSendError(
-                error?.message ?? 'Ocurrió un error al preparar el envío.'
-            );
+            setSendError(error?.message ?? 'Ocurrió un error al preparar el envío.');
         } finally {
             setIsSending(false);
         }
@@ -556,37 +371,29 @@ export default function WhatsApp({
 
     const submitSearch = (event) => {
         event.preventDefault();
-        setSelectedContactIds([]);
         applyFilters();
     };
 
     const clearSearch = () => {
         setSearch('');
-        setSelectedContactIds([]);
         applyFilters({ searchValue: '' });
     };
 
     const handleBirthdayDateChange = (event) => {
         const value = event.target.value;
-
         setBirthdayDate(value);
-        setSelectedContactIds([]);
-
         applyFilters({ birthdayValue: value });
     };
 
     const selectTodayBirthdays = () => {
         const today = new Date();
         const value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
         setBirthdayDate(value);
-        setSelectedContactIds([]);
         applyFilters({ birthdayValue: value });
     };
 
     const clearBirthdayFilter = () => {
         setBirthdayDate('');
-        setSelectedContactIds([]);
         applyFilters({ birthdayValue: '' });
     };
 
@@ -616,9 +423,7 @@ export default function WhatsApp({
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(
-                    data?.message ?? 'No fue posible consultar el historial.'
-                );
+                throw new Error(data?.message ?? 'No fue posible consultar el historial.');
             }
 
             setBirthdayHistory(data);
@@ -644,17 +449,33 @@ export default function WhatsApp({
         }).format(date);
     };
 
-    const goToPage = (url) => {
-        if (!url) return;
+    const normalizeStatus = (status) => String(status ?? '').toLowerCase();
 
-        // Los enlaces de paginación de Laravel conservan los parámetros
-        // de búsqueda y filtros si el controlador usa withQueryString().
-        router.get(url, {}, {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
-        });
+    const getStatusLabel = (status) => {
+        switch (normalizeStatus(status)) {
+            case 'pendiente': return 'Pendiente';
+            case 'enviando': return 'Enviando';
+            case 'enviado': return 'Enviado';
+            case 'leido': return 'Leído';  
+            case 'error': return 'Error';
+            default: return status || 'Sin estado';
+        }
     };
+
+    const getStatusClass = (status) => {
+        switch (normalizeStatus(status)) {
+            case 'pendiente': return 'bg-gray-100 text-gray-600';
+            case 'enviando': return 'bg-blue-100 text-blue-700';
+            case 'enviado': return 'bg-green-100 text-green-700';
+            case 'leido': return 'bg-purple-100 text-purple-700';
+            case 'error': return 'bg-red-100 text-red-700';
+            default: return 'bg-gray-100 text-gray-600';
+        }
+    };
+
+    const sentCount = sendTracking.filter(
+        (item) => normalizeStatus(item.status) === 'enviado'
+    ).length;
 
     return (
         <AppLayout
@@ -689,6 +510,7 @@ export default function WhatsApp({
                             Selecciona una plantilla y posteriormente los destinatarios.
                         </p>
 
+                        {/* ÚNICO selector de plantilla */}
                         <div>
                             <label htmlFor="plantilla" className="block text-sm font-medium text-gray-700">
                                 Plantilla
@@ -706,7 +528,6 @@ export default function WhatsApp({
                                     </option>
                                 ))}
                             </select>
-
                             {!templates.length && (
                                 <p className="mt-2 text-[11px] text-red-600">
                                     No hay plantillas disponibles.
@@ -714,12 +535,12 @@ export default function WhatsApp({
                             )}
                         </div>
 
+                        {/* Selector de modo, fuera del formulario ocultable */}
                         {isBirthdayTemplate && (
                             <div className="mb-6 mt-5">
                                 <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                     Modo de cumpleaños
                                 </p>
-
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <button
                                         type="button"
@@ -762,6 +583,7 @@ export default function WhatsApp({
                             </div>
                         )}
 
+                        {/* Formulario manual: se oculta solo al consultar el historial */}
                         <div className={`space-y-6 ${
                             isBirthdayTemplate && birthdayMode === 'history' ? 'hidden' : ''
                         }`}>
@@ -775,7 +597,6 @@ export default function WhatsApp({
                                             <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
                                                 Selecciona de qué grupo quieres obtener los destinatarios.
                                             </p>
-
                                             <select
                                                 id="source-filter"
                                                 value={source}
@@ -788,60 +609,6 @@ export default function WhatsApp({
                                             </select>
                                         </div>
 
-                                        {/* Los ocho filtros solicitados: cuatro columnas en pantallas amplias. */}
-                                        <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
-                                            <div className="mb-3">
-                                                <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
-                                                    Filtros de destinatarios
-                                                </h3>
-                                                <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                    Los filtros se aplican a todos los contactos, no solo a la página visible.
-                                                </p>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                                {filterDefinitions.map(({ key, label }) => {
-                                                    const options = normalizeOptions(filterOptions?.[key]);
-
-                                                    return (
-                                                        <div key={key} className="min-w-0">
-                                                            <label
-                                                                htmlFor={`filter-${key}`}
-                                                                className="mb-1.5 block text-[11px] font-semibold text-[var(--color-ink)]"
-                                                            >
-                                                                {label}
-                                                            </label>
-
-                                                            <select
-                                                                id={`filter-${key}`}
-                                                                value={filterValues[key] ?? (key === 'estado' ? 'todos' : '')}
-                                                                onChange={(event) => handleFilterChange(key, event.target.value)}
-                                                                className="w-full rounded-lg border border-[var(--color-line)] bg-white px-2.5 py-2 text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                            >
-                                                                <option value="todos">Todos</option>
-                                                                {key !== 'estado' && (
-                                                                    <option value="">Todos</option>
-                                                                )}
-                                                                {key === 'estado' && (
-                                                                    <>
-                                                                        <option value="activos">Activos</option>
-                                                                        <option value="inactivos">Inactivos</option>
-                                                                    </>
-                                                                )}
-                                                                {options
-                                                                    .filter((option) => option.value !== 'todos' && option.value !== '')
-                                                                    .map((option) => (
-                                                                        <option key={option.value} value={option.value}>
-                                                                            {option.label}
-                                                                        </option>
-                                                                    ))}
-                                                            </select>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
                                         {isBirthdayTemplate && (
                                             <div className="mb-4 rounded-lg border border-[var(--color-line)] bg-white p-4">
                                                 <label htmlFor="birthday-filter" className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
@@ -850,7 +617,6 @@ export default function WhatsApp({
                                                 <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
                                                     Elige una fecha para encontrar personas que cumplen años ese día.
                                                 </p>
-
                                                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                                                     <input
                                                         id="birthday-filter"
@@ -859,21 +625,11 @@ export default function WhatsApp({
                                                         onChange={handleBirthdayDateChange}
                                                         className="flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
                                                     />
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={selectTodayBirthdays}
-                                                        className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
-                                                    >
+                                                    <button type="button" onClick={selectTodayBirthdays} className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-[11px] font-semibold text-white hover:opacity-90">
                                                         Cumplen hoy
                                                     </button>
-
                                                     {birthdayDate && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={clearBirthdayFilter}
-                                                            className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                        >
+                                                        <button type="button" onClick={clearBirthdayFilter} className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50">
                                                             Quitar filtro
                                                         </button>
                                                     )}
@@ -889,48 +645,23 @@ export default function WhatsApp({
                                                 placeholder="Buscar por nombre o teléfono..."
                                                 className="flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
                                             />
-
-                                            <button
-                                                type="submit"
-                                                className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
-                                            >
+                                            <button type="submit" className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white hover:opacity-90">
                                                 Buscar
                                             </button>
-
                                             {search && (
-                                                <button
-                                                    type="button"
-                                                    onClick={clearSearch}
-                                                    className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                >
+                                                <button type="button" onClick={clearSearch} className="rounded-lg border border-[var(--color-line)] bg-white px-4 py-2.5 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50">
                                                     Limpiar
                                                 </button>
                                             )}
                                         </form>
 
-                                        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="text-[11px] text-[var(--color-ink-faint)]">
-                                                <p>
-                                                    Página {contacts?.current_page ?? 1} de {contacts?.last_page ?? 1}
-                                                    {' · '}
-                                                    {contacts?.total ?? contactData.length} contactos encontrados
-                                                </p>
-                                                <p className="mt-1">
-                                                    {allMatchingIds.length > 0
-                                                        ? `${allMatchingIds.length} contactos seleccionables en todos los resultados`
-                                                        : 'Selecciona los contactos que tengan celular.'}
-                                                </p>
-                                            </div>
-
-                                            {(allMatchingIds.length > 0 || selectableContactData.length > 0) && (
-                                                <button
-                                                    type="button"
-                                                    onClick={toggleAllContacts}
-                                                    className="self-start text-[11px] font-semibold text-[var(--color-primary)] hover:underline sm:self-auto"
-                                                >
-                                                    {allMatchingSelected
-                                                        ? 'Deseleccionar todos los resultados'
-                                                        : 'Seleccionar todos los resultados'}
+                                        <div className="mt-4 flex items-center justify-between">
+                                            <span className="text-[11px] text-[var(--color-ink-faint)]">
+                                                Página {contacts?.current_page ?? 1} de {contacts?.last_page ?? 1}
+                                            </span>
+                                            {selectableContactData.length > 0 && (
+                                                <button type="button" onClick={toggleAllContacts} className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline">
+                                                    {allVisibleSelected ? 'Deseleccionar todos' : 'Seleccionar todos'}
                                                 </button>
                                             )}
                                         </div>
@@ -938,7 +669,9 @@ export default function WhatsApp({
                                         {contactData.length > 0 ? (
                                             <div className="mt-3 max-h-96 space-y-2 overflow-y-auto">
                                                 {contactData.map((contact) => {
-                                                    const selected = selectedIdSet.has(String(contact.id));
+                                                    const selected = selectedContactIds.some(
+                                                        (id) => String(id) === String(contact.id)
+                                                    );
 
                                                     return (
                                                         <label
@@ -956,7 +689,6 @@ export default function WhatsApp({
                                                                 onChange={() => toggleContact(contact)}
                                                                 className="h-4 w-4 rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
                                                             />
-
                                                             <div className="min-w-0 flex-1">
                                                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-center">
                                                                     <div className="min-w-0">
@@ -964,23 +696,13 @@ export default function WhatsApp({
                                                                             {contact.name}
                                                                         </p>
                                                                     </div>
-
                                                                     <div>
-                                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
-                                                                            Celular
-                                                                        </p>
-                                                                        <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
-                                                                            {contact.phone || 'Sin celular'}
-                                                                        </p>
+                                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Celular</p>
+                                                                        <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">{contact.phone || 'Sin celular'}</p>
                                                                     </div>
-
                                                                     <div>
-                                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
-                                                                            Cumpleaños
-                                                                        </p>
-                                                                        <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">
-                                                                            {formatBirthDate(contact.birth_date)}
-                                                                        </p>
+                                                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Cumpleaños</p>
+                                                                        <p className="mt-0.5 text-[11px] text-[var(--color-ink)]">{formatBirthDate(contact.birth_date)}</p>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -999,28 +721,18 @@ export default function WhatsApp({
                                             </div>
                                         )}
 
-                                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="mt-4 flex items-center justify-between">
                                             <span className="text-[10px] text-[var(--color-ink-faint)]">
-                                                {selectedContactIds.length} destinatarios seleccionados en total
+                                                {selectedContactIds.length} destinatarios seleccionados
                                             </span>
-
                                             <div className="flex gap-2">
                                                 {contacts?.prev_page_url && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => goToPage(contacts.prev_page_url)}
-                                                        className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                    >
+                                                    <button type="button" onClick={() => router.get(contacts.prev_page_url, {}, { preserveState: true, preserveScroll: true, replace: true })} className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50">
                                                         Anterior
                                                     </button>
                                                 )}
-
                                                 {contacts?.next_page_url && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => goToPage(contacts.next_page_url)}
-                                                        className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                    >
+                                                    <button type="button" onClick={() => router.get(contacts.next_page_url, {}, { preserveState: true, preserveScroll: true, replace: true })} className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-primary)] hover:bg-gray-50">
                                                         Siguiente
                                                     </button>
                                                 )}
@@ -1033,22 +745,16 @@ export default function WhatsApp({
                                             <label className="mb-3 block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
                                                 Personalización
                                             </label>
-
                                             <div className="space-y-3">
                                                 {sortedVariables.map((variable) => {
                                                     const position = Number(variable.position);
-
                                                     if (position === 1) return null;
 
                                                     return (
                                                         <div key={variable.position}>
-                                                            <label
-                                                                htmlFor={`variable-${variable.position}`}
-                                                                className="mb-1.5 block text-[11px] font-semibold text-[var(--color-ink)]"
-                                                            >
+                                                            <label htmlFor={`variable-${variable.position}`} className="mb-1.5 block text-[11px] font-semibold text-[var(--color-ink)]">
                                                                 {variable.label}
                                                             </label>
-
                                                             <input
                                                                 id={`variable-${variable.position}`}
                                                                 type="text"
@@ -1061,7 +767,6 @@ export default function WhatsApp({
                                                     );
                                                 })}
                                             </div>
-
                                             <p className="mt-2 text-[10px] text-[var(--color-ink-faint)]">
                                                 <strong>El nombre del contacto se agregará automáticamente al momento del envío.</strong>
                                             </p>
@@ -1073,51 +778,21 @@ export default function WhatsApp({
                                             <label className="mb-3 block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
                                                 Imagen del encabezado
                                             </label>
-
                                             <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
                                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        onChange={handleImageFileChange}
-                                                        className="hidden"
-                                                        id="whatsapp-image-file"
-                                                    />
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => document.getElementById('whatsapp-image-file')?.click()}
-                                                        className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
-                                                    >
+                                                    <input type="file" accept="image/*" onChange={handleImageFileChange} className="hidden" id="whatsapp-image-file" />
+                                                    <button type="button" onClick={() => document.getElementById('whatsapp-image-file')?.click()} className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-[11px] font-semibold text-white hover:opacity-90">
                                                         Adjuntar imagen
                                                     </button>
-
-                                                    <span className="text-[11px] text-[var(--color-ink-faint)]">
-                                                        o usa una URL pública
-                                                    </span>
-
-                                                    <input
-                                                        type="url"
-                                                        value={imageUrl}
-                                                        onChange={handleImageUrlChange}
-                                                        placeholder="https://ejemplo.com/imagen.jpg"
-                                                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                    />
+                                                    <span className="text-[11px] text-[var(--color-ink-faint)]">o usa una URL pública</span>
+                                                    <input type="url" value={imageUrl} onChange={handleImageUrlChange} placeholder="https://ejemplo.com/imagen.jpg" className="min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]" />
                                                 </div>
-
                                                 {(imageFile || imageUrl) && (
                                                     <div className="mt-3 flex items-center justify-between gap-3">
                                                         <p className="min-w-0 truncate text-[10px] text-[var(--color-ink-faint)]">
-                                                            {imageFile
-                                                                ? `Archivo seleccionado: ${imageFile.name}`
-                                                                : `Imagen desde URL pública: ${imageUrl}`}
+                                                            {imageFile ? `Archivo seleccionado: ${imageFile.name}` : `Imagen desde URL pública: ${imageUrl}`}
                                                         </p>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={clearImage}
-                                                            className="shrink-0 text-[10px] font-semibold text-[var(--color-primary)] hover:underline"
-                                                        >
+                                                        <button type="button" onClick={clearImage} className="shrink-0 text-[10px] font-semibold text-[var(--color-primary)] hover:underline">
                                                             Quitar
                                                         </button>
                                                     </div>
@@ -1132,35 +807,25 @@ export default function WhatsApp({
                                                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
                                                     Vista previa
                                                 </label>
-
                                                 {selectedContactIds.length === 1 && previewContact && (
                                                     <span className="text-[10px] text-[var(--color-ink-faint)]">
                                                         Para: <strong>{previewContact.name}</strong>
                                                     </span>
                                                 )}
-
                                                 {selectedContactIds.length > 1 && (
                                                     <span className="text-[10px] text-[var(--color-ink-faint)]">
                                                         Vista previa general para <strong>{selectedContactIds.length}</strong> destinatarios
                                                     </span>
                                                 )}
                                             </div>
-
                                             <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
                                                 {hasImageHeader && imagePreview && (
                                                     <div className="mb-4 overflow-hidden rounded-lg bg-white">
-                                                        <img
-                                                            src={imagePreview}
-                                                            alt="Vista previa del encabezado"
-                                                            className="max-h-80 w-full object-contain"
-                                                        />
+                                                        <img src={imagePreview} alt="Vista previa del encabezado" className="max-h-80 w-full object-contain" />
                                                     </div>
                                                 )}
-
                                                 {selectedContactIds.length > 0 ? (
-                                                    <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-ink)]">
-                                                        {previewText}
-                                                    </p>
+                                                    <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-ink)]">{previewText}</p>
                                                 ) : (
                                                     <p className="text-[12px] text-[var(--color-ink-faint)]">
                                                         Selecciona un contacto para visualizar el mensaje.
@@ -1182,43 +847,76 @@ export default function WhatsApp({
                                 <button
                                     type="button"
                                     onClick={prepareSending}
-                                    disabled={
-                                        !selectedTemplate ||
-                                        selectedContactIds.length === 0 ||
-                                        isSending ||
-                                        isTrackingActive
-                                    }
+                                    disabled={!selectedTemplate || selectedContactIds.length === 0 || isSending || isTrackingActive}
                                     className={`rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white ${
-                                        !selectedTemplate ||
-                                        selectedContactIds.length === 0 ||
-                                        isSending ||
-                                        isTrackingActive
+                                        !selectedTemplate || selectedContactIds.length === 0 || isSending || isTrackingActive
                                             ? 'cursor-not-allowed opacity-50'
                                             : 'hover:opacity-90'
                                     }`}
                                 >
-                                    {isSending
-                                        ? 'Preparando envío...'
-                                        : isTrackingActive
-                                            ? 'Envío en progreso, revise el historial'
-                                            : 'Enviar'}
+                                    {isSending ? 'Preparando envío...' : isTrackingActive ? 'Envío en progreso...' : 'Enviar'}
                                 </button>
-
-                                {sendMessage && (
-                                    <p className="mt-2 text-[11px] font-medium text-green-600">
-                                        {sendMessage}
-                                    </p>
-                                )}
-
-                                {sendError && (
-                                    <p className="mt-2 text-[11px] font-medium text-red-600">
-                                        {sendError}
-                                    </p>
-                                )}
+                                {sendMessage && <p className="mt-2 text-[11px] font-medium text-green-600">{sendMessage}</p>}
+                                {sendError && <p className="mt-2 text-[11px] font-medium text-red-600">{sendError}</p>}
                             </div>
+
+                            {sendTracking.length > 0 && (
+                                <div className="rounded-lg border border-[var(--color-line)] bg-white">
+                                    <div className="border-b border-[var(--color-line)] px-4 py-4">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                                <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink)]">Seguimiento del envío</h3>
+                                                <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">Estado de cada destinatario.</p>
+                                            </div>
+                                            <span className="text-[10px] font-medium text-[var(--color-ink-faint)]">
+                                                {sentCount} de {sendTracking.length} enviados
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="border-b border-[var(--color-line)] bg-gray-50">
+                                                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Destinatario</th>
+                                                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Celular</th>
+                                                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Estado</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {[...sendTracking]
+                                                    .sort((a, b) => {
+                                                        const order = { enviado: 1, error: 2, enviando: 3, pendiente: 4 };
+                                                        return (order[normalizeStatus(a.status)] ?? 99) - (order[normalizeStatus(b.status)] ?? 99);
+                                                    })
+                                                    .map((recipient) => {
+                                                        const status = normalizeStatus(recipient.status);
+                                                        return (
+                                                            <tr key={recipient.id} className="border-b border-[var(--color-line)] last:border-b-0">
+                                                                <td className="px-4 py-3">
+                                                                    <p className="text-[12px] font-semibold text-[var(--color-ink)]">{recipient.name}</p>
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    <p className="text-[11px] text-[var(--color-ink)]">{recipient.phone}</p>
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}>
+                                                                        {status === 'enviado' && <span className="mr-1.5">✓</span>}
+                                                                        {status === 'leido' && <span className="mr-1.5">✓✓</span>}
+                                                                        {status === 'error' && <span className="mr-1.5">!</span>}
+                                                                        {getStatusLabel(recipient.status)}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Historial de cumpleaños: aquí sí se conservan los estados individuales. */}
+                        {/* Historial como hermano del formulario: los botones siguen visibles */}
                         {isBirthdayTemplate && birthdayMode === 'history' && (
                             <div className="mt-6 space-y-5">
                                 <div>
@@ -1232,13 +930,9 @@ export default function WhatsApp({
 
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                                     <div className="flex-1">
-                                        <label
-                                            htmlFor="birthday-history-date"
-                                            className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]"
-                                        >
+                                        <label htmlFor="birthday-history-date" className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]">
                                             Fecha del envío
                                         </label>
-
                                         <input
                                             id="birthday-history-date"
                                             type="date"
@@ -1251,7 +945,6 @@ export default function WhatsApp({
                                             className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)]"
                                         />
                                     </div>
-
                                     <button
                                         type="button"
                                         onClick={loadBirthdayHistory}
@@ -1270,7 +963,7 @@ export default function WhatsApp({
 
                                 {birthdayHistory && (
                                     <>
-                                        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                                        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                                             {[
                                                 { label: 'Enviados', value: birthdayHistory.summary?.enviado ?? 0, style: 'bg-green-50 text-green-700' },
                                                 { label: 'Leídos', value: birthdayHistory.summary?.leido ?? 0, style: 'bg-purple-50 text-purple-700' },
@@ -1279,68 +972,37 @@ export default function WhatsApp({
                                                 { label: 'En curso', value: birthdayHistory.summary?.enviando ?? 0, style: 'bg-blue-50 text-blue-700' },
                                             ].map((item) => (
                                                 <div key={item.label} className={`rounded-lg p-4 ${item.style}`}>
-                                                    <p className="text-[10px] font-bold uppercase tracking-wider">
-                                                        {item.label}
-                                                    </p>
-                                                    <p className="mt-1 text-2xl font-extrabold">
-                                                        {item.value}
-                                                    </p>
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider">{item.label}</p>
+                                                    <p className="mt-1 text-2xl font-extrabold">{item.value}</p>
                                                 </div>
                                             ))}
                                         </div>
 
                                         <div className="flex flex-wrap gap-4 text-[11px] text-[var(--color-ink-faint)]">
-                                            <span>
-                                                Fecha: <strong>{formatBirthDate(birthdayHistory.date)}</strong>
-                                            </span>
-                                            <span>
-                                                Campañas: <strong>{birthdayHistory.campaigns_count}</strong>
-                                            </span>
-                                            <span>
-                                                Destinatarios: <strong>{birthdayHistory.recipients_count}</strong>
-                                            </span>
+                                            <span>Fecha: <strong>{formatBirthDate(birthdayHistory.date)}</strong></span>
+                                            <span>Campañas: <strong>{birthdayHistory.campaigns_count}</strong></span>
+                                            <span>Destinatarios: <strong>{birthdayHistory.recipients_count}</strong></span>
                                         </div>
 
                                         <div className="overflow-x-auto rounded-lg border border-[var(--color-line)]">
                                             <table className="w-full text-left">
                                                 <thead>
                                                     <tr className="border-b border-[var(--color-line)] bg-gray-50">
-                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
-                                                            Destinatario
-                                                        </th>
-                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
-                                                            Celular
-                                                        </th>
-                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
-                                                            Fecha de nacimiento
-                                                        </th>
-                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
-                                                            Estado
-                                                        </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Destinatario</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Celular</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Fecha de nacimiento</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Estado</th>
                                                     </tr>
                                                 </thead>
-
                                                 <tbody>
                                                     {(birthdayHistory.recipients ?? []).length > 0 ? (
                                                         birthdayHistory.recipients.map((recipient) => (
-                                                            <tr
-                                                                key={recipient.id}
-                                                                className="border-b border-[var(--color-line)] last:border-b-0"
-                                                            >
+                                                            <tr key={recipient.id} className="border-b border-[var(--color-line)] last:border-b-0">
                                                                 <td className="px-4 py-3">
-                                                                    <p className="text-[12px] font-semibold text-[var(--color-ink)]">
-                                                                        {recipient.name}
-                                                                    </p>
+                                                                    <p className="text-[12px] font-semibold text-[var(--color-ink)]">{recipient.name}</p>
                                                                 </td>
-
-                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">
-                                                                    {recipient.phone || 'Sin celular'}
-                                                                </td>
-
-                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">
-                                                                    {formatBirthDate(recipient.birth_date)}
-                                                                </td>
-
+                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">{recipient.phone || 'Sin celular'}</td>
+                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">{formatBirthDate(recipient.birth_date)}</td>
                                                                 <td className="px-4 py-3">
                                                                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}>
                                                                         {getStatusLabel(recipient.status)}
@@ -1350,10 +1012,7 @@ export default function WhatsApp({
                                                         ))
                                                     ) : (
                                                         <tr>
-                                                            <td
-                                                                colSpan={4}
-                                                                className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]"
-                                                            >
+                                                            <td colSpan={4} className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]">
                                                                 No hay destinatarios registrados para esta fecha.
                                                             </td>
                                                         </tr>
