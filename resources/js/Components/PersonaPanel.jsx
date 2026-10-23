@@ -883,9 +883,11 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 ) : (
                                     <div className="space-y-3">
                                         <DataRow label="Partido" value={data.partido} />
+                                        {data.partido_candidatura && <DataRow label="Partido (candidatura)" value={data.partido_candidatura} />}
                                         <DataRow label="Tipo" value={data.tipo_registro} />
                                         <DataRow label="Cargo" value={data.cargos?.length > 0 ? data.cargos.join(', ') : data.cargo} />
                                         <DataRow label="Votos" value={data.votos > 0 ? data.votos.toLocaleString('es-CO') : null} />
+                                        {data.votos_candidatura > 0 && <DataRow label="Votos (candidatura)" value={data.votos_candidatura.toLocaleString('es-CO')} />}
                                         {data.nivel_confianza && (
                                             <div className="flex items-start justify-between py-2 border-b border-[var(--color-line)]">
                                                 <span className="text-[14px] text-[var(--color-ink-faint)] uppercase tracking-wider flex-shrink-0 w-[140px]">Confianza</span>

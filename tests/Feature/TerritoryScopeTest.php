@@ -509,8 +509,9 @@ class TerritoryScopeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('id', $this->liderA)
             ->assertJsonPath('source', 'lider')
-            ->assertJsonPath('votos', 120)
-            ->assertJsonPath('partido', 'Partido 2023')
+            ->assertJsonPath('votos_candidatura', 120)
+            ->assertJsonPath('partido_candidatura', 'Partido 2023')
+            ->assertJsonPath('partido', null)
             ->assertJsonStructure(['info_politica', 'contactos']);
     }
 
@@ -546,6 +547,22 @@ class TerritoryScopeTest extends TestCase
         $this->assertSame('Partido Actual', DB::table('lideres')->where('id', $this->liderA)->value('partido'));
         $endorsed = DB::table('candidacy_endorsements as ce')->join('political_organizations as po', 'po.id', '=', 'ce.organization_id')->value('po.canonical_name');
         $this->assertSame('Partido 2023', $endorsed);
+    }
+
+    public function test_saving_the_panel_form_does_not_copy_the_candidacy_party_or_votes_into_the_lider(): void
+    {
+        $personId = $this->candidateLinkedToLiderA();
+        $data = $this->actingAs($this->admin)->getJson("/mapa-politico/persona/{$personId}")->assertOk()->json();
+
+        // The panel sends its whole form back, built from these same fields.
+        $this->putJson("/mapa-politico/persona/{$data['id']}", [
+            'telefono' => '3001112233', 'partido' => $data['partido'] ?? '', 'votos' => $data['votos'] ?? 0,
+        ])->assertOk();
+
+        $lider = DB::table('lideres')->where('id', $this->liderA)->first(['partido', 'votos', 'telefono']);
+        $this->assertNull($lider->partido);
+        $this->assertSame(0, (int) $lider->votos);
+        $this->assertSame('3001112233', $lider->telefono);
     }
 }
 

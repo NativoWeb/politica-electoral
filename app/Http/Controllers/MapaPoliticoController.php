@@ -856,7 +856,7 @@ class MapaPoliticoController extends Controller
         if ($source === 'persona') {
             $partido = $this->candidatePartido($id);
         } elseif ($source === 'lider') {
-            $partido = ($person->partido ?? null) ?: ($candidatePersonId ? $this->candidatePartido($candidatePersonId) : null);
+            $partido = $person->partido ?? null;
         }
 
         $partidos = Cache::remember('all_partidos', 3600, fn () => DB::table('political_organizations')->orderBy('canonical_name')->pluck('canonical_name')->toArray()
@@ -886,9 +886,12 @@ class MapaPoliticoController extends Controller
                 ? (($person->tipo ?? '') === 'nuevo_lider' ? 'Nuevos Líderes' : 'Líderes')
                 : null,
             'votos' => $source === 'lider'
-                ? ((int) ($bestLider->votos ?? 0) ?: ($candidatePersonId ? $this->candidateVotos($candidatePersonId) : 0))
+                ? (int) ($bestLider->votos ?? 0)
                 : $this->candidateVotos($id),
             'nexos' => $nexos,
+            // Read-only: the candidacy this lider is linked to. Never copied into the editable partido/votos.
+            'partido_candidatura' => $candidatePersonId ? $this->candidatePartido($candidatePersonId) : null,
+            'votos_candidatura' => $candidatePersonId ? $this->candidateVotos($candidatePersonId) : null,
         ];
 
         $liderId = $source === 'lider' ? $id : ($bestLider->id ?? null);
