@@ -40,6 +40,10 @@ class GenericExport implements FromArray, WithHeadings, WithTitle, WithStyles
             $out = [];
             foreach ($this->columns as $col) {
                 $val = $row[$col] ?? '—';
+                // A cell starting with = + - @ would run as a spreadsheet formula.
+                if (is_string($val) && $val !== '' && in_array($val[0], ['=', '+', '-', '@'], true)) {
+                    $val = "'".$val;
+                }
                 $out[] = $val == 0 && $col === 'votos' ? '—' : $val;
             }
             return $out;

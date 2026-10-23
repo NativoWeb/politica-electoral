@@ -218,11 +218,11 @@ class ExportController extends Controller
 
         $notes = $this->scopeToTerritory(DB::table('lideres'))
             ->whereIn(DB::raw('LOWER(nombre)'), array_values(array_unique(array_map(fn ($r) => mb_strtolower(trim($r['nombre'])), $missing))))
-            ->whereNotNull('observacion')->where('observacion', '!=', '')
             ->get(['nombre', 'municipio', 'observacion'])
             ->groupBy(fn ($l) => $key($l->nombre, $l->municipio))
             ->filter(fn ($group) => $group->count() === 1)
-            ->map(fn ($group) => $group->first()->observacion);
+            ->map(fn ($group) => $group->first()->observacion)
+            ->filter(fn ($obs) => $obs !== null && $obs !== '');
 
         return array_map(function ($r) use ($notes, $key) {
             if (! array_key_exists('observacion', $r)) {
