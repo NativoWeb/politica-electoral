@@ -9,6 +9,21 @@ use Inertia\Inertia;
 
 class WhatsAppTemplateController extends Controller
 {
+    /**
+     * Filtros que se pueden configurar por plantilla.
+     */
+    private const ALLOWED_FILTERS = [
+        'provincia',
+        'municipio',
+        'tipo',
+        'cargo',
+        'partido',
+        'profesion',
+        'barrio',
+        'estado',
+        'cumpleanos',
+    ];
+
     public function index()
     {
         $templates = WhatsAppTemplate::query()
@@ -24,9 +39,20 @@ class WhatsAppTemplateController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'meta_name' => ['required', 'string', 'max:255', 'unique:whatsapp_templates,meta_name'],
+            'meta_name' => [
+                'required',
+                'string',
+                'max:255',
+                'unique:whatsapp_templates,meta_name',
+            ],
             'body_text' => ['required', 'string'],
             'variables' => ['nullable', 'array'],
+            'filters' => ['nullable', 'array'],
+            'filters.*' => [
+                'string',
+                'distinct',
+                'in:' . implode(',', self::ALLOWED_FILTERS),
+            ],
             'header_type' => ['nullable', 'string', 'in:text,image'],
             'header_text' => ['nullable', 'string', 'max:255'],
             'language' => ['required', 'string', 'max:20'],
@@ -36,6 +62,9 @@ class WhatsAppTemplateController extends Controller
         ]);
 
         $validated['is_active'] = $request->boolean('is_active', true);
+        $validated['filters'] = array_values(
+            array_unique($validated['filters'] ?? [])
+        );
 
         WhatsAppTemplate::create($validated);
 
@@ -44,8 +73,10 @@ class WhatsAppTemplateController extends Controller
             ->with('success', 'Plantilla creada correctamente.');
     }
 
-    public function update(Request $request, WhatsAppTemplate $whatsappTemplate)
-    {
+    public function update(
+        Request $request,
+        WhatsAppTemplate $whatsappTemplate
+    ) {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'meta_name' => [
@@ -56,6 +87,12 @@ class WhatsAppTemplateController extends Controller
             ],
             'body_text' => ['required', 'string'],
             'variables' => ['nullable', 'array'],
+            'filters' => ['nullable', 'array'],
+            'filters.*' => [
+                'string',
+                'distinct',
+                'in:' . implode(',', self::ALLOWED_FILTERS),
+            ],
             'header_type' => ['nullable', 'string', 'in:text,image'],
             'header_text' => ['nullable', 'string', 'max:255'],
             'language' => ['required', 'string', 'max:20'],
@@ -65,6 +102,9 @@ class WhatsAppTemplateController extends Controller
         ]);
 
         $validated['is_active'] = $request->boolean('is_active', true);
+        $validated['filters'] = array_values(
+            array_unique($validated['filters'] ?? [])
+        );
 
         $whatsappTemplate->update($validated);
 

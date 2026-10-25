@@ -29,6 +29,13 @@ class WhatsAppController extends Controller
             $source = 'todos';
         }
 
+        $templateId = $request->input('template_id');
+        $selectedTemplate = $templateId
+            ? WhatsAppTemplate::query()
+                ->where('is_active', true)
+                ->find($templateId)
+            : null;
+
         $persons = collect();
 
         if (in_array($source, ['todos', 'votantes'], true)) {
@@ -70,15 +77,17 @@ class WhatsAppController extends Controller
                 });
             }
 
-            $birthMonth = $request->integer('birth_month');
-            $birthDay = $request->integer('birth_day');
+            if ($selectedTemplate?->meta_name === 'oscarfc') {
+                $birthMonth = $request->integer('birth_month');
+                $birthDay = $request->integer('birth_day');
 
-            if ($birthMonth >= 1 && $birthMonth <= 12) {
-                $query->whereMonth('birth_date', $birthMonth);
-            }
+                if ($birthMonth >= 1 && $birthMonth <= 12) {
+                    $query->whereMonth('birth_date', $birthMonth);
+                }
 
-            if ($birthDay >= 1 && $birthDay <= 31) {
-                $query->whereDay('birth_date', $birthDay);
+                if ($birthDay >= 1 && $birthDay <= 31) {
+                    $query->whereDay('birth_date', $birthDay);
+                }
             }
 
             $persons = $query
@@ -114,6 +123,7 @@ class WhatsAppController extends Controller
                     'persons.id',
                     'persons.full_name',
                     'persons.birth_date',
+                    'persons.identity_status',
                 ])
                 ->get()
                 ->map(function (Person $person) {
@@ -139,6 +149,11 @@ class WhatsAppController extends Controller
                         'cargo' => $contest?->office?->name
                             ?? $contest?->corporation?->name,
                         'tipo_registro' => $candidacy ? 'Candidato' : 'Persona',
+                        'tipo' => $candidacy ? 'Candidato' : 'Persona',
+                        'estado' => $person->identity_status,
+                        'provincia' => null,
+                        'profesion' => null,
+                        'barrio' => null,
                         'source' => 'votante',
                     ];
                 });
@@ -167,15 +182,17 @@ class WhatsAppController extends Controller
                 });
             }
 
-            $birthMonth = $request->integer('birth_month');
-            $birthDay = $request->integer('birth_day');
+            if ($selectedTemplate?->meta_name === 'oscarfc') {
+                $birthMonth = $request->integer('birth_month');
+                $birthDay = $request->integer('birth_day');
 
-            if ($birthMonth >= 1 && $birthMonth <= 12) {
-                $query->whereMonth('fecha_nacimiento', $birthMonth);
-            }
+                if ($birthMonth >= 1 && $birthMonth <= 12) {
+                    $query->whereMonth('fecha_nacimiento', $birthMonth);
+                }
 
-            if ($birthDay >= 1 && $birthDay <= 31) {
-                $query->whereDay('fecha_nacimiento', $birthDay);
+                if ($birthDay >= 1 && $birthDay <= 31) {
+                    $query->whereDay('fecha_nacimiento', $birthDay);
+                }
             }
 
             $lideres = $query
@@ -196,15 +213,17 @@ class WhatsAppController extends Controller
                     'municipio',
                     'partido',
                     'cargo',
+                    'provincia',
+                    'tipo',
+                    'profesion',
+                    'barrio',
+                    'is_active',
                     'geographic_unit_id',
                 ])
                 ->get()
                 ->map(function (Lider $lider) {
-                    $phone = $lider->telefono;
-
-                    if (!$phone) {
-                        $phone = $lider->contactos->first()?->valor;
-                    }
+                    $phone = $lider->telefono
+                        ?: $lider->contactos->first()?->valor;
 
                     return [
                         'id' => $lider->id,
@@ -218,6 +237,11 @@ class WhatsAppController extends Controller
                         'partido' => $lider->partido,
                         'cargo' => $lider->cargo,
                         'tipo_registro' => 'Líder',
+                        'tipo' => $lider->tipo,
+                        'provincia' => $lider->provincia,
+                        'profesion' => $lider->profesion,
+                        'barrio' => $lider->barrio,
+                        'estado' => $lider->is_active ? 'Activo' : 'Inactivo',
                         'source' => 'lider',
                     ];
                 });
@@ -227,6 +251,88 @@ class WhatsAppController extends Controller
             ->concat($lideres)
             ->sortBy(fn ($contact) => mb_strtolower($contact['name'] ?? ''))
             ->values();
+
+        /*
+        * Solo aplicar filtros configurados en la plantilla seleccionada.
+        * Los filtros se reciben como filter_provincia, filter_municipio, etc.
+        */
+        $configuredFilters = $selectedTemplate?->filters ?? [];
+
+        $filterFields = [
+            'provincia',
+            'municipio',
+            'tipo',
+            'cargo',
+            'partido',
+            'profesion',
+            'barrio',
+            'estado',
+        ];
+
+        foreach ($filterFields as $field) {
+            $value = trim((string) $request->input("filter_{$field}", ''));
+
+            if (
+                $value !== ''
+                && in_array($field, $configuredFilters, true)
+            ) {
+                $contacts = $contacts->filter(function ($contact) use ($field, $value) {
+                    $contactValue = (string) ($contact[$field] ?? '');
+
+                    return $contactValue !== ''
+                        && str_contains(
+                            mb_strtolower($contactValue),
+                            mb_strtolower($value)
+                        );
+                });
+            }
+        }
+
+        if (
+            in_array('cumpleanos', $configuredFilters, true)
+            && $selectedTemplate?->meta_name !== 'oscarfc'
+        ) {
+            $birthdayValue = trim(
+                (string) $request->input('filter_cumpleanos', '')
+            );
+
+            if ($birthdayValue !== '') {
+                try {
+                    $birthday = Carbon::createFromFormat(
+                        '!Y-m-d',
+                        $birthdayValue
+                    );
+
+                    if ($birthday->format('Y-m-d') === $birthdayValue) {
+                        $month = $birthday->month;
+                        $day = $birthday->day;
+
+                        $contacts = $contacts->filter(
+                            function ($contact) use ($month, $day) {
+                                $birthDate = $contact['birth_date'] ?? null;
+
+                                if (!$birthDate) {
+                                    return false;
+                                }
+
+                                try {
+                                    $date = Carbon::parse($birthDate);
+
+                                    return $date->month === $month
+                                        && $date->day === $day;
+                                } catch (\Throwable $exception) {
+                                    return false;
+                                }
+                            }
+                        );
+                    }
+                } catch (\Throwable $exception) {
+                    // Si la fecha no es válida, no aplicar el filtro.
+                }
+            }
+        }
+
+        $contacts = $contacts->values();
 
         $perPage = 100;
         $currentPage = LengthAwarePaginator::resolveCurrentPage();
@@ -255,6 +361,7 @@ class WhatsAppController extends Controller
                 'meta_name',
                 'body_text',
                 'variables',
+                'filters',
                 'header_type',
                 'header_text',
                 'language',
@@ -270,6 +377,17 @@ class WhatsAppController extends Controller
                 'birth_month' => $request->input('birth_month'),
                 'birth_day' => $request->input('birth_day'),
                 'source' => $source,
+                'template_id' => $templateId,
+
+                'filter_provincia' => $request->input('filter_provincia', ''),
+                'filter_municipio' => $request->input('filter_municipio', ''),
+                'filter_tipo' => $request->input('filter_tipo', ''),
+                'filter_cargo' => $request->input('filter_cargo', ''),
+                'filter_partido' => $request->input('filter_partido', ''),
+                'filter_profesion' => $request->input('filter_profesion', ''),
+                'filter_barrio' => $request->input('filter_barrio', ''),
+                'filter_estado' => $request->input('filter_estado', ''),
+                'filter_cumpleanos' => $request->input('filter_cumpleanos', ''),
             ],
         ]);
     }
@@ -283,33 +401,57 @@ class WhatsAppController extends Controller
      */
     public function prepare(Request $request)
     {
+        $selectAllMatching = $request->boolean('select_all_matching');
+
         $validated = $request->validate([
             'template_id' => [
                 'required',
                 'integer',
                 'exists:whatsapp_templates,id',
             ],
-            'contact_ids' => ['required', 'array', 'min:1'],
+            'contact_ids' => [
+                $selectAllMatching ? 'nullable' : 'required',
+                'array',
+                $selectAllMatching ? 'min:0' : 'min:1',
+            ],
             'contact_ids.*' => ['uuid'],
+            'select_all_matching' => ['nullable', 'boolean'],
             'variables' => ['nullable', 'array'],
             'image_url' => ['nullable', 'url'],
             'image' => ['nullable', 'image', 'max:10240'],
             'source' => ['nullable', 'in:todos,votantes,lideres'],
-        ]);
+            'search' => ['nullable', 'string', 'max:255'],
+            'birth_month' => ['nullable', 'integer', 'between:1,12'],
+            'birth_day' => ['nullable', 'integer', 'between:1,31'],
+            'filter_provincia' => ['nullable', 'string', 'max:255'],
+            'filter_municipio' => ['nullable', 'string', 'max:255'],
+            'filter_tipo' => ['nullable', 'string', 'max:255'],
+            'filter_cargo' => ['nullable', 'string', 'max:255'],
+            'filter_partido' => ['nullable', 'string', 'max:255'],
+            'filter_profesion' => ['nullable', 'string', 'max:255'],
+            'filter_barrio' => ['nullable', 'string', 'max:255'],
+            'filter_estado' => ['nullable', 'string', 'max:255'],
+            'filter_cumpleanos' => ['nullable', 'date_format:Y-m-d'],
 
+            'excluded_contact_ids' => [
+                'nullable',
+                'array',
+            ],
+            'excluded_contact_ids.*' => ['uuid'],
+        ]);
         $template = WhatsAppTemplate::query()
             ->where('is_active', true)
             ->findOrFail($validated['template_id']);
 
         $source = $validated['source'] ?? 'todos';
         $user = $request->user();
+        $configuredFilters = $template->filters ?? [];
 
         $persons = collect();
 
         if (in_array($source, ['todos', 'votantes'], true)) {
             $query = Person::query()
                 ->whereNull('persons.merged_into_id')
-                ->whereIn('persons.id', $validated['contact_ids'])
                 ->whereHas('contactPoints', function ($q) {
                     $q->where('type', 'mobile')
                         ->where('is_current', true)
@@ -323,6 +465,48 @@ class WhatsAppController extends Controller
                             });
                         });
                 });
+
+            if (!$selectAllMatching) {
+                $query->whereIn('persons.id', $validated['contact_ids'] ?? []);
+            }
+
+            if ($search = trim((string) ($validated['search'] ?? ''))) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('persons.full_name', 'ilike', "%{$search}%")
+                        ->orWhereHas('contactPoints', function ($cq) use ($search) {
+                            $cq->where('type', 'mobile')
+                                ->where('is_current', true)
+                                ->where(function ($pq) use ($search) {
+                                    $pq->where('value_normalized', 'ilike', "%{$search}%")
+                                        ->orWhere('value_raw', 'ilike', "%{$search}%");
+                                });
+                        });
+                });
+            }
+
+            if ($template->meta_name === 'oscarfc') {
+                if (!empty($validated['birth_month'])) {
+                    $query->whereMonth('birth_date', $validated['birth_month']);
+                }
+
+                if (!empty($validated['birth_day'])) {
+                    $query->whereDay('birth_date', $validated['birth_day']);
+                }
+            }
+
+            if (
+                $template->meta_name !== 'oscarfc'
+                && in_array('cumpleanos', $configuredFilters, true)
+                && !empty($validated['filter_cumpleanos'])
+            ) {
+                $birthday = Carbon::createFromFormat(
+                    '!Y-m-d',
+                    $validated['filter_cumpleanos']
+                );
+
+                $query->whereMonth('birth_date', $birthday->month)
+                    ->whereDay('birth_date', $birthday->day);
+            }
 
             if ($user?->hasTerritoryScopeRestriction()) {
                 $allowedGeoIds = $user->allowedGeoIds();
@@ -353,16 +537,38 @@ class WhatsAppController extends Controller
                                 });
                             });
                     },
+                    'candidacies.electoralList.organization',
+                    'candidacies.contest.office',
+                    'candidacies.contest.corporation',
+                    'candidacies.contest.geographicUnit',
                 ])
                 ->get()
                 ->map(function (Person $person) {
                     $contact = $person->contactPoints->first();
+
+                    $candidacy = $person->candidacies
+                        ->sortByDesc(
+                            fn ($c) => $c->outcome_date?->timestamp ?? 0
+                        )
+                        ->first();
+
+                    $contest = $candidacy?->contest;
 
                     return [
                         'id' => $person->id,
                         'name' => $person->full_name,
                         'phone' => $contact?->value_normalized
                             ?: $contact?->value_raw,
+                        'municipio' => $contest?->geographicUnit?->canonical_name,
+                        'partido' => $candidacy?->electoralList?->organization?->canonical_name,
+                        'cargo' => $contest?->office?->name
+                            ?? $contest?->corporation?->name,
+                        'tipo' => $candidacy ? 'Candidato' : 'Persona',
+                        'estado' => $person->identity_status,
+                        'provincia' => null,
+                        'profesion' => null,
+                        'barrio' => null,
+                        'source' => 'votante',
                     ];
                 });
         }
@@ -371,16 +577,57 @@ class WhatsAppController extends Controller
 
         if (in_array($source, ['todos', 'lideres'], true)) {
             $query = Lider::query()
-                ->whereIn('lideres.id', $validated['contact_ids'])
                 ->where(function ($q) {
                     $q->where(function ($a) {
                         $a->whereNotNull('telefono')
                             ->where('telefono', '!=', '');
                     })->orWhereHas('contactos', function ($cq) {
-                        $cq->whereNotNull('valor')
-                            ->where('valor', '!=', '');
+                        $cq->where(function ($active) {
+                            $active->where('estado', true)
+                                ->orWhereNull('estado');
+                        })
+                        ->whereNotNull('valor')
+                        ->where('valor', '!=', '');
                     });
                 });
+
+            if (!$selectAllMatching) {
+                $query->whereIn('lideres.id', $validated['contact_ids'] ?? []);
+            }
+
+            if ($search = trim((string) ($validated['search'] ?? ''))) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('nombre', 'ilike', "%{$search}%")
+                        ->orWhere('telefono', 'ilike', "%{$search}%")
+                        ->orWhereHas('contactos', function ($cq) use ($search) {
+                            $cq->where('valor', 'ilike', "%{$search}%");
+                        });
+                });
+            }
+
+            if ($template->meta_name === 'oscarfc') {
+                if (!empty($validated['birth_month'])) {
+                    $query->whereMonth('fecha_nacimiento', $validated['birth_month']);
+                }
+
+                if (!empty($validated['birth_day'])) {
+                    $query->whereDay('fecha_nacimiento', $validated['birth_day']);
+                }
+            }
+
+            if (
+                $template->meta_name !== 'oscarfc'
+                && in_array('cumpleanos', $configuredFilters, true)
+                && !empty($validated['filter_cumpleanos'])
+            ) {
+                $birthday = Carbon::createFromFormat(
+                    '!Y-m-d',
+                    $validated['filter_cumpleanos']
+                );
+
+                $query->whereMonth('fecha_nacimiento', $birthday->month)
+                    ->whereDay('fecha_nacimiento', $birthday->day);
+            }
 
             if ($user?->hasTerritoryScopeRestriction()) {
                 $allowedGeoIds = $user->allowedGeoIds();
@@ -398,16 +645,25 @@ class WhatsAppController extends Controller
                                 ->orWhereNull('estado');
                         })->orderByDesc('principal');
                     },
+                    'geographicUnit',
                 ])
                 ->get()
                 ->map(function (Lider $lider) {
-                    $phone = $lider->telefono
-                        ?: $lider->contactos->first()?->valor;
-
                     return [
                         'id' => $lider->id,
                         'name' => $lider->nombre,
-                        'phone' => $phone,
+                        'phone' => $lider->telefono
+                            ?: $lider->contactos->first()?->valor,
+                        'municipio' => $lider->geographicUnit?->canonical_name
+                            ?? $lider->municipio,
+                        'partido' => $lider->partido,
+                        'cargo' => $lider->cargo,
+                        'tipo' => $lider->tipo,
+                        'provincia' => $lider->provincia,
+                        'profesion' => $lider->profesion,
+                        'barrio' => $lider->barrio,
+                        'estado' => $lider->is_active ? 'Activo' : 'Inactivo',
+                        'source' => 'lider',
                     ];
                 });
         }
@@ -416,6 +672,62 @@ class WhatsAppController extends Controller
             ->concat($lideres)
             ->filter(fn ($recipient) => !empty($recipient['phone']))
             ->values();
+
+        /*
+        * Aplicar exclusivamente los filtros habilitados para esta plantilla.
+        */
+        foreach ([
+            'provincia',
+            'municipio',
+            'tipo',
+            'cargo',
+            'partido',
+            'profesion',
+            'barrio',
+            'estado',
+        ] as $field) {
+            $value = trim((string) ($validated["filter_{$field}"] ?? ''));
+
+            if (
+                $value !== ''
+                && in_array($field, $configuredFilters, true)
+            ) {
+                $recipients = $recipients->filter(function ($recipient) use ($field, $value) {
+                    $contactValue = (string) ($recipient[$field] ?? '');
+
+                    return $contactValue !== ''
+                        && str_contains(
+                            mb_strtolower($contactValue),
+                            mb_strtolower($value)
+                        );
+                });
+            }
+        }
+
+
+        if (!$selectAllMatching) {
+            $selectedIds = collect($validated['contact_ids'] ?? [])
+                ->map(fn ($id) => (string) $id);
+
+            $recipients = $recipients
+                ->filter(fn ($recipient) => $selectedIds->contains((string) $recipient['id']))
+                ->values();
+        } else {
+            $excludedIds = collect($validated['excluded_contact_ids'] ?? [])
+                ->map(fn ($id) => (string) $id)
+                ->flip();
+
+            if ($excludedIds->isNotEmpty()) {
+                $recipients = $recipients
+                    ->reject(
+                        fn ($recipient) => $excludedIds->has(
+                            (string) $recipient['id']
+                        )
+                    )
+                    ->values();
+            }
+        }
+
 
         if ($recipients->isEmpty()) {
             return response()->json([
@@ -464,11 +776,8 @@ class WhatsAppController extends Controller
             ->values();
 
         /*
-         * Cumpleaños: solo se registra la selección.
-         * No se manda texto ni imagen desde Laravel.
-         * El procesamiento y envío se conectarán con n8n.
-         */
-
+        * Se mantiene el payload y el webhook actuales de n8n.
+        */
         $payload = [
             'send_id' => $send->id,
             'template' => [
@@ -531,7 +840,7 @@ class WhatsAppController extends Controller
         }
 
         return response()->json([
-            'message' => 'Datos enviados correctamente a n8n.',
+            'message' => 'Envío en progreso, revise el historial',
             'send_id' => $send->id,
             'recipients_count' => $savedRecipients->count(),
         ]);

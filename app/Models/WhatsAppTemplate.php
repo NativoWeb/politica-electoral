@@ -16,6 +16,7 @@ class WhatsAppTemplate extends Model
         'meta_name',
         'body_text',
         'variables',
+        'filters',
         'header_type',
         'header_text',
         'language',
@@ -26,6 +27,7 @@ class WhatsAppTemplate extends Model
 
     protected $casts = [
         'variables' => 'array',
+        'filters' => 'array',
         'is_active' => 'boolean',
     ];
 }

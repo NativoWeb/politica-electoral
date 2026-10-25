@@ -7,22 +7,37 @@ const emptyVariable = {
     label: 'Nombre',
 };
 
+const availableFilters = [
+    { value: 'provincia', label: 'Provincia' },
+    { value: 'municipio', label: 'Municipio' },
+    { value: 'tipo', label: 'Tipo' },
+    { value: 'cargo', label: 'Cargo' },
+    { value: 'partido', label: 'Partido' },
+    { value: 'profesion', label: 'Profesión' },
+    { value: 'barrio', label: 'Barrio' },
+    { value: 'estado', label: 'Estado' },
+    { value: 'cumpleanos', label: 'Cumpleaños' },
+];
+
+const emptyForm = {
+    name: '',
+    meta_name: '',
+    body_text: '',
+    variables: [emptyVariable],
+    filters: [],
+    header_type: '',
+    header_text: '',
+    language: 'es',
+    category: 'marketing',
+    description: '',
+    is_active: true,
+};
+
 export default function WhatsAppTemplates({ templates = [] }) {
     const [editingTemplate, setEditingTemplate] = useState(null);
     const [showForm, setShowForm] = useState(false);
 
-    const form = useForm({
-        name: '',
-        meta_name: '',
-        body_text: '',
-        variables: [emptyVariable],
-        header_type: '',
-        header_text: '',
-        language: 'es',
-        category: 'marketing',
-        description: '',
-        is_active: true,
-    });
+    const form = useForm({ ...emptyForm });
 
     useEffect(() => {
         if (!form.data.body_text) return;
@@ -32,13 +47,17 @@ export default function WhatsAppTemplates({ templates = [] }) {
         ];
 
         const positions = [
-            ...new Set(
-                matches.map((match) => Number(match[1]))
-            ),
+            ...new Set(matches.map((match) => Number(match[1]))),
         ].sort((a, b) => a - b);
 
         if (!positions.length) {
-            form.setData('variables', [emptyVariable]);
+            if (
+                JSON.stringify(form.data.variables) !==
+                JSON.stringify([emptyVariable])
+            ) {
+                form.setData('variables', [emptyVariable]);
+            }
+
             return;
         }
 
@@ -50,9 +69,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
                     Number(variable.position) === position
             );
 
-            if (existing) {
-                return existing;
-            }
+            if (existing) return existing;
 
             return {
                 position,
@@ -73,16 +90,9 @@ export default function WhatsAppTemplates({ templates = [] }) {
 
     const resetForm = () => {
         form.setData({
-            name: '',
-            meta_name: '',
-            body_text: '',
-            variables: [emptyVariable],
-            header_type: '',
-            header_text: '',
-            language: 'es',
-            category: 'marketing',
-            description: '',
-            is_active: true,
+            ...emptyForm,
+            variables: [{ ...emptyVariable }],
+            filters: [],
         });
 
         form.clearErrors();
@@ -99,10 +109,12 @@ export default function WhatsAppTemplates({ templates = [] }) {
             name: template.name ?? '',
             meta_name: template.meta_name ?? '',
             body_text: template.body_text ?? '',
-            variables:
-                template.variables?.length
-                    ? template.variables
-                    : [emptyVariable],
+            variables: template.variables?.length
+                ? template.variables
+                : [{ ...emptyVariable }],
+            filters: Array.isArray(template.filters)
+                ? template.filters
+                : [],
             header_type: template.header_type ?? '',
             header_text: template.header_text ?? '',
             language: template.language ?? 'es',
@@ -170,10 +182,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
             'variables',
             (form.data.variables ?? []).map((variable) =>
                 Number(variable.position) === Number(position)
-                    ? {
-                          ...variable,
-                          label: value,
-                      }
+                    ? { ...variable, label: value }
                     : variable
             )
         );
@@ -206,9 +215,30 @@ export default function WhatsAppTemplates({ templates = [] }) {
             'variables',
             (form.data.variables ?? []).filter(
                 (variable) =>
-                    Number(variable.position) !==
-                    Number(position)
+                    Number(variable.position) !== Number(position)
             )
+        );
+    };
+
+    const toggleFilter = (filterValue) => {
+        const currentFilters = form.data.filters ?? [];
+
+        const nextFilters = currentFilters.includes(filterValue)
+            ? currentFilters.filter((value) => value !== filterValue)
+            : [...currentFilters, filterValue];
+
+        form.setData('filters', nextFilters);
+    };
+
+    const getFilterLabels = (filters) => {
+        if (!Array.isArray(filters) || filters.length === 0) {
+            return [];
+        }
+
+        return filters.map(
+            (value) =>
+                availableFilters.find((filter) => filter.value === value)
+                    ?.label ?? value
         );
     };
 
@@ -237,8 +267,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
                 </h1>
 
                 <p className="mt-1 text-[13px] text-white/60">
-                    Administra las plantillas utilizadas para los
-                    envíos.
+                    Administra las plantillas utilizadas para los envíos.
                 </p>
             </div>
 
@@ -254,9 +283,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                 {templates.length} plantilla
                                 {templates.length === 1 ? '' : 's'}
                                 registrada
-                                {templates.length === 1
-                                    ? ''
-                                    : 's'}
+                                {templates.length === 1 ? '' : 's'}
                             </p>
                         </div>
 
@@ -272,118 +299,130 @@ export default function WhatsAppTemplates({ templates = [] }) {
                     <div className="overflow-hidden rounded-lg border border-[var(--color-line)] bg-white">
                         {templates.length > 0 ? (
                             <div className="divide-y divide-[var(--color-line)]">
-                                {templates.map((template) => (
-                                    <div
-                                        key={template.id}
-                                        className="p-5"
-                                    >
-                                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <h3 className="text-[14px] font-bold text-[var(--color-ink)]">
-                                                        {template.name}
-                                                    </h3>
+                                {templates.map((template) => {
+                                    const filterLabels = getFilterLabels(
+                                        template.filters
+                                    );
 
-                                                    <span
-                                                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
-                                                            template.is_active
-                                                                ? 'bg-green-100 text-green-700'
-                                                                : 'bg-gray-100 text-gray-500'
-                                                        }`}
-                                                    >
-                                                        {template.is_active
-                                                            ? 'Activa'
-                                                            : 'Inactiva'}
-                                                    </span>
-                                                </div>
+                                    return (
+                                        <div
+                                            key={template.id}
+                                            className="p-5"
+                                        >
+                                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <h3 className="text-[14px] font-bold text-[var(--color-ink)]">
+                                                            {template.name}
+                                                        </h3>
 
-                                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--color-ink-faint)]">
-                                                    <span>
-                                                        Meta:{' '}
-                                                        <strong className="text-[var(--color-ink)]">
-                                                            {
-                                                                template.meta_name
-                                                            }
-                                                        </strong>
-                                                    </span>
-
-                                                    <span>
-                                                        Idioma:{' '}
-                                                        {
-                                                            template.language
-                                                        }
-                                                    </span>
-
-                                                    {template.category && (
-                                                        <span>
-                                                            Categoría:{' '}
-                                                            {
-                                                                template.category
-                                                            }
+                                                        <span
+                                                            className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                                                                template.is_active
+                                                                    ? 'bg-green-100 text-green-700'
+                                                                    : 'bg-gray-100 text-gray-500'
+                                                            }`}
+                                                        >
+                                                            {template.is_active
+                                                                ? 'Activa'
+                                                                : 'Inactiva'}
                                                         </span>
-                                                    )}
-                                                </div>
+                                                    </div>
 
-                                                <div className="mt-4 rounded-lg bg-gray-50 p-3">
-                                                    <p className="whitespace-pre-wrap text-[12px] leading-5 text-[var(--color-ink)]">
-                                                        {
-                                                            template.body_text
-                                                        }
-                                                    </p>
-                                                </div>
+                                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                        <span>
+                                                            Meta:{' '}
+                                                            <strong className="text-[var(--color-ink)]">
+                                                                {template.meta_name}
+                                                            </strong>
+                                                        </span>
 
-                                                {template.variables?.length >
-                                                    0 && (
-                                                    <div className="mt-3 flex flex-wrap gap-2">
-                                                        {template.variables.map(
-                                                            (
-                                                                variable
-                                                            ) => (
-                                                                <span
-                                                                    key={
-                                                                        variable.position
-                                                                    }
-                                                                    className="rounded-md border border-[var(--color-line)] bg-white px-2 py-1 text-[9px] text-[var(--color-ink-faint)]"
-                                                                >
-                                                                    {`{{${variable.position}}}`}{' '}
-                                                                    {
-                                                                        variable.label
-                                                                    }
-                                                                </span>
-                                                            )
+                                                        <span>
+                                                            Idioma:{' '}
+                                                            {template.language}
+                                                        </span>
+
+                                                        {template.category && (
+                                                            <span>
+                                                                Categoría:{' '}
+                                                                {template.category}
+                                                            </span>
                                                         )}
                                                     </div>
-                                                )}
-                                            </div>
 
-                                            <div className="flex shrink-0 gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        openEdit(
-                                                            template
-                                                        )
-                                                    }
-                                                    className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[10px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
-                                                >
-                                                    Editar
-                                                </button>
+                                                    <div className="mt-4 rounded-lg bg-gray-50 p-3">
+                                                        <p className="whitespace-pre-wrap text-[12px] leading-5 text-[var(--color-ink)]">
+                                                            {template.body_text}
+                                                        </p>
+                                                    </div>
 
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        deleteTemplate(
-                                                            template
-                                                        )
-                                                    }
-                                                    className="rounded-lg border border-red-200 bg-white px-3 py-2 text-[10px] font-semibold text-red-600 hover:bg-red-50"
-                                                >
-                                                    Eliminar
-                                                </button>
+                                                    {template.variables?.length > 0 && (
+                                                        <div className="mt-3 flex flex-wrap gap-2">
+                                                            {template.variables.map(
+                                                                (variable) => (
+                                                                    <span
+                                                                        key={variable.position}
+                                                                        className="rounded-md border border-[var(--color-line)] bg-white px-2 py-1 text-[9px] text-[var(--color-ink-faint)]"
+                                                                    >
+                                                                        {`{{${variable.position}}}`}{' '}
+                                                                        {variable.label}
+                                                                    </span>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    <div className="mt-3">
+                                                        <p className="mb-2 text-[10px] font-semibold text-[var(--color-ink)]">
+                                                            Filtros configurados
+                                                        </p>
+
+                                                        {filterLabels.length > 0 ? (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {filterLabels.map(
+                                                                    (label) => (
+                                                                        <span
+                                                                            key={label}
+                                                                            className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-medium text-blue-700"
+                                                                        >
+                                                                            {label}
+                                                                        </span>
+                                                                    )
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-[10px] text-[var(--color-ink-faint)]">
+                                                                Sin filtros configurados.
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex shrink-0 gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            openEdit(template)
+                                                        }
+                                                        className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-[10px] font-semibold text-[var(--color-primary)] hover:bg-gray-50"
+                                                    >
+                                                        Editar
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            deleteTemplate(template)
+                                                        }
+                                                        className="rounded-lg border border-red-200 bg-white px-3 py-2 text-[10px] font-semibold text-red-600 hover:bg-red-50"
+                                                    >
+                                                        Eliminar
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="px-6 py-12 text-center">
@@ -392,9 +431,8 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                 </p>
 
                                 <p className="mx-auto mt-1 max-w-md text-[11px] text-[var(--color-ink-faint)]">
-                                    Crea una plantilla para poder
-                                    utilizarla posteriormente en
-                                    los envíos de WhatsApp.
+                                    Crea una plantilla para poder utilizarla
+                                    posteriormente en los envíos de WhatsApp.
                                 </p>
 
                                 <button
@@ -422,8 +460,8 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                 </h2>
 
                                 <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
-                                    Configura la plantilla que
-                                    utilizará el módulo de envíos.
+                                    Configura la plantilla que utilizará el
+                                    módulo de envíos.
                                 </p>
                             </div>
 
@@ -485,9 +523,8 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                     />
 
                                     <p className="mt-1 text-[9px] text-[var(--color-ink-faint)]">
-                                        Debe coincidir con el
-                                        identificador de la plantilla
-                                        aprobada.
+                                        Debe coincidir con el identificador de
+                                        la plantilla aprobada.
                                     </p>
 
                                     {form.errors.meta_name && (
@@ -517,8 +554,8 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                 />
 
                                 <p className="mt-1 text-[9px] text-[var(--color-ink-faint)]">
-                                    Usa {'{{1}}'}, {'{{2}}'}, etc.
-                                    para las variables.
+                                    Usa {'{{1}}'}, {'{{2}}'}, etc. para las
+                                    variables.
                                 </p>
 
                                 {form.errors.body_text && (
@@ -536,9 +573,8 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                         </label>
 
                                         <p className="mt-1 text-[9px] text-[var(--color-ink-faint)]">
-                                            {'{{1}}'} se reserva
-                                            automáticamente para el
-                                            nombre del contacto.
+                                            {'{{1}}'} se reserva automáticamente
+                                            para el nombre del contacto.
                                         </p>
                                     </div>
 
@@ -555,9 +591,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                     {(form.data.variables ?? []).map(
                                         (variable) => (
                                             <div
-                                                key={
-                                                    variable.position
-                                                }
+                                                key={variable.position}
                                                 className="flex items-center gap-2"
                                             >
                                                 <span className="w-12 shrink-0 text-center text-[10px] font-bold text-[var(--color-ink-faint)]">
@@ -566,30 +600,22 @@ export default function WhatsAppTemplates({ templates = [] }) {
 
                                                 <input
                                                     type="text"
-                                                    value={
-                                                        variable.label ??
-                                                        ''
-                                                    }
+                                                    value={variable.label ?? ''}
                                                     disabled={
-                                                        Number(
-                                                            variable.position
-                                                        ) === 1
+                                                        Number(variable.position) ===
+                                                        1
                                                     }
-                                                    onChange={(
-                                                        event
-                                                    ) =>
+                                                    onChange={(event) =>
                                                         updateVariableLabel(
                                                             variable.position,
-                                                            event.target
-                                                                .value
+                                                            event.target.value
                                                         )
                                                     }
                                                     className="flex-1 rounded-lg border border-[var(--color-line)] px-3 py-2 text-[11px] outline-none disabled:bg-gray-100"
                                                 />
 
-                                                {Number(
-                                                    variable.position
-                                                ) !== 1 && (
+                                                {Number(variable.position) !==
+                                                    1 && (
                                                     <button
                                                         type="button"
                                                         onClick={() =>
@@ -608,6 +634,63 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                 </div>
                             </div>
 
+                            <div className="rounded-xl border border-[var(--color-line)] p-4">
+                                <div className="mb-3">
+                                    <h3 className="text-[12px] font-bold text-[var(--color-ink)]">
+                                        Filtros disponibles para esta plantilla
+                                    </h3>
+
+                                    <p className="mt-1 text-[10px] leading-5 text-[var(--color-ink-faint)]">
+                                        Selecciona los filtros que podrá utilizar
+                                        el módulo de WhatsApp al escoger esta
+                                        plantilla. Puedes seleccionar varios o
+                                        dejar todos desmarcados.
+                                    </p>
+                                </div>
+
+                                <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                                    {availableFilters.map((filter) => (
+                                        <label
+                                            key={filter.value}
+                                            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-3 transition ${
+                                                (form.data.filters ?? []).includes(
+                                                    filter.value
+                                                )
+                                                    ? 'border-[var(--color-primary)] bg-blue-50'
+                                                    : 'border-[var(--color-line)] bg-white hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={(
+                                                    form.data.filters ?? []
+                                                ).includes(filter.value)}
+                                                onChange={() =>
+                                                    toggleFilter(filter.value)
+                                                }
+                                                className="h-4 w-4 rounded border-gray-300"
+                                            />
+
+                                            <span className="text-[11px] font-medium text-[var(--color-ink)]">
+                                                {filter.label}
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+
+                                {form.errors.filters && (
+                                    <p className="mt-2 text-[10px] text-red-600">
+                                        {form.errors.filters}
+                                    </p>
+                                )}
+
+                                {form.errors['filters.0'] && (
+                                    <p className="mt-2 text-[10px] text-red-600">
+                                        {form.errors['filters.0']}
+                                    </p>
+                                )}
+                            </div>
+
                             <div className="grid gap-4 md:grid-cols-3">
                                 <div>
                                     <label className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]">
@@ -624,12 +707,8 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                         }
                                         className="w-full rounded-lg border border-[var(--color-line)] px-3 py-2.5 text-sm outline-none"
                                     >
-                                        <option value="es">
-                                            Español
-                                        </option>
-                                        <option value="en">
-                                            Inglés
-                                        </option>
+                                        <option value="es">Español</option>
+                                        <option value="en">Inglés</option>
                                     </select>
                                 </div>
 
@@ -651,9 +730,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                         <option value="marketing">
                                             Marketing
                                         </option>
-                                        <option value="utility">
-                                            Utility
-                                        </option>
+                                        <option value="utility">Utility</option>
                                         <option value="authentication">
                                             Authentication
                                         </option>
@@ -666,9 +743,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                     </label>
 
                                     <select
-                                        value={
-                                            form.data.header_type
-                                        }
+                                        value={form.data.header_type}
                                         onChange={(event) =>
                                             form.setData(
                                                 'header_type',
@@ -677,15 +752,9 @@ export default function WhatsAppTemplates({ templates = [] }) {
                                         }
                                         className="w-full rounded-lg border border-[var(--color-line)] px-3 py-2.5 text-sm outline-none"
                                     >
-                                        <option value="">
-                                            Sin encabezado
-                                        </option>
-                                        <option value="text">
-                                            Texto
-                                        </option>
-                                        <option value="image">
-                                            Imagen
-                                        </option>
+                                        <option value="">Sin encabezado</option>
+                                        <option value="text">Texto</option>
+                                        <option value="image">Imagen</option>
                                     </select>
                                 </div>
                             </div>
@@ -713,11 +782,10 @@ export default function WhatsAppTemplates({ templates = [] }) {
                             {form.data.header_type === 'image' && (
                                 <div className="rounded-lg border border-dashed border-[var(--color-line)] bg-gray-50 p-4">
                                     <p className="text-[10px] text-[var(--color-ink-faint)]">
-                                        El soporte de imagen para el
-                                        envío se conectará posteriormente
-                                        con n8n. Por ahora la plantilla
-                                        queda marcada con encabezado de
-                                        imagen.
+                                        El soporte de imagen para el envío se
+                                        conectará posteriormente con n8n. Por
+                                        ahora la plantilla queda marcada con
+                                        encabezado de imagen.
                                     </p>
                                 </div>
                             )}
@@ -761,8 +829,7 @@ export default function WhatsAppTemplates({ templates = [] }) {
 
                             {Object.keys(form.errors).length > 0 && (
                                 <div className="rounded-lg bg-red-50 p-3 text-[10px] text-red-600">
-                                    Revisa los campos marcados
-                                    anteriormente.
+                                    Revisa los campos marcados anteriormente.
                                 </div>
                             )}
 
