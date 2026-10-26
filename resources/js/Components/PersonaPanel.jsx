@@ -165,7 +165,19 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             method: 'PUT',
             body: JSON.stringify(payload),
         })
-            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(async r => {
+                if (r.ok) return r.json();
+                // 4xx carries a message the user can act on (e.g. duplicate cédula); don't hide it.
+                const body = (await r.json().catch(() => null)) || {};
+                const firstError = body.errors ? Object.values(body.errors)[0]?.[0] : null;
+                const err = new Error(`HTTP ${r.status}`);
+                if (r.status === 401 || r.status === 419) {
+                    err.userMessage = 'Tu sesión expiró. Recarga la página e inicia sesión de nuevo.';
+                } else if (r.status === 422 || r.status === 403) {
+                    err.userMessage = firstError || body.message || body.error;
+                }
+                throw err;
+            })
             .then(res => {
                 setMessage(res.message || 'Guardado');
                 setEditMode(false);
@@ -175,8 +187,11 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 }
                 setTimeout(() => setMessage(''), 3000);
             })
-            .catch(async () => {
-                if (!navigator.onLine) {
+            .catch(async (err) => {
+                if (err?.userMessage) {
+                    setMessage(err.userMessage);
+                    showGlobalToast(err.userMessage, 'error');
+                } else if (!navigator.onLine) {
                     try {
                         await offlineUpdatePersona(targetId, form);
                         setMessage('Guardado localmente');
