@@ -95,6 +95,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
         Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
         Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle');
+        Route::post('/mapa-politico/persona/{id}/unificar', [MapaPoliticoController::class, 'mergeLider'])->name('mapa-politico.persona.merge');
         Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add');
         Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove');
         Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store');

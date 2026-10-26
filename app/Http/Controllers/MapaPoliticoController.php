@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Votantes\AddNexo;
 use App\Actions\Votantes\AddReferido;
+use App\Actions\Votantes\MergeLideres;
 use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
@@ -1055,10 +1056,20 @@ class MapaPoliticoController extends Controller
                     ->whereNotIn('id', $excludeIds)
                     ->first();
                 if ($existente) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => $this->duplicateCedulaMessage($cedula, $existente),
-                    ], 422);
+                    $response = ['success' => false, 'message' => $this->duplicateCedulaMessage($cedula, $existente)];
+                    // Same person entered twice: the panel offers to merge it into the record being edited.
+                    $allowed = $this->allowedGeoIds();
+                    if ($currentLider && $currentLider->id === $id && ($allowed === null || in_array($existente->geographic_unit_id, $allowed, true))) {
+                        $response['duplicado'] = [
+                            'id' => $existente->id,
+                            'nombre' => $existente->nombre,
+                            'municipio' => $existente->municipio,
+                            'cargo' => $existente->cargo,
+                            'telefono' => $existente->telefono,
+                        ];
+                    }
+
+                    return response()->json($response, 422);
                 }
             }
         }
@@ -1399,6 +1410,23 @@ class MapaPoliticoController extends Controller
         }
 
         return response()->json(['data' => $query->get()]);
+    }
+
+    // Folds a duplicate lider (same person entered twice) into the one being edited.
+    public function mergeLider(Request $request, string $id, MergeLideres $merge)
+    {
+        $data = $request->validate([
+            'duplicado_id' => 'required|uuid',
+            // The cédula typed in the form; it may correct the one the edited record had.
+            'cedula' => 'nullable|string|max:20',
+        ]);
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+
+        $lider = $merge->handle($id, $data['duplicado_id'], Cedula::normalize($data['cedula'] ?? null));
+
+        return response()->json(['success' => true, 'message' => 'Registros unificados.', 'lider' => $lider]);
     }
 
     public function addReferido(Request $request, string $id, AddReferido $addReferido)

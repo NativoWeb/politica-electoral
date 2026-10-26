@@ -252,6 +252,19 @@ class TerritoryScopeTest extends TestCase
         $this->assertDatabaseHas('lideres', ['id' => $this->liderB, 'is_active' => true]);
     }
 
+    public function test_scoped_user_cannot_merge_a_lider_from_outside_territory(): void
+    {
+        $this->actingAs($this->campo)
+            ->postJson("/mapa-politico/persona/{$this->liderA}/unificar", ['duplicado_id' => $this->liderB])
+            ->assertForbidden();
+        $this->actingAs($this->campo)
+            ->postJson("/mapa-politico/persona/{$this->liderB}/unificar", ['duplicado_id' => $this->liderA])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA]);
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderB]);
+    }
+
     public function test_scoped_user_cannot_create_votante_in_other_municipio(): void
     {
         $this->actingAs($this->campo)

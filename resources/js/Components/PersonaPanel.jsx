@@ -113,6 +113,11 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     const [editingNexoId, setEditingNexoId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
+    // The message currently shown as an error; any later message (e.g. "Nexo agregado") is shown normally.
+    const [errorMessage, setErrorMessage] = useState('');
+    // Another lider holding the cédula being saved: probably the same person entered twice.
+    const [duplicado, setDuplicado] = useState(null);
+    const [merging, setMerging] = useState(false);
     const [activeTab, setActiveTab] = useState('basicos');
     const [showReferidoSearch, setShowReferidoSearch] = useState(false);
     const [referidoQuery, setReferidoQuery] = useState('');
@@ -160,6 +165,8 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     function savePersona() {
         setSaving(true);
         setMessage('');
+        setErrorMessage('');
+        setDuplicado(null);
         const payload = { ...form, votos: form.votos ? parseInt(form.votos, 10) : 0 };
         apiFetch(`/mapa-politico/persona/${targetId}`, {
             method: 'PUT',
@@ -175,6 +182,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     err.userMessage = 'Tu sesión expiró. Recarga la página e inicia sesión de nuevo.';
                 } else if (r.status === 422 || r.status === 403) {
                     err.userMessage = firstError || body.message || body.error;
+                    err.duplicado = body.duplicado || null;
                 }
                 throw err;
             })
@@ -190,6 +198,12 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             .catch(async (err) => {
                 if (err?.userMessage) {
                     setMessage(err.userMessage);
+                    setErrorMessage(err.userMessage);
+                    if (err.duplicado) {
+                        // Stays on screen with the merge button until the user acts.
+                        setDuplicado(err.duplicado);
+                        return;
+                    }
                     showGlobalToast(err.userMessage, 'error');
                 } else if (!navigator.onLine) {
                     try {
@@ -209,6 +223,50 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 setTimeout(() => setMessage(''), 5000);
             })
             .finally(() => setSaving(false));
+    }
+
+    function mergeDuplicado() {
+        const dup = duplicado;
+        const actual = form.nombre || data?.nombre;
+        confirm(
+            'Unificar registros',
+            `Quedará un solo registro: «${actual}». La cédula, teléfono, notas, cargos, contactos y nexos de «${dup.nombre}» pasan a este registro y el duplicado se elimina. Esto no se puede deshacer.`,
+            async () => {
+                setMerging(true);
+                const fail = (msg) => { setMessage(msg); setErrorMessage(msg); showGlobalToast(msg, 'error'); };
+                const failFrom = async (r) => {
+                    const res = (await r.json().catch(() => null)) || {};
+                    fail(r.status === 401 || r.status === 419
+                        ? 'Tu sesión expiró. Recarga la página e inicia sesión de nuevo.'
+                        : (res.message || 'No se pudo unificar. Intenta de nuevo.'));
+                };
+                try {
+                    // 1) Keep the pending edits, leaving the cédula as it was (the duplicate still holds the new one).
+                    const payload = { ...form, cedula: data?.cedula ?? '', votos: form.votos ? parseInt(form.votos, 10) : 0 };
+                    const saved = await apiFetch(`/mapa-politico/persona/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    if (!saved.ok) return failFrom(saved);
+                    // 2) Fold the duplicate in: this record takes its cédula, notes, cargos and related rows.
+                    const merged = await apiFetch(`/mapa-politico/persona/${targetId}/unificar`, {
+                        method: 'POST',
+                        body: JSON.stringify({ duplicado_id: dup.id, cedula: form.cedula ?? '' }),
+                    });
+                    if (!merged.ok) return failFrom(merged);
+                    setDuplicado(null);
+                    setMessage('Registros unificados');
+                    setErrorMessage('');
+                    showGlobalToast('Registros unificados.');
+                    setEditMode(false);
+                    loadData();
+                    setTimeout(() => router.reload({ only: ['data'] }), 500);
+                    setTimeout(() => setMessage(''), 4000);
+                } catch {
+                    fail('No se pudo unificar. Revisa tu conexión e intenta de nuevo.');
+                } finally {
+                    setMerging(false);
+                }
+            },
+            false,
+        );
     }
 
     function addNexo(e) {
@@ -462,16 +520,49 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     </div>
 
                     {/* Status message */}
-                    {message && (
-                        <div className={`mx-4 lg:mx-8 mt-3 px-4 py-3 rounded-xl text-[14px] font-semibold flex items-center gap-3 ${message.toLowerCase().includes('error') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
-                            {message.toLowerCase().includes('error') ? (
-                                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            ) : (
-                                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                            )}
-                            {message}
-                        </div>
-                    )}
+                    {message && (() => {
+                        const isError = (errorMessage && message === errorMessage) || message.toLowerCase().includes('error');
+                        return (
+                            <div className={`mx-4 lg:mx-8 mt-3 px-4 py-3 rounded-xl text-[14px] font-semibold ${isError ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+                                <div className="flex items-center gap-3">
+                                    {isError ? (
+                                        <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    ) : (
+                                        <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    )}
+                                    <span>{message}</span>
+                                </div>
+                                {duplicado && message === errorMessage && (
+                                    <div className="mt-3 pl-8 text-[13px] font-normal text-[var(--color-ink)]">
+                                        <p>
+                                            ¿Es la misma persona? <strong>{duplicado.nombre}</strong>
+                                            {[duplicado.municipio, duplicado.cargo, duplicado.telefono].filter(Boolean).length > 0 && (
+                                                <span className="text-[var(--color-ink-faint)]"> · {[duplicado.municipio, duplicado.cargo, duplicado.telefono].filter(Boolean).join(' · ')}</span>
+                                            )}
+                                        </p>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={mergeDuplicado}
+                                                disabled={merging || saving}
+                                                className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
+                                            >
+                                                {merging ? 'Unificando...' : 'Sí, unificar en este registro'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setDuplicado(null); setMessage(''); }}
+                                                disabled={merging}
+                                                className="px-4 py-2 bg-white border border-[var(--color-line-strong)] text-[13px] font-semibold rounded-lg hover:bg-gray-50"
+                                            >
+                                                No, corregir la cédula
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Tab bar */}
                     <TabBar tabs={tabsWithCounts} active={activeTab} onChange={setActiveTab} />
