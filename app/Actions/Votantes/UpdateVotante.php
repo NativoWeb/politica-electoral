@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Services\Import\TextNormalizer;
+use App\Support\Cedula;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +50,7 @@ class UpdateVotante
     public function handle(string $id, array $data): Lider
     {
         $this->warning = null;
-        $data = self::withoutNulls($data);
+        $data = Cedula::normalizeFields(self::withoutNulls($data));
 
         $lider = Lider::find($id);
         if (! $lider) {

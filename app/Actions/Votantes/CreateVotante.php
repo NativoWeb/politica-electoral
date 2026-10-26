@@ -5,6 +5,7 @@ namespace App\Actions\Votantes;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
+use App\Support\Cedula;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -16,6 +17,7 @@ class CreateVotante
     public function handle(array $data): Lider
     {
         $this->authorizeGeo($data['municipio_id']);
+        $data = Cedula::normalizeFields($data);
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {

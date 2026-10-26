@@ -137,6 +137,15 @@ class OfflineCreateIdempotencyTest extends TestCase
         $this->assertSame(1, DB::table('lideres')->count());
     }
 
+    public function test_the_same_cedula_written_with_dots_is_still_a_duplicate(): void
+    {
+        $this->storeLider(['nombre' => 'Elsa Rojas', 'municipio_id' => $this->municipio, 'cedula' => '63.525.141']);
+        $this->assertSame('63525141', DB::table('lideres')->value('cedula'));
+
+        $this->assertSame(422, $this->storeLider(['nombre' => 'ELSA ROJAS', 'municipio_id' => $this->municipio, 'cedula' => '63525141']));
+        $this->assertSame(1, DB::table('lideres')->count());
+    }
+
     public function test_a_nexo_id_owned_by_someone_else_is_a_conflict(): void
     {
         $clientId = (string) Str::uuid();
