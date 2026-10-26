@@ -252,6 +252,26 @@ class WhatsAppController extends Controller
             ->sortBy(fn ($contact) => mb_strtolower($contact['name'] ?? ''))
             ->values();
 
+            $filterOptions = [];
+            foreach ([
+                'provincia',
+                'municipio',
+                'tipo',
+                'cargo',
+                'partido',
+                'profesion',
+                'barrio',
+                'estado',
+            ] as $field) {
+                $filterOptions[$field] = $contacts
+                    ->pluck($field)
+                    ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
+                    ->map(fn ($value) => trim((string) $value))
+                    ->unique()
+                    ->sort(fn ($a, $b) => strcasecmp($a, $b))
+                    ->values()
+                    ->all();
+            }
         /*
         * Solo aplicar filtros configurados en la plantilla seleccionada.
         * Los filtros se reciben como filter_provincia, filter_municipio, etc.
@@ -372,6 +392,7 @@ class WhatsAppController extends Controller
         return Inertia::render('Admin/WhatsApp', [
             'contacts' => $paginatedContacts,
             'templates' => $templates,
+            'filter_options' => $filterOptions,
             'filters' => [
                 'search' => $request->input('search'),
                 'birth_month' => $request->input('birth_month'),

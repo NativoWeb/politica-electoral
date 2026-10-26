@@ -26,10 +26,111 @@ const FILTER_ORDER = Object.keys(FILTER_LABELS);
 
 const normalizeStatus = (status) => String(status ?? '').toLowerCase();
 
+const FILTER_VALUE_KEYS = {
+    provincia: ['provincia', 'province'],
+    municipio: ['municipio', 'municipality'],
+    tipo: ['tipo', 'type'],
+    cargo: ['cargo', 'position'],
+    partido: ['partido', 'party'],
+    profesion: ['profesion', 'profesión', 'profession'],
+    barrio: ['barrio', 'neighborhood'],
+    estado: ['estado', 'status'],
+};
+
+function FilterCombobox({
+    id,
+    label,
+    value,
+    options,
+    placeholder,
+    onChange,
+}) {
+    const [isOpen, setIsOpen] = useState(false);
+
+    const normalizedValue = String(value ?? '').trim().toLocaleLowerCase('es');
+
+    const filteredOptions = options.filter((option) =>
+        option.toLocaleLowerCase('es').includes(normalizedValue)
+    );
+
+    return (
+        <div className="relative">
+
+            <div className="relative">
+                <input
+                    id={id}
+                    type="text"
+                    value={value}
+                    onChange={(event) => {
+                        onChange(event.target.value);
+                        setIsOpen(true);
+                    }}
+                    onFocus={() => setIsOpen(true)}
+                    onBlur={() => {
+                        // Permite que el clic en una opción se procese antes
+                        // de cerrar la lista.
+                        window.setTimeout(() => setIsOpen(false), 150);
+                    }}
+                    placeholder={placeholder}
+                    autoComplete="off"
+                    className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 pr-10 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                />
+
+                <button
+                    type="button"
+                    aria-label={`Mostrar opciones de ${label}`}
+                    aria-expanded={isOpen}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setIsOpen((current) => !current)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-[var(--color-ink-faint)] hover:text-[var(--color-primary)]"
+                >
+                    <svg
+                        className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        aria-hidden="true"
+                    >
+                        <path
+                            fillRule="evenodd"
+                            d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.09 1.03l-4.25 4.5a.75.75 0 01-1.09 0l-4.25-4.5a.75.75 0 01.02-1.05z"
+                            clipRule="evenodd"
+                        />
+                    </svg>
+                </button>
+            </div>
+
+            {isOpen && filteredOptions.length > 0 && (
+                <ul className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--color-line)] bg-white py-1 shadow-lg">
+                    {filteredOptions.map((option) => (
+                        <li key={option}>
+                            <button
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => {
+                                    onChange(option);
+                                    setIsOpen(false);
+                                }}
+                                className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-100 ${
+                                    String(value) === option
+                                        ? 'bg-gray-50 font-semibold text-[var(--color-primary)]'
+                                        : 'text-[var(--color-ink)]'
+                                }`}
+                            >
+                                {option}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
+
 export default function WhatsApp({
     contacts = emptyPagination,
     templates = [],
     filters = {},
+    filter_options: serverFilterOptions = {},
 }) {
     const [selectedTemplateId, setSelectedTemplateId] = useState(
         filters.template_id ? String(filters.template_id) : ''
@@ -765,31 +866,6 @@ export default function WhatsApp({
                             )}
                         </div>
 
-                        {selectedTemplate && (
-                            <div className="mt-4 rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
-                                <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink)]">
-                                    Filtros configurados para esta plantilla
-                                </p>
-
-                                {configuredFilters.length > 0 ? (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        {configuredFilters.map((key) => (
-                                            <span
-                                                key={key}
-                                                className="rounded-full border border-[var(--color-line)] bg-white px-3 py-1 text-[10px] font-semibold text-[var(--color-ink)]"
-                                            >
-                                                {FILTER_LABELS[key]}
-                                            </span>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="mt-2 text-[11px] text-[var(--color-ink-faint)]">
-                                        Esta plantilla no tiene filtros adicionales configurados.
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
                         {isBirthdayTemplate && (
                             <div className="mb-6 mt-5">
                                 <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
@@ -918,14 +994,26 @@ export default function WhatsApp({
                                                                 {FILTER_LABELS[key]}
                                                             </label>
 
-                                                            <input
-                                                                id={`filter-${key}`}
-                                                                type={key === 'cumpleanos' ? 'date' : 'text'}
-                                                                value={filterValues[key] ?? ''}
-                                                                onChange={(event) => handleFilterValueChange(key, event.target.value)}
-                                                                placeholder={key === 'cumpleanos' ? '' : `Filtrar por ${FILTER_LABELS[key].toLowerCase()}`}
-                                                                className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
-                                                            />
+                                                            {key === 'cumpleanos' ? (
+                                                                <input
+                                                                    id={`filter-${key}`}
+                                                                    type="date"
+                                                                    value={filterValues[key] ?? ''}
+                                                                    onChange={(event) =>
+                                                                        handleFilterValueChange(key, event.target.value)
+                                                                    }
+                                                                    className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
+                                                                />
+                                                            ) : (
+                                                                <FilterCombobox
+                                                                    id={`filter-${key}`}
+                                                                    label={FILTER_LABELS[key]}
+                                                                    value={filterValues[key] ?? ''}
+                                                                    options={serverFilterOptions[key] ?? []}
+                                                                    placeholder={`Filtrar por ${FILTER_LABELS[key].toLowerCase()}`}
+                                                                    onChange={(value) => handleFilterValueChange(key, value)}
+                                                                />
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>
