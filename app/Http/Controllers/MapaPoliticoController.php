@@ -10,6 +10,7 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
+use App\Support\Cedula;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -680,6 +681,7 @@ class MapaPoliticoController extends Controller
             // Reusing an electoral person's id would make authorizePersonOrLider treat it as this lider.
             'client_id' => 'nullable|uuid|unique:persons,id',
         ]);
+        $data = Cedula::normalizeFields($data);
         $this->authorizeGeo($data['municipio_id']);
 
         // Offline creates carry the id generated on the device: a repeated send must not create a second lider.
@@ -1022,7 +1024,7 @@ class MapaPoliticoController extends Controller
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
         ]);
-        $data = UpdateVotante::withoutNulls($data);
+        $data = Cedula::normalizeFields(UpdateVotante::withoutNulls($data));
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
@@ -1040,7 +1042,10 @@ class MapaPoliticoController extends Controller
                 }
             }
 
-            if ($cedula !== ($currentCedula ?? '')) {
+            // The form resends the cédula on every save; an unchanged one (even if stored with dots) is left as is.
+            if ($cedula === Cedula::normalize($currentCedula ?? '')) {
+                unset($data['cedula']);
+            } else {
                 $excludeIds = [$id];
                 if ($currentLider && $currentLider->id !== $id) {
                     $excludeIds[] = $currentLider->id;
