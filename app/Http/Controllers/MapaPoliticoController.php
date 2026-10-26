@@ -1042,7 +1042,10 @@ class MapaPoliticoController extends Controller
                 }
             }
 
-            if ($cedula !== ($currentCedula ?? '')) {
+            // The form resends the cédula on every save; an unchanged one (even if stored with dots) is left as is.
+            if ($cedula === Cedula::normalize($currentCedula ?? '')) {
+                unset($data['cedula']);
+            } else {
                 $excludeIds = [$id];
                 if ($currentLider && $currentLider->id !== $id) {
                     $excludeIds[] = $currentLider->id;

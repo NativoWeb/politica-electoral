@@ -19,7 +19,6 @@ return new class extends Migration
             WHERE l.cedula IS NOT NULL
               AND {$digits} ~ '^[0-9]+$'
               AND {$digits} <> l.cedula
-              AND NOT EXISTS (SELECT 1 FROM lideres o WHERE o.id <> l.id AND o.cedula = {$digits})
               AND (SELECT count(*) FROM lideres s WHERE regexp_replace(trim(s.cedula), '[[:space:].,''´’‘`-]', '', 'g') = {$digits}) = 1
         ");
 

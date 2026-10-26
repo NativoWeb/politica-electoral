@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Actions\Votantes\AddNexo;
+use App\Actions\Votantes\UpdateVotante;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\MapaPoliticoController;
 use Illuminate\Database\Schema\Blueprint;
@@ -37,6 +38,9 @@ class OfflineCreateIdempotencyTest extends TestCase
             $t->string('nivel_confianza')->default('sin_llamar');
             $t->uuid('geographic_unit_id')->nullable();
             $t->string('cedula')->nullable()->unique();
+            $t->string('partido')->nullable();
+            $t->boolean('destacado')->default(false);
+            $t->integer('votos')->default(0);
             foreach (['provincia', 'telefono', 'email', 'profesion', 'direccion', 'barrio', 'zona', 'observacion',
                 'tipo_documento', 'fecha_expedicion_doc', 'genero', 'fecha_nacimiento', 'estado_civil',
                 'referente_documento', 'referente_nombre', 'referente_apellido', 'departamento_votacion',
@@ -49,6 +53,11 @@ class OfflineCreateIdempotencyTest extends TestCase
                 $t->boolean($col)->default(false);
             }
             $t->timestamps();
+        });
+        Schema::create('candidacies', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('person_id');
+            $t->uuid('contest_id')->nullable();
         });
         Schema::create('persons', function (Blueprint $t) {
             $t->uuid('id')->primary();
@@ -144,6 +153,39 @@ class OfflineCreateIdempotencyTest extends TestCase
 
         $this->assertSame(422, $this->storeLider(['nombre' => 'ELSA ROJAS', 'municipio_id' => $this->municipio, 'cedula' => '63525141']));
         $this->assertSame(1, DB::table('lideres')->count());
+    }
+
+    public function test_a_lider_whose_formatted_cedula_clashes_can_still_be_edited(): void
+    {
+        $id = (string) Str::uuid();
+        DB::table('lideres')->insert([
+            ['id' => (string) Str::uuid(), 'nombre' => 'Otra persona', 'municipio' => 'Socorro', 'geographic_unit_id' => $this->municipio, 'cedula' => '1097333182'],
+            ['id' => $id, 'nombre' => 'Asbleidy', 'municipio' => 'Socorro', 'geographic_unit_id' => $this->municipio, 'cedula' => "1.097'333.182"],
+        ]);
+
+        // The form resends the unchanged cédula along with the edited field.
+        app(UpdateVotante::class)->handle($id, ['cedula' => "1.097'333.182", 'telefono' => '3001234567']);
+
+        $this->assertSame('3001234567', DB::table('lideres')->where('id', $id)->value('telefono'));
+        $this->assertSame("1.097'333.182", DB::table('lideres')->where('id', $id)->value('cedula'));
+    }
+
+    public function test_the_mapa_politico_panel_can_edit_a_lider_whose_formatted_cedula_clashes(): void
+    {
+        $id = (string) Str::uuid();
+        DB::table('lideres')->insert([
+            ['id' => (string) Str::uuid(), 'nombre' => 'Otra persona', 'municipio' => 'Socorro', 'geographic_unit_id' => $this->municipio, 'cedula' => '1097333182'],
+            ['id' => $id, 'nombre' => 'Asbleidy', 'municipio' => 'Socorro', 'geographic_unit_id' => $this->municipio, 'cedula' => "1.097'333.182"],
+        ]);
+
+        $request = Request::create("/mapa-politico/persona/{$id}", 'PUT',
+            ['cedula' => "1.097'333.182", 'telefono' => '3001234567'], [], [], ['HTTP_ACCEPT' => 'application/json']);
+        $this->app->instance('request', $request);
+        $response = app(MapaPoliticoController::class)->updatePersona($request, $id);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('3001234567', DB::table('lideres')->where('id', $id)->value('telefono'));
+        $this->assertSame("1.097'333.182", DB::table('lideres')->where('id', $id)->value('cedula'));
     }
 
     public function test_a_nexo_id_owned_by_someone_else_is_a_conflict(): void

@@ -59,7 +59,10 @@ class UpdateVotante
         $this->authorizeGeo($lider->geographic_unit_id);
 
         $cedula = $data['cedula'] ?? null;
-        if ($cedula !== null && $cedula !== '' && $cedula !== $lider->cedula) {
+        // The form resends the cédula on every save; an unchanged one (even if stored with dots) is left as is.
+        if ($cedula !== null && $cedula === Cedula::normalize($lider->cedula)) {
+            unset($data['cedula']);
+        } elseif ($cedula !== null && $cedula !== '') {
             $existente = DB::table('lideres')->where('cedula', $cedula)->where('id', '!=', $id)->first();
             if ($existente) {
                 throw new BusinessRuleException($this->duplicateCedulaMessage($cedula, $existente));
