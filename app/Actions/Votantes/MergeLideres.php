@@ -7,13 +7,14 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Support\Cedula;
 use Illuminate\Support\Facades\DB;
 
-// Two lider records of the same person: $dropId is folded into $keepId and deleted.
-// The kept record's values win; it only takes what it lacks from the duplicate.
+// Two lider records of the same person become one.
+// The most complete record survives (its id keeps links, contacts, favorites...). Values come first from
+// $editedId, the record the user is working on (its data was just saved), then from the other one.
 class MergeLideres
 {
     use ScopesTerritory;
 
-    // Rows pointing at a lider id, moved to the kept record.
+    // Rows pointing at a lider id, moved to the surviving record.
     private const REFERENCES = [
         ['lider_contactos', 'lider_id'], ['lider_info_politica', 'lider_id'], ['lider_seguimientos', 'lider_id'],
         ['lider_municipios_influencia', 'lider_id'], ['nexos_familiares', 'person_id'],
@@ -25,64 +26,96 @@ class MergeLideres
     private const SPECIAL = ['id', 'nombre', 'cargo', 'observacion', 'telefono', 'cedula', 'votos', 'nivel_confianza',
         'municipio', 'provincia', 'geographic_unit_id', 'created_at', 'updated_at', 'is_active'];
 
-    // Text attributes whose differing value in the duplicate is noted in the observation.
+    // Text attributes whose differing value in the other record is noted in the observation.
     private const NOTED = ['email' => 'correo', 'direccion' => 'dirección', 'barrio' => 'barrio', 'profesion' => 'profesión', 'partido' => 'partido'];
 
     // Yes/no attributes: true on either record stays true.
     private const FLAGS = ['destacado', 'militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario',
         'reservista', 'funcionario', 'exfuncionario', 'gran_elector'];
 
-    // $cedula: the one typed in the form. When it is the duplicate's, it replaces a (mistyped) cédula of the kept record.
-    public function handle(string $keepId, string $dropId, ?string $cedula = null): object
+    public function __construct(private readonly UpdateVotante $updateVotante) {}
+
+    // $cedula: the one typed in the form. When it is the other record's, it replaces a (mistyped) cédula of the edited one.
+    // Returns the surviving record.
+    public function handle(string $editedId, string $otherId, ?string $cedula = null): object
     {
-        if ($keepId === $dropId) {
+        if ($editedId === $otherId) {
             throw new BusinessRuleException('No se puede unificar un registro consigo mismo.');
         }
 
-        return DB::transaction(function () use ($keepId, $dropId, $cedula) {
-            $keep = DB::table('lideres')->where('id', $keepId)->lockForUpdate()->first();
-            $drop = DB::table('lideres')->where('id', $dropId)->lockForUpdate()->first();
-            if (! $keep || ! $drop) {
+        return DB::transaction(function () use ($editedId, $otherId, $cedula) {
+            $edited = DB::table('lideres')->where('id', $editedId)->lockForUpdate()->first();
+            $other = DB::table('lideres')->where('id', $otherId)->lockForUpdate()->first();
+            if (! $edited || ! $other) {
                 throw new BusinessRuleException('Uno de los registros ya no existe.', 404);
             }
-            $this->authorizeGeo($keep->geographic_unit_id);
-            $this->authorizeGeo($drop->geographic_unit_id);
+            $this->authorizeGeo($edited->geographic_unit_id);
+            $this->authorizeGeo($other->geographic_unit_id);
 
-            $keepCedula = Cedula::normalize($keep->cedula) ?: null;
-            $dropCedula = Cedula::normalize($drop->cedula) ?: null;
-            $replacesCedula = $dropCedula && $cedula === $dropCedula && $keepCedula !== $dropCedula;
-            if ($keepCedula && $dropCedula && $keepCedula !== $dropCedula && ! $replacesCedula) {
+            $editedCedula = Cedula::normalize($edited->cedula) ?: null;
+            $otherCedula = Cedula::normalize($other->cedula) ?: null;
+            $correctsCedula = $otherCedula && $cedula === $otherCedula && $editedCedula !== $otherCedula;
+            if ($editedCedula && $otherCedula && $editedCedula !== $otherCedula && ! $correctsCedula) {
                 throw new BusinessRuleException('No se pueden unificar: los dos registros tienen cédulas distintas.');
             }
 
-            $upd = $this->mergedValues($keep, $drop);
-            if ($replacesCedula) {
-                $upd['cedula'] = $dropCedula;
-                if ($keepCedula) {
-                    $upd['observacion'] = trim(($upd['observacion'] ?? (string) $keep->observacion)."\nCédula anterior: {$keep->cedula}.");
+            [$keep, $drop] = $this->completeness($other) > $this->completeness($edited) ? [$other, $edited] : [$edited, $other];
+
+            // A candidate opens as their lider by exact name: never rename away from a linked name.
+            $linkedName = match (true) {
+                $this->updateVotante->linkedPersonIds($edited)->isNotEmpty() => $edited->nombre,
+                $this->updateVotante->linkedPersonIds($other)->isNotEmpty() => $other->nombre,
+                default => null,
+            };
+            $final = $this->mergedValues($edited, $other, $linkedName);
+            if ($correctsCedula) {
+                $final['cedula'] = $otherCedula;
+                if ($editedCedula) {
+                    $final['observacion'] = trim($final['observacion']."\nCédula anterior: {$edited->cedula}.");
                 }
             }
+            $upd = array_filter($final, fn ($value, $col) => $value !== $keep->$col, ARRAY_FILTER_USE_BOTH);
 
             foreach (self::REFERENCES as [$table, $column]) {
-                $this->moveReferences($table, $column, $dropId, $keepId);
+                $this->moveReferences($table, $column, $drop->id, $keep->id);
             }
-            // The cédula is unique: free it before the kept record takes it.
-            DB::table('lideres')->where('id', $dropId)->delete();
+            // The cédula is unique: free it before the surviving record takes it.
+            DB::table('lideres')->where('id', $drop->id)->delete();
             if ($upd) {
-                DB::table('lideres')->where('id', $keepId)->update($upd + ['updated_at' => now()]);
+                DB::table('lideres')->where('id', $keep->id)->update($upd + ['updated_at' => now()]);
             }
 
-            return DB::table('lideres')->where('id', $keepId)->first();
+            return DB::table('lideres')->where('id', $keep->id)->first();
         });
     }
 
-    private function mergedValues(object $keep, object $drop): array
+    // Filled attributes plus related rows (contacts, nexos...): the record with more of them survives.
+    private function completeness(object $lider): int
+    {
+        $filled = count(array_filter((array) $lider, fn ($v) => $v !== null && $v !== '' && $v !== false && $v !== 0));
+        foreach (self::REFERENCES as [$table, $column]) {
+            $filled += DB::table($table)->where($column, $lider->id)->count();
+        }
+
+        return $filled;
+    }
+
+    // The resulting values of every mergeable column; $first wins conflicts, $second fills the gaps.
+    private function mergedValues(object $first, object $second, ?string $linkedName): array
     {
         $empty = fn ($v) => $v === null || $v === '';
-        $upd = [];
+        $final = [];
+
+        // Where the record lives and whether it shows is what the user is editing, whichever row survives.
+        $final['geographic_unit_id'] = $first->geographic_unit_id;
+        $final['municipio'] = $first->municipio;
+        $final['provincia'] = $first->provincia ?? $second->provincia ?? null;
+        $final['is_active'] = (bool) ($first->is_active ?? true) || (bool) ($second->is_active ?? true);
+
+        $final['nombre'] = $linkedName ?? self::fullestName($first->nombre, $second->nombre);
 
         $tokens = [];
-        foreach ([$keep->cargo, $drop->cargo] as $cargo) {
+        foreach ([$first->cargo, $second->cargo] as $cargo) {
             foreach (explode(',', (string) $cargo) as $t) {
                 $t = trim($t);
                 if ($t !== '' && ! in_array(mb_strtolower($t), array_map('mb_strtolower', $tokens), true)) {
@@ -90,60 +123,67 @@ class MergeLideres
                 }
             }
         }
-        if (implode(', ', $tokens) !== (string) $keep->cargo) {
-            $upd['cargo'] = implode(', ', $tokens);
-        }
+        $final['cargo'] = implode(', ', $tokens);
 
-        $notes = array_values(array_unique(array_filter([trim((string) $keep->observacion), trim((string) $drop->observacion)])));
-        $keepPhone = preg_replace('/\D/', '', (string) $keep->telefono);
-        $dropPhone = preg_replace('/\D/', '', (string) $drop->telefono);
-        if ($keepPhone === '' && $dropPhone !== '') {
-            $upd['telefono'] = $drop->telefono;
-        } elseif ($dropPhone !== '' && $dropPhone !== $keepPhone) {
-            $notes[] = "Otro teléfono registrado: {$drop->telefono}.";
+        $notes = array_values(array_unique(array_filter([trim((string) $first->observacion), trim((string) $second->observacion)])));
+        $firstPhone = preg_replace('/\D/', '', (string) $first->telefono);
+        $secondPhone = preg_replace('/\D/', '', (string) $second->telefono);
+        $final['telefono'] = $firstPhone !== '' ? $first->telefono : $second->telefono;
+        if ($firstPhone !== '' && $secondPhone !== '' && $secondPhone !== $firstPhone) {
+            $notes[] = "Otro teléfono registrado: {$second->telefono}.";
         }
-        // The kept record wins; what the duplicate had different is written down instead of lost.
         foreach (self::NOTED as $col => $label) {
-            $mine = trim((string) ($keep->$col ?? ''));
-            $theirs = trim((string) ($drop->$col ?? ''));
+            $mine = trim((string) ($first->$col ?? ''));
+            $theirs = trim((string) ($second->$col ?? ''));
             if ($mine !== '' && $theirs !== '' && mb_strtolower($mine) !== mb_strtolower($theirs)) {
                 $notes[] = "Otro {$label} registrado: {$theirs}.";
             }
         }
-        if (implode("\n", $notes) !== trim((string) $keep->observacion)) {
-            $upd['observacion'] = implode("\n", $notes);
+        $otherName = mb_strtolower($final['nombre']) === mb_strtolower(trim($first->nombre)) ? $second->nombre : $first->nombre;
+        if (mb_strtolower(trim($otherName)) !== mb_strtolower($final['nombre'])) {
+            $notes[] = "También registrado como: {$otherName}.";
         }
+        $final['observacion'] = implode("\n", $notes);
 
-        if ($empty($keep->cedula) && ! $empty($drop->cedula)) {
-            $upd['cedula'] = Cedula::normalize($drop->cedula);
-        }
-        if ((int) $drop->votos > (int) $keep->votos) {
-            $upd['votos'] = (int) $drop->votos;
-        }
-        if (($keep->nivel_confianza ?? 'sin_llamar') === 'sin_llamar' && ! $empty($drop->nivel_confianza ?? null) && $drop->nivel_confianza !== 'sin_llamar') {
-            $upd['nivel_confianza'] = $drop->nivel_confianza;
-        }
+        $final['cedula'] = (Cedula::normalize($first->cedula) ?: Cedula::normalize($second->cedula)) ?: null;
+        $final['votos'] = max((int) $first->votos, (int) $second->votos);
+        $nivel = fn ($v) => $empty($v) || $v === 'sin_llamar' ? null : $v;
+        $final['nivel_confianza'] = $nivel($first->nivel_confianza ?? null) ?? $nivel($second->nivel_confianza ?? null) ?? 'sin_llamar';
 
-        foreach ((array) $keep as $col => $val) {
-            if (in_array($col, self::SPECIAL, true) || ! property_exists($drop, $col)) {
+        foreach ((array) $first as $col => $val) {
+            if (in_array($col, self::SPECIAL, true) || ! property_exists($second, $col)) {
                 continue;
             }
-            $other = $drop->$col;
-            if (in_array($col, self::FLAGS, true) || is_bool($val) || is_bool($other)) {
-                if ($other && ! $val) {
-                    $upd[$col] = true;
-                }
-            } elseif ($empty($val) && ! $empty($other)) {
-                $upd[$col] = $other;
+            $theirs = $second->$col;
+            if (in_array($col, self::FLAGS, true) || is_bool($val) || is_bool($theirs)) {
+                $final[$col] = (bool) $val || (bool) $theirs;
+            } else {
+                $final[$col] = $empty($val) ? $theirs : $val;
             }
         }
 
-        return $upd;
+        return $final;
+    }
+
+    // "Cesar Ricardo Silva Diaz" over "Cesar Silva Diaz"; proper case over ALL CAPS when they are the same name.
+    private static function fullestName(string $a, string $b): string
+    {
+        $a = preg_replace('/\s+/', ' ', trim($a));
+        $b = preg_replace('/\s+/', ' ', trim($b));
+        $words = fn ($n) => count(preg_split('/\s+/', $n));
+        if ($words($b) > $words($a)) {
+            return $b;
+        }
+        if ($words($b) === $words($a) && $a === mb_strtoupper($a) && $b !== mb_strtoupper($b)) {
+            return $b;
+        }
+
+        return $a;
     }
 
     private function moveReferences(string $table, string $column, string $from, string $to): void
     {
-        // Rows that would duplicate one the kept record already has are dropped instead of moved.
+        // Rows that would duplicate one the surviving record already has are dropped instead of moved.
         $uniqueWith = ['lider_municipios_influencia' => 'geographic_unit_id', 'favorites' => 'user_id', 'taggables' => 'tag_id'][$table] ?? null;
         if ($uniqueWith) {
             DB::table($table)->where($column, $from)

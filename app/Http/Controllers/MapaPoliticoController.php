@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Votantes\AddNexo;
 use App\Actions\Votantes\AddReferido;
+use App\Actions\Votantes\FindPossibleDuplicates;
 use App\Actions\Votantes\MergeLideres;
 use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\FiltersByCargo;
@@ -1410,6 +1411,15 @@ class MapaPoliticoController extends Controller
         }
 
         return response()->json(['data' => $query->get()]);
+    }
+
+    public function posiblesDuplicados(string $id, FindPossibleDuplicates $find)
+    {
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+
+        return response()->json(['data' => $find->handle($id)]);
     }
 
     // Folds a duplicate lider (same person entered twice) into the one being edited.

@@ -129,9 +129,20 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
     // The server may answer a candidate with their linked lider record: every write goes to that id.
     const targetId = data?.id || personId;
+    // After a merge the surviving record may be the other one: the panel then shows that id.
+    const [viewId, setViewId] = useState(null);
+    // Other records of the same municipio that look like this person (same phone, contained name...).
+    const [posibles, setPosibles] = useState([]);
 
-    function loadData() {
-        return apiFetch(`/mapa-politico/persona/${personId}`, { method: 'GET' })
+    function loadPosibles(id) {
+        apiFetch(`/mapa-politico/persona/${id}/posibles-duplicados`, { method: 'GET' })
+            .then(r => (r.ok ? r.json() : { data: [] }))
+            .then(res => setPosibles(res.data || []))
+            .catch(() => setPosibles([]));
+    }
+
+    function loadData(id = viewId || personId) {
+        return apiFetch(`/mapa-politico/persona/${id}`, { method: 'GET' })
             .then(r => {
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 const ct = r.headers.get('content-type') || '';
@@ -142,9 +153,10 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 setData(d);
                 setLoadError(false);
                 setForm(buildFormFromData(d));
+                if (d?.id) loadPosibles(d.id);
             })
             .catch(async () => {
-                const offlineData = await getOfflinePersona(personId).catch(() => null);
+                const offlineData = await getOfflinePersona(id).catch(() => null);
                 const source = offlineData || fallbackData;
                 if (source) {
                     setData({ ...source, _offline: true });
@@ -159,7 +171,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     useEffect(() => {
         setLoading(true);
         setLoadError(false);
-        loadData().finally(() => setLoading(false));
+        setViewId(null);
+        setPosibles([]);
+        loadData(personId).finally(() => setLoading(false));
     }, [personId]);
 
     function savePersona() {
@@ -225,12 +239,12 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             .finally(() => setSaving(false));
     }
 
-    function mergeDuplicado() {
-        const dup = duplicado;
+    // Merges `dup` with this record. In edit mode the pending changes are saved first so nothing typed is lost.
+    function mergeDuplicado(dup = duplicado) {
         const actual = form.nombre || data?.nombre;
         confirm(
             'Unificar registros',
-            `Quedará un solo registro: «${actual}». La cédula, teléfono, notas, cargos, contactos y nexos de «${dup.nombre}» pasan a este registro y el duplicado se elimina. Esto no se puede deshacer.`,
+            `${dup.motivo ? `(${dup.motivo}) ` : ''}«${actual}» y «${dup.nombre}» quedarán como un solo registro, con la información de los dos (cédula, teléfonos, notas, cargos, contactos y nexos). Se conserva el registro más completo. Esto no se puede deshacer.`,
             async () => {
                 setMerging(true);
                 const fail = (msg) => { setMessage(msg); setErrorMessage(msg); showGlobalToast(msg, 'error'); };
@@ -241,22 +255,30 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                         : (res.message || 'No se pudo unificar. Intenta de nuevo.'));
                 };
                 try {
-                    // 1) Keep the pending edits, leaving the cédula as it was (the duplicate still holds the new one).
-                    const payload = { ...form, cedula: data?.cedula ?? '', votos: form.votos ? parseInt(form.votos, 10) : 0 };
-                    const saved = await apiFetch(`/mapa-politico/persona/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) });
-                    if (!saved.ok) return failFrom(saved);
-                    // 2) Fold the duplicate in: this record takes its cédula, notes, cargos and related rows.
+                    if (editMode) {
+                        // 1) Keep the pending edits. After a cédula clash the typed cédula still belongs to the
+                        // duplicate, so the old one is sent and the merge moves it over.
+                        const fromClash = dup === duplicado;
+                        const payload = { ...form, cedula: fromClash ? (data?.cedula ?? '') : (form.cedula ?? ''), votos: form.votos ? parseInt(form.votos, 10) : 0 };
+                        const saved = await apiFetch(`/mapa-politico/persona/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) });
+                        if (!saved.ok) return failFrom(saved);
+                    }
+                    // 2) One record stays with both records' data and related rows.
                     const merged = await apiFetch(`/mapa-politico/persona/${targetId}/unificar`, {
                         method: 'POST',
-                        body: JSON.stringify({ duplicado_id: dup.id, cedula: form.cedula ?? '' }),
+                        body: JSON.stringify({ duplicado_id: dup.id, cedula: editMode ? (form.cedula ?? '') : '' }),
                     });
                     if (!merged.ok) return failFrom(merged);
+                    const res = (await merged.json().catch(() => null)) || {};
+                    const survivorId = res.lider?.id || targetId;
                     setDuplicado(null);
+                    setPosibles(prev => prev.filter(p => p.id !== dup.id));
                     setMessage('Registros unificados');
                     setErrorMessage('');
                     showGlobalToast('Registros unificados.');
                     setEditMode(false);
-                    loadData();
+                    if (survivorId !== targetId) setViewId(survivorId);
+                    loadData(survivorId);
                     setTimeout(() => router.reload({ only: ['data'] }), 500);
                     setTimeout(() => setMessage(''), 4000);
                 } catch {
@@ -543,7 +565,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             <button
                                                 type="button"
-                                                onClick={mergeDuplicado}
+                                                onClick={() => mergeDuplicado()}
                                                 disabled={merging || saving}
                                                 className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
                                             >
@@ -563,6 +585,31 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                             </div>
                         );
                     })()}
+
+                    {/* Possible duplicates of this person in the same municipio */}
+                    {posibles.length > 0 && !duplicado && (
+                        <div className="mx-4 lg:mx-8 mt-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-[13px] text-[var(--color-ink)]">
+                            <p className="font-bold text-amber-800">¿Esta persona está registrada dos veces?</p>
+                            <ul className="mt-2 space-y-2">
+                                {posibles.map(p => (
+                                    <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+                                        <span>
+                                            <strong>{p.nombre}</strong>
+                                            <span className="text-[var(--color-ink-faint)]"> · {[p.cargo, p.telefono, p.motivo].filter(Boolean).join(' · ')}</span>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => mergeDuplicado(p)}
+                                            disabled={merging || saving}
+                                            className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
+                                        >
+                                            {merging ? 'Unificando...' : 'Unificar'}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
 
                     {/* Tab bar */}
                     <TabBar tabs={tabsWithCounts} active={activeTab} onChange={setActiveTab} />

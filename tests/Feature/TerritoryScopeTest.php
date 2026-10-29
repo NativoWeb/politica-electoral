@@ -228,6 +228,7 @@ class TerritoryScopeTest extends TestCase
         $this->actingAs($this->campo)->getJson("/votantes/{$this->liderB}")->assertForbidden();
         $this->actingAs($this->campo)->getJson("/votantes/{$this->liderB}/referidos")->assertForbidden();
         $this->actingAs($this->campo)->getJson("/mapa-politico/persona/{$this->liderB}")->assertForbidden();
+        $this->actingAs($this->campo)->getJson("/mapa-politico/persona/{$this->liderB}/posibles-duplicados")->assertForbidden();
         $this->actingAs($this->campo)->get("/lideres/{$this->munB}")->assertForbidden();
     }
 

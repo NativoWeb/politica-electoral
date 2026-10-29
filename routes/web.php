@@ -77,6 +77,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/lideres/{id}', [LiderController::class, 'show'])->name('lideres.show');
     Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
     Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona');
+    Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados');
 
     // Búsqueda de líderes para referidos
     Route::get('/mapa-politico/search-lideres', [MapaPoliticoController::class, 'searchLideres'])->name('mapa-politico.search-lideres');
