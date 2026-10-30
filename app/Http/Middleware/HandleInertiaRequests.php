@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Support\CurrentCampaign;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -60,6 +61,7 @@ class HandleInertiaRequests extends Middleware
         $roleCode = $user?->role?->code;
 
         $permissions = $user ? $user->resolvedPermissions() : [];
+        $campaign = app(CurrentCampaign::class);
 
         return [
             ...parent::share($request),
@@ -75,6 +77,8 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => $permissions,
                     'canWrite' => in_array('*', $permissions) || in_array('write.data', $permissions),
                     'whatsapp' => $this->whatsappLink($user),
+                    'campaign' => $campaign->info(),
+                    'canEditElectoral' => $campaign->canEditElectoral(),
                 ] : null,
             ],
             'agent' => $user ? [

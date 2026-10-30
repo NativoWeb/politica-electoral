@@ -97,8 +97,8 @@ class RolesAndPermissionsSeeder extends Seeder
             ],
             [
                 'code' => 'R02_ADMIN_FUNCIONAL',
-                'name' => 'Administrador funcional',
-                'description' => 'Gestiona catálogos, usuarios y configuración de negocio',
+                'name' => 'Administrador de campaña',
+                'description' => 'Gestiona los usuarios, el WhatsApp masivo y la auditoría de su campaña',
                 'level' => 4,
                 'permissions' => [
                     'AUTH_LOGIN', 'PERSON_VIEW', 'PERSON_CREATE', 'PERSON_EDIT', 'PERSON_VIEW_CONTACTS',

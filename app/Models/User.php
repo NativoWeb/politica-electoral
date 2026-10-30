@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -46,6 +47,22 @@ class User extends Authenticatable
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
+    }
+
+    // A model built in memory (User::create) does not carry the column default until it is reloaded.
+    public function campaignId(): string
+    {
+        if (! $this->campaign_id) {
+            $this->campaign_id = DB::table('users')->where('id', $this->id)->value('campaign_id') ?? Campaign::DEFAULT_ID;
+        }
+
+        return $this->campaign_id;
+    }
+
+    // Bulk WhatsApp and the WhatsApp agent are only for users whose campaign has WhatsApp enabled.
+    public function campaignHasWhatsapp(): bool
+    {
+        return (bool) DB::table('campaigns')->where('id', $this->campaignId())->value('whatsapp_enabled');
     }
 
     public function resolvedPermissions(): array

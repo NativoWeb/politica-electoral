@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\WhatsAppLinkCode;
@@ -16,11 +17,14 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // The base migrations need PostgreSQL, so users/roles are built here; the new tables come from their real migrations.
 class AgentIdentityTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private const SECRET = 'test-agent-secret-0123456789abcdef';
 
     private const PHONE = '+573001234567';
@@ -99,6 +103,8 @@ class AgentIdentityTest extends TestCase
             $t->string('owner');
             $t->integer('expiration');
         });
+
+        $this->addCampaignColumns();
 
         foreach (glob(database_path('migrations/2026_10_19_*.php')) as $file) {
             (require $file)->up();
@@ -372,6 +378,7 @@ class AgentIdentityTest extends TestCase
             'permissions' => ['view.mapa', 'write.data'],
             'territory' => ['restricted' => true, 'municipios' => [['id' => $this->munA, 'name' => 'Girón']]],
             'can_write' => true,
+            'campaign' => ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático'],
         ]);
     }
 
@@ -410,6 +417,46 @@ class AgentIdentityTest extends TestCase
             ->assertJson(['id' => $this->campo->id, 'role_code' => 'R09_CAMPO', 'can_write' => true]);
 
         $this->travel(16)->minutes();
+        $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
+    }
+
+    public function test_me_includes_the_users_campaign(): void
+    {
+        $campX = (string) Str::uuid();
+        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => true]);
+        $this->campo->forceFill(['campaign_id' => $campX])->save();
+        $this->linkedCampo();
+
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertOk()->json('token');
+
+        $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])
+            ->assertOk()
+            ->assertJsonPath('campaign', ['id' => $campX, 'name' => 'Alejandro']);
+    }
+
+    public function test_a_campaign_without_whatsapp_cannot_link_nor_use_the_agent(): void
+    {
+        $campX = (string) Str::uuid();
+        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => true]);
+        $this->campo->forceFill(['campaign_id' => $campX])->save();
+        $code = $this->generateCode($this->campo);
+
+        DB::table('campaigns')->where('id', $campX)->update(['whatsapp_enabled' => false]);
+
+        // Neither a new code on the web nor linking with a code issued before WhatsApp was turned off.
+        $this->actingAs($this->campo)->postJson('/perfil/whatsapp/codigo', ['phone' => self::PHONE])
+            ->assertForbidden()->assertJson(['success' => false]);
+        $this->link($code)->assertForbidden()->assertJson(['success' => false]);
+        $this->assertNull($this->campo->refresh()->whatsapp_phone);
+
+        // A user linked while it was enabled loses the agent as soon as it is turned off.
+        DB::table('campaigns')->where('id', $campX)->update(['whatsapp_enabled' => true]);
+        $this->link($code)->assertOk();
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertOk()->json('token');
+
+        DB::table('campaigns')->where('id', $campX)->update(['whatsapp_enabled' => false]);
+        $this->whoami()->assertNotFound();
+        $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertNotFound();
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
     }
 

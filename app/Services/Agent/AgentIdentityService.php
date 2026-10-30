@@ -29,7 +29,8 @@ class AgentIdentityService
             && $user->is_active
             && ! $user->must_change_password
             && $user->whatsapp_phone !== null
-            && $user->whatsapp_verified_at !== null;
+            && $user->whatsapp_verified_at !== null
+            && $user->campaignHasWhatsapp();
     }
 
     public function findEligibleByPhone(?string $phone): ?User
@@ -74,6 +75,10 @@ class AgentIdentityService
                 'municipios' => $municipios,
             ],
             'can_write' => $this->canWrite($user),
+            'campaign' => [
+                'id' => $user->campaignId(),
+                'name' => DB::table('campaigns')->where('id', $user->campaignId())->value('name'),
+            ],
         ];
     }
 }

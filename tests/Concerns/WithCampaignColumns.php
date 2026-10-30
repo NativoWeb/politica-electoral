@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-// SQLite fixtures built by hand: the campaigns table and the campaign_id columns of
+// SQLite fixtures built by hand: the campaigns table (CD with WhatsApp enabled) and the campaign_id columns of
 // 2026_10_30_000001, with every existing row in "Centro Democrático" as in production.
 trait WithCampaignColumns
 {
@@ -24,10 +24,10 @@ trait WithCampaignColumns
                 $t->boolean('is_active')->default(true);
                 $t->timestamps();
             });
-            DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico']);
+            DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico', 'whatsapp_enabled' => true]);
         }
 
-        foreach (['users', 'lideres', 'nexos_familiares'] as $table) {
+        foreach (['users', 'lideres', 'nexos_familiares', 'whatsapp_templates', 'whatsapp_sends'] as $table) {
             if (Schema::hasTable($table) && ! Schema::hasColumn($table, 'campaign_id')) {
                 Schema::table($table, fn (Blueprint $t) => $t->uuid('campaign_id')->default(Campaign::DEFAULT_ID));
             }

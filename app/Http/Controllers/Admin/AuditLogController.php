@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Role;
 use App\Models\User;
+use App\Support\CurrentCampaign;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -21,7 +23,18 @@ class AuditLogController extends Controller
             abort(403);
         }
 
+        $campaign = app(CurrentCampaign::class);
         $query = AuditLog::with('user:id,name,email');
+        $users = User::select('id', 'name', 'email')->orderBy('name');
+
+        // Superadmin sees everything; anyone else only the events of the non-superadmin users of the campaigns they can see.
+        if (! $campaign->isSuperadmin()) {
+            $superadminRoles = Role::where('code', 'R01_SUPERADMIN')->select('id');
+            $scope = fn ($q) => $q->whereIn('campaign_id', $campaign->visibleIds())
+                ->where(fn ($r) => $r->whereNull('role_id')->orWhereNotIn('role_id', $superadminRoles));
+            $query->whereIn('user_id', $scope(User::query())->select('id'));
+            $scope($users);
+        }
 
         if ($request->filled('user_id')) {
             $query->where('user_id', $request->user_id);
@@ -56,7 +69,7 @@ class AuditLogController extends Controller
             ->paginate(50)
             ->withQueryString();
 
-        $users = User::select('id', 'name', 'email')->orderBy('name')->get();
+        $users = $users->get();
         $entityTypes = AuditLog::distinct()->pluck('entity_type')->sort()->values();
 
         return Inertia::render('Admin/AuditLog', [

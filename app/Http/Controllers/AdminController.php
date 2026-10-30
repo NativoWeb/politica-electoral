@@ -8,6 +8,7 @@ use App\Models\PoliticalOrganization;
 use App\Models\Role;
 use App\Models\SourceFile;
 use App\Models\User;
+use App\Support\CurrentCampaign;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -16,11 +17,45 @@ use Inertia\Inertia;
 
 class AdminController extends Controller
 {
+    // Roles a campaign may hand out (Administrador de campaña, Operador and the read-only ones). The rest
+    // (superadmin, data admin, analysts, auditor...) are platform roles that only a superadmin assigns.
+    public const CAMPAIGN_ROLES = ['R02_ADMIN_FUNCIONAL', 'R09_CAMPO', 'R10_CONSULTA', 'R12_REPORTES'];
+
+    // Roles offered by the Users page (the read-only ones are assignable through the API until the UI offers them).
+    private const LISTED_ROLES = ['R01_SUPERADMIN', 'R02_ADMIN_FUNCIONAL', 'R09_CAMPO'];
+
+    private function campaign(): CurrentCampaign
+    {
+        return app(CurrentCampaign::class);
+    }
+
+    // Superadmin manages every user; anyone else only the users of their own campaign (not its subcampaigns).
+    private function managedUsers()
+    {
+        $query = User::query();
+        if (! $this->campaign()->isSuperadmin()) {
+            $query->where('campaign_id', $this->campaign()->ownId());
+        }
+
+        return $query;
+    }
+
+    private function assignableRoles()
+    {
+        $query = Role::where('is_active', true);
+        if (! $this->campaign()->isSuperadmin()) {
+            $query->whereIn('code', self::CAMPAIGN_ROLES)
+                ->where('level', '<=', (int) request()->user()->role?->level);
+        }
+
+        return $query;
+    }
+
     public function index()
     {
         return Inertia::render('Admin/Index', [
             'stats' => [
-                'users' => User::count(),
+                'users' => $this->managedUsers()->count(),
                 'roles' => Role::count(),
                 'partidos' => PoliticalOrganization::count(),
                 'imports' => ImportJob::count(),
@@ -59,7 +94,7 @@ class AdminController extends Controller
             ->toArray();
 
         $search = request('search', '');
-        $query = User::with('role')->orderBy('name');
+        $query = $this->managedUsers()->with(['role', 'campaign:id,name'])->orderBy('name');
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ilike', "%{$search}%")
@@ -79,11 +114,16 @@ class AdminController extends Controller
                 'isActive' => $u->is_active,
                 'permissions' => $u->permissions,
                 'territoryScope' => $u->territory_scope,
+                'campaignId' => $u->campaign_id,
+                'campaignName' => $u->campaign?->name,
                 'createdAt' => $u->created_at?->format('Y-m-d'),
             ]),
             'filters' => ['search' => $search],
-            'roles' => Role::where('is_active', true)
-                ->whereIn('code', ['R01_SUPERADMIN', 'R09_CAMPO'])
+            'campaigns' => $this->campaign()->isSuperadmin()
+                ? DB::table('campaigns')->orderBy('name')->get(['id', 'name', 'parent_id'])
+                : [],
+            'roles' => $this->assignableRoles()
+                ->whereIn('code', self::LISTED_ROLES)
                 ->orderBy('level', 'desc')
                 ->get(['id', 'name', 'code'])
                 ->map(fn ($r) => [
@@ -108,16 +148,31 @@ class AdminController extends Controller
     }
 
     // Only a superadmin may grant superadmin or '*', or touch a superadmin; territory-restricted users cannot manage users at all.
+    // Anyone else works inside their own campaign (managedUsers) and can neither hand out nor touch a role above
+    // their own or outside CAMPAIGN_ROLES, nor grant permissions they do not have.
     private function authorizeUserWrite(?User $target = null, ?string $roleId = null, ?array $permissions = null): void
     {
         $actor = request()->user();
-        if ($actor->role?->code === 'R01_SUPERADMIN') {
+        if ($this->campaign()->isSuperadmin()) {
             return;
         }
         abort_if($actor->hasTerritoryScopeRestriction(), 403, 'Un usuario con territorio restringido no puede gestionar usuarios.');
         abort_if($target?->role?->code === 'R01_SUPERADMIN', 403, 'Solo un superadministrador puede modificar a otro superadministrador.');
         abort_if($roleId && Role::where('id', $roleId)->value('code') === 'R01_SUPERADMIN', 403, 'Solo un superadministrador puede asignar ese rol.');
         abort_if(in_array('*', $permissions ?? [], true), 403, 'Solo un superadministrador puede otorgar todos los permisos.');
+
+        abort_if($target?->role_id && ! $this->assignableRoles()->whereKey($target->role_id)->exists(), 403, 'No puedes modificar a un usuario con ese rol.');
+        abort_if($target && array_diff($target->permissions ?? [], $actor->resolvedPermissions()) !== [], 403, 'No puedes modificar a un usuario con permisos que no tienes.');
+        abort_if($roleId && ! $this->assignableRoles()->whereKey($roleId)->exists(), 403, 'No puedes asignar ese rol.');
+
+        $granted = array_diff($permissions ?? [], $target?->permissions ?? []);
+        abort_if(array_diff($granted, $actor->resolvedPermissions()) !== [], 403, 'No puedes otorgar permisos que no tienes.');
+    }
+
+    // Superadmin picks the campaign (its own by default); anyone else always creates in their own campaign.
+    private function campaignRule(): array
+    {
+        return $this->campaign()->isSuperadmin() ? ['nullable', 'uuid', 'exists:campaigns,id'] : ['exclude'];
     }
 
     public function storeUser(Request $request)
@@ -130,12 +185,13 @@ class AdminController extends Controller
             'permissions.*' => 'string',
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
+            'campaign_id' => $this->campaignRule(),
         ]);
         $this->authorizeUserWrite(null, $data['role_id'] ?? null, $data['permissions'] ?? null);
 
         $plainPassword = \Illuminate\Support\Str::random(10);
 
-        $user = User::create([
+        $user = new User([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($plainPassword),
@@ -145,6 +201,7 @@ class AdminController extends Controller
             'is_active' => true,
             'must_change_password' => true,
         ]);
+        $user->forceFill(['campaign_id' => $data['campaign_id'] ?? $this->campaign()->ownId()])->save();
 
         Mail::to($user->email)->send(new WelcomeCredentials(
             userName: $user->name,
@@ -158,7 +215,7 @@ class AdminController extends Controller
 
     public function updateUser(Request $request, string $id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->managedUsers()->findOrFail($id);
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $user->id,
@@ -168,6 +225,7 @@ class AdminController extends Controller
             'permissions.*' => 'string',
             'territory_scope' => 'nullable|array',
             'territory_scope.*' => 'uuid',
+            'campaign_id' => $this->campaignRule(),
         ]);
         $this->authorizeUserWrite($user, $data['role_id'] ?? null, $data['permissions'] ?? null);
 
@@ -179,6 +237,9 @@ class AdminController extends Controller
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
         }
+        if (! empty($data['campaign_id'])) {
+            $user->campaign_id = $data['campaign_id'];
+        }
         $user->save();
 
         return back()->with('success', 'Usuario actualizado.');
@@ -186,15 +247,18 @@ class AdminController extends Controller
 
     public function toggleUser(string $id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->managedUsers()->findOrFail($id);
         $this->authorizeUserWrite($user);
+        if ($user->id === request()->user()->id) {
+            return back()->withErrors(['toggle' => 'No puedes desactivar tu propia cuenta']);
+        }
         $user->update(['is_active' => !$user->is_active]);
         return back();
     }
 
     public function destroyUser(string $id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->managedUsers()->findOrFail($id);
         $this->authorizeUserWrite($user);
         if ($user->id === request()->user()->id) {
             return back()->withErrors(['delete' => 'No puedes eliminar tu propia cuenta']);

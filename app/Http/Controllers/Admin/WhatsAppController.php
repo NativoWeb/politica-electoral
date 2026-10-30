@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Campaign;
 use App\Models\Lider;
 use App\Models\Person;
 use App\Models\WhatsAppSend;
 use App\Models\WhatsAppSendRecipient;
 use App\Models\WhatsAppTemplate;
+use App\Support\CurrentCampaign;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -31,14 +33,14 @@ class WhatsAppController extends Controller
 
         $templateId = $request->input('template_id');
         $selectedTemplate = $templateId
-            ? WhatsAppTemplate::query()
+            ? $this->ownTemplates()
                 ->where('is_active', true)
                 ->find($templateId)
             : null;
 
         $persons = collect();
 
-        if (in_array($source, ['todos', 'votantes'], true)) {
+        if (in_array($source, ['todos', 'votantes'], true) && $this->includesPersons()) {
             $query = Person::query()
                 ->whereNull('persons.merged_into_id');
 
@@ -162,7 +164,7 @@ class WhatsAppController extends Controller
         $lideres = collect();
 
         if (in_array($source, ['todos', 'lideres'], true)) {
-            $query = Lider::query();
+            $query = Lider::query()->where('lideres.campaign_id', $this->ownCampaignId());
 
             if ($user?->hasTerritoryScopeRestriction()) {
                 $allowedGeoIds = $user->allowedGeoIds();
@@ -372,7 +374,7 @@ class WhatsAppController extends Controller
             ]
         );
 
-        $templates = WhatsAppTemplate::query()
+        $templates = $this->ownTemplates()
             ->where('is_active', true)
             ->orderBy('name')
             ->get([
@@ -460,7 +462,7 @@ class WhatsAppController extends Controller
             ],
             'excluded_contact_ids.*' => ['uuid'],
         ]);
-        $template = WhatsAppTemplate::query()
+        $template = $this->ownTemplates()
             ->where('is_active', true)
             ->findOrFail($validated['template_id']);
 
@@ -470,7 +472,7 @@ class WhatsAppController extends Controller
 
         $persons = collect();
 
-        if (in_array($source, ['todos', 'votantes'], true)) {
+        if (in_array($source, ['todos', 'votantes'], true) && $this->includesPersons()) {
             $query = Person::query()
                 ->whereNull('persons.merged_into_id')
                 ->whereHas('contactPoints', function ($q) {
@@ -598,6 +600,7 @@ class WhatsAppController extends Controller
 
         if (in_array($source, ['todos', 'lideres'], true)) {
             $query = Lider::query()
+                ->where('lideres.campaign_id', $this->ownCampaignId())
                 ->where(function ($q) {
                     $q->where(function ($a) {
                         $a->whereNotNull('telefono')
@@ -763,8 +766,7 @@ class WhatsAppController extends Controller
             $recipients,
             $isBirthdayTemplate
         ) {
-            $send = WhatsAppSend::create([
-                'template_id' => $template->id,
+            $send = $this->createSend($template, [
                 'campaign_type' => $isBirthdayTemplate ? 'birthday' : null,
                 'campaign_date' => $isBirthdayTemplate
                     ? Carbon::now('America/Bogota')->toDateString()
@@ -906,15 +908,14 @@ class WhatsAppController extends Controller
             ->first();
 
         if (!$send) {
-            $recipients = $this->getTodayBirthdayRecipients($today);
+            $recipients = $this->getTodayBirthdayRecipients($today, $template);
 
             $send = DB::transaction(function () use (
                 $template,
                 $date,
                 $recipients
             ) {
-                $send = WhatsAppSend::create([
-                    'template_id' => $template->id,
+                $send = $this->createSend($template, [
                     'campaign_type' => 'birthday',
                     'campaign_date' => $date,
                 ]);
@@ -970,13 +971,20 @@ class WhatsAppController extends Controller
 
     /**
      * Construye la lista de cumpleaños de hoy para personas y líderes.
+     *
+     * Solo líderes de la campaña dueña de la plantilla (si tiene WhatsApp); las personas electorales
+     * compartidas solo con la plantilla de la campaña de plataforma.
      */
-    private function getTodayBirthdayRecipients(Carbon $today): array
+    private function getTodayBirthdayRecipients(Carbon $today, WhatsAppTemplate $template): array
     {
+        if (! DB::table('campaigns')->where('id', $template->campaign_id)->value('whatsapp_enabled')) {
+            return [];
+        }
+
         $month = (int) $today->month;
         $day = (int) $today->day;
 
-        $persons = Person::query()
+        $persons = $template->campaign_id !== Campaign::DEFAULT_ID ? collect() : Person::query()
             ->whereNull('persons.merged_into_id')
             ->whereNotNull('persons.birth_date')
             ->whereMonth('persons.birth_date', $month)
@@ -1021,8 +1029,9 @@ class WhatsAppController extends Controller
                 ];
             });
 
-        // Called by n8n without a user, so the campaign scope of Lider does not apply: only campaigns with WhatsApp.
+        // Called by n8n without a user, so the campaign scope of Lider does not apply: the template's campaign only.
         $lideres = Lider::query()
+            ->where('lideres.campaign_id', $template->campaign_id)
             ->whereIn('lideres.campaign_id', $this->whatsappCampaignIds())
             ->whereNotNull('fecha_nacimiento')
             ->whereMonth('fecha_nacimiento', $month)
@@ -1114,6 +1123,7 @@ class WhatsAppController extends Controller
         $validated = $request->validate([
             'phone' => ['required', 'string', 'max:30'],
             'status' => ['required', 'in:delivered,read,failed'],
+            'send_id' => ['nullable', 'integer'],
         ]);
     
         // Normalizar el teléfono recibido desde Meta.
@@ -1129,8 +1139,11 @@ class WhatsAppController extends Controller
         // Comparar los últimos 10 dígitos para ignorar el indicativo 57.
         $lastTenDigits = substr($phoneDigits, -10);
     
-        // Buscar el destinatario pendiente más reciente que coincida.
+        // Buscar el destinatario pendiente más reciente que coincida, solo en envíos de campañas con WhatsApp
+        // (y del envío indicado, si n8n lo manda). Meta no devuelve un id de mensaje que esté guardado aquí.
         $recipient = WhatsAppSendRecipient::query()
+            ->whereHas('send', fn ($q) => $q->whereIn('campaign_id', $this->whatsappCampaignIds()))
+            ->when($validated['send_id'] ?? null, fn ($q, $sendId) => $q->where('whatsapp_send_id', $sendId))
     ->whereIn('status', ['pendiente', 'enviando', 'enviado'])
             ->whereRaw(
                 "right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = ?",
@@ -1206,6 +1219,8 @@ class WhatsAppController extends Controller
      */
     public function status(WhatsAppSend $send)
     {
+        abort_unless($send->campaign_id === $this->ownCampaignId(), 404);
+
         $send->load([
             'recipients:id,whatsapp_send_id,person_id,name,phone,status',
         ]);
@@ -1236,6 +1251,7 @@ class WhatsAppController extends Controller
                 'template:id,name,meta_name',
                 'recipients:id,whatsapp_send_id,person_id,name,phone,status,created_at,updated_at',
             ])
+            ->where('campaign_id', $this->ownCampaignId())
             ->where('campaign_type', 'birthday')
             ->whereDate('campaign_date', $date)
             ->orderBy('id')
@@ -1254,7 +1270,7 @@ class WhatsAppController extends Controller
             ->pluck('birth_date', 'id');
 
         $leaderBirthDates = Lider::query()
-            ->whereIn('lideres.campaign_id', $this->whatsappCampaignIds())
+            ->where('lideres.campaign_id', $this->ownCampaignId())
             ->whereIn('id', $personIds)
             ->pluck('fecha_nacimiento', 'id');
 
@@ -1299,6 +1315,33 @@ class WhatsAppController extends Controller
             ],
             'recipients' => $recipients,
         ]);
+    }
+
+    // Bulk WhatsApp works on the user's OWN campaign only: its templates, its sends and its lideres, never a
+    // subcampaign's (the root campaign does not message the lideres of its subcampaigns).
+    private function ownCampaignId(): string
+    {
+        return app(CurrentCampaign::class)->ownId();
+    }
+
+    private function ownTemplates()
+    {
+        return WhatsAppTemplate::query()->where('campaign_id', $this->ownCampaignId());
+    }
+
+    // Electoral persons are shared platform data: only the platform (superadmin, root campaign) messages them.
+    private function includesPersons(): bool
+    {
+        return app(CurrentCampaign::class)->canEditElectoral();
+    }
+
+    // A send belongs to the campaign of its template, also when n8n creates it without a user.
+    private function createSend(WhatsAppTemplate $template, array $attributes): WhatsAppSend
+    {
+        $send = new WhatsAppSend(['template_id' => $template->id, ...$attributes]);
+        $send->forceFill(['campaign_id' => $template->campaign_id])->save();
+
+        return $send;
     }
 
     // Campaigns allowed to send WhatsApp messages to their lideres.

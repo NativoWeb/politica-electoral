@@ -151,11 +151,13 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::prefix('admin')->name('admin.')->middleware('permission:view.admin')->group(function () {
         Route::get('/auditoria', [AuditLogController::class, 'index'])->name('auditoria');
         Route::get('/', [AdminController::class, 'index'])->name('index');
-        Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
-        Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
-        Route::put('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('users.update');
-        Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
-        Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy');
+        Route::middleware('permission:manage.users')->group(function () {
+            Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
+            Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
+            Route::put('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('users.update');
+            Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
+            Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy');
+        });
 
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory');
         Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store')->middleware('electoral.platform');
@@ -185,29 +187,31 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::post('/personas/{id}/contacts', [PersonCrudController::class, 'storeContact'])->name('personas.contact.store')->middleware('electoral.platform');
         Route::delete('/personas/{id}/contacts/{contactId}', [PersonCrudController::class, 'destroyContact'])->name('personas.contact.destroy')->middleware('electoral.platform');
 
-        // WhatsApp
-        Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
+        // WhatsApp: templates, recipients and sends of the user's own campaign, if it has WhatsApp enabled
+        Route::middleware('campaign.whatsapp')->group(function () {
+            Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
 
-        Route::get('/whatsapp/sends/{send}/status', [WhatsAppController::class, 'status'])
-            ->name('whatsapp.sends.status');
+            Route::get('/whatsapp/sends/{send}/status', [WhatsAppController::class, 'status'])
+                ->name('whatsapp.sends.status');
 
-        Route::get('/whatsapp/birthdays/history', [WhatsAppController::class, 'birthdayHistory'])
-            ->name('whatsapp.birthdays.history');
+            Route::get('/whatsapp/birthdays/history', [WhatsAppController::class, 'birthdayHistory'])
+                ->name('whatsapp.birthdays.history');
 
-        Route::post('/whatsapp/prepare', [WhatsAppController::class, 'prepare'])
-            ->name('whatsapp.prepare');
+            Route::post('/whatsapp/prepare', [WhatsAppController::class, 'prepare'])
+                ->name('whatsapp.prepare');
 
-        Route::get('/whatsapp/templates', [WhatsAppTemplateController::class, 'index'])
-            ->name('whatsapp.templates');
+            Route::get('/whatsapp/templates', [WhatsAppTemplateController::class, 'index'])
+                ->name('whatsapp.templates');
 
-        Route::post('/whatsapp/templates', [WhatsAppTemplateController::class, 'store'])
-            ->name('whatsapp.templates.store');
+            Route::post('/whatsapp/templates', [WhatsAppTemplateController::class, 'store'])
+                ->name('whatsapp.templates.store');
 
-        Route::put('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'update'])
-            ->name('whatsapp.templates.update');
+            Route::put('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'update'])
+                ->name('whatsapp.templates.update');
 
-        Route::delete('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'destroy'])
-            ->name('whatsapp.templates.destroy');
+            Route::delete('/whatsapp/templates/{whatsappTemplate}', [WhatsAppTemplateController::class, 'destroy'])
+                ->name('whatsapp.templates.destroy');
+        });
 
         // Cargos CRUD
         Route::get('/cargos', [CargoCategoryController::class, 'index'])->name('cargos');

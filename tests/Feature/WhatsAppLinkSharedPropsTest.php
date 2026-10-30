@@ -7,11 +7,14 @@ use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // The base migrations need PostgreSQL, so users/roles are built here; the WhatsApp columns come from their real migration.
 class WhatsAppLinkSharedPropsTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private const PHONE = '+573001234567';
 
     private const AGENT_NUMBER = '+573134459145';
@@ -48,6 +51,8 @@ class WhatsAppLinkSharedPropsTest extends TestCase
             $t->timestamps();
         });
         (require database_path('migrations/2026_10_19_000001_add_whatsapp_link_to_users.php'))->up();
+
+        $this->addCampaignColumns();
 
         $role = Role::create(['code' => 'R09_CAMPO', 'name' => 'Operador', 'level' => 1]);
         $this->user = User::create([

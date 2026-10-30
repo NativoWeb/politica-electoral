@@ -29,16 +29,26 @@ class CurrentCampaign
 
     public function ownId(): ?string
     {
-        $user = $this->user();
-        if (! $user) {
-            return null;
-        }
-        // A model built in memory (User::create) does not carry the column default until it is reloaded.
-        if (! $user->campaign_id) {
-            $user->campaign_id = DB::table('users')->where('id', $user->id)->value('campaign_id') ?? Campaign::DEFAULT_ID;
-        }
+        return $this->user()?->campaignId();
+    }
 
-        return $user->campaign_id;
+    public function isSuperadmin(): bool
+    {
+        return $this->user()?->role?->code === 'R01_SUPERADMIN';
+    }
+
+    // The user's campaign as the frontend sees it; null without an authenticated user.
+    public function info(): ?array
+    {
+        $own = $this->ownId();
+        $campaign = $own ? DB::table('campaigns')->where('id', $own)->first(['id', 'name', 'parent_id', 'whatsapp_enabled']) : null;
+
+        return $campaign ? [
+            'id' => $campaign->id,
+            'name' => $campaign->name,
+            'whatsapp_enabled' => (bool) $campaign->whatsapp_enabled,
+            'is_subcampaign' => $campaign->parent_id !== null,
+        ] : null;
     }
 
     // null = unrestricted (no authenticated user).
@@ -67,12 +77,11 @@ class CurrentCampaign
     // superadmins and the root campaign's team, which keeps the behaviour it had before campaigns.
     public function canEditElectoral(): bool
     {
-        $user = $this->user();
-        if (! $user) {
+        if (! $this->user()) {
             return true;
         }
 
-        return $user->role?->code === 'R01_SUPERADMIN' || $this->ownId() === Campaign::DEFAULT_ID;
+        return $this->isSuperadmin() || $this->ownId() === Campaign::DEFAULT_ID;
     }
 
     public function scope($query, string $column = 'campaign_id')

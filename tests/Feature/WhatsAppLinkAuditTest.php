@@ -8,11 +8,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // Phone numbers and one-time codes of the WhatsApp linking flow must never reach audit_logs in full.
 class WhatsAppLinkAuditTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private const SECRET = 'test-agent-secret-0123456789abcdef';
 
     private const PHONE = '+573001234567';
@@ -48,6 +51,7 @@ class WhatsAppLinkAuditTest extends TestCase
             $t->rememberToken();
             $t->timestamps();
         });
+        $this->addCampaignColumns();
         Schema::create('audit_logs', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->uuid('user_id')->nullable();

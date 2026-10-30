@@ -60,6 +60,11 @@ class AgentIdentityController extends Controller
                     return $this->invalidCode();
                 }
 
+                // The code stays unused: it is refused, not burnt, in case WhatsApp is enabled later on.
+                if (! $user->campaignHasWhatsapp()) {
+                    return $this->campaignWithoutWhatsapp();
+                }
+
                 if (User::where('whatsapp_phone', $phone)->whereKeyNot($user->id)->exists()) {
                     $this->registerFailure($failKey);
 
@@ -136,6 +141,11 @@ class AgentIdentityController extends Controller
     private function phoneTaken(): JsonResponse
     {
         return response()->json(['success' => false, 'message' => 'El número ya está vinculado a otro usuario.'], 409);
+    }
+
+    private function campaignWithoutWhatsapp(): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => 'Tu campaña no tiene habilitado el agente de WhatsApp.'], 403);
     }
 
     private function invalidCode(): JsonResponse

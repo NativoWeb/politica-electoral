@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\WhatsAppTemplate;
+use App\Support\CurrentCampaign;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -24,9 +25,23 @@ class WhatsAppTemplateController extends Controller
         'cumpleanos',
     ];
 
+    // Templates belong to the user's own campaign; another campaign's template does not exist for them.
+    // meta_name stays unique across campaigns on purpose: every campaign sends through the same WhatsApp Business
+    // account (one n8n webhook), where a template name is unique. A second WABA would need it per campaign.
+    private function ownCampaignId(): string
+    {
+        return app(CurrentCampaign::class)->ownId();
+    }
+
+    private function authorizeTemplate(WhatsAppTemplate $template): void
+    {
+        abort_unless($template->campaign_id === $this->ownCampaignId(), 404);
+    }
+
     public function index()
     {
         $templates = WhatsAppTemplate::query()
+            ->where('campaign_id', $this->ownCampaignId())
             ->orderBy('name')
             ->get();
 
@@ -66,7 +81,7 @@ class WhatsAppTemplateController extends Controller
             array_unique($validated['filters'] ?? [])
         );
 
-        WhatsAppTemplate::create($validated);
+        (new WhatsAppTemplate($validated))->forceFill(['campaign_id' => $this->ownCampaignId()])->save();
 
         return redirect()
             ->route('admin.whatsapp.templates')
@@ -77,6 +92,8 @@ class WhatsAppTemplateController extends Controller
         Request $request,
         WhatsAppTemplate $whatsappTemplate
     ) {
+        $this->authorizeTemplate($whatsappTemplate);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'meta_name' => [
@@ -115,6 +132,7 @@ class WhatsAppTemplateController extends Controller
 
     public function destroy(WhatsAppTemplate $whatsappTemplate)
     {
+        $this->authorizeTemplate($whatsappTemplate);
         $whatsappTemplate->delete();
 
         return redirect()

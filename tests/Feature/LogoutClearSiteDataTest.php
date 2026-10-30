@@ -6,11 +6,14 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // The base migrations need PostgreSQL, so users/roles are built here.
 class LogoutClearSiteDataTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private User $user;
 
     protected function setUp(): void
@@ -41,6 +44,8 @@ class LogoutClearSiteDataTest extends TestCase
             $t->rememberToken();
             $t->timestamps();
         });
+
+        $this->addCampaignColumns();
 
         $role = Role::create(['code' => 'R09_CAMPO', 'name' => 'Operador', 'level' => 1]);
         $this->user = User::create([

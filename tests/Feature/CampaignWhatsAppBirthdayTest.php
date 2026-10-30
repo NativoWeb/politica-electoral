@@ -106,4 +106,32 @@ class CampaignWhatsAppBirthdayTest extends TestCase
 
         $this->assertSame(['Cumple CD'], $names);
     }
+
+    public function test_template_campaign_without_whatsapp_gets_no_recipients_at_all(): void
+    {
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple CD');
+        $person = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $person, 'full_name' => 'Candidato Cumpleañero', 'birth_date' => Carbon::now('America/Bogota')->subYears(50)->toDateString()]);
+        DB::table('person_contact_points')->insert(['id' => (string) Str::uuid(), 'person_id' => $person, 'type' => 'mobile', 'value_raw' => '3009998877']);
+        DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->update(['whatsapp_enabled' => false]);
+
+        $this->getJson('/api/whatsapp/birthdays/today', ['X-Birthday-Token' => self::TOKEN])
+            ->assertOk()->assertJsonPath('recipients_count', 0)->assertJsonPath('recipients', []);
+        $this->assertSame(0, DB::table('whatsapp_send_recipients')->count());
+    }
+
+    // The birthday template belongs to the CD: a subcampaign's lideres are not its recipients, even with WhatsApp.
+    public function test_birthdays_only_reach_lideres_of_the_templates_campaign(): void
+    {
+        $campX = (string) Str::uuid();
+        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => true]);
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple CD');
+        $this->cumpleanero($campX, 'Cumple X');
+
+        $response = $this->getJson('/api/whatsapp/birthdays/today', ['X-Birthday-Token' => self::TOKEN])->assertOk();
+
+        $this->assertSame(['Cumple CD'], collect($response->json('recipients'))->pluck('name')->all());
+        $this->assertSame(Campaign::DEFAULT_ID, DB::table('whatsapp_sends')->where('id', $response->json('send_id'))->value('campaign_id'));
+        $this->assertSame(['Cumple CD'], DB::table('whatsapp_send_recipients')->pluck('name')->all());
+    }
 }

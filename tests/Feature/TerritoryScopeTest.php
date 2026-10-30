@@ -425,7 +425,7 @@ class TerritoryScopeTest extends TestCase
     {
         $operador = User::create([
             'name' => 'Operador admin', 'email' => 'op@test.local', 'password' => 'secret123',
-            'role_id' => $this->campo->role_id, 'permissions' => ['view.admin'],
+            'role_id' => $this->campo->role_id, 'permissions' => ['view.admin', 'manage.users'],
         ]);
         $r01 = Role::where('code', 'R01_SUPERADMIN')->value('id');
         $base = ['name' => 'Operador admin', 'email' => 'op@test.local'];
@@ -435,7 +435,7 @@ class TerritoryScopeTest extends TestCase
         $this->actingAs($operador)->put("/admin/usuarios/{$this->admin->id}", ['name' => 'X', 'email' => 'admin@test.local', 'password' => 'hijacked1'])->assertForbidden();
 
         $this->assertSame($this->campo->role_id, $operador->fresh()->role_id);
-        $this->assertSame(['view.admin'], $operador->fresh()->permissions);
+        $this->assertSame(['view.admin', 'manage.users'], $operador->fresh()->permissions);
         $this->assertSame('Admin', $this->admin->fresh()->name);
     }
 

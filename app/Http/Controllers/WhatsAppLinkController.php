@@ -14,6 +14,9 @@ class WhatsAppLinkController extends Controller
     public function store(WhatsAppLinkCodeRequest $request): JsonResponse
     {
         $user = $request->user();
+        if (! $user->campaignHasWhatsapp()) {
+            return response()->json(['success' => false, 'message' => 'Tu campaña no tiene habilitado el agente de WhatsApp.'], 403);
+        }
         $ttl = (int) config('agent.link_code_ttl_minutes', 10);
         $phoneHash = WhatsAppLinkCode::hashPhone($request->validated('phone'));
 

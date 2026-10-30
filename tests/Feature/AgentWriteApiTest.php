@@ -865,7 +865,7 @@ class AgentWriteApiTest extends TestCase
     public function test_agent_applies_the_campaign_isolation_of_its_user(): void
     {
         $campX = (string) Str::uuid();
-        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID]);
+        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => true]);
         $userX = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573003330000', null, ['view.votantes', 'write.data']);
         $userX->forceFill(['campaign_id' => $campX])->save();
         $token = $this->tokenFor($userX);
