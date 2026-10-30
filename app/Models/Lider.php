@@ -78,6 +78,11 @@ class Lider extends Model
         return $this->hasMany(NexoFamiliar::class, 'person_id');
     }
 
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
+    }
+
     public function geographicUnit(): BelongsTo
     {
         return $this->belongsTo(GeographicUnit::class);

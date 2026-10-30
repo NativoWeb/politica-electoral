@@ -115,6 +115,8 @@ class AgentWriteApiPostgresTest extends TestCase
             DB::statement('CREATE ROLE agent_ro NOLOGIN');
         }
 
+        // Later migrations add columns to the view; CREATE OR REPLACE cannot drop them (rolled back with the test).
+        DB::statement('DROP VIEW IF EXISTS agent_ro.v_lider_seguimientos');
         (require database_path('migrations/2026_10_20_000002_create_agent_ro_v_lider_seguimientos_view.php'))->up();
 
         $this->assertTrue((bool) DB::selectOne(

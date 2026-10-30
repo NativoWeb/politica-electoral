@@ -38,6 +38,11 @@ class User extends Authenticatable
         ];
     }
 
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
+    }
+
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
