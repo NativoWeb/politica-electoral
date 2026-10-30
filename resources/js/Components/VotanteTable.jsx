@@ -1,4 +1,5 @@
 import { router } from '@inertiajs/react';
+import CampaignChip from '@/Components/CampaignChip';
 
 const NIVEL_BADGE = {
     sin_llamar: { label: 'Sin llamar', cls: 'bg-gray-100 text-gray-600' },
@@ -82,6 +83,7 @@ export default function VotanteTable({ votantes, selectedId, onSelect }) {
                                     <td className="px-3 py-2.5">
                                         <span className="text-[13px] font-semibold text-[var(--color-ink)] line-clamp-1">{v.nombre}</span>
                                         <span className="block sm:hidden text-[11px] text-[var(--color-ink-faint)]">{v.cedula}</span>
+                                        <CampaignChip campaignId={v.campaign_id} className="mt-1" />
                                     </td>
                                     <td className="px-3 py-2.5 text-[13px] text-[var(--color-ink-soft)] hidden sm:table-cell font-mono">{v.cedula || '-'}</td>
                                     <td className="px-3 py-2.5 text-[13px] text-[var(--color-ink-soft)] hidden md:table-cell">{v.municipio || '-'}</td>

@@ -50,6 +50,11 @@ class VotanteController extends Controller
         $user = $request->user();
         $this->scopeToTerritory($query, 'lideres.geographic_unit_id');
 
+        $campana = $this->campaign()->filterId($request->input('campana'));
+        if ($campana) {
+            $query->where('lideres.campaign_id', $campana);
+        }
+
         if ($search = $request->input('search')) {
             $escaped = $this->escapeLike($search);
             $query->where(function ($q) use ($escaped) {
@@ -93,6 +98,9 @@ class VotanteController extends Controller
             $counterBase->where('is_active', false);
         }
         $this->scopeToTerritory($counterBase);
+        if ($campana) {
+            $counterBase->where('campaign_id', $campana);
+        }
         $total = (clone $counterBase)->count();
         $granElectorCount = (clone $counterBase)->where('gran_elector', true)->count();
         // A referente's cédula only refers inside the referente's own campaign.
@@ -120,7 +128,10 @@ class VotanteController extends Controller
                 'con_referidos' => $conReferidos,
             ],
             'municipios' => $municipios,
-            'filters' => $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado']),
+            'filters' => array_merge(
+                $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado']),
+                $campana ? ['campana' => $campana] : [],
+            ),
         ]);
     }
 

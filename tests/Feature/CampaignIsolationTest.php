@@ -502,16 +502,196 @@ class CampaignIsolationTest extends TestCase
                 ->where('totalLideres', 2));
     }
 
+    // --- 3b. Campaign labels and filter for the frontend (step 4) ---
+
+    public function test_visible_campaigns_are_shared_only_when_there_is_more_than_one(): void
+    {
+        $this->actingAs($this->userCd)->get('/votantes')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('visibleCampaigns', [
+                    ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático'],
+                    ['id' => $this->campX, 'name' => 'Alejandro'],
+                ])
+                ->where('auth.user.campaign.id', Campaign::DEFAULT_ID)
+                ->where('auth.user.campaign.is_subcampaign', false));
+
+        $this->actingAs($this->userX)->get('/votantes')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('visibleCampaigns', [])
+                ->where('auth.user.campaign.name', 'Alejandro')
+                ->where('auth.user.campaign.is_subcampaign', true)
+                ->where('auth.user.canEditElectoral', false));
+
+        $this->actingAs($this->userY)->get('/votantes')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('visibleCampaigns', []));
+    }
+
+    public function test_listings_and_the_ficha_carry_the_campaign_of_each_lider(): void
+    {
+        $rows = $this->actingAs($this->userCd)->get('/mapa-politico?tipo=lideres')->assertOk()
+            ->viewData('page')['props']['data'];
+        $this->assertEqualsCanonicalizing(
+            [$this->liderA => Campaign::DEFAULT_ID, $this->liderB => $this->campX],
+            collect($rows)->mapWithKeys(fn ($r) => [$r['id'] => $r['campaign_id']])->all(),
+        );
+
+        $this->actingAs($this->userCd)->get('/votantes')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('votantes.data', fn ($data) => collect($data)->firstWhere('id', $this->liderB)['campaign_id'] === $this->campX));
+
+        $this->actingAs($this->userCd)->getJson("/mapa-politico/persona/{$this->liderB}")
+            ->assertOk()->assertJsonPath('campaign_id', $this->campX);
+        $this->actingAs($this->userCd)->getJson("/votantes/{$this->liderB}")
+            ->assertOk()->assertJsonPath('data.campaign_id', $this->campX);
+    }
+
+    public function test_mapa_politico_campaign_filter_works_inside_the_visible_campaigns(): void
+    {
+        $this->candidateNamedLikeC();
+        $names = fn (User $user, string $query) => collect($this->actingAs($user)->get("/mapa-politico?tipo=alcaldia,lideres&municipio={$this->mun}{$query}")
+            ->assertOk()->viewData('page')['props']['data'])->pluck('nombre')->sort()->values()->all();
+
+        // Without the filter the shared electoral candidate is listed with the visible lideres.
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $names($this->userCd, ''));
+
+        // A visible campaign: only its lideres, no shared electoral rows.
+        $this->assertSame(['Beto Campaña X'], $names($this->userCd, "&campana={$this->campX}"));
+        $this->assertSame(['Ana Campaña CD'], $names($this->userCd, '&campana='.Campaign::DEFAULT_ID));
+        $this->actingAs($this->userCd)->get("/mapa-politico?tipo=lideres&campana={$this->campX}")
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('filters.campana', $this->campX));
+
+        // A campaign the user cannot see (or garbage) is ignored, never a way in.
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $names($this->userCd, "&campana={$this->campY}"));
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $names($this->userCd, '&campana=no-es-uuid'));
+        $this->assertSame(['Beto Campaña X', 'Ceci Campaña Y'], $names($this->userX, '&campana='.Campaign::DEFAULT_ID));
+        $this->actingAs($this->userCd)->get("/mapa-politico?tipo=lideres&campana={$this->campY}")
+            ->assertInertia(fn (AssertableInertia $page) => $page->missing('filters.campana'));
+    }
+
+    public function test_votantes_campaign_filter_works_inside_the_visible_campaigns(): void
+    {
+        $this->actingAs($this->userCd)->get("/votantes?campana={$this->campX}")->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('votantes.data', 1)
+                ->where('votantes.data.0.id', $this->liderB)
+                ->where('counters.total', 1)
+                ->where('filters.campana', $this->campX));
+
+        $this->actingAs($this->userCd)->get("/votantes?campana={$this->campY}")->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('votantes.data', 2)
+                ->where('counters.total', 2)
+                ->missing('filters.campana'));
+
+        $this->actingAs($this->userX)->get('/votantes?campana='.Campaign::DEFAULT_ID)->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('votantes.data', 1)
+                ->where('votantes.data.0.id', $this->liderB));
+    }
+
+    public function test_a_leftover_campaign_filter_is_ignored_with_a_single_visible_campaign(): void
+    {
+        // X sees only its own campaign: there is no filter on screen, so ?campana= must not narrow anything.
+        $this->actingAs($this->userX)->get("/votantes?campana={$this->campX}")->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('votantes.data', 1)
+                ->missing('filters.campana'));
+        $this->actingAs($this->userX)->get("/mapa-politico?tipo=lideres&campana={$this->campX}")->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('data', 1)
+                ->missing('filters.campana'));
+        $this->actingAs($this->userY)->get("/votantes?campana={$this->campY}")->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->missing('filters.campana'));
+    }
+
+    public function test_namesake_lideres_of_different_campaigns_stay_in_separate_rows(): void
+    {
+        $twin = $this->lider($this->campX, 'Ana Campaña CD', '777');
+
+        $rows = collect($this->actingAs($this->userCd)->get('/mapa-politico?tipo=lideres')->assertOk()
+            ->viewData('page')['props']['data'])->where('nombre', 'Ana Campaña CD');
+
+        $this->assertCount(2, $rows);
+        $this->assertEqualsCanonicalizing(
+            [$this->liderA => Campaign::DEFAULT_ID, $twin => $this->campX],
+            $rows->mapWithKeys(fn ($r) => [$r['id'] => $r['campaign_id']])->all(),
+        );
+    }
+
+    public function test_a_shared_electoral_row_still_merges_with_the_own_campaign_lider(): void
+    {
+        $this->candidateNamedLike('Ana Campaña CD');
+        $this->lider($this->campX, 'Ana Campaña CD', '777');
+
+        $rows = collect($this->actingAs($this->userCd)->get("/mapa-politico?tipo=alcaldia,lideres&municipio={$this->mun}")->assertOk()
+            ->viewData('page')['props']['data'])->where('nombre', 'Ana Campaña CD')->values();
+
+        $this->assertCount(2, $rows);
+        $merged = $rows->firstWhere('campaign_id', Campaign::DEFAULT_ID);
+        $this->assertStringContainsString('Alcaldía', $merged['tipo_registro']);
+        $this->assertStringContainsString('Líderes', $merged['tipo_registro']);
+        $this->assertSame('Líderes', $rows->firstWhere('campaign_id', $this->campX)['tipo_registro']);
+    }
+
+    public function test_exports_apply_the_campaign_filter_inside_the_visible_campaigns(): void
+    {
+        $this->candidateNamedLikeC();
+        $rows = function (string $query) {
+            Excel::fake();
+            $this->actingAs($this->userCd)->get("/exportar/excel?source=mapa-politico&tipo=alcaldia,lideres{$query}")->assertOk();
+            $exported = null;
+            Excel::assertDownloaded('Exportacion.xlsx', function (GenericExport $export) use (&$exported) {
+                $exported = $export->array();
+
+                return true;
+            });
+
+            return collect($exported)->map(fn ($r) => implode('|', array_map('strval', $r)))->implode("\n");
+        };
+
+        $x = $rows("&campana={$this->campX}");
+        $this->assertStringContainsString('Beto Campaña X', $x);
+        $this->assertStringNotContainsString('Ana Campaña CD', $x);
+        $this->assertStringNotContainsString('Ceci Campaña Y', $x);
+
+        // Not visible: ignored, the export is what the unfiltered listing shows.
+        $y = $rows("&campana={$this->campY}");
+        $this->assertStringContainsString('Ana Campaña CD', $y);
+        $this->assertStringContainsString('Beto Campaña X', $y);
+        $this->assertStringContainsString('Ceci Campaña Y', $y);
+
+        $captured = null;
+        $pdf = Mockery::mock(\Barryvdh\DomPDF\PDF::class);
+        $pdf->shouldReceive('setPaper')->andReturnSelf();
+        $pdf->shouldReceive('setOption')->andReturnSelf();
+        $pdf->shouldReceive('download')->andReturn(response('pdf'));
+        Pdf::shouldReceive('loadView')->andReturnUsing(function ($view, $data) use (&$captured, $pdf) {
+            $captured = $data['data'];
+
+            return $pdf;
+        });
+        $this->actingAs($this->userCd)->get('/exportar/pdf?source=mapa-politico&tipo=alcaldia,lideres&campana='.Campaign::DEFAULT_ID)->assertOk();
+        $this->assertSame(['Ana Campaña CD'], array_column($captured, 'nombre'));
+    }
+
     // --- 4. Exports and offline packages ---
 
     private function candidateNamedLikeC(): void
     {
-        $office = (string) Str::uuid();
-        DB::table('offices')->insert(['id' => $office, 'name' => 'Alcaldía']);
+        $this->candidateNamedLike('Ceci Campaña Y');
+    }
+
+    private function candidateNamedLike(string $name): void
+    {
+        $office = DB::table('offices')->where('name', 'Alcaldía')->value('id');
+        if (! $office) {
+            $office = (string) Str::uuid();
+            DB::table('offices')->insert(['id' => $office, 'name' => 'Alcaldía']);
+        }
         $contest = (string) Str::uuid();
         DB::table('contests')->insert(['id' => $contest, 'geographic_unit_id' => $this->mun, 'office_id' => $office]);
         $person = (string) Str::uuid();
-        DB::table('persons')->insert(['id' => $person, 'full_name' => 'Ceci Campaña Y']);
+        DB::table('persons')->insert(['id' => $person, 'full_name' => $name]);
         DB::table('candidacies')->insert(['id' => (string) Str::uuid(), 'person_id' => $person, 'contest_id' => $contest, 'outcome' => 'elected']);
     }
 

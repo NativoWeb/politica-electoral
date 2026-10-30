@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { forbiddenMessage } from '@/lib/campaign';
 
 const TIPO_CONTACTO = ['Celular', 'Fijo', 'WhatsApp', 'Email', 'Otro'];
 const ESTADO_CONTACTO = ['activo', 'inactivo'];
 
 const emptyForm = { tipo: 'Celular', valor: '', principal: false, estado: 'activo' };
 
-export default function ContactosManager({ personId, contactos: initialContactos = [], onUpdate }) {
+export default function ContactosManager({ personId, contactos: initialContactos = [], onUpdate, readOnly = false }) {
     const [contactos, setContactos] = useState(initialContactos);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -37,7 +38,7 @@ export default function ContactosManager({ personId, contactos: initialContactos
             const res = await apiFetch(url, { method, body: JSON.stringify(form) });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                throw new Error(body.message || `Error ${res.status}`);
+                throw new Error(res.status === 403 ? forbiddenMessage(body.message) : (body.message || `Error ${res.status}`));
             }
             const data = await res.json();
 
@@ -59,11 +60,12 @@ export default function ContactosManager({ personId, contactos: initialContactos
         if (!confirm('¿Eliminar este contacto?')) return;
         try {
             const res = await apiFetch(`/votantes/contactos/${id}`, { method: 'DELETE' });
+            if (res.status === 403) throw new Error(forbiddenMessage((await res.json().catch(() => ({}))).message));
             if (!res.ok) throw new Error();
             setContactos(prev => prev.filter(c => c.id !== id));
             onUpdate?.();
-        } catch {
-            setError('Error al eliminar');
+        } catch (err) {
+            setError(err.message || 'Error al eliminar');
         }
     }
 
@@ -81,13 +83,15 @@ export default function ContactosManager({ personId, contactos: initialContactos
                 <h4 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                     Contactos adicionales ({contactos.length})
                 </h4>
-                <button
-                    type="button"
-                    onClick={() => { resetForm(); setShowForm(true); }}
-                    className="px-3 py-1.5 bg-[var(--color-primary)] text-white text-[12px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors"
-                >
-                    + Agregar
-                </button>
+                {!readOnly && (
+                    <button
+                        type="button"
+                        onClick={() => { resetForm(); setShowForm(true); }}
+                        className="px-3 py-1.5 bg-[var(--color-primary)] text-white text-[12px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors"
+                    >
+                        + Agregar
+                    </button>
+                )}
             </div>
 
             {error && (
@@ -143,10 +147,12 @@ export default function ContactosManager({ personId, contactos: initialContactos
                             {c.estado === 'inactivo' && <span className="px-1.5 py-0.5 bg-gray-200 text-gray-500 text-[9px] font-bold rounded">Inactivo</span>}
                         </div>
                     </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                        <button type="button" onClick={() => startEdit(c)} className="px-2 py-1.5 text-[11px] text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold rounded-lg">Editar</button>
-                        <button type="button" onClick={() => handleDelete(c.id)} className="px-2 py-1.5 text-[11px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg">Eliminar</button>
-                    </div>
+                    {!readOnly && (
+                        <div className="flex gap-1 flex-shrink-0">
+                            <button type="button" onClick={() => startEdit(c)} className="px-2 py-1.5 text-[11px] text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold rounded-lg">Editar</button>
+                            <button type="button" onClick={() => handleDelete(c.id)} className="px-2 py-1.5 text-[11px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg">Eliminar</button>
+                        </div>
+                    )}
                 </div>
             ))}
         </div>

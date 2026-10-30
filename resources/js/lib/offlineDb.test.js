@@ -323,6 +323,127 @@ describe('offlineDb', () => {
         });
     });
 
+    describe('syncPendingChanges ante rechazos del servidor', () => {
+        const update = { id: 7, type: 'lider', action: 'update', data: { id: 'lid-x', telefono: '1' }, owner: 'owner-test', synced: 0 };
+        const createLider = { id: 1, type: 'lider', action: 'create', data: { nombre: 'Nuevo', client_id: 'lid-new' }, owner: 'owner-test', synced: 0 };
+        const createNexo = { id: 2, type: 'nexo', action: 'create', data: { nombre: 'Hija', personId: 'lid-new', client_id: 'nex-new' }, owner: 'owner-test', synced: 0 };
+        const deleteNexo = { id: 3, type: 'nexo', action: 'delete', data: { id: 'nex-new' }, owner: 'owner-test', synced: 0 };
+        const respond = (status, body = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+        const READ_ONLY = 'Este registro es de otra campaña. Puedes verlo, pero solo su equipo puede modificarlo.';
+
+        beforeEach(() => {
+            document.getElementById('global-offline-toast')?.remove();
+        });
+
+        it('un 403 de otra campaña sale de la cola, guarda cuándo y avisa con el mensaje de solo lectura', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([update]);
+            global.fetch.mockResolvedValueOnce(respond(403, { message: 'Este registro pertenece a otra campaña: solo se puede consultar.' }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(result).toMatchObject({ synced: 0, failed: 0, rejected: 1, messages: [READ_ONLY] });
+            expect(db.pendingChanges.update).toHaveBeenCalledWith(7, expect.objectContaining({
+                synced: 1, rejected: true, rejectedStatus: 403, rejectedReason: READ_ONLY, rejectedAt: expect.any(String),
+            }));
+            expect(document.getElementById('global-offline-toast').textContent).toContain(READ_ONLY);
+        });
+
+        it('un 422 también se descarta con el motivo del servidor', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([update]);
+            global.fetch.mockResolvedValueOnce(respond(422, { message: 'Datos inválidos', errors: { cedula: ['Ya existe un líder con cédula 1'] } }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(result.rejected).toBe(1);
+            expect(db.pendingChanges.update).toHaveBeenCalledWith(7, expect.objectContaining({ rejected: true, rejectedReason: 'Ya existe un líder con cédula 1' }));
+        });
+
+        it('tras un error temporal se detiene: los cambios siguientes no se envían ni se descartan', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([update, { ...update, id: 8 }]);
+            global.fetch.mockResolvedValueOnce(respond(500));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+            expect(result).toMatchObject({ synced: 0, failed: 1, rejected: 0 });
+            expect(db.pendingChanges.update).not.toHaveBeenCalled();
+            expect(document.getElementById('global-offline-toast')).toBeNull();
+        });
+
+        it('(a) create de líder con 500 y nexo del mismo líder después: ambos siguen en la cola', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([createLider, createNexo]);
+            global.fetch.mockResolvedValueOnce(respond(500)).mockResolvedValueOnce(respond(404, { message: 'No encontrado.' }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+            expect(result).toMatchObject({ synced: 0, rejected: 0 });
+            expect(db.pendingChanges.update).not.toHaveBeenCalled();
+            expect(db.lideres.delete).not.toHaveBeenCalled();
+            expect(db.nexos.delete).not.toHaveBeenCalled();
+        });
+
+        it('(b) borrar un nexo cuyo create sigue pendiente: un 404 no lo descarta', async () => {
+            const { db } = offlineDb;
+            // The delete comes first in the queue; its create is still waiting further down.
+            db.pendingChanges.toArray.mockResolvedValueOnce([deleteNexo, createNexo]);
+            global.fetch.mockResolvedValueOnce(respond(404, { message: 'No encontrado.' }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(result).toMatchObject({ synced: 0, rejected: 0, failed: 1 });
+            expect(db.pendingChanges.update).not.toHaveBeenCalled();
+        });
+
+        it('un 404 sin create pendiente de esa entidad sí es definitivo', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([deleteNexo]);
+            global.fetch.mockResolvedValueOnce(respond(404, { message: 'No encontrado.' }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(result.rejected).toBe(1);
+            expect(db.pendingChanges.update).toHaveBeenCalledWith(3, expect.objectContaining({ rejected: true, rejectedStatus: 404 }));
+        });
+
+        it('un create rechazado se quita de la vista sin internet (líder y nexo)', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([createLider, createNexo]);
+            global.fetch
+                .mockResolvedValueOnce(respond(422, { message: 'El municipio es obligatorio.' }))
+                .mockResolvedValueOnce(respond(404, { message: 'No encontrado.' }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(result.rejected).toBe(2);
+            expect(db.lideres.delete).toHaveBeenCalledWith('lid-new');
+            expect(db.nexos.delete).toHaveBeenCalledWith('nex-new');
+        });
+
+        it('limpieza: los rechazados se miden desde rejectedAt y duran una semana; los sincronizados un día', async () => {
+            const now = Date.parse('2026-10-30T12:00:00Z');
+            const iso = (msAgo) => new Date(now - msAgo).toISOString();
+            const day = 86400000;
+
+            expect(offlineDb.isExpiredResolvedChange({ synced: 1, createdAt: iso(2 * day) }, now)).toBe(true);
+            expect(offlineDb.isExpiredResolvedChange({ synced: 1, createdAt: iso(day / 2) }, now)).toBe(false);
+            // Created long ago but refused just now: kept.
+            expect(offlineDb.isExpiredResolvedChange({ synced: 1, rejected: true, createdAt: iso(30 * day), rejectedAt: iso(day) }, now)).toBe(false);
+            expect(offlineDb.isExpiredResolvedChange({ synced: 1, rejected: true, createdAt: iso(30 * day), rejectedAt: iso(8 * day) }, now)).toBe(true);
+
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([update]);
+            global.fetch.mockResolvedValueOnce(respond(200, {}));
+            await offlineDb.syncPendingChanges();
+            const cleanup = db.pendingChanges.and.mock.calls.at(-1)[0];
+            expect(cleanup({ synced: 1, rejected: true, createdAt: iso(30 * day), rejectedAt: new Date().toISOString() })).toBe(false);
+        });
+    });
+
     describe('clearDownloadedData', () => {
         it('vacía las regiones descargadas y conserva la cola de cambios pendientes', async () => {
             const { db } = offlineDb;

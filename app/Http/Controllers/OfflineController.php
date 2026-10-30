@@ -90,7 +90,7 @@ class OfflineController extends Controller
             })
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
                 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
-                'votos', 'destacado', 'profesion', 'cedula')
+                'votos', 'destacado', 'profesion', 'cedula', 'campaign_id')
             ->orderBy('nombre')
             ->get()->map(fn ($r) => (array) $r)->toArray();
 
@@ -100,7 +100,7 @@ class OfflineController extends Controller
             ->where('cargo', 'ilike', '%Directorio Municipal%')
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
                 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
-                'votos', 'destacado', 'profesion', 'cedula',
+                'votos', 'destacado', 'profesion', 'cedula', 'campaign_id',
                 DB::raw("'Directorio Municipal' as tipo_registro"))
             ->orderBy('nombre')
             ->get()->map(fn ($r) => (array) $r)->toArray();

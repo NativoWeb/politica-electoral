@@ -11,6 +11,8 @@
  *  - pendingChanges: offline edits queue { id, type, action, data, createdAt, synced }
  */
 import Dexie from 'dexie';
+import { showGlobalToast } from './api';
+import { forbiddenMessage } from './campaign';
 
 export const db = new Dexie('ElectoralOffline');
 
@@ -291,6 +293,63 @@ export async function markSynced(id) {
     return db.pendingChanges.update(id, { synced: 1 });
 }
 
+// A 4xx that will answer the same on every retry (no permission, gone, invalid). Session (401/419),
+// timeout (408) and rate limit (429) are temporary: those changes stay queued.
+function isDefinitiveRejection(status) {
+    return status >= 400 && status < 500 && ![401, 408, 419, 429].includes(status);
+}
+
+// The record a change creates (its client_id becomes the server id) and the records it needs to exist.
+function createdId(change) {
+    return change.action === 'create' ? change.data?.client_id ?? null : null;
+}
+
+function referencedIds(change) {
+    if (change.type === 'nexo' && change.action === 'create') return [change.data?.personId];
+    if (change.action === 'create') return [];
+    return [change.data?.id];
+}
+
+// A 404 is only final when the record is not still waiting to be created by another queued change.
+function waitsForQueuedCreate(change, pending, resolved) {
+    const needed = referencedIds(change).filter(Boolean);
+    return pending.some(other => other.id !== change.id && !resolved.has(other.id)
+        && createdId(other) !== null && needed.includes(createdId(other)));
+}
+
+// The server refused the change for good: it leaves the queue (resolved, not retried) with the reason.
+export async function markRejected(id, status, reason) {
+    return db.pendingChanges.update(id, {
+        synced: 1, rejected: true, rejectedStatus: status, rejectedReason: reason, rejectedAt: new Date().toISOString(),
+    });
+}
+
+// A refused create must not keep showing as saved in the offline view.
+async function dropRejectedLocalRecord(change) {
+    const id = createdId(change);
+    if (!id) return;
+    if (change.type === 'lider') await db.lideres.delete(id);
+    if (change.type === 'nexo') await db.nexos.delete(id);
+}
+
+async function rejectionReason(res) {
+    const body = await res.json().catch(() => null);
+    if (res.status === 403) return forbiddenMessage(body?.message);
+    const firstError = body?.errors ? Object.values(body.errors)[0]?.[0] : null;
+    return firstError || body?.message || 'El servidor no aceptó el cambio.';
+}
+
+const SYNCED_RETENTION_MS = 86400000;
+const REJECTED_RETENTION_MS = 7 * 86400000;
+
+// Synced changes go after a day; refused ones are kept a week from the refusal (they hold what the user typed).
+export function isExpiredResolvedChange(change, now = Date.now()) {
+    if (change.rejected) {
+        return Boolean(change.rejectedAt) && change.rejectedAt < new Date(now - REJECTED_RETENTION_MS).toISOString();
+    }
+    return change.createdAt < new Date(now - SYNCED_RETENTION_MS).toISOString();
+}
+
 // ─── Sync Engine ───
 
 // Callers (auto-sync, manual button, login of the owner) share one run, so a change is never sent twice.
@@ -310,6 +369,10 @@ async function runSync() {
 
     let synced = 0;
     let failed = 0;
+    let rejected = 0;
+    const messages = [];
+    // Changes settled in this run (synced or refused for good).
+    const resolved = new Set();
 
     // Get CSRF token
     const cookie = document.cookie.split('; ').find(c => c.startsWith('XSRF-TOKEN='));
@@ -318,39 +381,38 @@ async function runSync() {
     for (const change of pending) {
         // The session changed mid-sync (logout / other account): stop, never send with someone else's cookie.
         if ((await ownerKey) !== owner) break;
-        try {
-            let url, method, body;
+        let url, method;
 
-            switch (change.type) {
-                case 'lider':
-                    if (change.action === 'create') {
-                        url = '/mapa-politico/crear-lider';
-                        method = 'POST';
-                    } else if (change.action === 'update') {
-                        url = `/mapa-politico/persona/${change.data.id}`;
-                        method = 'PUT';
-                    }
-                    break;
-                case 'nexo':
-                    if (change.action === 'create') {
-                        url = `/mapa-politico/persona/${change.data.personId}/nexos`;
-                        method = 'POST';
-                    } else if (change.action === 'delete') {
-                        url = `/mapa-politico/nexos/${change.data.id}`;
-                        method = 'DELETE';
-                    }
-                    break;
-                case 'persona':
+        switch (change.type) {
+            case 'lider':
+                if (change.action === 'create') {
+                    url = '/mapa-politico/crear-lider';
+                    method = 'POST';
+                } else if (change.action === 'update') {
                     url = `/mapa-politico/persona/${change.data.id}`;
                     method = 'PUT';
-                    break;
-            }
+                }
+                break;
+            case 'nexo':
+                if (change.action === 'create') {
+                    url = `/mapa-politico/persona/${change.data.personId}/nexos`;
+                    method = 'POST';
+                } else if (change.action === 'delete') {
+                    url = `/mapa-politico/nexos/${change.data.id}`;
+                    method = 'DELETE';
+                }
+                break;
+            case 'persona':
+                url = `/mapa-politico/persona/${change.data.id}`;
+                method = 'PUT';
+                break;
+        }
 
-            if (!url) { failed++; continue; }
+        if (!url) { failed++; continue; }
 
-            body = change.action !== 'delete' ? JSON.stringify(change.data) : undefined;
-
-            const res = await fetch(url, {
+        let res;
+        try {
+            res = await fetch(url, {
                 method,
                 headers: {
                     'Content-Type': 'application/json',
@@ -358,25 +420,45 @@ async function runSync() {
                     'X-XSRF-TOKEN': csrfToken,
                 },
                 credentials: 'same-origin',
-                body,
+                body: change.action !== 'delete' ? JSON.stringify(change.data) : undefined,
             });
-
-            if (res.ok) {
-                await markSynced(change.id);
-                synced++;
-            } else {
-                failed++;
-            }
         } catch {
+            // No network: later changes may depend on this one, keep the queue order for the next run.
             failed++;
+            break;
         }
+
+        if (res.ok) {
+            await markSynced(change.id);
+            resolved.add(change.id);
+            synced++;
+            continue;
+        }
+
+        const definitive = isDefinitiveRejection(res.status)
+            && !(res.status === 404 && waitsForQueuedCreate(change, pending, resolved));
+        if (!definitive) {
+            // Temporary (5xx, session, rate limit) or still waiting for its create: stop here, in order.
+            failed++;
+            break;
+        }
+
+        const reason = await rejectionReason(res);
+        await markRejected(change.id, res.status, reason);
+        await dropRejectedLocalRecord(change);
+        resolved.add(change.id);
+        messages.push(reason);
+        rejected++;
     }
 
-    // Clean synced changes older than 24h
-    const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
-    await db.pendingChanges.where('synced').equals(1).and(c => c.createdAt < oneDayAgo).delete();
+    await db.pendingChanges.where('synced').equals(1).and(c => isExpiredResolvedChange(c)).delete();
 
-    return { synced, failed };
+    if (rejected > 0) {
+        const more = rejected > 1 ? ` (y ${rejected - 1} cambio${rejected > 2 ? 's' : ''} más)` : '';
+        showGlobalToast(`Un cambio hecho sin internet no se guardó${more}: ${messages[0]}`, 'error');
+    }
+
+    return { synced, failed, rejected, messages };
 }
 
 // ─── Offline CRUD (saves locally + queues for sync) ───

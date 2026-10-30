@@ -59,6 +59,34 @@ class CurrentCampaign
         return $own === null ? null : $this->withDescendants($own);
     }
 
+    // [{id, name}] of every visible campaign, the own one first; empty unless there is more than one,
+    // so a user who only sees their own campaign gets no campaign labels or filters.
+    public function visibleCampaigns(): array
+    {
+        $visible = $this->visibleIds();
+        if ($visible === null || count($visible) < 2) {
+            return [];
+        }
+
+        $own = $this->ownId();
+
+        return DB::table('campaigns')->whereIn('id', $visible)->orderBy('name')->get(['id', 'name'])
+            ->sortBy(fn ($c) => $c->id === $own ? 0 : 1)
+            ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])
+            ->values()->all();
+    }
+
+    // The campaign a listing was filtered by, only when the user can see it; anything else means "all".
+    // With a single visible campaign there is no filter on screen, so a leftover ?campana= never hides rows.
+    public function filterId(?string $campaignId): ?string
+    {
+        if (! $campaignId || $this->visibleIds() === null || count($this->visibleIds()) < 2) {
+            return null;
+        }
+
+        return in_array($campaignId, $this->visibleIds(), true) ? $campaignId : null;
+    }
+
     public function isVisible(?string $campaignId): bool
     {
         $visible = $this->visibleIds();

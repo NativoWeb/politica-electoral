@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { forbiddenMessage } from '@/lib/campaign';
 
 const ESTADO_OPTIONS = ['activo', 'inactivo'];
 
 const emptyForm = { cargo_politico: '', departamento: '', municipio: '', partido: '', aliado: '', votos: '', observacion: '', estado: 'activo' };
 
-export default function InfoPoliticaManager({ personId, infoPolitica: initialData = [], onUpdate }) {
+export default function InfoPoliticaManager({ personId, infoPolitica: initialData = [], onUpdate, readOnly = false }) {
     const [items, setItems] = useState(initialData);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -37,7 +38,7 @@ export default function InfoPoliticaManager({ personId, infoPolitica: initialDat
             const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                throw new Error(body.message || `Error ${res.status}`);
+                throw new Error(res.status === 403 ? forbiddenMessage(body.message) : (body.message || `Error ${res.status}`));
             }
             const data = await res.json();
 
@@ -59,11 +60,12 @@ export default function InfoPoliticaManager({ personId, infoPolitica: initialDat
         if (!confirm('¿Eliminar este registro de info politica?')) return;
         try {
             const res = await apiFetch(`/votantes/info-politica/${id}`, { method: 'DELETE' });
+            if (res.status === 403) throw new Error(forbiddenMessage((await res.json().catch(() => ({}))).message));
             if (!res.ok) throw new Error();
             setItems(prev => prev.filter(item => item.id !== id));
             onUpdate?.();
-        } catch {
-            setError('Error al eliminar');
+        } catch (err) {
+            setError(err.message || 'Error al eliminar');
         }
     }
 
@@ -90,13 +92,15 @@ export default function InfoPoliticaManager({ personId, infoPolitica: initialDat
                 <h4 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                     Historial politico ({items.length})
                 </h4>
-                <button
-                    type="button"
-                    onClick={() => { resetForm(); setShowForm(true); }}
-                    className="px-3 py-1.5 bg-[var(--color-primary)] text-white text-[12px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors"
-                >
-                    + Agregar
-                </button>
+                {!readOnly && (
+                    <button
+                        type="button"
+                        onClick={() => { resetForm(); setShowForm(true); }}
+                        className="px-3 py-1.5 bg-[var(--color-primary)] text-white text-[12px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors"
+                    >
+                        + Agregar
+                    </button>
+                )}
             </div>
 
             {error && (
@@ -175,10 +179,12 @@ export default function InfoPoliticaManager({ personId, infoPolitica: initialDat
                                 {item.votos > 0 && ` · ${Number(item.votos).toLocaleString('es-CO')} votos`}
                             </p>
                         </div>
-                        <div className="flex gap-1 flex-shrink-0">
-                            <button type="button" onClick={e => { e.stopPropagation(); startEdit(item); }} className="px-2 py-1.5 text-[11px] text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold rounded-lg">Editar</button>
-                            <button type="button" onClick={e => { e.stopPropagation(); handleDelete(item.id); }} className="px-2 py-1.5 text-[11px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg">Eliminar</button>
-                        </div>
+                        {!readOnly && (
+                            <div className="flex gap-1 flex-shrink-0">
+                                <button type="button" onClick={e => { e.stopPropagation(); startEdit(item); }} className="px-2 py-1.5 text-[11px] text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold rounded-lg">Editar</button>
+                                <button type="button" onClick={e => { e.stopPropagation(); handleDelete(item.id); }} className="px-2 py-1.5 text-[11px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg">Eliminar</button>
+                            </div>
+                        )}
                         <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${expandedId === item.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                     </div>
                     {expandedId === item.id && (

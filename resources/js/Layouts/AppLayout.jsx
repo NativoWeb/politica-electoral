@@ -231,6 +231,28 @@ const SIDEBAR_ITEMS = [
     { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
 ];
 
+// Platform administration (territory, parties, catalogs, elections...) is only for whoever edits the shared
+// electoral data; any other campaign's admin reaches its users from the same menu entry.
+function menuItems(items, auth, hasPerm) {
+    return items.filter(item => hasPerm(item.permission)).flatMap(item => {
+        if (item.name !== 'ADMIN' || auth?.canEditElectoral !== false) return [item];
+        return hasPerm('manage.users') ? [{ ...item, href: '/admin/usuarios', label: 'Usuarios', icon: 'USUARIOS' }] : [];
+    });
+}
+
+function CampaignBadge({ campaign, className = '' }) {
+    if (!campaign?.name) return null;
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 min-w-0 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] leading-tight ${className}`}
+            title={`Campaña: ${campaign.name}`}
+        >
+            <span className="text-white/80 flex-shrink-0">Campaña:</span>
+            <span className="font-semibold text-white/90 truncate">{campaign.name}</span>
+        </span>
+    );
+}
+
 const ICONS_EXTRA = {
     ADMIN: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
@@ -390,7 +412,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const auth = props.auth?.user;
     const perms = auth?.permissions || [];
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
-    const visibleItems = SIDEBAR_ITEMS.filter(item => hasPerm(item.permission));
+    const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm);
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
@@ -414,8 +436,8 @@ export default function AppLayout({ children, title, breadcrumb }) {
             {/* Header */}
             <header className="bg-[var(--color-primary)] text-white relative z-40 safe-top">
                 <div className="flex items-center justify-between px-3 lg:px-6 h-11 lg:h-14">
-                    <div className="flex items-center gap-3">
-                        <Link href="/" className="flex items-center gap-2 lg:gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <Link href="/" className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
                             <div className="w-6 h-4 lg:w-7 lg:h-5 rounded-[3px] overflow-hidden flex flex-col flex-shrink-0 shadow-sm">
                                 <span className="flex-[2] bg-[#FCD116]" />
                                 <span className="flex-1 bg-[#003893]" />
@@ -426,6 +448,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 <p className="text-[8px] lg:text-[9px] text-white/50 tracking-[0.2em] hidden lg:block">SANTANDER</p>
                             </div>
                         </Link>
+                        <CampaignBadge campaign={auth?.campaign} className="max-w-[46vw] md:max-w-[220px] lg:max-w-[260px]" />
                     </div>
 
                     <div className="hidden md:block flex-1 max-w-lg mx-8">
@@ -506,6 +529,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         <div className="px-6 pt-4 pb-2">
                             <p className="text-[16px] font-bold text-[var(--color-ink)]">{auth?.name}</p>
                             <p className="text-[13px] text-[var(--color-ink-faint)]">{auth?.email}</p>
+                            {auth?.campaign?.name && (
+                                <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Campaña: <span className="font-semibold text-[var(--color-ink)]">{auth.campaign.name}</span></p>
+                            )}
                         </div>
                         <div className="px-4 pb-6 space-y-2">
                             <Link href="/perfil" onClick={() => setMobileUserMenu(false)} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl active:bg-gray-100 transition-colors">
@@ -551,7 +577,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     {isActive && (
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[var(--color-accent)] rounded-r-full" />
                                     )}
-                                    <span className="flex-shrink-0">{ICONS[item.name] || ICONS_EXTRA[item.name]}</span>
+                                    <span className="flex-shrink-0">{ICONS[item.icon ?? item.name] || ICONS_EXTRA[item.icon ?? item.name]}</span>
                                     <span>{item.label}</span>
                                 </Link>
                             );
@@ -579,7 +605,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 }`}
                             >
                                 <span className="w-7 h-7 flex items-center justify-center [&>svg]:w-7 [&>svg]:h-7">
-                                    {ICONS[item.name] || ICONS_EXTRA[item.name]}
+                                    {ICONS[item.icon ?? item.name] || ICONS_EXTRA[item.icon ?? item.name]}
                                 </span>
                                 <span className="text-[12px] font-bold leading-tight">{item.label}</span>
                                 {isActive && <span className="w-6 h-[3px] bg-[var(--color-accent)] rounded-full" />}

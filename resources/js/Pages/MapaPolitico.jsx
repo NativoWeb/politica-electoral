@@ -8,6 +8,8 @@ import { TIPO_OPTIONS, CARGOS_DISPONIBLES, AREA_METROPOLITANA } from '@/lib/mapa
 import PersonaPanel from '@/Components/PersonaPanel';
 import CrearLiderModal from '@/Components/CrearLiderModal';
 import SearchableDropdown from '@/Components/SearchableDropdown';
+import CampaignChip from '@/Components/CampaignChip';
+import { useCampaign } from '@/lib/campaign';
 
 const TIPO_COLORS = {
     'Alcaldía': 'bg-blue-100 text-blue-700',
@@ -115,12 +117,13 @@ function PartyAccordion({ partyName, rows, index, onSelectPerson, partyTotal }) 
                                 onClick={() => onSelectPerson(row.id)}
                                 className={`flex items-center gap-3 px-5 py-2.5 border-b border-[var(--color-line)] last:border-0 hover:bg-blue-50 cursor-pointer transition-colors ${isElecto ? 'bg-emerald-50/60' : ''}`}
                             >
-                                <StarToggle id={row.id} initial={!!row.destacado} />
+                                <StarToggle id={row.id} initial={!!row.destacado} campaignId={row.campaign_id} />
                                 <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ backgroundColor: color, opacity: 0.4 }} />
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
                                         <span className="text-[13px] font-bold text-[var(--color-primary)] uppercase truncate">{row.nombre}</span>
                                         {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[8px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
+                                        <CampaignChip campaignId={row.campaign_id} />
                                     </div>
                                     <p className="text-[11px] text-[var(--color-ink-faint)]">{row.municipio ?? ''} · {row.cargo ?? ''}</p>
                                 </div>
@@ -145,8 +148,21 @@ function toggleDestacado(personId, currentValue, onDone) {
 }
 
 /* ── Star toggle button (reusable) ── */
-function StarToggle({ id, initial }) {
+function StarToggle({ id, initial, campaignId }) {
     const [starred, setStarred] = useState(initial);
+    const { isOther } = useCampaign();
+    if (isOther(campaignId)) {
+        return (
+            <span
+                className="flex-shrink-0"
+                role="img"
+                aria-label={starred ? 'Destacado (solo lectura)' : 'No destacado'}
+                title="Solo su campaña puede cambiar el destacado"
+            >
+                <svg className={`w-5 h-5 ${starred ? 'text-amber-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+            </span>
+        );
+    }
     return (
         <button
             onClick={(e) => { e.stopPropagation(); const next = !starred; setStarred(next); toggleDestacado(id, starred); }}
@@ -168,7 +184,7 @@ function PersonRow({ row, onSelectPerson, color }) {
             onClick={() => onSelectPerson(row.id)}
             className={`flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 active:bg-blue-50 cursor-pointer transition-colors ${isElecto ? 'bg-emerald-50/40' : ''}`}
         >
-            <StarToggle id={row.id} initial={!!row.destacado} />
+            <StarToggle id={row.id} initial={!!row.destacado} campaignId={row.campaign_id} />
 
             {/* Avatar */}
             <div
@@ -183,6 +199,7 @@ function PersonRow({ row, onSelectPerson, color }) {
                 <div className="flex items-center gap-2">
                     <span className="text-[14px] font-bold text-[var(--color-ink)] uppercase truncate">{row.nombre}</span>
                     {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[9px] font-bold uppercase rounded flex-shrink-0">Electo</span>}
+                    <CampaignChip campaignId={row.campaign_id} />
                 </div>
                 <p className="text-[12px] text-[var(--color-ink-faint)] truncate">
                     {row.municipio ?? ''}
@@ -309,6 +326,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
     const [offlineDataLoaded, setOfflineDataLoaded] = useState(false);
     const [offlineMunicipios, setOfflineMunicipios] = useState(null);
+    const campaign = useCampaign();
 
     // Load IndexedDB data when offline (replaces stale SW cache data)
     useEffect(() => {
@@ -383,6 +401,9 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         }
         if (f.destacado === '1') {
             result = result.filter(r => r.destacado);
+        }
+        if (f.campana) {
+            result = result.filter(r => r.campaign_id === f.campana);
         }
         return result;
     }, [isOnline, isOfflineFiltering, offlineDataLoaded, serverData, allData, localFilters]);
@@ -494,6 +515,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             search: localSearch || undefined,
             provincia: selectedProv || undefined,
             estado: filters.estado && filters.estado !== 'activos' ? filters.estado : undefined,
+            campana: filters.campana,
             ...overrides,
         };
         Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
@@ -525,6 +547,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     if (filters.profesion) activeChips.push({ key: 'profesion', label: filters.profesion, onRemove: () => applyFilters({ profesion: undefined }) });
     if (filters.barrio) filters.barrio.split(',').forEach(b => activeChips.push({ key: `barrio-${b}`, label: b, onRemove: () => applyFilters({ barrio: removeFromList(filters.barrio, b) }) }));
     if (isOnline && filters.estado && filters.estado !== 'activos') activeChips.push({ key: 'estado', label: filters.estado === 'inactivos' ? 'Inactivos' : 'Activos e inactivos', onRemove: () => applyFilters({ estado: undefined }) });
+    if (campaign.hasMultiple && filters.campana) activeChips.push({ key: 'campana', label: `Campaña ${campaign.nameOf(filters.campana) || ''}`.trim(), onRemove: () => applyFilters({ campana: undefined }) });
     if (filters.destacado) activeChips.push({ key: 'destacado', label: 'Destacados', onRemove: () => applyFilters({ destacado: undefined }) });
     if (filters.search) activeChips.push({ key: 'search', label: `"${filters.search}"`, onRemove: () => { setLocalSearch(''); applyFilters({ search: undefined }); } });
 
@@ -706,6 +729,20 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                                 <option value="todos">Todos</option>
                             </select>
                         </div>
+                        {campaign.hasMultiple && (
+                            <div className="col-span-1">
+                                <label htmlFor="mapa-filtro-campana" className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Campaña</label>
+                                <select
+                                    id="mapa-filtro-campana"
+                                    value={filters.campana || ''}
+                                    onChange={e => applyFilters({ campana: e.target.value || undefined })}
+                                    className="w-full text-[15px] border border-[var(--color-line)] rounded-lg px-4 py-3 focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-ink)] bg-white"
+                                >
+                                    <option value="">Todas</option>
+                                    {campaign.list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                        )}
                         {/* Search visible only on desktop (mobile has it above) */}
                         <div className="hidden lg:block">
                             <label className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Buscar</label>
@@ -844,9 +881,10 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                                     >
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
-                                                <StarToggle id={row.id} initial={!!row.destacado} />
+                                                <StarToggle id={row.id} initial={!!row.destacado} campaignId={row.campaign_id} />
                                                 <span className="font-bold text-[var(--color-primary)] uppercase hover:underline">{row.nombre}</span>
                                                 {isElecto && <span className="px-1.5 py-0.5 bg-[var(--color-good-light)] text-[var(--color-good)] text-[8px] font-bold uppercase rounded">Electo</span>}
+                                                <CampaignChip campaignId={row.campaign_id} />
                                             </div>
                                             {row.email && <p className="text-[10px] text-[var(--color-ink-faint)] mt-0.5">{row.email}</p>}
                                         </td>

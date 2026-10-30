@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useCampaign } from '@/lib/campaign';
 
 const NIVEL_OPTIONS = [
     { value: '', label: 'Todos' },
@@ -20,6 +21,8 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
     const [verificado, setVerificado] = useState(filters.verificado === '1' || filters.verificado === true);
     const [granElector, setGranElector] = useState(filters.gran_elector === '1' || filters.gran_elector === true);
     const [militante, setMilitante] = useState(filters.militante === '1' || filters.militante === true);
+    const [campana, setCampana] = useState(filters.campana || '');
+    const campaign = useCampaign();
     const [munSearch, setMunSearch] = useState('');
     const [munOpen, setMunOpen] = useState(false);
     const munRef = useRef(null);
@@ -51,6 +54,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
             search, municipio, partido,
             nivel_confianza: nivelConfianza,
             estado,
+            ...(campaign.hasMultiple && campana ? { campana } : {}),
             ...(verificado ? { verificado: '1' } : {}),
             ...(granElector ? { gran_elector: '1' } : {}),
             ...(militante ? { militante: '1' } : {}),
@@ -68,6 +72,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
         setVerificado(false);
         setGranElector(false);
         setMilitante(false);
+        setCampana('');
         onClear();
     }
 
@@ -178,6 +183,16 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
                     <option value="todos">Todos</option>
                 </select>
             </div>
+
+            {campaign.hasMultiple && (
+                <div>
+                    <label htmlFor="votantes-filtro-campana" className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Campaña</label>
+                    <select id="votantes-filtro-campana" value={campana} onChange={e => setCampana(e.target.value)} className={inputCls}>
+                        <option value="">Todas</option>
+                        {campaign.list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                </div>
+            )}
 
             {/* Checkboxes */}
             <div className="space-y-2">

@@ -137,6 +137,33 @@ function MunicipioSelector({ selected, provincias, onChange }) {
     );
 }
 
+// Superadmin picks the campaign of each user; everyone else creates users in their own campaign.
+function CampaignField({ isSuperadmin, campaigns, value, onChange, ownCampaign, error, labelCls, inputCls, id }) {
+    if (isSuperadmin && campaigns.length > 0) {
+        const names = Object.fromEntries(campaigns.map(c => [c.id, c.name]));
+        return (
+            <div>
+                <label htmlFor={id} className={labelCls}>Campaña</label>
+                <select id={id} className={inputCls} value={value} onChange={e => onChange(e.target.value)}>
+                    {campaigns.map(c => (
+                        <option key={c.id} value={c.id}>
+                            {c.parent_id && names[c.parent_id] ? `${c.name} (subcampaña de ${names[c.parent_id]})` : c.name}
+                        </option>
+                    ))}
+                </select>
+                {error && <p className="text-[12px] text-red-500 mt-1">{error}</p>}
+            </div>
+        );
+    }
+    if (!ownCampaign?.name) return null;
+    return (
+        <div>
+            <span className={labelCls}>Campaña</span>
+            <p className="px-3 py-3 bg-[var(--color-bg)] border border-[var(--color-line)] rounded-lg text-[15px] text-[var(--color-ink)]">{ownCampaign.name}</p>
+        </div>
+    );
+}
+
 function PermissionSelector({ selected, availablePermissions, onChange }) {
     const grouped = useMemo(() => {
         const map = {};
@@ -192,9 +219,15 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
     );
 }
 
-export default function Users({ users, roles, municipios, provincias, availablePermissions, filters }) {
-    const authPerms = usePage().props.auth?.user?.permissions || [];
+export default function Users({ users, roles, municipios, provincias, availablePermissions, filters, campaigns = [] }) {
+    const authUser = usePage().props.auth?.user;
+    const authPerms = authUser?.permissions || [];
     const canAudit = authPerms.includes('*') || authPerms.includes('audit.view');
+    const isSuperadmin = !!authUser?.isSuperadmin;
+    const ownCampaign = authUser?.campaign;
+    const canEditElectoral = authUser?.canEditElectoral !== false;
+    const defaultCampaignId = ownCampaign?.id || campaigns[0]?.id || '';
+    const campaignField = isSuperadmin ? { campaign_id: defaultCampaignId } : {};
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
     const [search, setSearch] = useState(filters?.search || '');
@@ -212,10 +245,10 @@ export default function Users({ users, roles, municipios, provincias, availableP
     const pagination = users?.links ? users : null;
 
     const { data, setData, post, processing, errors, reset } = useForm({
-        name: '', email: '', role_id: '', permissions: [], territory_scope: [],
+        name: '', email: '', role_id: '', permissions: [], territory_scope: [], ...campaignField,
     });
 
-    const editForm = useForm({ name: '', email: '', role_id: '', password: '', permissions: [], territory_scope: [] });
+    const editForm = useForm({ name: '', email: '', role_id: '', password: '', permissions: [], territory_scope: [], ...campaignField });
 
     const selectedRoleCode = roles.find(r => r.id === data.role_id)?.code;
     const editRoleCode = roles.find(r => r.id === editForm.data.role_id)?.code;
@@ -235,6 +268,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
             password: '',
             permissions: user.permissions || [],
             territory_scope: user.territoryScope || [],
+            ...(isSuperadmin ? { campaign_id: user.campaignId || defaultCampaignId } : {}),
         });
     }
 
@@ -257,7 +291,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
     const inputCls = "w-full px-3 py-3 border border-[var(--color-line)] rounded-lg text-[15px] focus:outline-none focus:border-[var(--color-primary)]";
 
     return (
-        <AppLayout title="Usuarios" breadcrumb={[{ label: 'ADMIN', href: '/admin/territorio' }, { label: 'USUARIOS' }]}>
+        <AppLayout title="Usuarios" breadcrumb={[{ label: 'ADMIN', href: canEditElectoral ? '/admin/territorio' : '/admin/usuarios' }, { label: 'USUARIOS' }]}>
             <Head title="Usuarios — Administración" />
 
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between">
@@ -303,6 +337,17 @@ export default function Users({ users, roles, municipios, provincias, availableP
                         <p className="text-[11px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
                             Se generará una contraseña aleatoria y se enviará al correo del usuario.
                         </p>
+                        <CampaignField
+                            id="new-user-campaign"
+                            isSuperadmin={isSuperadmin}
+                            campaigns={campaigns}
+                            value={data.campaign_id}
+                            onChange={val => setData('campaign_id', val)}
+                            ownCampaign={ownCampaign}
+                            error={errors.campaign_id}
+                            labelCls="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1"
+                            inputCls={inputCls}
+                        />
                         <div>
                             <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Rol</label>
                             <select className={inputCls} value={data.role_id} onChange={e => setData('role_id', e.target.value)}>
@@ -350,6 +395,17 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                     <input type="email" className={inputCls} value={editForm.data.email} onChange={e => editForm.setData('email', e.target.value)} required />
                                     {editForm.errors.email && <p className="text-[12px] text-red-500 mt-1">{editForm.errors.email}</p>}
                                 </div>
+                                <CampaignField
+                                    id={`edit-user-campaign-${user.id}`}
+                                    isSuperadmin={isSuperadmin}
+                                    campaigns={campaigns}
+                                    value={editForm.data.campaign_id}
+                                    onChange={val => editForm.setData('campaign_id', val)}
+                                    ownCampaign={ownCampaign}
+                                    error={editForm.errors.campaign_id}
+                                    labelCls="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1"
+                                    inputCls={inputCls}
+                                />
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Rol</label>
                                     <select className={inputCls} value={editForm.data.role_id} onChange={e => editForm.setData('role_id', e.target.value)}>
@@ -389,8 +445,13 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                 <div className="flex-1 min-w-0">
                                     <p className="text-[14px] font-bold text-[var(--color-ink)] truncate">{user.name}</p>
                                     <p className="text-[11px] text-[var(--color-ink-faint)] truncate">{user.email}</p>
-                                    <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                                         {user.role && <RoleChip code={user.roleCode} name={user.role} />}
+                                        {isSuperadmin && user.campaignName && (
+                                            <span className="inline-block px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--color-bg)] border border-[var(--color-line)] text-[var(--color-ink-soft)]">
+                                                Campaña: {user.campaignName}
+                                            </span>
+                                        )}
                                         <span className={`text-[10px] font-bold ${user.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
                                             {user.isActive ? 'ACTIVO' : 'INACTIVO'}
                                         </span>
@@ -458,7 +519,10 @@ export default function Users({ users, roles, municipios, provincias, availableP
                 )}
 
                 {/* Admin links */}
-                <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mt-6 mb-2 px-1">Administracion</h3>
+                {(canEditElectoral || canAudit) && (
+                    <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mt-6 mb-2 px-1">Administracion</h3>
+                )}
+                {canEditElectoral && (<>
                 <Link
                     href="/admin/territorio"
                     className="flex items-center gap-4 px-5 py-4 bg-white border border-[var(--color-line)] rounded-lg hover:bg-gray-50 transition-colors"
@@ -485,6 +549,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                     </div>
                     <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                 </Link>
+                </>)}
                 {canAudit && (
                     <Link
                         href="/admin/auditoria"

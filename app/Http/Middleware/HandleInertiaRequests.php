@@ -81,6 +81,7 @@ class HandleInertiaRequests extends Middleware
                     'canEditElectoral' => $campaign->canEditElectoral(),
                 ] : null,
             ],
+            'visibleCampaigns' => fn () => $user ? $campaign->visibleCampaigns() : [],
             'agent' => $user ? [
                 'whatsappNumber' => (string) config('agent.whatsapp_number', ''),
             ] : null,

@@ -76,13 +76,15 @@ class ExportController extends Controller
         $search = $request->input('search');
         $partido = $request->input('partido');
         $barrio = $request->input('barrio');
+        // Same campaign filter as the listing: only that campaign's lideres, no shared electoral rows.
+        $campana = $this->campaign()->filterId($request->input('campana'));
 
         if ($munId) {
             $this->authorizeGeo($munId);
         }
 
         if ($source === 'mapa-politico') {
-            return $this->getMapaPoliticoData($munId, $tipo, $cargo, $search, $partido, $barrio);
+            return $this->getMapaPoliticoData($munId, $tipo, $cargo, $search, $partido, $barrio, $campana);
         }
 
         if ($source === 'senado' || $source === 'camara') {
@@ -101,11 +103,12 @@ class ExportController extends Controller
         return [];
     }
 
-    private function getMapaPoliticoData(?string $munId, string $tipo, ?string $cargo, ?string $search, ?string $partido, ?string $barrio): array
+    private function getMapaPoliticoData(?string $munId, string $tipo, ?string $cargo, ?string $search, ?string $partido, ?string $barrio, ?string $campana = null): array
     {
         $cargos = $this->parseCargos($cargo);
         $tipos = $tipo ? explode(',', $tipo) : ['todos'];
         $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
+        $electoralMatch = fn ($key) => $campana === null && $tipoMatch($key);
         $barrios = $barrio ? explode(',', $barrio) : [];
         $data = [];
 
@@ -115,7 +118,7 @@ class ExportController extends Controller
             ->groupBy('candidacy_id');
 
         // Alcaldía
-        if ($tipoMatch('alcaldia')) {
+        if ($electoralMatch('alcaldia')) {
             $officeId = DB::table('offices')->where('name', 'Alcaldía')->value('id');
             $query = DB::table('candidacies as c')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
@@ -137,7 +140,7 @@ class ExportController extends Controller
         }
 
         // Concejo
-        if ($tipoMatch('concejo')) {
+        if ($electoralMatch('concejo')) {
             $corpId = DB::table('corporations')->where('name', 'Concejo')->value('id');
             $query = DB::table('candidacies as c')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
@@ -162,6 +165,7 @@ class ExportController extends Controller
         if ($tipoMatch('lideres')) {
             $query = $this->visibleLideres()
                 ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
+            if ($campana) $query->where('campaign_id', $campana);
             if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
             if ($search) $query->where(function ($q) use ($search) {
                 $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
@@ -178,6 +182,7 @@ class ExportController extends Controller
         if ($tipoMatch('directorio')) {
             $query = $this->visibleLideres()
                 ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
+            if ($campana) $query->where('campaign_id', $campana);
             $this->whereCargoIn($query, ['Directorio Municipal']);
             $this->whereCargoIn($query, $cargos);
             if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
@@ -194,7 +199,7 @@ class ExportController extends Controller
         // Senado / Cámara / Asamblea
         $corpMap = ['senado' => 'Senado', 'camara' => 'Cámara de Representantes', 'asamblea' => 'Asamblea'];
         foreach ($corpMap as $tipoKey => $corpName) {
-            if ($tipoMatch($tipoKey)) {
+            if ($electoralMatch($tipoKey)) {
                 $data = array_merge($data, $this->getCorporacionData($corpName, $munId, $cargos));
             }
         }
