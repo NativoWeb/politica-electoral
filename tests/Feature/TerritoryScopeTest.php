@@ -9,11 +9,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // The real migrations need PostgreSQL/PostGIS, so the tables the territory checks touch are built here on SQLite.
 class TerritoryScopeTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private string $provincia;
 
     private string $munA;
@@ -33,6 +36,7 @@ class TerritoryScopeTest extends TestCase
         parent::setUp();
         $this->withoutVite();
         $this->createSchema();
+        $this->addCampaignColumns();
         $this->seedTerritory();
     }
 

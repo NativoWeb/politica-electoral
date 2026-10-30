@@ -9,6 +9,7 @@ use App\Actions\Votantes\MergeLideres;
 use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Models\Campaign;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
@@ -48,9 +49,10 @@ class MapaPoliticoController extends Controller
     }
 
     // The single lider with the candidate's exact name in a municipio where they ran, inside the user's territory.
+    // The user's own campaign decides first; a subcampaign's lider is used only when the own campaign has none.
     private function linkedLiderId(object $person): ?string
     {
-        $ids = $this->scopeToTerritory(DB::table('lideres as l'), 'l.geographic_unit_id')
+        $find = fn ($lideres) => $this->scopeToTerritory($lideres, 'l.geographic_unit_id')
             ->join('contests as con', 'con.geographic_unit_id', '=', 'l.geographic_unit_id')
             ->join('candidacies as c', function ($j) use ($person) {
                 $j->on('c.contest_id', '=', 'con.id')->where('c.person_id', '=', $person->id);
@@ -58,6 +60,11 @@ class MapaPoliticoController extends Controller
             ->whereRaw('LOWER(l.nombre) = LOWER(?)', [$person->full_name])
             ->distinct()
             ->pluck('l.id');
+
+        $ids = $find($this->ownLideres('l'));
+        if ($ids->isEmpty()) {
+            $ids = $find($this->visibleLideres('l'));
+        }
 
         return $ids->count() === 1 ? $ids->first() : null;
     }
@@ -107,7 +114,7 @@ class MapaPoliticoController extends Controller
     {
         $catalogCargos = CargoCategory::active()->pluck('name')->toArray();
         $liderCargos = collect($catalogCargos)
-            ->merge(DB::table('lideres')->select('cargo')->distinct()->pluck('cargo')
+            ->merge($this->visibleLideres()->select('cargo')->distinct()->pluck('cargo')
                 ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter())
             ->unique()->values()->toArray();
 
@@ -282,7 +289,7 @@ class MapaPoliticoController extends Controller
 
         // === LIDERES ===
         if ($tipoMatch('lideres')) {
-            $query = DB::table('lideres');
+            $query = $this->visibleLideres();
             $applyEstado($query);
             $query->where(function ($q) {
                     $q->where('tipo', '!=', 'nuevo_lider')->orWhereNull('tipo');
@@ -323,7 +330,7 @@ class MapaPoliticoController extends Controller
 
         // === NUEVOS LIDERES ===
         if ($tipoMatch('nuevos_lideres')) {
-            $query = DB::table('lideres');
+            $query = $this->visibleLideres();
             $applyEstado($query);
             $query->where('tipo', 'nuevo_lider')
                 ->select(
@@ -362,7 +369,7 @@ class MapaPoliticoController extends Controller
 
         // === DIRECTORIO MUNICIPAL ===
         if ($tipoMatch('directorio')) {
-            $query = DB::table('lideres');
+            $query = $this->visibleLideres();
             $applyEstado($query);
             $this->whereCargoIn($query, ['Directorio Municipal']);
             $query->select(
@@ -468,15 +475,19 @@ class MapaPoliticoController extends Controller
         $relevantMunicipios = array_unique(array_filter(array_column($data, 'municipio')));
         $lideresLookup = [];
         if (! empty($relevantMunicipios)) {
-            $lideresAllQuery = DB::table('lideres');
+            $lideresAllQuery = $this->visibleLideres();
             $applyEstado($lideresAllQuery);
             $lideresAll = $lideresAllQuery
-                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo')
+                ->select('nombre', 'municipio', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo', 'campaign_id')
                 ->whereIn('municipio', $relevantMunicipios)
                 ->get();
+            $ownCampaign = $this->campaign()->ownId();
             foreach ($lideresAll as $l) {
                 $key = mb_strtoupper(trim($l->nombre)).'|'.mb_strtoupper(trim($l->municipio));
-                $lideresLookup[$key] = $l;
+                // The own campaign's record wins over a subcampaign's namesake.
+                if (! isset($lideresLookup[$key]) || $l->campaign_id === $ownCampaign) {
+                    $lideresLookup[$key] = $l;
+                }
             }
         }
 
@@ -601,7 +612,7 @@ class MapaPoliticoController extends Controller
 
         $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
 
-        $barriosQuery = DB::table('lideres');
+        $barriosQuery = $this->visibleLideres();
         $applyEstado($barriosQuery);
         $barriosQuery->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
         if ($munId) {
@@ -699,14 +710,15 @@ class MapaPoliticoController extends Controller
                 'search' => $data['nombre'],
             ])->with('success', $message);
         };
-        $alreadyCreated = fn () => $clientId && DB::table('lideres')->where('id', $clientId)->exists();
+        $alreadyCreated = fn () => $clientId && $this->ownLideres()->where('id', $clientId)->exists();
         if ($alreadyCreated()) {
             return $respond('Este líder ya estaba registrado.');
         }
 
+        // The lider goes to the user's own campaign, where its cédula has to be unique.
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
-            $existente = DB::table('lideres')->where('cedula', $cedula)->first();
+            $existente = $this->ownLideres()->where('cedula', $cedula)->first();
             if ($existente) {
                 return response()->json([
                     'success' => false,
@@ -723,6 +735,7 @@ class MapaPoliticoController extends Controller
 
         $insertData = [
             'id' => $clientId ?? (string) Str::uuid(),
+            'campaign_id' => $this->campaign()->ownId() ?? Campaign::DEFAULT_ID,
             'nombre' => $data['nombre'],
             'municipio' => $mun->canonical_name ?? '',
             'provincia' => $mun->provincia ?? '',
@@ -768,7 +781,7 @@ class MapaPoliticoController extends Controller
             if ($alreadyCreated()) {
                 return $respond('Este líder ya estaba registrado.');
             }
-            $existente = $cedula ? DB::table('lideres')->where('cedula', $cedula)->first() : null;
+            $existente = $cedula ? $this->ownLideres()->where('cedula', $cedula)->first() : null;
             if ($existente) {
                 return response()->json(['success' => false, 'message' => $this->duplicateCedulaMessage($cedula, $existente)], 422);
             }
@@ -813,7 +826,7 @@ class MapaPoliticoController extends Controller
             $nexoOwners = array_merge($nexoOwners, $linkedPersons->all());
             $candidatePersonId = $linkedPersons->count() === 1 ? $linkedPersons->first() : null;
         }
-        $nexos = DB::table('nexos_familiares')
+        $nexos = $this->campaign()->scope(DB::table('nexos_familiares'))
             ->whereIn('person_id', $nexoOwners)
             ->orderBy('nombre')
             ->get()
@@ -833,18 +846,19 @@ class MapaPoliticoController extends Controller
                 ->where('c.person_id', $id)
                 ->value('g.canonical_name');
 
+            $lideres = fn () => $this->ownFirst($this->scopeToTerritory($this->visibleLideres()));
             if ($personMunicipio) {
-                $liderRows = $this->scopeToTerritory(DB::table('lideres'))
+                $liderRows = $lideres()
                     ->where('nombre', 'ilike', $person->full_name)
                     ->where('municipio', 'ilike', $personMunicipio)
                     ->get();
             }
             if ($liderRows->isEmpty()) {
-                $liderRows = $this->scopeToTerritory(DB::table('lideres'))->where('nombre', 'ilike', $person->full_name)->get();
+                $liderRows = $lideres()->where('nombre', 'ilike', $person->full_name)->get();
             }
             if ($liderRows->isEmpty() && $personMunicipio) {
                 $nameParts = explode(' ', $person->full_name);
-                $query = $this->scopeToTerritory(DB::table('lideres'))->where('municipio', 'ilike', $personMunicipio);
+                $query = $lideres()->where('municipio', 'ilike', $personMunicipio);
                 foreach ($nameParts as $part) {
                     if (mb_strlen($part) >= 3) {
                         $query->where('nombre', 'ilike', '%'.$this->escapeLike($part).'%');
@@ -954,6 +968,7 @@ class MapaPoliticoController extends Controller
 
             if ($liderModel->cedula) {
                 $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $liderModel->cedula))
+                    ->where('campaign_id', $liderModel->campaign_id)
                     ->where('is_active', true)
                     ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
                     ->orderBy('nombre')
@@ -975,7 +990,10 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
-        $this->authorizePersonOrLider($id);
+        $this->authorizePersonOrLider($id, true);
+        // Electoral persons and their endorsements are shared by every campaign: only the platform edits
+        // them. Any other campaign only updates (or creates) its own lider for that person.
+        $canEditElectoral = $this->campaign()->canEditElectoral();
 
         $data = $request->validate([
             'nombre' => 'sometimes|required|string|max:255',
@@ -1036,7 +1054,7 @@ class MapaPoliticoController extends Controller
             if (! $currentLider) {
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
-                    $linkedLider = $this->scopeToTerritory(DB::table('lideres'))
+                    $linkedLider = $this->scopeToTerritory($this->ownLideres())
                         ->where('nombre', 'ilike', $person->full_name)
                         ->first();
                     $currentCedula = $linkedLider?->cedula;
@@ -1052,7 +1070,7 @@ class MapaPoliticoController extends Controller
                 if ($currentLider && $currentLider->id !== $id) {
                     $excludeIds[] = $currentLider->id;
                 }
-                $existente = DB::table('lideres')
+                $existente = $this->ownLideres()
                     ->where('cedula', $cedula)
                     ->whereNotIn('id', $excludeIds)
                     ->first();
@@ -1085,13 +1103,13 @@ class MapaPoliticoController extends Controller
             }
         }
 
-        DB::transaction(function () use ($id, $data, $nuevoNombre) {
+        DB::transaction(function () use ($id, $data, $nuevoNombre, $canEditElectoral) {
             $lider = DB::table('lideres')->where('id', $id)->first();
             // A namesake found only by the global fallback may be another person: never rename it.
             $liderVinculado = (bool) $lider;
             $personaARenombrar = null;
 
-            if ($lider && $nuevoNombre && $lider->geographic_unit_id) {
+            if ($lider && $nuevoNombre && $lider->geographic_unit_id && $canEditElectoral) {
                 // Merged rows keep the lider id: rename the electoral person of the same municipio too.
                 $candidatos = app(UpdateVotante::class)->linkedPersonIds($lider);
                 if ($candidatos->count() === 1) {
@@ -1102,7 +1120,7 @@ class MapaPoliticoController extends Controller
             if (! $lider) {
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
-                    $personaARenombrar = $person->id;
+                    $personaARenombrar = $canEditElectoral ? $person->id : null;
                     $personMunicipio = $this->scopeToTerritory(DB::table('candidacies as c'), 'con.geographic_unit_id')
                         ->join('contests as con', 'c.contest_id', '=', 'con.id')
                         ->join('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
@@ -1114,14 +1132,14 @@ class MapaPoliticoController extends Controller
                     $geoId = $personMunicipio->geo_id ?? null;
 
                     if ($munName) {
-                        $lider = $this->scopeToTerritory(DB::table('lideres'))
+                        $lider = $this->scopeToTerritory($this->ownLideres())
                             ->where('nombre', 'ilike', $person->full_name)
                             ->where('municipio', 'ilike', $munName)
                             ->first();
                         $liderVinculado = (bool) $lider;
                     }
                     if (! $lider) {
-                        $lider = $this->scopeToTerritory(DB::table('lideres'))->where('nombre', 'ilike', $person->full_name)->first();
+                        $lider = $this->scopeToTerritory($this->ownLideres())->where('nombre', 'ilike', $person->full_name)->first();
                     }
 
                     // #14: Create lider only when user explicitly edits — with correct municipio
@@ -1133,6 +1151,7 @@ class MapaPoliticoController extends Controller
 
                         DB::table('lideres')->insert([
                             'id' => Str::uuid(),
+                            'campaign_id' => $this->campaign()->ownId() ?? Campaign::DEFAULT_ID,
                             'nombre' => $nuevoNombre ?? $person->full_name,
                             'municipio' => $munName,
                             'provincia' => $provName ?? '',
@@ -1232,7 +1251,7 @@ class MapaPoliticoController extends Controller
             // Update partido via candidacy endorsement
             // Only when editing the electoral person itself: from a lider, partido is the current affiliation
             // (lideres.partido) and must never rewrite the party a past candidacy ran with.
-            $candidacyId = DB::table('candidacies')->where('person_id', $id)->value('id');
+            $candidacyId = $canEditElectoral ? DB::table('candidacies')->where('person_id', $id)->value('id') : null;
             if ($candidacyId && $partidoSent) {
                 if ($partidoValue) {
                     // Assign party
@@ -1310,9 +1329,7 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
-        $nexoOwner = DB::table('nexos_familiares')->where('id', $id)->value('person_id');
-        abort_if(! $nexoOwner, 404);
-        $this->authorizePersonOrLider($nexoOwner);
+        $this->authorizeNexoWrite($id);
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
@@ -1335,13 +1352,20 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
-        $nexoOwner = DB::table('nexos_familiares')->where('id', $id)->value('person_id');
-        abort_if(! $nexoOwner, 404);
-        $this->authorizePersonOrLider($nexoOwner);
+        $this->authorizeNexoWrite($id);
 
         DB::table('nexos_familiares')->where('id', $id)->delete();
 
         return response()->json(['success' => true, 'message' => 'Nexo eliminado.']);
+    }
+
+    // A nexo belongs to the campaign that wrote it, even when its owner is a shared electoral person.
+    private function authorizeNexoWrite(string $id): void
+    {
+        $nexo = DB::table('nexos_familiares')->where('id', $id)->first(['person_id', 'campaign_id']);
+        abort_if(! $nexo, 404);
+        $this->authorizeCampaign($nexo->campaign_id, true);
+        $this->authorizePersonOrLider($nexo->person_id);
     }
 
     public function destroyLider(Request $request, string $id)
@@ -1349,14 +1373,14 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id)) {
             abort(404);
         }
-        $this->authorizePersonOrLider($id);
+        $this->authorizePersonOrLider($id, true);
 
         $affected = DB::table('lideres')->where('id', $id)->update(['is_active' => false, 'updated_at' => now()]);
 
         if ($affected === 0) {
             $person = DB::table('persons')->where('id', $id)->first();
             if ($person) {
-                $this->scopeToTerritory(DB::table('lideres')->where('nombre', 'ilike', $this->escapeLike($person->full_name)))
+                $this->scopeToTerritory($this->ownLideres()->where('nombre', 'ilike', $this->escapeLike($person->full_name)))
                     ->update(['is_active' => false, 'updated_at' => now()]);
             }
         }
@@ -1374,7 +1398,7 @@ class MapaPoliticoController extends Controller
         if (! $lider) {
             abort(404);
         }
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $this->authorizeLiderRow($lider, true);
 
         $newState = ! $lider->is_active;
         DB::table('lideres')->where('id', $id)->update(['is_active' => $newState, 'updated_at' => now()]);
@@ -1395,8 +1419,9 @@ class MapaPoliticoController extends Controller
 
         $excludeId = $request->input('exclude_id');
 
+        // Only used to pick referidos, which must belong to the user's own campaign.
         $qe = $this->escapeLike($q);
-        $query = $this->scopeToTerritory(DB::table('lideres'))
+        $query = $this->scopeToTerritory($this->ownLideres())
             ->where('is_active', true)
             ->where(function ($qb) use ($qe) {
                 $qb->where('nombre', 'ilike', "%{$qe}%")
@@ -1459,11 +1484,13 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id) || ! Str::isUuid($referidoId)) {
             abort(404);
         }
-        $referente = DB::table('lideres')->where('id', $id)->first(['cedula', 'geographic_unit_id']);
-        $referido = DB::table('lideres')->where('id', $referidoId)->first(['referente_documento', 'geographic_unit_id']);
-        abort_if(! $referente || ! $referido || ! $referente->cedula || $referido->referente_documento !== $referente->cedula, 404);
-        $this->authorizeGeo($referente->geographic_unit_id);
-        $this->authorizeGeo($referido->geographic_unit_id);
+        $referente = DB::table('lideres')->where('id', $id)->first(['cedula', 'geographic_unit_id', 'campaign_id']);
+        $referido = DB::table('lideres')->where('id', $referidoId)->first(['referente_documento', 'geographic_unit_id', 'campaign_id']);
+        abort_if(! $referente || ! $referido, 404);
+        $this->authorizeLiderRow($referente, true);
+        $this->authorizeLiderRow($referido, true);
+        abort_if(! $referente->cedula || $referido->referente_documento !== $referente->cedula
+            || $referido->campaign_id !== $referente->campaign_id, 404);
 
         DB::table('lideres')->where('id', $referidoId)->update([
             'referente_documento' => null,
@@ -1483,7 +1510,7 @@ class MapaPoliticoController extends Controller
 
         $lider = DB::table('lideres')->where('id', $id)->first();
         abort_if(! $lider, 404);
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $this->authorizeLiderRow($lider, true);
 
         $data = $request->validate([
             'geographic_unit_id' => 'required|uuid|exists:geographic_units,id',
@@ -1533,7 +1560,7 @@ class MapaPoliticoController extends Controller
         if (! Str::isUuid($id) || ! Str::isUuid($influenciaId)) {
             abort(404);
         }
-        $this->authorizeLider($id);
+        $this->authorizeLiderWrite($id);
 
         $deleted = DB::table('lider_municipios_influencia')
             ->where('id', $influenciaId)

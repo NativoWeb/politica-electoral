@@ -2,12 +2,15 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 class DeduplicarLideres extends Command
 {
-    protected $signature = 'lideres:deduplicar {--dry-run}';
+    use TargetsCampaign;
+
+    protected $signature = 'lideres:deduplicar {--dry-run} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
 
     protected $description = 'Eliminar registros de prueba y deduplicar líderes por cédula y nombre+municipio';
 
@@ -30,6 +33,9 @@ class DeduplicarLideres extends Command
     public function handle(): int
     {
         $dryRun = $this->option('dry-run');
+        if (! $this->resolveCampaign()) {
+            return self::FAILURE;
+        }
 
         if ($dryRun) {
             $this->warn('=== DRY RUN — no se harán cambios ===');
@@ -51,7 +57,7 @@ class DeduplicarLideres extends Command
 
     private function eliminarPruebas(bool $dryRun): int
     {
-        $pruebas = DB::table('lideres')->whereRaw("nombre ILIKE '%prueba%'")->get();
+        $pruebas = $this->lideres()->whereRaw("nombre ILIKE '%prueba%'")->get();
         $count = $pruebas->count();
 
         if ($count === 0) {
@@ -65,7 +71,7 @@ class DeduplicarLideres extends Command
         }
 
         if (! $dryRun) {
-            DB::table('lideres')->whereIn('id', $pruebas->pluck('id'))->delete();
+            $this->lideres()->whereIn('id', $pruebas->pluck('id'))->delete();
         }
 
         $this->info(($dryRun ? 'Se eliminarían' : 'Eliminados').": {$count} registros de prueba.");
@@ -78,7 +84,7 @@ class DeduplicarLideres extends Command
         $this->newLine();
         $this->info('--- Deduplicando por cédula ---');
 
-        $duplicados = DB::table('lideres')
+        $duplicados = $this->lideres()
             ->select('cedula', DB::raw('count(*) as total'))
             ->whereNotNull('cedula')
             ->where('cedula', '!=', '')
@@ -97,7 +103,7 @@ class DeduplicarLideres extends Command
         $fusionados = 0;
 
         foreach ($duplicados as $dup) {
-            $registros = DB::table('lideres')->where('cedula', $dup->cedula)->get();
+            $registros = $this->lideres()->where('cedula', $dup->cedula)->get();
 
             try {
                 [$e, $f] = $this->procesarGrupo($registros, $dryRun, "cédula={$dup->cedula}");
@@ -117,7 +123,7 @@ class DeduplicarLideres extends Command
         $this->newLine();
         $this->info('--- Deduplicando por nombre+municipio (sin cédula) ---');
 
-        $duplicados = DB::table('lideres')
+        $duplicados = $this->lideres()
             ->select(
                 DB::raw('UPPER(TRIM(nombre)) as norm_nombre'),
                 DB::raw('UPPER(TRIM(municipio)) as norm_municipio'),
@@ -141,7 +147,7 @@ class DeduplicarLideres extends Command
         $fusionados = 0;
 
         foreach ($duplicados as $dup) {
-            $registros = DB::table('lideres')
+            $registros = $this->lideres()
                 ->where(function ($q) {
                     $q->whereNull('cedula')->orWhere('cedula', '');
                 })
@@ -190,13 +196,13 @@ class DeduplicarLideres extends Command
         if (! $dryRun) {
             DB::transaction(function () use ($ganador, $ganadorData, $perdedorIds) {
                 $updateFields = collect($ganadorData)
-                    ->except(['id', 'created_at', 'updated_at'])
+                    ->except(['id', 'campaign_id', 'created_at', 'updated_at'])
                     ->put('updated_at', now())
                     ->toArray();
 
-                DB::table('lideres')->where('id', $ganador->id)->update($updateFields);
-                DB::table('nexos_familiares')->whereIn('person_id', $perdedorIds)->update(['person_id' => $ganador->id]);
-                DB::table('lideres')->whereIn('id', $perdedorIds)->delete();
+                $this->lideres()->where('id', $ganador->id)->update($updateFields);
+                DB::table('nexos_familiares')->where('campaign_id', $this->campaignId)->whereIn('person_id', $perdedorIds)->update(['person_id' => $ganador->id]);
+                $this->lideres()->whereIn('id', $perdedorIds)->delete();
             });
         }
 

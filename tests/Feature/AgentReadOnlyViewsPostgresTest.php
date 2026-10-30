@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Campaign;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,7 @@ class AgentReadOnlyViewsPostgresTest extends TestCase
     {
         $id = (string) Str::uuid();
         DB::table('lideres')->insert([
+            'campaign_id' => Campaign::DEFAULT_ID,
             'id' => $id, 'nombre' => 'Lider Agent '.Str::random(4), 'municipio' => 'Girón', 'cargo' => 'COORDINADOR MUNICIPAL', 'is_active' => true,
             'created_at' => now(), 'updated_at' => now(), ...$attrs,
         ]);

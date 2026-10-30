@@ -12,11 +12,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // Offline creates are retried (two tabs, lost responses): the device id makes them idempotent.
 class OfflineCreateIdempotencyTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private string $municipio;
 
     protected function setUp(): void
@@ -73,6 +76,7 @@ class OfflineCreateIdempotencyTest extends TestCase
             $t->timestamps();
         });
 
+        $this->addCampaignColumns();
         $this->municipio = (string) Str::uuid();
         DB::table('geographic_units')->insert(['id' => $this->municipio, 'type' => 'municipality', 'canonical_name' => 'Socorro']);
     }

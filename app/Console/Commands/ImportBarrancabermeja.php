@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -9,12 +10,17 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportBarrancabermeja extends Command
 {
-    protected $signature = 'import:barrancabermeja {--dry-run : Show what would be imported without inserting}';
+    use TargetsCampaign;
+
+    protected $signature = 'import:barrancabermeja {--dry-run : Show what would be imported without inserting} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
     protected $description = 'Import leaders from Barrancabermeja Excel files (unified, no duplicates)';
 
     public function handle()
     {
         $dryRun = $this->option('dry-run');
+        if (! $this->resolveCampaign()) {
+            return 1;
+        }
         $file1 = 'C:/Users/Marly Rangel/Downloads/Mapa Electoral - Barrancabermeja.xlsx';
         $file2 = 'C:/Users/Marly Rangel/Downloads/BARRANCABERMEJA.xlsx';
 
@@ -25,7 +31,7 @@ class ImportBarrancabermeja extends Command
         }
 
         // Get existing names to avoid duplicates
-        $existing = DB::table('lideres')
+        $existing = $this->lideres()
             ->where('municipio', 'ilike', '%Barrancabermeja%')
             ->pluck('nombre')
             ->map(fn ($n) => mb_strtoupper(trim($n)))
@@ -186,6 +192,7 @@ class ImportBarrancabermeja extends Command
         foreach ($toInsert as $row) {
             DB::table('lideres')->insert([
                 'id' => Str::uuid(),
+                'campaign_id' => $this->campaignId,
                 'nombre' => $row['nombre'],
                 'municipio' => 'Barrancabermeja',
                 'provincia' => 'Mares',

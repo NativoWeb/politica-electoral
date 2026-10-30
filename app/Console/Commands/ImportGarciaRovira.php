@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -9,7 +10,9 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportGarciaRovira extends Command
 {
-    protected $signature = 'import:garcia-rovira';
+    use TargetsCampaign;
+
+    protected $signature = 'import:garcia-rovira {--campaign= : Campaña (slug o id) de los concejales CD que se agregan a lideres; por defecto Centro Democrático}';
     protected $description = 'Import Garcia Rovira data from the 2 complementary Excel files';
 
     private array $municipios = [];
@@ -17,6 +20,10 @@ class ImportGarciaRovira extends Command
 
     public function handle(): int
     {
+        if (! $this->resolveCampaign()) {
+            return 1;
+        }
+
         $this->municipios = DB::table('geographic_units')
             ->where('type', 'municipality')
             ->pluck('id', 'canonical_name')
@@ -330,7 +337,7 @@ class ImportGarciaRovira extends Command
             $munId = $this->findMunicipio($municipio);
 
             // Add to lideres if not already there
-            $exists = DB::table('lideres')
+            $exists = $this->lideres()
                 ->where('nombre', 'ilike', '%' . explode(' ', $nombre)[0] . '%')
                 ->where('municipio', 'ilike', '%' . $municipio . '%')
                 ->where('cargo', 'CONCEJAL CD')
@@ -339,6 +346,7 @@ class ImportGarciaRovira extends Command
             if (!$exists) {
                 DB::table('lideres')->insert([
                     'id' => Str::uuid(),
+                    'campaign_id' => $this->campaignId,
                     'nombre' => Str::title(Str::lower($nombre)),
                     'provincia' => $provincia ?: null,
                     'municipio' => Str::title(Str::lower($municipio)),

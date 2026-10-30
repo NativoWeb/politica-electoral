@@ -4,12 +4,14 @@ namespace App\Actions\Votantes;
 
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Models\Campaign;
 use App\Models\Lider;
 use App\Support\Cedula;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 // Shared by the web (VotanteController) and the WhatsApp agent; territory is checked for the current user.
+// The votante always goes to the user's own campaign, and its cédula only has to be unique there.
 class CreateVotante
 {
     use ScopesTerritory;
@@ -19,9 +21,11 @@ class CreateVotante
         $this->authorizeGeo($data['municipio_id']);
         $data = Cedula::normalizeFields($data);
 
+        $campaignId = $this->campaign()->ownId() ?? Campaign::DEFAULT_ID;
+
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
-            $existente = DB::table('lideres')->where('cedula', $cedula)->first();
+            $existente = DB::table('lideres')->where('campaign_id', $campaignId)->where('cedula', $cedula)->first();
             if ($existente) {
                 throw new BusinessRuleException($this->duplicateCedulaMessage($cedula, $existente));
             }
@@ -34,7 +38,7 @@ class CreateVotante
             ->first();
 
         try {
-            return DB::transaction(fn () => Lider::create([
+            return DB::transaction(fn () => tap(new Lider([
                 'nombre' => $data['nombre'],
                 'municipio' => $mun->canonical_name ?? '',
                 'provincia' => $mun->provincia ?? '',
@@ -82,7 +86,7 @@ class CreateVotante
                 'facebook' => $data['facebook'] ?? null,
                 'twitter' => $data['twitter'] ?? null,
                 'instagram' => $data['instagram'] ?? null,
-            ]));
+            ]), fn (Lider $lider) => $lider->forceFill(['campaign_id' => $campaignId])->save()));
         } catch (UniqueConstraintViolationException) {
             // Same cedula inserted concurrently between the check above and the insert.
             throw new BusinessRuleException("Ya existe un líder con cédula {$cedula}.");

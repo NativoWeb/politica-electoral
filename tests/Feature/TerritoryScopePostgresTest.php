@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -55,6 +56,7 @@ class TerritoryScopePostgresTest extends TestCase
     private function lider(string $geoId, string $barrio): void
     {
         DB::table('lideres')->insert([
+            'campaign_id' => Campaign::DEFAULT_ID,
             'id' => (string) Str::uuid(), 'geographic_unit_id' => $geoId, 'nombre' => 'Lider '.$barrio,
             'municipio' => DB::table('geographic_units')->where('id', $geoId)->value('canonical_name'),
             'barrio' => $barrio, 'cargo' => 'COORDINADOR MUNICIPAL', 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),

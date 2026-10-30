@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -10,7 +11,9 @@ use Illuminate\Support\Str;
 
 class NormalizarCargosLideres extends Command
 {
-    protected $signature = 'lideres:normalizar-cargos {--dry-run : Muestra los cambios sin guardarlos}';
+    use TargetsCampaign;
+
+    protected $signature = 'lideres:normalizar-cargos {--dry-run : Muestra los cambios sin guardarlos} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
 
     protected $description = 'Normaliza los cargos de líderes a las categorías del catálogo, guardando el texto original en la observación';
 
@@ -65,6 +68,9 @@ class NormalizarCargosLideres extends Command
     public function handle(): int
     {
         $dry = (bool) $this->option('dry-run');
+        if (! $this->resolveCampaign()) {
+            return self::FAILURE;
+        }
 
         $catalog = DB::table('cargo_categories')->pluck('name')->all();
         $canonical = [];
@@ -74,7 +80,7 @@ class NormalizarCargosLideres extends Command
 
         $changes = [];
         $unmapped = [];
-        foreach (DB::table('lideres')->select('id', 'nombre', 'cargo', 'observacion', 'barrio')->orderBy('nombre')->get() as $l) {
+        foreach ($this->lideres()->select('id', 'nombre', 'cargo', 'observacion', 'barrio')->orderBy('nombre')->get() as $l) {
             $tokens = array_values(array_filter(array_map('trim', explode(',', (string) $l->cargo)), fn ($t) => $t !== ''));
             if (empty($tokens)) {
                 continue;
@@ -131,7 +137,7 @@ class NormalizarCargosLideres extends Command
 
         $backup = 'lideres_cargo_backup_'.now()->format('Ymd_His');
         DB::transaction(function () use ($changes, $backup) {
-            DB::statement("CREATE TABLE {$backup} AS SELECT id, cargo, observacion, barrio FROM lideres");
+            DB::statement("CREATE TABLE {$backup} AS SELECT id, cargo, observacion, barrio FROM lideres WHERE campaign_id = '{$this->campaignId}'");
 
             $order = (int) DB::table('cargo_categories')->max('display_order');
             foreach (self::NEW_CATEGORIES as $name) {
@@ -144,7 +150,7 @@ class NormalizarCargosLideres extends Command
             }
 
             foreach ($changes as [$l, $update]) {
-                DB::table('lideres')->where('id', $l->id)->update($update);
+                $this->lideres()->where('id', $l->id)->update($update);
             }
         });
 

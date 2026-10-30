@@ -56,14 +56,15 @@ class UpdateVotante
         if (! $lider) {
             throw new BusinessRuleException('No encontrado.', 404);
         }
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $this->authorizeLiderRow($lider, true);
 
         $cedula = $data['cedula'] ?? null;
         // The form resends the cédula on every save; an unchanged one (even if stored with dots) is left as is.
         if ($cedula !== null && $cedula === Cedula::normalize($lider->cedula)) {
             unset($data['cedula']);
         } elseif ($cedula !== null && $cedula !== '') {
-            $existente = DB::table('lideres')->where('cedula', $cedula)->where('id', '!=', $id)->first();
+            $existente = DB::table('lideres')->where('campaign_id', $lider->campaign_id)
+                ->where('cedula', $cedula)->where('id', '!=', $id)->first();
             if ($existente) {
                 throw new BusinessRuleException($this->duplicateCedulaMessage($cedula, $existente));
             }
@@ -80,7 +81,8 @@ class UpdateVotante
         try {
             DB::transaction(function () use ($lider, $data, $nuevoNombre) {
                 $personaARenombrar = null;
-                if ($nuevoNombre !== null) {
+                // Electoral persons are shared: only the platform renames them.
+                if ($nuevoNombre !== null && $this->campaign()->canEditElectoral()) {
                     $candidatos = $this->linkedPersonIds($lider);
                     if ($candidatos->count() === 1) {
                         $personaARenombrar = $candidatos->first();

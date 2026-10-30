@@ -160,7 +160,7 @@ class ExportController extends Controller
 
         // Líderes
         if ($tipoMatch('lideres')) {
-            $query = DB::table('lideres')
+            $query = $this->visibleLideres()
                 ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
             if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
             if ($search) $query->where(function ($q) use ($search) {
@@ -176,7 +176,7 @@ class ExportController extends Controller
 
         // Directorio Municipal
         if ($tipoMatch('directorio')) {
-            $query = DB::table('lideres')
+            $query = $this->visibleLideres()
                 ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
             $this->whereCargoIn($query, ['Directorio Municipal']);
             $this->whereCargoIn($query, $cargos);
@@ -216,10 +216,13 @@ class ExportController extends Controller
             return $data;
         }
 
-        $notes = $this->scopeToTerritory(DB::table('lideres'))
+        // Only campaigns the user can see; when a subcampaign has a namesake, the own campaign's record decides.
+        $own = $this->campaign()->ownId();
+        $notes = $this->scopeToTerritory($this->visibleLideres())
             ->whereIn(DB::raw('LOWER(nombre)'), array_values(array_unique(array_map(fn ($r) => mb_strtolower(trim($r['nombre'])), $missing))))
-            ->get(['nombre', 'municipio', 'observacion'])
+            ->get(['nombre', 'municipio', 'observacion', 'campaign_id'])
             ->groupBy(fn ($l) => $key($l->nombre, $l->municipio))
+            ->map(fn ($group) => $group->count() > 1 && $own !== null ? $group->where('campaign_id', $own) : $group)
             ->filter(fn ($group) => $group->count() === 1)
             ->map(fn ($group) => $group->first()->observacion)
             ->filter(fn ($obs) => $obs !== null && $obs !== '');

@@ -24,7 +24,7 @@ class MergeLideres
 
     // Merged by hand below, or never copied.
     private const SPECIAL = ['id', 'nombre', 'cargo', 'observacion', 'telefono', 'cedula', 'votos', 'nivel_confianza',
-        'municipio', 'provincia', 'geographic_unit_id', 'created_at', 'updated_at', 'is_active'];
+        'municipio', 'provincia', 'geographic_unit_id', 'created_at', 'updated_at', 'is_active', 'campaign_id'];
 
     // Text attributes whose differing value in the other record is noted in the observation.
     private const NOTED = ['email' => 'correo', 'direccion' => 'dirección', 'barrio' => 'barrio', 'profesion' => 'profesión', 'partido' => 'partido'];
@@ -49,7 +49,12 @@ class MergeLideres
             if (! $edited || ! $other) {
                 throw new BusinessRuleException('Uno de los registros ya no existe.', 404);
             }
-            $this->authorizeGeo($edited->geographic_unit_id);
+            $this->authorizeLiderRow($edited, true);
+            $this->authorizeCampaign($other->campaign_id);
+            // A cédula identifies a person only inside one campaign: records of two campaigns are never one.
+            if ($other->campaign_id !== $edited->campaign_id) {
+                throw new BusinessRuleException('No se pueden unificar registros de campañas distintas.');
+            }
             $this->authorizeGeo($other->geographic_unit_id);
 
             $editedCedula = Cedula::normalize($edited->cedula) ?: null;

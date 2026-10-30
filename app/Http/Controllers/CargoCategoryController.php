@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CargoCategory;
+use App\Support\CurrentCampaign;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,7 @@ class CargoCategoryController extends Controller
     {
         $cargos = CargoCategory::orderBy('display_order')->get();
 
-        $cargoCounts = DB::table('lideres')
+        $cargoCounts = app(CurrentCampaign::class)->scope(DB::table('lideres'))
             ->pluck('cargo')
             ->flatMap(fn ($c) => array_map('trim', explode(',', $c ?? '')))
             ->filter()
@@ -78,6 +79,9 @@ class CargoCategoryController extends Controller
         return response()->json(['success' => true]);
     }
 
+    // Decision (multi-campaign step 2): the cargo catalog is shared by every campaign, so graduating is a
+    // global catalog operation that renames the cargo on the lideres of EVERY campaign. Only the platform
+    // (superadmin or the root campaign's team) may run it: the route carries the electoral.platform middleware.
     public function graduar(Request $request)
     {
         $data = $request->validate([

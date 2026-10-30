@@ -11,11 +11,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // The same person entered twice: the panel merges the duplicate into the record being edited.
 class MergeLideresTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private string $municipio;
 
     protected function setUp(): void
@@ -84,6 +87,7 @@ class MergeLideresTest extends TestCase
             $t->uuid('taggable_id');
         });
 
+        $this->addCampaignColumns();
         $this->municipio = (string) Str::uuid();
     }
 

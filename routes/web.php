@@ -158,18 +158,18 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy');
 
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory');
-        Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store');
-        Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store');
-        Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store');
-        Route::put('/territorio/{id}', [TerritoryController::class, 'update'])->name('territory.update');
-        Route::post('/territorio/{id}/toggle', [TerritoryController::class, 'toggleActive'])->name('territory.toggle');
+        Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store')->middleware('electoral.platform');
+        Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store')->middleware('electoral.platform');
+        Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store')->middleware('electoral.platform');
+        Route::put('/territorio/{id}', [TerritoryController::class, 'update'])->name('territory.update')->middleware('electoral.platform');
+        Route::post('/territorio/{id}/toggle', [TerritoryController::class, 'toggleActive'])->name('territory.toggle')->middleware('electoral.platform');
 
         Route::get('/partidos', [PartidoCrudController::class, 'index'])->name('partidos');
-        Route::post('/partidos', [PartidoCrudController::class, 'store'])->name('partidos.store');
-        Route::put('/partidos/{id}', [PartidoCrudController::class, 'update'])->name('partidos.update');
-        Route::delete('/partidos/{id}', [PartidoCrudController::class, 'destroy'])->name('partidos.destroy');
-        Route::post('/partidos/{id}/restore', [PartidoCrudController::class, 'restore'])->name('partidos.restore');
-        Route::delete('/partidos/{id}/force', [PartidoCrudController::class, 'forceDelete'])->name('partidos.forceDelete');
+        Route::post('/partidos', [PartidoCrudController::class, 'store'])->name('partidos.store')->middleware('electoral.platform');
+        Route::put('/partidos/{id}', [PartidoCrudController::class, 'update'])->name('partidos.update')->middleware('electoral.platform');
+        Route::delete('/partidos/{id}', [PartidoCrudController::class, 'destroy'])->name('partidos.destroy')->middleware('electoral.platform');
+        Route::post('/partidos/{id}/restore', [PartidoCrudController::class, 'restore'])->name('partidos.restore')->middleware('electoral.platform');
+        Route::delete('/partidos/{id}/force', [PartidoCrudController::class, 'forceDelete'])->name('partidos.forceDelete')->middleware('electoral.platform');
 
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports');
         Route::get('/catalogos', [AdminController::class, 'catalogs'])->name('catalogs');
@@ -177,13 +177,13 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         // Personas CRUD
         Route::get('/personas', [PersonCrudController::class, 'index'])->name('personas');
         Route::get('/personas/{id}/json', [PersonCrudController::class, 'show'])->name('personas.show');
-        Route::post('/personas', [PersonCrudController::class, 'store'])->name('personas.store');
-        Route::put('/personas/{id}', [PersonCrudController::class, 'update'])->name('personas.update');
-        Route::delete('/personas/{id}', [PersonCrudController::class, 'destroy'])->name('personas.destroy');
-        Route::post('/personas/{id}/aliases', [PersonCrudController::class, 'storeAlias'])->name('personas.alias.store');
-        Route::delete('/personas/{id}/aliases/{aliasId}', [PersonCrudController::class, 'destroyAlias'])->name('personas.alias.destroy');
-        Route::post('/personas/{id}/contacts', [PersonCrudController::class, 'storeContact'])->name('personas.contact.store');
-        Route::delete('/personas/{id}/contacts/{contactId}', [PersonCrudController::class, 'destroyContact'])->name('personas.contact.destroy');
+        Route::post('/personas', [PersonCrudController::class, 'store'])->name('personas.store')->middleware('electoral.platform');
+        Route::put('/personas/{id}', [PersonCrudController::class, 'update'])->name('personas.update')->middleware('electoral.platform');
+        Route::delete('/personas/{id}', [PersonCrudController::class, 'destroy'])->name('personas.destroy')->middleware('electoral.platform');
+        Route::post('/personas/{id}/aliases', [PersonCrudController::class, 'storeAlias'])->name('personas.alias.store')->middleware('electoral.platform');
+        Route::delete('/personas/{id}/aliases/{aliasId}', [PersonCrudController::class, 'destroyAlias'])->name('personas.alias.destroy')->middleware('electoral.platform');
+        Route::post('/personas/{id}/contacts', [PersonCrudController::class, 'storeContact'])->name('personas.contact.store')->middleware('electoral.platform');
+        Route::delete('/personas/{id}/contacts/{contactId}', [PersonCrudController::class, 'destroyContact'])->name('personas.contact.destroy')->middleware('electoral.platform');
 
         // WhatsApp
         Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
@@ -212,34 +212,34 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         // Cargos CRUD
         Route::get('/cargos', [CargoCategoryController::class, 'index'])->name('cargos');
         Route::middleware('can.write')->group(function () {
-            Route::post('/cargos', [CargoCategoryController::class, 'store'])->name('cargos.store');
-            Route::put('/cargos/{id}', [CargoCategoryController::class, 'update'])->name('cargos.update');
-            Route::post('/cargos/reorder', [CargoCategoryController::class, 'reorder'])->name('cargos.reorder');
-            Route::post('/cargos/graduar', [CargoCategoryController::class, 'graduar'])->name('cargos.graduar');
+            Route::post('/cargos', [CargoCategoryController::class, 'store'])->name('cargos.store')->middleware('electoral.platform');
+            Route::put('/cargos/{id}', [CargoCategoryController::class, 'update'])->name('cargos.update')->middleware('electoral.platform');
+            Route::post('/cargos/reorder', [CargoCategoryController::class, 'reorder'])->name('cargos.reorder')->middleware('electoral.platform');
+            Route::post('/cargos/graduar', [CargoCategoryController::class, 'graduar'])->name('cargos.graduar')->middleware('electoral.platform');
         });
 
         // Catálogos CRUD
-        Route::post('/catalogos/partidos', [CatalogCrudController::class, 'storePartido'])->name('catalogs.partido.store');
-        Route::put('/catalogos/partidos/{id}', [CatalogCrudController::class, 'updatePartido'])->name('catalogs.partido.update');
-        Route::delete('/catalogos/partidos/{id}', [CatalogCrudController::class, 'destroyPartido'])->name('catalogs.partido.destroy');
-        Route::post('/catalogos/oficios', [CatalogCrudController::class, 'storeOficio'])->name('catalogs.oficio.store');
-        Route::put('/catalogos/oficios/{id}', [CatalogCrudController::class, 'updateOficio'])->name('catalogs.oficio.update');
-        Route::delete('/catalogos/oficios/{id}', [CatalogCrudController::class, 'destroyOficio'])->name('catalogs.oficio.destroy');
-        Route::post('/catalogos/corporaciones', [CatalogCrudController::class, 'storeCorporacion'])->name('catalogs.corporacion.store');
-        Route::put('/catalogos/corporaciones/{id}', [CatalogCrudController::class, 'updateCorporacion'])->name('catalogs.corporacion.update');
-        Route::delete('/catalogos/corporaciones/{id}', [CatalogCrudController::class, 'destroyCorporacion'])->name('catalogs.corporacion.destroy');
+        Route::post('/catalogos/partidos', [CatalogCrudController::class, 'storePartido'])->name('catalogs.partido.store')->middleware('electoral.platform');
+        Route::put('/catalogos/partidos/{id}', [CatalogCrudController::class, 'updatePartido'])->name('catalogs.partido.update')->middleware('electoral.platform');
+        Route::delete('/catalogos/partidos/{id}', [CatalogCrudController::class, 'destroyPartido'])->name('catalogs.partido.destroy')->middleware('electoral.platform');
+        Route::post('/catalogos/oficios', [CatalogCrudController::class, 'storeOficio'])->name('catalogs.oficio.store')->middleware('electoral.platform');
+        Route::put('/catalogos/oficios/{id}', [CatalogCrudController::class, 'updateOficio'])->name('catalogs.oficio.update')->middleware('electoral.platform');
+        Route::delete('/catalogos/oficios/{id}', [CatalogCrudController::class, 'destroyOficio'])->name('catalogs.oficio.destroy')->middleware('electoral.platform');
+        Route::post('/catalogos/corporaciones', [CatalogCrudController::class, 'storeCorporacion'])->name('catalogs.corporacion.store')->middleware('electoral.platform');
+        Route::put('/catalogos/corporaciones/{id}', [CatalogCrudController::class, 'updateCorporacion'])->name('catalogs.corporacion.update')->middleware('electoral.platform');
+        Route::delete('/catalogos/corporaciones/{id}', [CatalogCrudController::class, 'destroyCorporacion'])->name('catalogs.corporacion.destroy')->middleware('electoral.platform');
 
         // Elecciones CRUD
         Route::get('/elecciones', [EleccionCrudController::class, 'index'])->name('elecciones');
         Route::get('/elecciones/{id}/json', [EleccionCrudController::class, 'showEvent'])->name('elecciones.show');
         Route::get('/elecciones/contest/{id}/json', [EleccionCrudController::class, 'showContest'])->name('elecciones.contest.show');
-        Route::post('/elecciones/events', [EleccionCrudController::class, 'storeEvent'])->name('elecciones.event.store');
-        Route::put('/elecciones/events/{id}', [EleccionCrudController::class, 'updateEvent'])->name('elecciones.event.update');
-        Route::delete('/elecciones/events/{id}', [EleccionCrudController::class, 'destroyEvent'])->name('elecciones.event.destroy');
-        Route::post('/elecciones/contests', [EleccionCrudController::class, 'storeContest'])->name('elecciones.contest.store');
-        Route::post('/elecciones/candidacies', [EleccionCrudController::class, 'storeCandidacy'])->name('elecciones.candidacy.store');
-        Route::put('/elecciones/candidacies/{id}', [EleccionCrudController::class, 'updateCandidacy'])->name('elecciones.candidacy.update');
-        Route::post('/elecciones/results', [EleccionCrudController::class, 'storeResult'])->name('elecciones.result.store');
-        Route::put('/elecciones/results/{id}', [EleccionCrudController::class, 'updateResult'])->name('elecciones.result.update');
+        Route::post('/elecciones/events', [EleccionCrudController::class, 'storeEvent'])->name('elecciones.event.store')->middleware('electoral.platform');
+        Route::put('/elecciones/events/{id}', [EleccionCrudController::class, 'updateEvent'])->name('elecciones.event.update')->middleware('electoral.platform');
+        Route::delete('/elecciones/events/{id}', [EleccionCrudController::class, 'destroyEvent'])->name('elecciones.event.destroy')->middleware('electoral.platform');
+        Route::post('/elecciones/contests', [EleccionCrudController::class, 'storeContest'])->name('elecciones.contest.store')->middleware('electoral.platform');
+        Route::post('/elecciones/candidacies', [EleccionCrudController::class, 'storeCandidacy'])->name('elecciones.candidacy.store')->middleware('electoral.platform');
+        Route::put('/elecciones/candidacies/{id}', [EleccionCrudController::class, 'updateCandidacy'])->name('elecciones.candidacy.update')->middleware('electoral.platform');
+        Route::post('/elecciones/results', [EleccionCrudController::class, 'storeResult'])->name('elecciones.result.store')->middleware('electoral.platform');
+        Route::put('/elecciones/results/{id}', [EleccionCrudController::class, 'updateResult'])->name('elecciones.result.update')->middleware('electoral.platform');
     });
 });

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -9,7 +10,9 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportDirectorioCdIncremental extends Command
 {
-    protected $signature = 'import:directorio-cd {file : Ruta al Excel DIRECTORIOS MUNICIPALES CD} {--dry-run : Muestra los cambios sin guardarlos}';
+    use TargetsCampaign;
+
+    protected $signature = 'import:directorio-cd {file : Ruta al Excel DIRECTORIOS MUNICIPALES CD} {--dry-run : Muestra los cambios sin guardarlos} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
 
     protected $description = 'Importa sin borrar nada: crea las personas del directorio CD que falten y agrega las observaciones de llamadas';
 
@@ -22,6 +25,9 @@ class ImportDirectorioCdIncremental extends Command
             return self::FAILURE;
         }
         $dry = (bool) $this->option('dry-run');
+        if (! $this->resolveCampaign()) {
+            return self::FAILURE;
+        }
 
         $reader = IOFactory::createReaderForFile($file);
         $reader->setReadDataOnly(true);
@@ -84,6 +90,7 @@ class ImportDirectorioCdIncremental extends Command
                 $obs = $p['extra'] ? 'También en el Excel como: '.implode(', ', array_unique($p['extra'])) : null;
                 DB::table('lideres')->insert([
                     'id' => Str::uuid(),
+                    'campaign_id' => $this->campaignId,
                     'nombre' => Str::title(Str::lower($p['nom'])),
                     'municipio' => $g->canonical_name ?? Str::title(Str::lower($p['mun'])),
                     'provincia' => $g->provincia ?? ($p['prov'] ?: null),
@@ -101,7 +108,7 @@ class ImportDirectorioCdIncremental extends Command
                 ]);
             }
             foreach ($obsUpdates as $id => $obs) {
-                DB::table('lideres')->where('id', $id)->update(['observacion' => $obs, 'updated_at' => now()]);
+                $this->lideres()->where('id', $id)->update(['observacion' => $obs, 'updated_at' => now()]);
             }
         });
 
@@ -114,7 +121,7 @@ class ImportDirectorioCdIncremental extends Command
     {
         $byCed = [];
         $byNameMun = [];
-        foreach (DB::table('lideres')->get(['id', 'nombre', 'municipio', 'cedula', 'observacion']) as $l) {
+        foreach ($this->lideres()->get(['id', 'nombre', 'municipio', 'cedula', 'observacion']) as $l) {
             $ced = preg_replace('/\D/', '', (string) $l->cedula);
             if ($ced !== '') {
                 $byCed[$ced] = $l;

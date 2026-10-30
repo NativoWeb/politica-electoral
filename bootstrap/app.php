@@ -5,6 +5,7 @@ use App\Http\Middleware\AuditActivity;
 use App\Http\Middleware\EnsureAgentCanWrite;
 use App\Http\Middleware\EnsureAgentUserEligible;
 use App\Http\Middleware\EnsureCanWrite;
+use App\Http\Middleware\EnsureElectoralPlatform;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -37,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'can.write' => EnsureCanWrite::class,
+            'electoral.platform' => EnsureElectoralPlatform::class,
             'password.changed' => EnsurePasswordChanged::class,
             'permission' => EnsureHasPermission::class,
             'audit' => AuditActivity::class,

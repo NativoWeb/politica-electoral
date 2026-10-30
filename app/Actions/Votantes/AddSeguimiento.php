@@ -12,13 +12,14 @@ class AddSeguimiento
 {
     use ScopesTerritory;
 
-    public function authorizeFor(string $liderId): Lider
+    // $write = false for reading the history: a subcampaign's lider is visible but read-only.
+    public function authorizeFor(string $liderId, bool $write = true): Lider
     {
         $lider = Lider::find($liderId);
         if (! $lider) {
             throw new BusinessRuleException('Lider no encontrado.', 404);
         }
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $this->authorizeLiderRow($lider, $write);
 
         return $lider;
     }

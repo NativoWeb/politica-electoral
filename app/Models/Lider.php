@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\CurrentCampaign;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -62,6 +64,23 @@ class Lider extends Model
         'gran_elector' => 'boolean',
         'votos' => 'integer',
     ];
+
+    // Only the campaigns the authenticated user can see; campaign_id is assigned by the server, never by the request.
+    protected static function booted(): void
+    {
+        static::addGlobalScope('campaign', function (Builder $query) {
+            app(CurrentCampaign::class)->scope($query, $query->getModel()->qualifyColumn('campaign_id'));
+        });
+
+        static::creating(function (Lider $lider) {
+            if (! $lider->campaign_id) {
+                $own = app(CurrentCampaign::class)->ownId();
+                if ($own) {
+                    $lider->campaign_id = $own;
+                }
+            }
+        });
+    }
 
     public function contactos(): HasMany
     {

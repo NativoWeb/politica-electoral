@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use Illuminate\Support\Facades\DB;
 
 // Marks $referidoId as referred by $referenteId (through the referente's cedula).
+// Both records must belong to the user's own campaign: a cédula only identifies a referente inside one campaign.
 class AddReferido
 {
     use ScopesTerritory;
@@ -14,10 +15,11 @@ class AddReferido
     public function handle(string $referenteId, string $referidoId): void
     {
         $referente = DB::table('lideres')->where('id', $referenteId)->first();
-        if ($referente) {
-            $this->authorizeGeo($referente->geographic_unit_id);
+        if (! $referente) {
+            throw new BusinessRuleException('Persona no encontrada.', 404);
         }
-        if (! $referente || ! $referente->cedula) {
+        $this->authorizeLiderRow($referente, true);
+        if (! $referente->cedula) {
             throw new BusinessRuleException('El referente debe tener cédula registrada.');
         }
 
@@ -25,7 +27,10 @@ class AddReferido
         if (! $referido) {
             throw new BusinessRuleException('Persona no encontrada.', 404);
         }
-        $this->authorizeGeo($referido->geographic_unit_id);
+        $this->authorizeLiderRow($referido, true);
+        if ($referido->campaign_id !== $referente->campaign_id) {
+            throw new BusinessRuleException('El referente y el referido deben ser de la misma campaña.');
+        }
 
         $nameParts = explode(' ', $referente->nombre, 2);
 

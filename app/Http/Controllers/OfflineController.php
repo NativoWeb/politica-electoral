@@ -82,7 +82,7 @@ class OfflineController extends Controller
         }
 
         // Líderes
-        $lideres = DB::table('lideres')
+        $lideres = $this->visibleLideres()
             ->where('geographic_unit_id', $municipioId)
             ->where(function ($q) {
                 $q->where('cargo', 'not ilike', '%Directorio Municipal%')
@@ -95,7 +95,7 @@ class OfflineController extends Controller
             ->get()->map(fn ($r) => (array) $r)->toArray();
 
         // Directorio Municipal (líderes with cargo "Directorio Municipal")
-        $directorio = DB::table('lideres')
+        $directorio = $this->visibleLideres()
             ->where('geographic_unit_id', $municipioId)
             ->where('cargo', 'ilike', '%Directorio Municipal%')
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
@@ -156,7 +156,7 @@ class OfflineController extends Controller
         );
         $nexos = [];
         if (!empty($personIds)) {
-            $nexos = DB::table('nexos_familiares')
+            $nexos = $this->campaign()->scope(DB::table('nexos_familiares'))
                 ->whereIn('person_id', $personIds)
                 ->select('id', 'person_id as personId', 'nombre', 'parentesco', 'cargo', 'edad', 'gustos', 'observaciones')
                 ->orderBy('nombre')

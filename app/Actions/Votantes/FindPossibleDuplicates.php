@@ -2,6 +2,7 @@
 
 namespace App\Actions\Votantes;
 
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Support\Cedula;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Support\Str;
 
 // Other lideres of the same municipio that look like the same person (same phone, same cédula or
 // a name contained in the other), so the panel can offer to merge them. Records with different
-// cédulas are never offered: they cannot be merged.
+// cédulas are never offered: they cannot be merged. Only the lider's own campaign is searched.
 class FindPossibleDuplicates
 {
     use ScopesTerritory;
@@ -17,10 +18,15 @@ class FindPossibleDuplicates
     public function handle(string $liderId): array
     {
         $lider = DB::table('lideres')->where('id', $liderId)->first();
-        if (! $lider || ! $lider->geographic_unit_id) {
+        // A lider of a campaign the user cannot see answers exactly like a missing one.
+        if (! $lider) {
+            throw new BusinessRuleException('No encontrado.', 404);
+        }
+        $this->authorizeLiderRow($lider);
+        // A subcampaign's lider is read-only for this user: offering a merge would only end in a 403.
+        if (! $lider->geographic_unit_id || ! $this->campaign()->isOwn($lider->campaign_id)) {
             return [];
         }
-        $this->authorizeGeo($lider->geographic_unit_id);
 
         $phone = self::phone($lider->telefono);
         $cedula = Cedula::normalize($lider->cedula) ?: null;
@@ -28,6 +34,7 @@ class FindPossibleDuplicates
 
         $found = [];
         $others = DB::table('lideres')
+            ->where('campaign_id', $lider->campaign_id)
             ->where('geographic_unit_id', $lider->geographic_unit_id)
             ->where('id', '!=', $liderId)
             ->where('is_active', true)

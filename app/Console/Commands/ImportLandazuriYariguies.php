@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -10,7 +11,9 @@ use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 
 class ImportLandazuriYariguies extends Command
 {
-    protected $signature = 'import:landazuri-yariguies {--path= : Base path for Excel files} {--source= : Run only: yariguies, resumen, landazury}';
+    use TargetsCampaign;
+
+    protected $signature = 'import:landazuri-yariguies {--path= : Base path for Excel files} {--source= : Run only: yariguies, resumen, landazury} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
 
     protected $description = 'Import líderes from LANDAZURY, LANDAZURI RESUMEN & DIRECTORIOS YARIGUIES CD';
 
@@ -26,6 +29,10 @@ class ImportLandazuriYariguies extends Command
 
     public function handle(): int
     {
+        if (! $this->resolveCampaign()) {
+            return 1;
+        }
+
         $this->basePath = $this->option('path')
             ?: (PHP_OS_FAMILY === 'Windows'
                 ? 'C:\\Users\\Marly Rangel\\Downloads\\'
@@ -385,7 +392,7 @@ class ImportLandazuriYariguies extends Command
 
         // 1. By cédula
         if ($cedula) {
-            $existing = DB::table('lideres')->where('cedula', $cedula)->first();
+            $existing = $this->lideres()->where('cedula', $cedula)->first();
             if ($existing) {
                 $updates = [];
                 foreach (['telefono', 'email', 'partido', 'votos', 'observacion', 'provincia', 'geographic_unit_id'] as $field) {
@@ -395,7 +402,7 @@ class ImportLandazuriYariguies extends Command
                 }
                 if ($updates) {
                     $updates['updated_at'] = now();
-                    DB::table('lideres')->where('id', $existing->id)->update($updates);
+                    $this->lideres()->where('id', $existing->id)->update($updates);
                     $this->updated++;
 
                     return 'updated';
@@ -409,7 +416,7 @@ class ImportLandazuriYariguies extends Command
         // 2. By name+municipio (normalized)
         $normalizedName = Str::upper(Str::ascii($nombre));
         $normalizedMun = Str::upper(Str::ascii($municipio));
-        $existing = DB::table('lideres')
+        $existing = $this->lideres()
             ->whereRaw('UPPER(UNACCENT(nombre)) = ?', [$normalizedName])
             ->whereRaw('UPPER(UNACCENT(municipio)) = ?', [$normalizedMun])
             ->first();
@@ -426,7 +433,7 @@ class ImportLandazuriYariguies extends Command
             }
             if ($updates) {
                 $updates['updated_at'] = now();
-                DB::table('lideres')->where('id', $existing->id)->update($updates);
+                $this->lideres()->where('id', $existing->id)->update($updates);
                 $this->updated++;
 
                 return 'updated';
@@ -439,6 +446,7 @@ class ImportLandazuriYariguies extends Command
         // 3. Insert
         DB::table('lideres')->insert([
             'id' => Str::uuid(),
+            'campaign_id' => $this->campaignId,
             'nombre' => Str::title(Str::lower($nombre)),
             'provincia' => ! empty($data['provincia']) ? Str::upper(trim($data['provincia'])) : null,
             'municipio' => $municipio ? Str::title(Str::lower($municipio)) : null,

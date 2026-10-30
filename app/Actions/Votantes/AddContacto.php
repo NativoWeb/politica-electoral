@@ -11,14 +11,14 @@ class AddContacto
 {
     use ScopesTerritory;
 
-    // Territory is checked before the payload is validated, so callers validate after calling authorizeFor().
+    // Territory and campaign are checked before the payload is validated, so callers validate after calling authorizeFor().
     public function authorizeFor(string $liderId): Lider
     {
         $lider = Lider::find($liderId);
         if (! $lider) {
             throw new BusinessRuleException('Lider no encontrado.', 404);
         }
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $this->authorizeLiderRow($lider, true);
 
         return $lider;
     }

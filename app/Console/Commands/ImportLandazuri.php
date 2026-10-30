@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
+use App\Models\Campaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -9,7 +11,9 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportLandazuri extends Command
 {
-    protected $signature = 'import:landazuri {file? : Path to LANDAZURY.xlsx}';
+    use TargetsCampaign;
+
+    protected $signature = 'import:landazuri {file? : Path to LANDAZURY.xlsx} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
 
     protected $description = 'Import Landazuri electoral data from Excel (líderes, directorio, alcaldía, concejos)';
 
@@ -36,6 +40,9 @@ class ImportLandazuri extends Command
 
             return 1;
         }
+        if (! $this->resolveCampaign()) {
+            return 1;
+        }
 
         $geo = DB::table('geographic_units')
             ->where('type', 'municipality')
@@ -54,7 +61,7 @@ class ImportLandazuri extends Command
 
         $this->info("Municipality: {$geo->canonical_name} (ID: {$geo->id}, Provincia: {$this->provincia})");
 
-        $this->existingNames = DB::table('lideres')
+        $this->existingNames = $this->lideres()
             ->whereRaw("unaccent(municipio) ilike unaccent(?)", ['%landaz%'])
             ->get(['id', 'nombre', 'telefono', 'votos', 'partido', 'cargo', 'observacion', 'cedula', 'email'])
             ->keyBy(fn ($r) => $this->normalize($r->nombre))
@@ -150,7 +157,7 @@ class ImportLandazuri extends Command
 
             if (! empty($updates)) {
                 $updates['updated_at'] = now();
-                DB::table('lideres')->where('id', $existing->id)->update($updates);
+                $this->lideres()->where('id', $existing->id)->update($updates);
                 $this->updated++;
                 $this->line("  Updated: {$nombre} (".implode(', ', array_keys($updates)).')');
             } else {
@@ -166,6 +173,7 @@ class ImportLandazuri extends Command
         $id = Str::uuid()->toString();
         DB::table('lideres')->insert([
             'id' => $id,
+            'campaign_id' => $this->campaignId,
             'nombre' => mb_strtoupper(trim($nombre)),
             'municipio' => 'Landázuri',
             'provincia' => $this->provincia,
@@ -187,7 +195,8 @@ class ImportLandazuri extends Command
         $this->created++;
         $this->line("  Created: {$nombre} ({$cargo})");
 
-        if (! empty($data['partido'])) {
+        // Endorsements are shared electoral data: only the root campaign's import touches them.
+        if (! empty($data['partido']) && $this->campaignId === Campaign::DEFAULT_ID) {
             $this->ensureEndorsement($id, $data['partido']);
         }
     }

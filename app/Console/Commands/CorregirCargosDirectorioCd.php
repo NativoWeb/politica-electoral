@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -9,7 +10,9 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class CorregirCargosDirectorioCd extends Command
 {
-    protected $signature = 'lideres:corregir-cargos-directorio {file : Ruta al Excel DIRECTORIOS MUNICIPALES CD} {--dry-run : Muestra los cambios sin guardarlos}';
+    use TargetsCampaign;
+
+    protected $signature = 'lideres:corregir-cargos-directorio {file : Ruta al Excel DIRECTORIOS MUNICIPALES CD} {--dry-run : Muestra los cambios sin guardarlos} {--campaign= : Campaña (slug o id); por defecto Centro Democrático}';
 
     protected $description = 'Según el Excel del directorio CD: Líder -> Directorio Municipal para miembros del directorio y Mujeres -> Reservistas para representantes de la reserva';
 
@@ -27,6 +30,9 @@ class CorregirCargosDirectorioCd extends Command
 
             return self::FAILURE;
         }
+        if (! $this->resolveCampaign()) {
+            return self::FAILURE;
+        }
 
         $reader = IOFactory::createReaderForFile($file);
         $reader->setReadDataOnly(true);
@@ -34,7 +40,7 @@ class CorregirCargosDirectorioCd extends Command
 
         $byCed = [];
         $byNameMun = [];
-        foreach (DB::table('lideres')->get(['id', 'nombre', 'municipio', 'cedula', 'cargo']) as $l) {
+        foreach ($this->lideres()->get(['id', 'nombre', 'municipio', 'cedula', 'cargo']) as $l) {
             $ced = preg_replace('/\D/', '', (string) $l->cedula);
             if ($ced !== '') {
                 $byCed[$ced] = $l;
@@ -105,9 +111,9 @@ class CorregirCargosDirectorioCd extends Command
 
         $backup = 'lideres_cargo_backup_'.now()->format('Ymd_His');
         DB::transaction(function () use ($changes, $backup) {
-            DB::statement("CREATE TABLE {$backup} AS SELECT id, cargo FROM lideres");
+            DB::statement("CREATE TABLE {$backup} AS SELECT id, cargo FROM lideres WHERE campaign_id = '{$this->campaignId}'");
             foreach ($changes as $id => $c) {
-                DB::table('lideres')->where('id', $id)->update(['cargo' => $c[3], 'updated_at' => now()]);
+                $this->lideres()->where('id', $id)->update(['cargo' => $c[3], 'updated_at' => now()]);
             }
         });
         $this->info("Listo. Respaldo en la tabla {$backup}.");

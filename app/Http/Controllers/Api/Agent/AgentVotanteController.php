@@ -79,7 +79,7 @@ class AgentVotanteController extends Controller
 
     public function seguimientos(Request $request, string $id, AddSeguimiento $action): JsonResponse
     {
-        $action->authorizeFor($id);
+        $action->authorizeFor($id, false);
 
         $items = LiderSeguimiento::with('user:id,name')
             ->where('lider_id', $id)

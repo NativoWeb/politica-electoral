@@ -16,7 +16,7 @@ class DeactivateVotante
         if (! $lider) {
             throw new BusinessRuleException('No encontrado.', 404);
         }
-        $this->authorizeGeo($lider->geographic_unit_id);
+        $this->authorizeLiderRow($lider, true);
 
         $lider->update(['is_active' => false]);
 

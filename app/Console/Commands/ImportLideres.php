@@ -2,27 +2,60 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\TargetsCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
+// Full load of one campaign's lideres. It never touches other campaigns, and it only deletes the campaign's
+// current lideres with --replace after an explicit confirmation (or --force).
 class ImportLideres extends Command
 {
-    protected $signature = 'import:lideres';
+    use TargetsCampaign;
+
+    protected $signature = 'import:lideres
+        {file? : Ruta al Excel; por defecto el de Descargas}
+        {--campaign= : Campaña (slug o id); por defecto Centro Democrático}
+        {--replace : Borra antes los líderes de ESA campaña (pide confirmación)}
+        {--force : Con --replace, no pide confirmación}';
     protected $description = 'Import líderes from DIRECTORIOS MUNICIPALES CD Excel';
 
     public function handle(): int
     {
-        $file = 'C:\\Users\\Marly Rangel\\Downloads\\Panel Electoral\\DIRECTORIOS MUNICIPALES CD (1).xlsx';
+        $file = $this->argument('file') ?: 'C:\\Users\\Marly Rangel\\Downloads\\Panel Electoral\\DIRECTORIOS MUNICIPALES CD (1).xlsx';
 
         if (!file_exists($file)) {
             $this->error("File not found: {$file}");
             return 1;
         }
 
-        // Clear existing
-        DB::table('lideres')->truncate();
+        if (! $this->resolveCampaign()) {
+            return 1;
+        }
+
+        $existing = $this->lideres()->count();
+        if ($existing > 0 && ! $this->option('replace')) {
+            $this->error("La campaña ya tiene {$existing} líderes. Usa --replace para reemplazarlos o import:directorio-cd para una carga incremental.");
+
+            return 1;
+        }
+        if ($existing > 0 && ! $this->option('force')
+            && ! $this->confirm("Se borrarán los {$existing} líderes de esta campaña (y solo de esta). ¿Continuar?")) {
+            $this->warn('Cancelado: no se borró ni importó nada.');
+
+            return 1;
+        }
+
+        return DB::transaction(fn () => $this->import($file));
+    }
+
+    private function import(string $file): int
+    {
+        $deleted = $this->lideres()->delete();
+        if ($deleted) {
+            $this->warn("Borrados {$deleted} líderes de la campaña.");
+        }
 
         $reader = IOFactory::createReaderForFile($file);
         $reader->setReadDataOnly(true);
@@ -62,6 +95,7 @@ class ImportLideres extends Command
 
                 DB::table('lideres')->insert([
                     'id' => Str::uuid(),
+                    'campaign_id' => $this->campaignId,
                     'nombre' => Str::title(Str::lower($nombre)),
                     'provincia' => $provincia ?: null,
                     'municipio' => Str::title(Str::lower($municipio)),
@@ -100,6 +134,7 @@ class ImportLideres extends Command
 
                 DB::table('lideres')->insert([
                     'id' => Str::uuid(),
+                    'campaign_id' => $this->campaignId,
                     'nombre' => Str::title(Str::lower($nombre)),
                     'provincia' => $provincia ?: null,
                     'municipio' => Str::title(Str::lower($municipio)),

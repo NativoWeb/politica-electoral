@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Actions\Votantes\UpdateVotante;
+use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Agent\AgentIdentityService;
@@ -12,12 +13,15 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // The base migrations need PostgreSQL, so the tables touched here are built on SQLite;
 // the agent tables (users WhatsApp columns, tokens, lider_seguimientos) come from their real migrations.
 class AgentWriteApiTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private const SECRET = 'test-agent-secret-0123456789abcdef';
 
     private string $munA;
@@ -38,6 +42,7 @@ class AgentWriteApiTest extends TestCase
         $this->withoutVite();
         config(['agent.hmac_secret' => self::SECRET]);
         $this->createSchema();
+        $this->addCampaignColumns();
 
         $provincia = $this->geo('province', 'Soto');
         $this->munA = $this->geo('municipality', 'Girón', $provincia);
@@ -854,5 +859,28 @@ class AgentWriteApiTest extends TestCase
             $this->assertSame('[omitido]', $meta['militante']);
         }
         $this->assertEqualsCanonicalizing(['Militante Agente', 'Ana Territorio A'], array_column($metas, 'nombre'));
+    }
+
+    // The agent acts as its linked user: a subcampaign's user cannot see the parent campaign's lideres.
+    public function test_agent_applies_the_campaign_isolation_of_its_user(): void
+    {
+        $campX = (string) Str::uuid();
+        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID]);
+        $userX = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573003330000', null, ['view.votantes', 'write.data']);
+        $userX->forceFill(['campaign_id' => $campX])->save();
+        $token = $this->tokenFor($userX);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['telefono' => '999'], $token)->assertNotFound();
+        $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/desactivar", null, $token)->assertNotFound();
+        $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/contactos", ['tipo' => 'celular', 'valor' => '1'], $token)->assertNotFound();
+        $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/nexos", ['nombre' => 'Primo'], $token)->assertNotFound();
+        $this->agent('GET', "/api/agent/v1/votantes/{$this->liderA}/seguimientos", null, $token)->assertNotFound();
+
+        $created = $this->agent('POST', '/api/agent/v1/votantes', ['nombre' => 'Ana en X', 'municipio_id' => $this->munA, 'cedula' => '111'], $token)
+            ->assertCreated();
+        $this->assertDatabaseHas('lideres', ['id' => $created->json('data.id'), 'campaign_id' => $campX]);
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'telefono' => '300111', 'is_active' => true]);
+        $this->assertSame(0, DB::table('lider_contactos')->count());
+        $this->assertSame(0, DB::table('nexos_familiares')->count());
     }
 }

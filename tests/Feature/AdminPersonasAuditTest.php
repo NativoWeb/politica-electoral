@@ -8,11 +8,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
 // Electoral persons edited from /admin/personas: birth and document dates and contact values never reach audit_logs in full.
 class AdminPersonasAuditTest extends TestCase
 {
+    use WithCampaignColumns;
+
     private User $admin;
 
     protected function setUp(): void
@@ -79,6 +82,7 @@ class AdminPersonasAuditTest extends TestCase
             $t->timestamp('created_at')->useCurrent();
         });
         (require database_path('migrations/2026_10_19_000001_add_whatsapp_link_to_users.php'))->up();
+        $this->addCampaignColumns();
 
         $role = Role::create(['code' => 'R02_ADMIN_FUNCIONAL', 'name' => 'Admin', 'level' => 5]);
         $this->admin = User::create([

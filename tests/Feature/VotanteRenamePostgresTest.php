@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Agent\AgentIdentityService;
@@ -49,6 +50,7 @@ class VotanteRenamePostgresTest extends TestCase
         $liderId = (string) Str::uuid();
         $cedula = '99'.random_int(10000000, 99999999);
         DB::table('lideres')->insert([
+            'campaign_id' => Campaign::DEFAULT_ID,
             'id' => $liderId, 'nombre' => $candidate->full_name, 'cedula' => $cedula, 'cargo' => 'Lider',
             'municipio' => DB::table('geographic_units')->where('id', $candidate->geo_id)->value('canonical_name'),
             'geographic_unit_id' => $candidate->geo_id, 'created_at' => now(), 'updated_at' => now(),

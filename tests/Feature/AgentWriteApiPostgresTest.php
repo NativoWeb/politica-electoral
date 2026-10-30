@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Agent\AgentIdentityService;
@@ -42,6 +43,7 @@ class AgentWriteApiPostgresTest extends TestCase
 
         $this->lider = (string) Str::uuid();
         DB::table('lideres')->insert([
+            'campaign_id' => Campaign::DEFAULT_ID,
             'id' => $this->lider, 'nombre' => 'Lider PG Agente', 'municipio' => 'X', 'cargo' => '',
             'geographic_unit_id' => $this->geo, 'created_at' => now(), 'updated_at' => now(),
         ]);

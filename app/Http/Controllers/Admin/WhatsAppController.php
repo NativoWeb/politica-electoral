@@ -1021,7 +1021,9 @@ class WhatsAppController extends Controller
                 ];
             });
 
+        // Called by n8n without a user, so the campaign scope of Lider does not apply: only campaigns with WhatsApp.
         $lideres = Lider::query()
+            ->whereIn('lideres.campaign_id', $this->whatsappCampaignIds())
             ->whereNotNull('fecha_nacimiento')
             ->whereMonth('fecha_nacimiento', $month)
             ->whereDay('fecha_nacimiento', $day)
@@ -1252,6 +1254,7 @@ class WhatsAppController extends Controller
             ->pluck('birth_date', 'id');
 
         $leaderBirthDates = Lider::query()
+            ->whereIn('lideres.campaign_id', $this->whatsappCampaignIds())
             ->whereIn('id', $personIds)
             ->pluck('fecha_nacimiento', 'id');
 
@@ -1296,6 +1299,12 @@ class WhatsAppController extends Controller
             ],
             'recipients' => $recipients,
         ]);
+    }
+
+    // Campaigns allowed to send WhatsApp messages to their lideres.
+    private function whatsappCampaignIds()
+    {
+        return DB::table('campaigns')->where('whatsapp_enabled', true)->select('id');
     }
 
     /**

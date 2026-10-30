@@ -28,7 +28,7 @@ class LiderController extends Controller
         abort_if(!$municipio, 404);
         $this->authorizeGeo($municipio->id);
 
-        $lideres = DB::table('lideres')
+        $lideres = $this->visibleLideres()
             ->where('geographic_unit_id', $munId)
             ->orderByRaw("CASE WHEN cargo = 'CONCEJAL CD' THEN 1 WHEN cargo = 'COORDINADOR MUNICIPAL' THEN 2 WHEN cargo = 'MIEMBRO DIRECTORIO' THEN 3 WHEN cargo = 'REPRESENTANTE JOVENES' THEN 4 WHEN cargo = 'REPRESENTANTE RESERVA' THEN 5 WHEN cargo = 'VEEDOR' THEN 6 ELSE 7 END")
             ->orderBy('nombre')
@@ -44,7 +44,7 @@ class LiderController extends Controller
             ->toArray();
 
         // Stats por cargo
-        $statsByCargo = DB::table('lideres')
+        $statsByCargo = $this->visibleLideres()
             ->where('geographic_unit_id', $munId)
             ->select('cargo', DB::raw('COUNT(*) as total'))
             ->groupBy('cargo')
@@ -54,8 +54,8 @@ class LiderController extends Controller
             ->toArray();
 
         // Stats globales
-        $totalLideres = $this->scopeToTerritory(DB::table('lideres'))->count();
-        $totalMunicipios = $this->scopeToTerritory(DB::table('lideres'))->distinct('geographic_unit_id')->count('geographic_unit_id');
+        $totalLideres = $this->scopeToTerritory($this->visibleLideres())->count();
+        $totalMunicipios = $this->scopeToTerritory($this->visibleLideres())->distinct('geographic_unit_id')->count('geographic_unit_id');
 
         $allMunicipios = DB::table('geographic_units as g')
             ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
