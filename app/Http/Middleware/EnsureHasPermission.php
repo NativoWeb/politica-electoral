@@ -8,11 +8,13 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureHasPermission
 {
+    // "permission:view.mapa|view.votantes" lets in whoever has any of them (endpoints shared by both screens).
     public function handle(Request $request, Closure $next, string $permission): Response
     {
         $user = $request->user();
+        $allowed = $user && collect(explode('|', $permission))->contains(fn ($p) => $user->hasPermission(trim($p)));
 
-        if (! $user || ! $user->hasPermission($permission)) {
+        if (! $allowed) {
             // API calls and writes get a 403. A page visit (also an Inertia one, e.g. after login to a
             // url.intended the user may not open) goes home, which picks a view the user does have.
             if ($request->wantsJson() || ! $request->isMethod('GET')) {

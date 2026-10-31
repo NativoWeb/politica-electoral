@@ -11,6 +11,7 @@ use App\Models\Lider;
 use App\Models\LiderContacto;
 use App\Models\LiderInfoPolitica;
 use App\Services\CachedQueries;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -25,7 +26,8 @@ class VotanteController extends Controller
         return str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $value);
     }
 
-    public function index(Request $request)
+    // The Votantes listing with the screen's filters and scope, unpaginated: the screen and its export share it.
+    public function listing(Request $request): Builder
     {
         $referidosCount = $this->scopeToTerritory(DB::table('lideres as r'), 'r.geographic_unit_id')
             ->selectRaw('count(*)')
@@ -47,7 +49,6 @@ class VotanteController extends Controller
         }
 
         // Territory scope restriction
-        $user = $request->user();
         $this->scopeToTerritory($query, 'lideres.geographic_unit_id');
 
         $campana = $this->campaign()->filterId($request->input('campana'));
@@ -88,7 +89,15 @@ class VotanteController extends Controller
             $query->where('militante', filter_var($request->input('militante'), FILTER_VALIDATE_BOOLEAN));
         }
 
-        $paginated = $query->orderBy('nombre')->paginate(20)->withQueryString();
+        return $query;
+    }
+
+    public function index(Request $request)
+    {
+        $estado = $request->input('estado', 'activos');
+        $campana = $this->campaign()->filterId($request->input('campana'));
+        $user = $request->user();
+        $paginated = $this->listing($request)->orderBy('nombre')->paginate(20)->withQueryString();
 
         // Counters also respect territory scope and estado filter
         $counterBase = Lider::query();

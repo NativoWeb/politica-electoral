@@ -74,7 +74,16 @@ describe('swSession', () => {
 
         expect(worker.postMessage.mock.calls[0][0].precache).toEqual(['/mapa-politico']);
         expect(precacheUrlsFor({ permissions: ['*'] })).toEqual(PRECACHE_URLS);
-        expect(precacheUrlsFor({ permissions: null })).toEqual(['/mapa-politico']);
+        expect(precacheUrlsFor({ permissions: null })).toEqual([]);
+    });
+
+    it('no pide precargar /mapa-politico a quien solo tiene view.votantes', async () => {
+        const worker = installWorker();
+
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['view.votantes', 'write.data'] });
+
+        expect(worker.postMessage.mock.calls[0][0].precache).toEqual([]);
+        expect(precacheUrlsFor({ permissions: ['view.gobernador'] })).toEqual(['/gobernador']);
     });
 
     it('al entrar otro usuario borra descargas y oculta (no adopta) los cambios ajenos', async () => {

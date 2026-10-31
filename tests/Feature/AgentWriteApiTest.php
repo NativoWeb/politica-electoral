@@ -350,7 +350,7 @@ class AgentWriteApiTest extends TestCase
         ]);
         $this->assertDatabaseHas('audit_logs', [
             'user_id' => $this->campo->id, 'entity_type' => 'votante', 'correlation_id' => $correlation,
-            'action' => 'POST agent.votantes.store',
+            'action' => 'POST api.agent.votantes.store',
         ]);
 
         $this->app['auth']->forgetGuards();
@@ -555,7 +555,7 @@ class AgentWriteApiTest extends TestCase
         $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'is_active' => false]);
         $this->assertDatabaseHas('audit_logs', [
             'user_id' => $this->campo->id, 'entity_id' => $this->liderA, 'correlation_id' => $correlation,
-            'action' => 'POST agent.votantes.desactivar',
+            'action' => 'POST api.agent.votantes.desactivar',
         ]);
     }
 
@@ -684,7 +684,7 @@ class AgentWriteApiTest extends TestCase
         $logs = DB::table('audit_logs')->where('user_id', $this->campo->id)->get()
             ->keyBy('action')->map(fn ($l) => json_decode($l->metadata, true));
 
-        $store = $logs['POST agent.votantes.store'];
+        $store = $logs['POST api.agent.votantes.store'];
         $this->assertSame('Pedro Auditado', $store['nombre']);
         $this->assertSame('5432', $store['cedula_last4']);
         $this->assertSame('4567', $store['telefono_last4']);
@@ -697,11 +697,11 @@ class AgentWriteApiTest extends TestCase
         $this->assertArrayNotHasKey('telefono', $store);
 
         $this->assertSame(['telefono_last4' => '4321', 'email' => 'o***@mail.com', 'observacion' => '[omitido]', 'verificado' => true],
-            $logs['PATCH agent.votantes.update']);
-        $this->assertSame(['tipo' => 'celular', 'valor' => '[omitido]'], $logs['POST agent.votantes.contactos.store']);
+            $logs['PATCH api.agent.votantes.update']);
+        $this->assertSame(['tipo' => 'celular', 'valor' => '[omitido]'], $logs['POST api.agent.votantes.contactos.store']);
         $this->assertSame(['nombre' => 'Hermano', 'cedula_last4' => '1234', 'telefono_last4' => '3322', 'edad' => '[omitido]',
-            'gustos' => '[omitido]', 'observaciones' => '[omitido]'], $logs['POST agent.votantes.nexo.store']);
-        $this->assertSame('[omitido]', $logs['POST agent.votantes.seguimientos.store']['nota']);
+            'gustos' => '[omitido]', 'observaciones' => '[omitido]'], $logs['POST api.agent.votantes.nexo.store']);
+        $this->assertSame('[omitido]', $logs['POST api.agent.votantes.seguimientos.store']['nota']);
     }
 
     public function test_web_votante_update_masks_personal_data_including_nested_lists(): void
@@ -752,7 +752,7 @@ class AgentWriteApiTest extends TestCase
             ->assertOk();
         $this->assertDatabaseHas('lideres', ['id' => $this->liderB, 'nombre' => 'Beto Renombrado']);
 
-        $this->assertDatabaseHas('audit_logs', ['user_id' => $r02->id, 'entity_id' => $this->liderA, 'action' => 'PATCH agent.votantes.update']);
+        $this->assertDatabaseHas('audit_logs', ['user_id' => $r02->id, 'entity_id' => $this->liderA, 'action' => 'PATCH api.agent.votantes.update']);
     }
 
     public function test_rename_through_the_agent_is_validated_and_scoped(): void

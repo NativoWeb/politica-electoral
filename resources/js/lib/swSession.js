@@ -12,8 +12,8 @@ import {
 import { userKey } from './userKey';
 
 export const PRECACHE_URLS = ['/mapa-politico', '/gobernador'];
-// A page behind a permission the user lacks only answers 403, so it is not requested.
-const PRECACHE_PERMISSIONS = { '/gobernador': 'view.gobernador' };
+// A page behind a permission the user lacks only redirects home, so it is not requested.
+const PRECACHE_PERMISSIONS = { '/mapa-politico': 'view.mapa', '/gobernador': 'view.gobernador' };
 const LAST_USER_KEY = 'electoral:offline-user';
 // Set before every logout attempt and removed by the first page without a session. If the server
 // never got the logout (no network), the next online page of that same user finishes it.

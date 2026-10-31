@@ -4,6 +4,7 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
 import { OfflineIndicator } from '@/Components/OfflineManager';
 import { logout } from '@/lib/logout';
+import { canExportFrom } from '@/lib/exportPermission';
 
 const TYPE_LABELS = { persona: 'Persona', municipio: 'Municipio', partido: 'Partido' };
 const TYPE_COLORS = {
@@ -182,6 +183,7 @@ function ExportButtons({ url }) {
         else if (path.startsWith('/camara')) { source = 'camara'; title = 'Camara'; }
         else if (path.startsWith('/gobernador')) { source = 'gobernador'; title = 'Gobernador'; }
         else if (path.startsWith('/asamblea')) { source = 'asamblea'; title = 'Asamblea'; }
+        else if (path.startsWith('/votantes')) { source = 'votantes'; title = 'Votantes'; }
         else if (path.startsWith('/mapa-politico')) { source = 'mapa-politico'; title = 'Mapa Politico'; }
 
         // Extract municipio ID from path like /senado/uuid
@@ -363,6 +365,7 @@ function MobileExportSheet({ open, onClose, url }) {
         else if (path.startsWith('/camara')) { source = 'camara'; title = 'Camara'; }
         else if (path.startsWith('/gobernador')) { source = 'gobernador'; title = 'Gobernador'; }
         else if (path.startsWith('/asamblea')) { source = 'asamblea'; title = 'Asamblea'; }
+        else if (path.startsWith('/votantes')) { source = 'votantes'; title = 'Votantes'; }
         const pathParts = path.split('/').filter(Boolean);
         if (pathParts.length >= 2 && pathParts[1].length > 10) params.set('municipio', pathParts[1]);
         params.set('source', source);
@@ -421,6 +424,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const perms = auth?.permissions || [];
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
     const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm);
+    const canExport = canExportFrom(url.split('?')[0], hasPerm);
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
@@ -466,7 +470,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     {/* Desktop header actions */}
                     <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
                         <OfflineIndicator />
-                        <ExportButtons url={url} />
+                        {canExport && <ExportButtons url={url} />}
                         <div className="relative group">
                             <button className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1.5 transition-colors">
                                 <div className="w-8 h-8 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-[12px] font-bold flex-shrink-0">
@@ -622,6 +626,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     })}
 
                     {/* Exportar Excel/PDF */}
+                    {canExport && (
                     <button
                         onClick={() => setExportSheetOpen(true)}
                         className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
@@ -631,6 +636,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         </svg>
                         <span className="text-[12px] font-bold leading-tight">Exportar</span>
                     </button>
+                    )}
                 </div>
             </nav>
 

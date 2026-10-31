@@ -249,6 +249,7 @@ class CampaignIsolationTest extends TestCase
     {
         $user = User::create([
             'name' => "Usuario {$key}", 'email' => "{$key}@test.local", 'password' => 'secret123', 'role_id' => $roleId,
+            'permissions' => ['view.mapa', 'view.votantes', 'write.data'],
         ]);
         // campaign_id is never mass-assignable.
         $user->forceFill(['campaign_id' => $campaignId])->save();
@@ -587,6 +588,42 @@ class CampaignIsolationTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->has('votantes.data', 1)
                 ->where('votantes.data.0.id', $this->liderB));
+    }
+
+    public function test_votantes_export_follows_campaign_visibility_and_the_campaign_filter(): void
+    {
+        $names = function (User $user, string $query = '') {
+            Excel::fake();
+            $this->actingAs($user)->get("/exportar/excel?source=votantes&title=Votantes{$query}")->assertOk();
+            $exported = null;
+            Excel::assertDownloaded('Votantes.xlsx', function (GenericExport $export) use (&$exported) {
+                $exported = $export->array();
+
+                return true;
+            });
+
+            return array_column($exported, 0);
+        };
+
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X'], $names($this->userCd));
+        $this->assertSame(['Beto Campaña X'], $names($this->userCd, "&campana={$this->campX}"));
+        // Not visible: ignored, never a way into another campaign.
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X'], $names($this->userCd, "&campana={$this->campY}"));
+        $this->assertSame(['Beto Campaña X'], $names($this->userX, '&campana='.Campaign::DEFAULT_ID));
+        $this->assertSame(['Ceci Campaña Y'], $names($this->userY));
+
+        $captured = null;
+        $pdf = Mockery::mock(\Barryvdh\DomPDF\PDF::class);
+        $pdf->shouldReceive('setPaper')->andReturnSelf();
+        $pdf->shouldReceive('setOption')->andReturnSelf();
+        $pdf->shouldReceive('download')->andReturn(response('pdf'));
+        Pdf::shouldReceive('loadView')->andReturnUsing(function ($view, $data) use (&$captured, $pdf) {
+            $captured = $data['data'];
+
+            return $pdf;
+        });
+        $this->actingAs($this->userX)->get('/exportar/pdf?source=votantes')->assertOk();
+        $this->assertSame(['Beto Campaña X'], array_column($captured, 'nombre'));
     }
 
     public function test_a_leftover_campaign_filter_is_ignored_with_a_single_visible_campaign(): void

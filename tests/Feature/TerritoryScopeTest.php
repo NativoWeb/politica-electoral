@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exports\GenericExport;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
+use Maatwebsite\Excel\Facades\Excel;
 use Tests\Concerns\WithCampaignColumns;
 use Tests\TestCase;
 
@@ -187,6 +189,8 @@ class TerritoryScopeTest extends TestCase
         $this->campo = User::create([
             'name' => 'Campo A', 'email' => 'campo@test.local', 'password' => 'secret123',
             'role_id' => $campoRole->id, 'territory_scope' => [$this->munA],
+            // The map and Votantes need their view permission on the server.
+            'permissions' => ['view.mapa', 'view.votantes', 'write.data'],
         ]);
         $this->admin = User::create([
             'name' => 'Admin', 'email' => 'admin@test.local', 'password' => 'secret123',
@@ -336,6 +340,27 @@ class TerritoryScopeTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->has('votantes.data', 2)
                 ->where('counters.total', 2));
+    }
+
+    public function test_votantes_export_only_contains_the_users_territory(): void
+    {
+        $names = function (User $user, string $query = '') {
+            Excel::fake();
+            $this->actingAs($user)->get("/exportar/excel?source=votantes&title=Votantes{$query}")->assertOk();
+            $exported = null;
+            Excel::assertDownloaded('Votantes.xlsx', function (GenericExport $export) use (&$exported) {
+                $exported = $export->array();
+
+                return true;
+            });
+
+            return array_column($exported, 0);
+        };
+
+        $this->assertSame(['Ana Territorio A'], $names($this->campo));
+        // Asking for a municipio outside the scope by name returns nothing, not its votantes.
+        $this->assertSame([], $names($this->campo, '&municipio=Lebrija'));
+        $this->assertSame(['Ana Territorio A', 'Beto Territorio B'], $names($this->admin));
     }
 
     public function test_contact_and_nexo_writes_on_lider_outside_territory_are_forbidden(): void

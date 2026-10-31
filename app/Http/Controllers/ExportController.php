@@ -21,7 +21,7 @@ class ExportController extends Controller
     {
         $columns = 'nombre,municipio,tipo,cargo,partido,telefono,votos';
 
-        return $request->input('source', 'mapa-politico') === 'mapa-politico' ? $columns.',observacion' : $columns;
+        return in_array($request->input('source', 'mapa-politico'), ['mapa-politico', 'votantes'], true) ? $columns.',observacion' : $columns;
     }
 
     public function excel(Request $request)
@@ -41,11 +41,14 @@ class ExportController extends Controller
         ini_set('memory_limit', '256M');
         set_time_limit(120);
 
-        $data = $this->getData($request);
+        // Votantes reads one row past the PDF cap instead of the whole listing, and counts the total apart.
+        $data = $this->getData($request, self::PDF_MAX_ROWS + 1);
         $title = $request->input('title', 'Exportacion');
         $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
 
-        $totalCount = count($data);
+        $totalCount = $request->input('source') === 'votantes' && count($data) > self::PDF_MAX_ROWS
+            ? app(VotanteController::class)->listing($request)->count()
+            : count($data);
         $truncated = false;
         if ($totalCount > self::PDF_MAX_ROWS) {
             $data = array_slice($data, 0, self::PDF_MAX_ROWS);
@@ -66,9 +69,17 @@ class ExportController extends Controller
         return $pdf->download(str_replace(' ', '_', $title) . '.pdf');
     }
 
-    private function getData(Request $request): array
+    private function getData(Request $request, ?int $votantesLimit = null): array
     {
         $source = $request->input('source', 'mapa-politico');
+
+        // Votantes filters municipio by name and its listing is already scoped to the user's territory.
+        if ($source === 'votantes') {
+            abort_unless($request->user()->hasPermission('view.votantes'), 403);
+
+            return $this->getVotantesData($request, $votantesLimit);
+        }
+
         $munId = $request->input('municipio');
         abort_if($munId !== null && ! is_string($munId), 422);
         if ($munId) {
@@ -76,6 +87,8 @@ class ExportController extends Controller
         }
 
         if ($source === 'mapa-politico') {
+            abort_unless($request->user()->hasPermission('view.mapa'), 403);
+
             // The listing's rows for the same filters (municipio, campaign, tipos...), already unified, without its display caps.
             $rows = app(MapaPoliticoController::class)->rows($request, forExport: true)['data'];
 
@@ -128,6 +141,26 @@ class ExportController extends Controller
 
             return $r;
         }, $data);
+    }
+
+    // Only the exported columns: select() drops the listing's referidos_count subquery.
+    private function getVotantesData(Request $request, ?int $limit = null): array
+    {
+        return app(VotanteController::class)->listing($request)
+            ->select(['lideres.nombre', 'lideres.municipio', 'lideres.cargo', 'lideres.partido', 'lideres.telefono', 'lideres.votos', 'lideres.observacion'])
+            ->orderBy('lideres.nombre')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get()
+            ->map(fn ($l) => [
+                'nombre' => $l->nombre,
+                'municipio' => $l->municipio,
+                'tipo' => 'Votante',
+                'cargo' => $l->cargo,
+                'partido' => $l->partido,
+                'telefono' => $l->telefono,
+                'votos' => $l->votos,
+                'observacion' => $l->observacion,
+            ])->all();
     }
 
     private function getCorporacionData(string $corpName, ?string $munId): array

@@ -54,8 +54,8 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'])->name('search');
 Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
 
-// Offline API (auth required)
-Route::middleware(['auth', 'password.changed', 'audit'])->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
+// Offline API: it packs a municipio's Mapa Politico data and only the map downloads it
+Route::middleware(['auth', 'password.changed', 'audit', 'permission:view.mapa'])->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
 
 // Protected routes
 Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
@@ -74,45 +74,62 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/asamblea', [LegislativoController::class, 'asamblea'])->name('asamblea');
     Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio');
     Route::get('/consultas', [LegislativoController::class, 'consultas'])->name('consultas');
-    Route::get('/lideres', [LiderController::class, 'index'])->name('lideres');
-    Route::get('/lideres/{id}', [LiderController::class, 'show'])->name('lideres.show');
-    Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
-    Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona');
-    Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados');
+    // Lideres are shown by the map and by Votantes: either view lets them in, nothing else does.
+    Route::middleware('permission:view.mapa|view.votantes')->group(function () {
+        Route::get('/lideres', [LiderController::class, 'index'])->name('lideres');
+        Route::get('/lideres/{id}', [LiderController::class, 'show'])->name('lideres.show');
 
-    // Búsqueda de líderes para referidos
-    Route::get('/mapa-politico/search-lideres', [MapaPoliticoController::class, 'searchLideres'])->name('mapa-politico.search-lideres');
+        // Búsqueda de líderes para referidos (persona panel of the map and VotanteDetail)
+        Route::get('/mapa-politico/search-lideres', [MapaPoliticoController::class, 'searchLideres'])->name('mapa-politico.search-lideres');
+    });
+
+    Route::middleware('permission:view.mapa')->group(function () {
+        Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
+        Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona');
+        Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados');
+    });
 
     // Votantes
-    Route::get('/votantes', [VotanteController::class, 'index'])->name('votantes.index');
-    Route::get('/votantes/{id}', [VotanteController::class, 'show'])->name('votantes.show');
-    Route::get('/votantes/{id}/referidos', [VotanteController::class, 'referidos'])->name('votantes.referidos');
+    Route::middleware('permission:view.votantes')->group(function () {
+        Route::get('/votantes', [VotanteController::class, 'index'])->name('votantes.index');
+        Route::get('/votantes/{id}', [VotanteController::class, 'show'])->name('votantes.show');
+        Route::get('/votantes/{id}/referidos', [VotanteController::class, 'referidos'])->name('votantes.referidos');
+    });
 
     // Write routes — require can.write middleware (#4 RBAC)
     Route::middleware('can.write')->group(function () {
-        Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store');
-        Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update');
-        Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store');
-        Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
-        Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
-        Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
-        Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle');
-        Route::post('/mapa-politico/persona/{id}/unificar', [MapaPoliticoController::class, 'mergeLider'])->name('mapa-politico.persona.merge');
-        Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add');
-        Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove');
-        Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store');
-        Route::delete('/mapa-politico/persona/{id}/municipios-influencia/{influenciaId}', [MapaPoliticoController::class, 'destroyMunicipioInfluencia'])->name('mapa-politico.influencia.destroy');
+        Route::middleware('permission:view.mapa')->group(function () {
+            Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store');
+            Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update');
+            Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store');
+            Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
+            Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
+            Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
+            Route::post('/mapa-politico/persona/{id}/unificar', [MapaPoliticoController::class, 'mergeLider'])->name('mapa-politico.persona.merge');
+            Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store');
+            Route::delete('/mapa-politico/persona/{id}/municipios-influencia/{influenciaId}', [MapaPoliticoController::class, 'destroyMunicipioInfluencia'])->name('mapa-politico.influencia.destroy');
+        });
 
-        // Votantes write
-        Route::post('/votantes', [VotanteController::class, 'store'])->name('votantes.store');
-        Route::put('/votantes/{id}', [VotanteController::class, 'update'])->name('votantes.update');
-        Route::delete('/votantes/{id}', [VotanteController::class, 'destroy'])->name('votantes.destroy');
-        Route::post('/votantes/{id}/contactos', [VotanteController::class, 'storeContacto'])->name('votantes.contactos.store');
-        Route::put('/votantes/contactos/{id}', [VotanteController::class, 'updateContacto'])->name('votantes.contactos.update');
-        Route::delete('/votantes/contactos/{id}', [VotanteController::class, 'destroyContacto'])->name('votantes.contactos.destroy');
-        Route::post('/votantes/{id}/info-politica', [VotanteController::class, 'storeInfoPolitica'])->name('votantes.info-politica.store');
-        Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica'])->name('votantes.info-politica.update');
-        Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica'])->name('votantes.info-politica.destroy');
+        // Shared by both screens: VotanteDetail toggles and links referidos through the map's endpoints,
+        // and the map's persona panel edits contactos and info politica through the Votantes ones.
+        Route::middleware('permission:view.mapa|view.votantes')->group(function () {
+            Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle');
+            Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add');
+            Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove');
+
+            Route::post('/votantes/{id}/contactos', [VotanteController::class, 'storeContacto'])->name('votantes.contactos.store');
+            Route::put('/votantes/contactos/{id}', [VotanteController::class, 'updateContacto'])->name('votantes.contactos.update');
+            Route::delete('/votantes/contactos/{id}', [VotanteController::class, 'destroyContacto'])->name('votantes.contactos.destroy');
+            Route::post('/votantes/{id}/info-politica', [VotanteController::class, 'storeInfoPolitica'])->name('votantes.info-politica.store');
+            Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica'])->name('votantes.info-politica.update');
+            Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica'])->name('votantes.info-politica.destroy');
+        });
+
+        Route::middleware('permission:view.votantes')->group(function () {
+            Route::post('/votantes', [VotanteController::class, 'store'])->name('votantes.store');
+            Route::put('/votantes/{id}', [VotanteController::class, 'update'])->name('votantes.update');
+            Route::delete('/votantes/{id}', [VotanteController::class, 'destroy'])->name('votantes.destroy');
+        });
     });
 
     // Change own password
