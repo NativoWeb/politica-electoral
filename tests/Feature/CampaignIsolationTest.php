@@ -487,6 +487,23 @@ class CampaignIsolationTest extends TestCase
                 ->where('barrios', ['Barrio Beto Campaña X']));
     }
 
+    public function test_cargo_options_list_each_cargo_once_whatever_its_spelling(): void
+    {
+        DB::table('cargo_categories')->insert(['id' => (string) Str::uuid(), 'name' => 'Líder']);
+        $this->lider($this->campX, 'Dora Sin Tilde', '444', ['cargo' => 'Lider']);
+        $this->lider($this->campX, 'Eva Minuscula', '555', ['cargo' => 'concejal']);
+
+        $cargos = $this->actingAs($this->userCd)->get('/mapa-politico?tipo=lideres')->assertOk()
+            ->viewData('page')['props']['cargosPorTipo'];
+
+        foreach (['lideres', 'todos'] as $tipo) {
+            $lider = array_values(array_filter($cargos[$tipo], fn ($c) => mb_strtolower(Str::ascii($c)) === 'lider'));
+            $this->assertSame(['Líder'], $lider, $tipo);
+        }
+        $concejal = array_values(array_filter($cargos['todos'], fn ($c) => mb_strtolower($c) === 'concejal'));
+        $this->assertSame(['Concejal'], $concejal);
+    }
+
     public function test_lideres_page_follows_campaign_visibility(): void
     {
         $this->actingAs($this->userX)->get("/lideres/{$this->mun}")->assertOk()

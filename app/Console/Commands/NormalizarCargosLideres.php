@@ -37,7 +37,6 @@ class NormalizarCargosLideres extends Command
         'cconcejo por cd 180v' => 'Concejal',
         'c. alcaldia' => 'Candidato Alcaldía',
         'alcalde' => 'Alcalde Electo',
-        'alcalde electo' => 'Alcalde Electo',
         'presidente jac' => 'JAC',
         'secretario de gobierno' => 'Funcionario',
         'secretario de planeacion' => 'Funcionario',
@@ -47,7 +46,6 @@ class NormalizarCargosLideres extends Command
         'aunap' => 'Funcionario',
         'sena floridablanca' => 'Funcionario',
         'alcaldia barrancabermeja' => 'Funcionario',
-        'exconcejal' => 'Exconcejal',
         'ex alcalde' => 'Exalcalde',
     ];
 
@@ -93,7 +91,10 @@ class NormalizarCargosLideres extends Command
                 $k = $this->key($t);
                 if (isset(self::MAP[$k])) {
                     $new[] = self::MAP[$k];
-                    $legacy[] = $t;
+                    // Only a real rename is legacy; a spelling variant (case, accents, spaces) is not.
+                    if ($k !== $this->key(self::MAP[$k])) {
+                        $legacy[] = $t;
+                    }
                     $barrio ??= self::BARRIO_FROM[$k] ?? null;
                 } elseif (isset($canonical[$k])) {
                     $new[] = $canonical[$k];
@@ -110,18 +111,18 @@ class NormalizarCargosLideres extends Command
             }
 
             $update = ['cargo' => $newCargo, 'updated_at' => now()];
-            if ($legacy) {
-                $note = 'Cargo original: '.implode(', ', $legacy);
+            $note = $legacy ? 'Cargo original: '.implode(', ', $legacy) : '';
+            if ($note !== '') {
                 $update['observacion'] = trim(($l->observacion ? $l->observacion.' | ' : '').$note);
             }
             if ($barrio && blank($l->barrio)) {
                 $update['barrio'] = $barrio;
             }
-            $changes[] = [$l, $update];
+            $changes[] = [$l, $update, $note];
         }
 
-        $this->table(['Nombre', 'Cargo actual', 'Cargo nuevo', 'Barrio nuevo'], array_map(
-            fn ($c) => [Str::limit($c[0]->nombre, 30), Str::limit($c[0]->cargo, 45), $c[1]['cargo'], $c[1]['barrio'] ?? ''],
+        $this->table(['Nombre', 'Cargo actual', 'Cargo nuevo', 'Barrio nuevo', 'Nota añadida'], array_map(
+            fn ($c) => [Str::limit($c[0]->nombre, 30), Str::limit($c[0]->cargo, 45), $c[1]['cargo'], $c[1]['barrio'] ?? '', $c[2]],
             $changes
         ));
         $this->info(count($changes).' líderes a actualizar.');
@@ -162,6 +163,6 @@ class NormalizarCargosLideres extends Command
 
     private function key(string $value): string
     {
-        return mb_strtolower(trim(Str::ascii($value)));
+        return mb_strtolower(trim(preg_replace('/\s+/', ' ', Str::ascii($value))));
     }
 }

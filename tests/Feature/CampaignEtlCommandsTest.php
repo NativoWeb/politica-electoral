@@ -161,4 +161,61 @@ class CampaignEtlCommandsTest extends TestCase
         $backup = collect(DB::select("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'lideres_cargo_backup_%'"))->first()->name;
         $this->assertSame([$x], DB::table($backup)->pluck('id')->all());
     }
+
+    private function catalogoCargos(): void
+    {
+        foreach (['Líder', 'Exconcejal', 'Exalcalde'] as $name) {
+            DB::table('cargo_categories')->insert(['id' => (string) Str::uuid(), 'name' => $name]);
+        }
+    }
+
+    public function test_normalizar_cargos_spelling_variants_add_no_note(): void
+    {
+        $this->catalogoCargos();
+        $id = $this->lider($this->campX, 'Ana X', 'Lider, Exconcejal');
+        $otro = $this->lider($this->campX, 'Beto X', 'alcalde electo');
+        DB::table('lideres')->whereIn('id', [$id, $otro])->update(['observacion' => 'Nota previa']);
+
+        $this->artisan('lideres:normalizar-cargos', ['--campaign' => $this->campX])->assertSuccessful();
+
+        $ana = DB::table('lideres')->where('id', $id)->first();
+        $this->assertSame('Líder, Exconcejal', $ana->cargo);
+        $this->assertSame('Nota previa', $ana->observacion);
+        $beto = DB::table('lideres')->where('id', $otro)->first();
+        $this->assertSame('Alcalde Electo', $beto->cargo);
+        $this->assertSame('Nota previa', $beto->observacion);
+    }
+
+    public function test_normalizar_cargos_notes_a_real_legacy_cargo(): void
+    {
+        $this->catalogoCargos();
+        $id = $this->lider($this->campX, 'Ana X', 'lider centro');
+        DB::table('lideres')->where('id', $id)->update(['observacion' => 'Nota previa']);
+
+        $this->artisan('lideres:normalizar-cargos', ['--campaign' => $this->campX])->assertSuccessful();
+
+        $ana = DB::table('lideres')->where('id', $id)->first();
+        $this->assertSame('Líder', $ana->cargo);
+        $this->assertSame('Nota previa | Cargo original: lider centro', $ana->observacion);
+        $this->assertSame('Centro', $ana->barrio);
+    }
+
+    public function test_normalizar_cargos_dry_run_shows_the_note_and_saves_nothing(): void
+    {
+        $this->catalogoCargos();
+        $legado = $this->lider($this->campX, 'Ana X', 'lider centro');
+        $variante = $this->lider($this->campX, 'Beto X', 'Lider, Exconcejal');
+
+        $this->artisan('lideres:normalizar-cargos', ['--campaign' => $this->campX, '--dry-run' => true])
+            ->expectsTable(['Nombre', 'Cargo actual', 'Cargo nuevo', 'Barrio nuevo', 'Nota añadida'], [
+                ['Ana X', 'lider centro', 'Líder', 'Centro', 'Cargo original: lider centro'],
+                ['Beto X', 'Lider, Exconcejal', 'Líder, Exconcejal', '', ''],
+            ])
+            ->expectsOutputToContain('2 líderes a actualizar')
+            ->assertSuccessful();
+
+        $this->assertSame('lider centro', DB::table('lideres')->where('id', $legado)->value('cargo'));
+        $this->assertNull(DB::table('lideres')->where('id', $legado)->value('observacion'));
+        $this->assertSame('Lider, Exconcejal', DB::table('lideres')->where('id', $variante)->value('cargo'));
+    }
 }

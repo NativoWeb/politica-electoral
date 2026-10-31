@@ -16,6 +16,7 @@ use App\Services\CachedQueries;
 use App\Support\Cedula;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -113,11 +114,9 @@ class MapaPoliticoController extends Controller
     private function cargosPorTipo(): array
     {
         $catalogCargos = CargoCategory::active()->pluck('name')->toArray();
-        // "Lider" and "Líder" are one option: the catalog spelling wins, then the first one seen.
-        $liderCargos = collect($catalogCargos)
+        $liderCargos = self::uniqueCargos(collect($catalogCargos)
             ->merge($this->visibleLideres()->select('cargo')->distinct()->pluck('cargo')
-                ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->filter())
-            ->unique(fn ($c) => mb_strtolower(Str::ascii($c)))
+                ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->filter()))
             ->values()->toArray();
 
         return [
@@ -129,9 +128,15 @@ class MapaPoliticoController extends Controller
             'senado' => ['Senador', 'Candidato Senado'],
             'camara' => ['Representante', 'Candidato Cámara'],
             'asamblea' => ['Diputado', 'Candidato Asamblea'],
-            'todos' => collect(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal', 'Candidato Concejo', 'Senador', 'Candidato Senado', 'Representante', 'Candidato Cámara', 'Diputado', 'Candidato Asamblea'])
-                ->merge($liderCargos)->unique()->sort()->values()->toArray(),
+            'todos' => self::uniqueCargos(collect(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal', 'Candidato Concejo', 'Senador', 'Candidato Senado', 'Representante', 'Candidato Cámara', 'Diputado', 'Candidato Asamblea'])
+                ->merge($liderCargos))->sort()->values()->toArray(),
         ];
+    }
+
+    // "Lider" and "Líder" are one option: the first spelling in the list wins (catalog or fixed list first).
+    private static function uniqueCargos(Collection $cargos): Collection
+    {
+        return $cargos->unique(fn ($c) => mb_strtolower(Str::ascii($c)));
     }
 
     public function index(Request $request)
