@@ -232,14 +232,12 @@ const SIDEBAR_ITEMS = [
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
     { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
-    // On phones the superadmin reaches it from the admin pages, the tab bar has no room for a sixth tab.
-    { name: 'CAMPANAS', href: '/admin/campanas', label: 'Campañas', superadminOnly: true, desktopOnly: true },
 ];
 
 // Platform administration (territory, parties, catalogs, elections...) is only for whoever edits the shared
 // electoral data; any other campaign's admin reaches its users from the same menu entry.
 function menuItems(items, auth, hasPerm) {
-    return items.filter(item => (item.superadminOnly ? !!auth?.isSuperadmin : hasPerm(item.permission))).flatMap(item => {
+    return items.filter(item => hasPerm(item.permission)).flatMap(item => {
         if (item.name !== 'ADMIN' || auth?.canEditElectoral !== false) return [item];
         return hasPerm('manage.users') ? [{ ...item, href: '/admin/usuarios', label: 'Usuarios', icon: 'USUARIOS' }] : [];
     });
@@ -275,11 +273,6 @@ const ICONS_EXTRA = {
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" />
             <circle cx="9" cy="7" r="4" />
             <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" />
-        </svg>
-    ),
-    CAMPANAS: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
-            <path d="M4 21V4m0 0h11l-1.5 4L15 12H4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
     AUDITORIA: (

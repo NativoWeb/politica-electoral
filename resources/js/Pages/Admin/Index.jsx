@@ -1,5 +1,5 @@
 import AppLayout from '@/Layouts/AppLayout';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 
 const STAT_CARDS = [
     {
@@ -103,7 +103,21 @@ const NAV_LINKS = [
     },
 ];
 
+const CAMPAIGNS_LINK = {
+    href: '/admin/campanas',
+    label: 'CAMPAÑAS',
+    description: 'Campañas, subcampañas y su equipo',
+    icon: (
+        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 21V4m0 0h11l-1.5 4L15 12H4" />
+        </svg>
+    ),
+};
+
 export default function AdminIndex({ stats }) {
+    const isSuperadmin = !!usePage().props.auth?.user?.isSuperadmin;
+    const navLinks = isSuperadmin ? [...NAV_LINKS, CAMPAIGNS_LINK] : NAV_LINKS;
+
     return (
         <AppLayout
             title="Administración"
@@ -162,7 +176,7 @@ export default function AdminIndex({ stats }) {
                         Acceso rápido
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {NAV_LINKS.map(({ href, label, description, icon }) => (
+                        {navLinks.map(({ href, label, description, icon }) => (
                             <Link
                                 key={href}
                                 href={href}
