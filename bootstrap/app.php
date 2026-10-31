@@ -2,6 +2,7 @@
 
 use App\Exceptions\BusinessRuleException;
 use App\Http\Middleware\AuditActivity;
+use App\Http\Middleware\EnsureAccountActive;
 use App\Http\Middleware\EnsureAgentCanWrite;
 use App\Http\Middleware\EnsureAgentUserEligible;
 use App\Http\Middleware\EnsureCampaignWhatsApp;
@@ -9,6 +10,7 @@ use App\Http\Middleware\EnsureCanWrite;
 use App\Http\Middleware\EnsureElectoralPlatform;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsurePasswordChanged;
+use App\Http\Middleware\EnsureSuperadmin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\VerifyAgentHmac;
 use App\Support\DatabaseErrorLog;
@@ -36,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: VerifyAgentHmac::class);
         $middleware->web(append: [
             HandleInertiaRequests::class,
+            EnsureAccountActive::class,
         ]);
         $middleware->alias([
             'can.write' => EnsureCanWrite::class,
@@ -43,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'campaign.whatsapp' => EnsureCampaignWhatsApp::class,
             'password.changed' => EnsurePasswordChanged::class,
             'permission' => EnsureHasPermission::class,
+            'superadmin' => EnsureSuperadmin::class,
             'audit' => AuditActivity::class,
             'agent.hmac' => VerifyAgentHmac::class,
             'agent.user' => EnsureAgentUserEligible::class,

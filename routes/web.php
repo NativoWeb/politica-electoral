@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AuditLogController;
+use App\Http\Controllers\Admin\CampaignController;
 use App\Http\Controllers\Admin\CatalogCrudController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
@@ -146,6 +147,15 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     // PDF Reports
     Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona');
     Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio');
+
+    // Campaigns: superadmin only, outside view.admin so any other role gets a 403 and not a redirect
+    Route::prefix('admin/campanas')->name('admin.campaigns.')->middleware('superadmin')->group(function () {
+        Route::get('/', [CampaignController::class, 'index'])->name('index');
+        Route::get('/candidatos', [CampaignController::class, 'candidates'])->name('candidates');
+        Route::post('/', [CampaignController::class, 'store'])->name('store');
+        Route::put('/{id}', [CampaignController::class, 'update'])->name('update')->whereUuid('id');
+        Route::post('/{id}/toggle', [CampaignController::class, 'toggle'])->name('toggle')->whereUuid('id');
+    });
 
     // Admin panel — requires view.admin permission
     Route::prefix('admin')->name('admin.')->middleware('permission:view.admin')->group(function () {

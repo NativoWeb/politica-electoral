@@ -56,7 +56,7 @@ class AgentIdentityController extends Controller
                 }
 
                 $user = User::whereKey($link->user_id)->lockForUpdate()->first();
-                if (! $user || ! $user->is_active) {
+                if (! $user || ! $user->is_active || $user->accessBlockedReason() !== null) {
                     return $this->invalidCode();
                 }
 

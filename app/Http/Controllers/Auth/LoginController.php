@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureAccountActive;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -16,9 +17,11 @@ use Inertia\Inertia;
 
 class LoginController extends Controller
 {
-    public function showLogin()
+    public function showLogin(Request $request)
     {
-        return Inertia::render('Auth/Login');
+        return Inertia::render('Auth/Login', [
+            'blockedReason' => $request->session()->pull(EnsureAccountActive::SESSION_KEY),
+        ]);
     }
 
     public function login(Request $request)
@@ -40,7 +43,15 @@ class LoginController extends Controller
             ]);
         }
 
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
+        // Callbacks run only once the password matched, so the reason is never shown to a wrong password.
+        $blocked = null;
+        $allowed = function (User $user) use (&$blocked) {
+            $blocked = $user->accessBlockedReason();
+
+            return $blocked === null;
+        };
+
+        if (Auth::attemptWhen($credentials, $allowed, $request->boolean('remember'))) {
             RateLimiter::clear($key);
             $request->session()->regenerate();
 
@@ -62,6 +73,10 @@ class LoginController extends Controller
             }
 
             return redirect()->intended('/');
+        }
+
+        if ($blocked !== null) {
+            return back()->withErrors(['email' => $blocked])->onlyInput('email');
         }
 
         RateLimiter::hit($key, 60);

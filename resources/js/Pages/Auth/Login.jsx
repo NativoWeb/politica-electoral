@@ -1,7 +1,8 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
-export default function Login() {
+// blockedReason: why the server closed the session (deactivated account or campaign).
+export default function Login({ blockedReason = null }) {
     const { flash } = usePage().props;
     const { data, setData, post, processing, errors } = useForm({
         email: '',
@@ -76,6 +77,12 @@ export default function Login() {
                             {flash?.success && (
                                 <div className="px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-[13px] font-semibold text-emerald-700">
                                     {flash.success}
+                                </div>
+                            )}
+
+                            {blockedReason && !errors.email && (
+                                <div role="alert" className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-[14px] font-semibold text-red-700">
+                                    {blockedReason}
                                 </div>
                             )}
 

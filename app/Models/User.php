@@ -65,6 +65,22 @@ class User extends Authenticatable
         return (bool) DB::table('campaigns')->where('id', $this->campaignId())->value('whatsapp_enabled');
     }
 
+    // Why the user may not log in or keep using the system, or null when they may. Only an explicit false
+    // blocks, so a model built in memory without the column default is not locked out.
+    public function accessBlockedReason(): ?string
+    {
+        if ($this->is_active === false) {
+            return 'Tu cuenta está desactivada. Comunícate con el administrador.';
+        }
+
+        if ($this->role?->code !== 'R01_SUPERADMIN'
+            && DB::table('campaigns')->where('id', $this->campaignId())->where('is_active', false)->exists()) {
+            return 'Tu campaña está desactivada. Comunícate con el administrador de la plataforma.';
+        }
+
+        return null;
+    }
+
     public function resolvedPermissions(): array
     {
         if ($this->role?->code === 'R01_SUPERADMIN') {

@@ -26,6 +26,8 @@ class AuditActivity
         'whatsapp' => 'whatsapp',
         'cargos' => 'cargo',
         'seguimientos' => 'seguimiento',
+        'campaigns' => 'campana',
+        'campanas' => 'campana',
     ];
 
     public function handle(Request $request, Closure $next): Response

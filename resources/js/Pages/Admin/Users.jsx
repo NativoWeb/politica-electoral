@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState, useMemo, useRef } from 'react';
+import { preselectedCampaign } from '@/lib/campaignAdmin';
 
 function RoleChip({ code, name }) {
     const isSuperadmin = code === 'R01_SUPERADMIN';
@@ -220,15 +221,17 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
 }
 
 export default function Users({ users, roles, municipios, provincias, availablePermissions, filters, campaigns = [] }) {
-    const authUser = usePage().props.auth?.user;
+    const page = usePage();
+    const authUser = page.props.auth?.user;
     const authPerms = authUser?.permissions || [];
     const canAudit = authPerms.includes('*') || authPerms.includes('audit.view');
     const isSuperadmin = !!authUser?.isSuperadmin;
     const ownCampaign = authUser?.campaign;
     const canEditElectoral = authUser?.canEditElectoral !== false;
     const defaultCampaignId = ownCampaign?.id || campaigns[0]?.id || '';
-    const campaignField = isSuperadmin ? { campaign_id: defaultCampaignId } : {};
-    const [showForm, setShowForm] = useState(false);
+    const preselected = isSuperadmin ? preselectedCampaign(page.url, campaigns) : null;
+    const campaignField = isSuperadmin ? { campaign_id: preselected || defaultCampaignId } : {};
+    const [showForm, setShowForm] = useState(!!preselected);
     const [editId, setEditId] = useState(null);
     const [search, setSearch] = useState(filters?.search || '');
     const searchTimeout = useRef(null);
@@ -519,8 +522,23 @@ export default function Users({ users, roles, municipios, provincias, availableP
                 )}
 
                 {/* Admin links */}
-                {(canEditElectoral || canAudit) && (
+                {(canEditElectoral || canAudit || isSuperadmin) && (
                     <h3 className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mt-6 mb-2 px-1">Administracion</h3>
+                )}
+                {isSuperadmin && (
+                    <Link
+                        href="/admin/campanas"
+                        className="flex items-center gap-4 px-5 py-4 bg-white border border-[var(--color-line)] rounded-xl hover:bg-gray-50 active:bg-gray-50 transition-colors"
+                    >
+                        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 21V4m0 0h11l-1.5 4L15 12H4" /></svg>
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-[14px] font-bold text-[var(--color-ink)]">Campañas</p>
+                            <p className="text-[12px] text-[var(--color-ink-faint)]">Crear, editar y desactivar campañas</p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                    </Link>
                 )}
                 {canEditElectoral && (<>
                 <Link

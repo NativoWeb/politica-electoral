@@ -27,6 +27,7 @@ class AgentIdentityService
     {
         return $user !== null
             && $user->is_active
+            && $user->accessBlockedReason() === null
             && ! $user->must_change_password
             && $user->whatsapp_phone !== null
             && $user->whatsapp_verified_at !== null

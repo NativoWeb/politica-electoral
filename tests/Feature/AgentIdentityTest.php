@@ -460,6 +460,31 @@ class AgentIdentityTest extends TestCase
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
     }
 
+    public function test_a_deactivated_campaign_cannot_link_nor_use_the_agent(): void
+    {
+        $campX = (string) Str::uuid();
+        DB::table('campaigns')->insert(['id' => $campX, 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => true]);
+        $this->campo->forceFill(['campaign_id' => $campX])->save();
+        $user = $this->linkedCampo();
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertOk()->json('token');
+
+        DB::table('campaigns')->where('id', $campX)->update(['is_active' => false]);
+
+        $this->whoami()->assertNotFound();
+        $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertNotFound();
+        $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
+        $this->assertSame(0, $user->tokens()->count(), 'agent.user deletes the token of a user whose campaign was deactivated');
+
+        // A code issued while the campaign was active cannot link once it is deactivated.
+        DB::table('campaigns')->where('id', $campX)->update(['is_active' => true]);
+        $user->forceFill(['whatsapp_phone' => null, 'whatsapp_verified_at' => null])->save();
+        $code = $this->generateCode($user);
+        DB::table('campaigns')->where('id', $campX)->update(['is_active' => false]);
+
+        $this->link($code)->assertStatus(422)->assertJson(['success' => false]);
+        $this->assertNull($user->refresh()->whatsapp_phone);
+    }
+
     public function test_me_without_agent_ability_is_403_and_without_token_is_401(): void
     {
         $user = $this->linkedCampo();

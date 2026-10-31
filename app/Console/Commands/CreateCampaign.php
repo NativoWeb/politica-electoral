@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Services\CampaignService;
 use App\Support\CurrentCampaign;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
-// Until there is a UI for it, campaigns are created by a superadmin or ops from the console.
+// Same rules as the Campañas screen (/admin/campanas), for ops working from the console.
 class CreateCampaign extends Command
 {
     protected $signature = 'campaign:create {name : Nombre visible de la campaña}
@@ -17,17 +17,17 @@ class CreateCampaign extends Command
 
     protected $description = 'Create a campaign (or a subcampaign with --parent)';
 
-    public function handle(): int
+    public function handle(CampaignService $campaigns): int
     {
         $name = trim((string) $this->argument('name'));
-        $slug = Str::slug((string) ($this->option('slug') ?: $name));
+        $slug = CampaignService::slug($this->option('slug'), $name);
         if ($name === '' || $slug === '') {
             $this->error('El nombre y el slug no pueden quedar vacíos.');
 
             return self::FAILURE;
         }
 
-        if (DB::table('campaigns')->where('slug', $slug)->exists()) {
+        if ($campaigns->slugTaken($slug)) {
             $this->error("Ya existe una campaña con el slug '{$slug}'.");
 
             return self::FAILURE;
@@ -43,17 +43,12 @@ class CreateCampaign extends Command
             }
         }
 
-        $id = (string) Str::uuid();
-        DB::table('campaigns')->insert([
-            'id' => $id,
+        $id = $campaigns->create([
             'name' => $name,
             'slug' => $slug,
             'parent_id' => $parentId,
             'whatsapp_enabled' => (bool) $this->option('whatsapp'),
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        ])->id;
 
         $parent = $parentId ? DB::table('campaigns')->where('id', $parentId)->value('name') : null;
         $this->info("Campaña creada: {$name} ({$slug}) id={$id}");
