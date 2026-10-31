@@ -494,7 +494,8 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         const groups = {};
         data.forEach(row => {
             // A row may have multiple tipos (e.g. "Alcaldía, Líderes")
-            const tipos = (row.tipo_registro || '').split(',').map(t => t.trim()).filter(Boolean);
+            // A row counts once per section even if a tipo repeats (e.g. rows merged offline)
+            const tipos = new Set((row.tipo_registro || '').split(',').map(t => t.trim()).filter(Boolean));
             tipos.forEach(t => {
                 if (!groups[t]) groups[t] = [];
                 groups[t].push(row);

@@ -612,6 +612,186 @@ class CampaignAdminTest extends TestCase
             ->where('auth.user.canEditElectoral', true));
     }
 
+    // --- Users form: only grantable permissions ---
+
+    private function offeredPermissions(User $actor): array
+    {
+        $keys = [];
+        $this->actingAs($actor)->get('/admin/usuarios')->assertOk()
+            ->assertInertia(function (AssertableInertia $page) use (&$keys) {
+                $props = $page->toArray()['props'];
+                $keys = collect($props['availablePermissions'])->pluck('key')->sort()->values()->all();
+                $this->assertCount(9, $props['permissionLabels']);
+            });
+
+        return $keys;
+    }
+
+    public function test_the_users_form_offers_only_the_permissions_the_actor_can_grant(): void
+    {
+        $sorted = fn (array $perms) => collect($perms)->sort()->values()->all();
+
+        $this->assertSame($sorted(self::CAMPAIGN_ADMIN_PERMS), $this->offeredPermissions($this->adminX));
+        $this->assertSame($sorted(self::ADMIN_PERMS), $this->offeredPermissions($this->adminCd));
+        $this->assertSame($sorted(self::ADMIN_PERMS), $this->offeredPermissions($this->superadmin));
+
+        // Everything offered is accepted; the hidden ones are still refused.
+        $this->actingAs($this->adminX)->post('/admin/usuarios', $this->newUserPayload(['permissions' => self::CAMPAIGN_ADMIN_PERMS]))
+            ->assertRedirect();
+        $this->actingAs($this->adminX)->post('/admin/usuarios', $this->newUserPayload([
+            'email' => 'otro@test.local', 'permissions' => ['view.mapa', 'manage.territory'],
+        ]))->assertForbidden();
+        $this->assertDatabaseMissing('users', ['email' => 'otro@test.local']);
+    }
+
+    public function test_saving_a_user_keeps_the_permissions_the_actor_cannot_see(): void
+    {
+        $cdUser = $this->user('con-partidos', Campaign::DEFAULT_ID, 'R09_CAMPO', ['view.mapa', 'manage.partidos']);
+        $limitedCdAdmin = $this->user('admin-cd-limitado', Campaign::DEFAULT_ID, 'R09_CAMPO', ['view.admin', 'manage.users', 'view.mapa']);
+
+        // The form resends the hidden permission untouched; an actor without it cannot edit that user at all.
+        $this->actingAs($limitedCdAdmin)->put("/admin/usuarios/{$cdUser->id}", [
+            'name' => 'Cambiado', 'email' => 'con-partidos@test.local', 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'manage.partidos'],
+        ])->assertForbidden();
+        $this->assertSame(['view.mapa', 'manage.partidos'], $cdUser->fresh()->permissions);
+
+        // Whoever holds it edits the user and the permission stays.
+        $this->actingAs($this->adminCd)->put("/admin/usuarios/{$cdUser->id}", [
+            'name' => 'Cambiado', 'email' => 'con-partidos@test.local', 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'manage.partidos'],
+        ])->assertRedirect();
+        $this->assertSame('Cambiado', $cdUser->fresh()->name);
+        $this->assertSame(['view.mapa', 'manage.partidos'], $cdUser->fresh()->permissions);
+    }
+
+    public function test_deactivating_the_own_account_is_refused_with_a_message(): void
+    {
+        $this->actingAs($this->adminX)->from('/admin/usuarios')->post("/admin/usuarios/{$this->adminX->id}/toggle")
+            ->assertRedirect('/admin/usuarios')
+            ->assertSessionHasErrors(['toggle' => 'No puedes desactivar tu propia cuenta']);
+        $this->assertTrue($this->adminX->fresh()->is_active);
+    }
+
+    // --- Platform admin screens ---
+
+    private const PLATFORM_SCREENS = ['/admin/territorio', '/admin/partidos', '/admin/importaciones', '/admin/catalogos',
+        '/admin/personas', '/admin/cargos', '/admin/elecciones'];
+
+    private function createPlatformScreenTables(): void
+    {
+        Schema::table('geographic_units', function (Blueprint $t) {
+            $t->string('official_code')->nullable();
+            $t->boolean('is_active')->default(true);
+        });
+        Schema::table('persons', function (Blueprint $t) {
+            foreach (['first_name', 'last_name', 'normalized_name', 'gender', 'data_classification'] as $col) {
+                $t->string($col)->nullable();
+            }
+        });
+        Schema::create('person_aliases', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('person_id');
+        });
+        Schema::create('political_organizations', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->string('canonical_name');
+            foreach (['acronym', 'type', 'status', 'color_hex'] as $col) {
+                $t->string($col)->nullable();
+            }
+            $t->timestamps();
+        });
+        foreach (['offices' => 'type', 'corporations' => 'scope'] as $table => $extra) {
+            Schema::create($table, function (Blueprint $t) use ($extra) {
+                $t->uuid('id')->primary();
+                $t->string('name');
+                $t->string($extra)->nullable();
+            });
+        }
+        Schema::create('source_files', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            foreach (['original_name', 'file_type', 'sha256_hash'] as $col) {
+                $t->string($col)->nullable();
+            }
+            $t->integer('size_bytes')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('cargo_categories', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->string('name');
+            $t->integer('display_order')->default(0);
+            $t->boolean('is_highlighted')->default(false);
+            $t->boolean('is_active')->default(true);
+            $t->timestamps();
+        });
+        Schema::create('electoral_events', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            foreach (['name', 'event_type', 'political_period', 'status'] as $col) {
+                $t->string($col)->nullable();
+            }
+            $t->date('election_date')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('contests', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('electoral_event_id');
+        });
+    }
+
+    public function test_platform_admin_screens_are_forbidden_to_campaigns_that_do_not_edit_electoral_data(): void
+    {
+        $id = (string) Str::uuid();
+        $urls = [...self::PLATFORM_SCREENS, "/admin/personas/{$id}/json", "/admin/elecciones/{$id}/json", "/admin/elecciones/contest/{$id}/json"];
+
+        foreach ([$this->adminX, $this->adminY] as $actor) {
+            foreach ($urls as $url) {
+                $this->actingAs($actor)->get($url)->assertForbidden();
+            }
+        }
+    }
+
+    public function test_platform_admin_screens_stay_open_for_the_cd_and_the_superadmin(): void
+    {
+        $this->createPlatformScreenTables();
+
+        foreach ([$this->adminCd, $this->superadmin] as $actor) {
+            foreach (self::PLATFORM_SCREENS as $url) {
+                $this->actingAs($actor)->get($url)->assertOk();
+            }
+        }
+    }
+
+    public function test_the_admin_home_sends_other_campaigns_to_screens_they_can_open(): void
+    {
+        $this->actingAs($this->adminX)->get('/admin')->assertRedirect('/admin/usuarios');
+
+        $viewer = $this->user('viewer-admin-x', $this->campX, 'R02_ADMIN_FUNCIONAL', ['view.admin', 'view.mapa']);
+        $this->actingAs($viewer)->get('/admin')->assertRedirect('/mapa-politico');
+
+        $this->createPlatformScreenTables();
+        Schema::create('import_jobs', fn (Blueprint $t) => $t->uuid('id')->primary());
+        foreach ([$this->adminCd, $this->superadmin] as $actor) {
+            $this->actingAs($actor)->get('/admin')->assertOk()
+                ->assertInertia(fn (AssertableInertia $page) => $page->component('Admin/Index'));
+        }
+    }
+
+    public function test_the_forbidden_page_is_in_spanish_and_gives_the_reason(): void
+    {
+        $this->actingAs($this->adminX)->get('/admin/territorio')->assertForbidden()
+            ->assertSee('No tienes acceso a esta sección')
+            ->assertSee('Esta sección es solo para el equipo de la plataforma.')
+            ->assertSee('Volver al inicio')
+            ->assertDontSee('Forbidden');
+    }
+
+    public function test_screens_every_campaign_uses_are_not_platform_only(): void
+    {
+        foreach (['/admin/usuarios', '/admin/auditoria', '/api/search?q=a', '/perfil'] as $url) {
+            $this->actingAs($this->adminX)->get($url)->assertOk();
+        }
+    }
+
     // --- Commands ---
 
     public function test_campaign_create_makes_a_subcampaign_and_rejects_duplicates(): void

@@ -40,6 +40,29 @@ class AdminController extends Controller
         return $query;
     }
 
+    private const PERMISSIONS = [
+        ['key' => 'view.gobernador', 'label' => 'Ver Gobernador', 'group' => 'Vistas'],
+        ['key' => 'view.mapa', 'label' => 'Ver Mapa Político', 'group' => 'Vistas'],
+        ['key' => 'view.votantes', 'label' => 'Ver Votantes', 'group' => 'Vistas'],
+        ['key' => 'view.admin', 'label' => 'Ver panel Admin', 'group' => 'Vistas'],
+        ['key' => 'write.data', 'label' => 'Editar datos (líderes, personas)', 'group' => 'Acciones'],
+        ['key' => 'manage.users', 'label' => 'Gestionar usuarios', 'group' => 'Administración'],
+        ['key' => 'manage.territory', 'label' => 'Gestionar territorio', 'group' => 'Administración'],
+        ['key' => 'manage.partidos', 'label' => 'Gestionar partidos', 'group' => 'Administración'],
+        ['key' => 'audit.view', 'label' => 'Ver auditoría', 'group' => 'Administración'],
+    ];
+
+    // The form only offers what the actor may hand out: a superadmin everything, anyone else the permissions they hold.
+    private function grantablePermissions(): array
+    {
+        $held = request()->user()->resolvedPermissions();
+        if ($this->campaign()->isSuperadmin() || in_array('*', $held, true)) {
+            return self::PERMISSIONS;
+        }
+
+        return array_values(array_filter(self::PERMISSIONS, fn ($p) => in_array($p['key'], $held, true)));
+    }
+
     private function assignableRoles()
     {
         $query = Role::where('is_active', true);
@@ -51,8 +74,13 @@ class AdminController extends Controller
         return $query;
     }
 
+    // The admin home links to platform screens; any other campaign lands on its users, or on the map without manage.users.
     public function index()
     {
+        if (! $this->campaign()->canEditElectoral()) {
+            return redirect(request()->user()->hasPermission('manage.users') ? '/admin/usuarios' : '/mapa-politico');
+        }
+
         return Inertia::render('Admin/Index', [
             'stats' => [
                 'users' => $this->managedUsers()->count(),
@@ -133,17 +161,8 @@ class AdminController extends Controller
                 ]),
             'municipios' => $municipios,
             'provincias' => $provincias,
-            'availablePermissions' => [
-                ['key' => 'view.gobernador', 'label' => 'Ver Gobernador', 'group' => 'Vistas'],
-                ['key' => 'view.mapa', 'label' => 'Ver Mapa Político', 'group' => 'Vistas'],
-                ['key' => 'view.votantes', 'label' => 'Ver Votantes', 'group' => 'Vistas'],
-                ['key' => 'view.admin', 'label' => 'Ver panel Admin', 'group' => 'Vistas'],
-                ['key' => 'write.data', 'label' => 'Editar datos (líderes, personas)', 'group' => 'Acciones'],
-                ['key' => 'manage.users', 'label' => 'Gestionar usuarios', 'group' => 'Administración'],
-                ['key' => 'manage.territory', 'label' => 'Gestionar territorio', 'group' => 'Administración'],
-                ['key' => 'manage.partidos', 'label' => 'Gestionar partidos', 'group' => 'Administración'],
-                ['key' => 'audit.view', 'label' => 'Ver auditoría', 'group' => 'Administración'],
-            ],
+            'availablePermissions' => $this->grantablePermissions(),
+            'permissionLabels' => array_column(self::PERMISSIONS, 'label', 'key'),
         ]);
     }
 

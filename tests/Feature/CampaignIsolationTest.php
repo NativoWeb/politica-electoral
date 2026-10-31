@@ -865,8 +865,8 @@ class CampaignIsolationTest extends TestCase
         $this->assertDatabaseHas('political_organizations', ['id' => $party]);
         $this->assertSame('Partido Compartido', DB::table('lideres')->where('id', $this->liderC)->value('partido'));
 
-        // Reads stay open.
-        $this->actingAs($this->userX)->get('/admin/cargos')->assertOk();
+        // The platform's admin screens are closed too: the subcampaign reads that data from the map and voters.
+        $this->actingAs($this->userX)->get('/admin/cargos')->assertForbidden();
 
         $this->actingAs($this->userCd)->put("/admin/personas/{$person}", ['first_name' => 'Renombrada', 'last_name' => 'Por CD'])->assertRedirect();
         $this->actingAs($this->userCd)->delete("/admin/partidos/{$party}/force")->assertRedirect();

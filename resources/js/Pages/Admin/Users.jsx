@@ -2,6 +2,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState, useMemo, useRef } from 'react';
 import { preselectedCampaign } from '@/lib/campaignAdmin';
+import { saveErrorMessage, unshownErrors, withHiddenPermissions } from '@/lib/userAdmin';
 
 function RoleChip({ code, name }) {
     const isSuperadmin = code === 'R01_SUPERADMIN';
@@ -165,7 +166,40 @@ function CampaignField({ isSuperadmin, campaigns, value, onChange, ownCampaign, 
     );
 }
 
+function FormAlert({ messages }) {
+    const list = messages.filter(Boolean);
+    if (list.length === 0) return null;
+    return (
+        <div role="alert" className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[15px] font-semibold text-red-700 space-y-1">
+            {list.map(m => <p key={m}>{m}</p>)}
+        </div>
+    );
+}
+
+function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm, onCancel }) {
+    return (
+        <>
+            <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onCancel} />
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
+                <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message" onKeyDown={e => { if (e.key === 'Escape') onCancel(); }} className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-[380px] overflow-hidden">
+                    <div className="px-6 pt-6 pb-4 text-center">
+                        <h3 id="confirm-title" className="text-[18px] font-extrabold text-[var(--color-ink)]">{title}</h3>
+                        <p id="confirm-message" className="text-[15px] text-[var(--color-ink-soft)] mt-2 leading-relaxed">{message}</p>
+                    </div>
+                    <div className="px-6 pb-6 flex gap-3">
+                        <button type="button" autoFocus onClick={onCancel} className="flex-1 px-4 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl active:bg-gray-100">Cancelar</button>
+                        <button type="button" onClick={onConfirm} className={`flex-1 px-4 py-3 text-white text-[15px] font-bold rounded-xl ${danger ? 'bg-amber-600 active:bg-amber-700' : 'bg-emerald-600 active:bg-emerald-700'}`}>{confirmLabel}</button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}
+
 function PermissionSelector({ selected, availablePermissions, onChange }) {
+    const visibleKeys = useMemo(() => availablePermissions.map(p => p.key), [availablePermissions]);
+    const shown = selected.filter(k => visibleKeys.includes(k));
+    const set = next => onChange(withHiddenPermissions(selected, visibleKeys, next));
     const grouped = useMemo(() => {
         const map = {};
         availablePermissions.forEach(p => {
@@ -176,15 +210,7 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
     }, [availablePermissions]);
 
     function toggle(key) {
-        if (selected.includes(key)) {
-            onChange(selected.filter(k => k !== key));
-        } else {
-            onChange([...selected, key]);
-        }
-    }
-
-    function selectAll() {
-        onChange(availablePermissions.map(p => p.key));
+        set(shown.includes(key) ? shown.filter(k => k !== key) : [...shown, key]);
     }
 
     return (
@@ -192,8 +218,8 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
             <div className="flex items-center justify-between mb-1">
                 <label className="block text-[12px] font-bold text-[var(--color-ink-faint)]">Permisos</label>
                 <div className="flex gap-2">
-                    <button type="button" onClick={selectAll} className="text-[10px] text-blue-500 font-bold hover:text-blue-700">Todos</button>
-                    <button type="button" onClick={() => onChange([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">Ninguno</button>
+                    <button type="button" onClick={() => set(visibleKeys)} className="text-[10px] text-blue-500 font-bold hover:text-blue-700">Todos</button>
+                    <button type="button" onClick={() => set([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">Ninguno</button>
                 </div>
             </div>
             <div className="border border-[var(--color-line)] rounded-lg overflow-hidden">
@@ -220,7 +246,10 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
     );
 }
 
-export default function Users({ users, roles, municipios, provincias, availablePermissions, filters, campaigns = [] }) {
+const CREATE_FIELDS = ['name', 'email', 'campaign_id'];
+const EDIT_FIELDS = ['name', 'email', 'password', 'campaign_id'];
+
+export default function Users({ users, roles, municipios, provincias, availablePermissions, permissionLabels = {}, filters, campaigns = [] }) {
     const page = usePage();
     const authUser = page.props.auth?.user;
     const authPerms = authUser?.permissions || [];
@@ -228,12 +257,19 @@ export default function Users({ users, roles, municipios, provincias, availableP
     const isSuperadmin = !!authUser?.isSuperadmin;
     const ownCampaign = authUser?.campaign;
     const canEditElectoral = authUser?.canEditElectoral !== false;
+    // The server refuses to touch a user holding a permission the actor cannot grant (a superadmin can grant them all).
+    const grantableKeys = useMemo(() => availablePermissions.map(p => p.key), [availablePermissions]);
+    const isLocked = user => !isSuperadmin && (user.permissions || []).some(k => !grantableKeys.includes(k));
     const defaultCampaignId = ownCampaign?.id || campaigns[0]?.id || '';
     const preselected = isSuperadmin ? preselectedCampaign(page.url, campaigns) : null;
     const campaignField = isSuperadmin ? { campaign_id: preselected || defaultCampaignId } : {};
     const [showForm, setShowForm] = useState(!!preselected);
     const [editId, setEditId] = useState(null);
     const [search, setSearch] = useState(filters?.search || '');
+    const [createError, setCreateError] = useState('');
+    const [editError, setEditError] = useState('');
+    const [listError, setListError] = useState('');
+    const [toggleTarget, setToggleTarget] = useState(null);
     const searchTimeout = useRef(null);
 
     function handleSearch(val) {
@@ -256,15 +292,23 @@ export default function Users({ users, roles, municipios, provincias, availableP
     const selectedRoleCode = roles.find(r => r.id === data.role_id)?.code;
     const editRoleCode = roles.find(r => r.id === editForm.data.role_id)?.code;
 
+    const failedSave = setMessage => response => {
+        setMessage(saveErrorMessage(response));
+        return false;
+    };
+
     function handleSubmit(e) {
         e.preventDefault();
+        setCreateError('');
         post('/admin/usuarios', {
             onSuccess: () => { reset(); setShowForm(false); },
+            onHttpException: failedSave(setCreateError),
         });
     }
 
     function startEdit(user) {
         setEditId(user.id);
+        setEditError('');
         editForm.setData({
             name: user.name, email: user.email,
             role_id: roles.find(r => r.name === user.role || (r.code === 'R09_CAMPO' && user.role === 'Usuario de campo'))?.id || '',
@@ -277,18 +321,30 @@ export default function Users({ users, roles, municipios, provincias, availableP
 
     function submitEdit(e) {
         e.preventDefault();
+        setEditError('');
         editForm.put(`/admin/usuarios/${editId}`, {
             onSuccess: () => setEditId(null),
+            onHttpException: failedSave(setEditError),
         });
     }
 
-    function handleToggle(id) {
-        router.post(`/admin/usuarios/${id}/toggle`);
+    const listActionOptions = {
+        preserveScroll: true,
+        onError: errors => setListError(Object.values(errors)[0] || 'No se pudo hacer el cambio.'),
+        onHttpException: failedSave(setListError),
+    };
+
+    function confirmToggle() {
+        const user = toggleTarget;
+        setToggleTarget(null);
+        setListError('');
+        router.post(`/admin/usuarios/${user.id}/toggle`, {}, listActionOptions);
     }
 
     function handleDelete(user) {
         if (!confirm(`¿Eliminar al usuario "${user.name}"? Esta accion no se puede deshacer.`)) return;
-        router.delete(`/admin/usuarios/${user.id}`);
+        setListError('');
+        router.delete(`/admin/usuarios/${user.id}`, listActionOptions);
     }
 
     const inputCls = "w-full px-3 py-3 border border-[var(--color-line)] rounded-lg text-[15px] focus:outline-none focus:border-[var(--color-primary)]";
@@ -322,6 +378,8 @@ export default function Users({ users, roles, municipios, provincias, availableP
                         className="w-full pl-10 pr-4 py-3 border border-[var(--color-line)] rounded-xl text-[14px] focus:outline-none focus:border-[var(--color-primary)]"
                     />
                 </div>
+
+                <FormAlert messages={[listError]} />
 
                 {/* Create form */}
                 {showForm && (
@@ -372,6 +430,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                 onChange={val => setData('territory_scope', val)}
                             />
                         )}
+                        <FormAlert messages={[createError, ...unshownErrors(errors, CREATE_FIELDS)]} />
                         <div className="flex gap-3">
                             <button type="submit" disabled={processing} className="flex-1 px-4 py-3 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-xl disabled:opacity-50">
                                 {processing ? 'Creando...' : 'Crear Usuario'}
@@ -435,6 +494,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                     <input type="password" className={inputCls} value={editForm.data.password} onChange={e => editForm.setData('password', e.target.value)} placeholder="Dejar vacio para mantener" />
                                     {editForm.errors.password && <p className="text-[12px] text-red-500 mt-1">{editForm.errors.password}</p>}
                                 </div>
+                                <FormAlert messages={[editError, ...unshownErrors(editForm.errors, EDIT_FIELDS)]} />
                                 <div className="flex gap-2">
                                     <button type="submit" disabled={editForm.processing} className="flex-1 px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg disabled:opacity-50">Guardar</button>
                                     <button type="button" onClick={() => setEditId(null)} className="px-4 py-2.5 border border-[var(--color-line)] text-[13px] font-bold text-[var(--color-ink-soft)] rounded-lg">Cancelar</button>
@@ -463,7 +523,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                         <div className="flex flex-wrap gap-1 mt-1">
                                             {user.permissions.map(p => (
                                                 <span key={p} className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-[9px] font-bold">
-                                                    {availablePermissions.find(ap => ap.key === p)?.label || p}
+                                                    {permissionLabels[p] || p}
                                                 </span>
                                             ))}
                                         </div>
@@ -471,22 +531,31 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                     {user.roleCode === 'R09_CAMPO' && (
                                         <TerritoryBadges scope={user.territoryScope} municipios={municipios} />
                                     )}
+                                    {isLocked(user) && (
+                                        <p className="text-[13px] text-[var(--color-ink-soft)] mt-2 leading-snug">
+                                            No puedes modificar a este usuario porque tiene permisos que tú no tienes.
+                                        </p>
+                                    )}
                                 </div>
+                                {!isLocked(user) && (
                                 <div className="flex gap-1.5 flex-shrink-0">
                                     <button onClick={() => startEdit(user)} className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center active:bg-blue-100" title="Editar">
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                     </button>
-                                    <button onClick={() => handleToggle(user.id)} className={`w-9 h-9 rounded-lg flex items-center justify-center ${user.isActive ? 'bg-amber-50 text-amber-600 active:bg-amber-100' : 'bg-emerald-50 text-emerald-600 active:bg-emerald-100'}`} title={user.isActive ? 'Desactivar' : 'Activar'}>
+                                    {user.id !== authUser?.id && (
+                                    <button onClick={() => setToggleTarget(user)} className={`w-9 h-9 rounded-lg flex items-center justify-center ${user.isActive ? 'bg-amber-50 text-amber-600 active:bg-amber-100' : 'bg-emerald-50 text-emerald-600 active:bg-emerald-100'}`} title={user.isActive ? 'Desactivar' : 'Activar'} aria-label={`${user.isActive ? 'Desactivar' : 'Activar'} a ${user.name}`}>
                                         {user.isActive ? (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                                         ) : (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                         )}
                                     </button>
+                                    )}
                                     <button onClick={() => handleDelete(user)} className="w-9 h-9 rounded-lg bg-red-50 text-red-500 flex items-center justify-center active:bg-red-100" title="Eliminar">
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -584,6 +653,19 @@ export default function Users({ users, roles, municipios, provincias, availableP
                     </Link>
                 )}
             </div>
+
+            {toggleTarget && (
+                <ConfirmDialog
+                    title={toggleTarget.isActive ? `¿Desactivar a ${toggleTarget.name}?` : `¿Activar a ${toggleTarget.name}?`}
+                    message={toggleTarget.isActive
+                        ? 'No podrá entrar hasta que lo actives de nuevo. No se borra ningún dato.'
+                        : 'Podrá volver a entrar con su correo y su contraseña.'}
+                    confirmLabel={toggleTarget.isActive ? 'Sí, desactivar' : 'Sí, activar'}
+                    danger={toggleTarget.isActive}
+                    onConfirm={confirmToggle}
+                    onCancel={() => setToggleTarget(null)}
+                />
+            )}
         </AppLayout>
     );
 }

@@ -5,14 +5,14 @@ namespace App\Http\Controllers;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\GenericExport;
-use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 
 class ExportController extends Controller
 {
-    use FiltersByCargo, ScopesTerritory;
+    use ScopesTerritory;
 
     private const PDF_MAX_ROWS = 500;
 
@@ -71,20 +71,15 @@ class ExportController extends Controller
         $source = $request->input('source', 'mapa-politico');
         $munId = $request->input('municipio');
         abort_if($munId !== null && ! is_string($munId), 422);
-        $tipo = $request->input('tipo', 'todos');
-        $cargo = $request->input('cargo');
-        $search = $request->input('search');
-        $partido = $request->input('partido');
-        $barrio = $request->input('barrio');
-        // Same campaign filter as the listing: only that campaign's lideres, no shared electoral rows.
-        $campana = $this->campaign()->filterId($request->input('campana'));
-
         if ($munId) {
             $this->authorizeGeo($munId);
         }
 
         if ($source === 'mapa-politico') {
-            return $this->getMapaPoliticoData($munId, $tipo, $cargo, $search, $partido, $barrio, $campana);
+            // The listing's rows for the same filters (municipio, campaign, tipos...), already unified, without its display caps.
+            $rows = app(MapaPoliticoController::class)->rows($request, forExport: true)['data'];
+
+            return $this->withLiderObservations(array_map(fn ($r) => $r + ['tipo' => $r['tipo_registro'] ?? null], $rows));
         }
 
         if ($source === 'senado' || $source === 'camara') {
@@ -103,119 +98,11 @@ class ExportController extends Controller
         return [];
     }
 
-    private function getMapaPoliticoData(?string $munId, string $tipo, ?string $cargo, ?string $search, ?string $partido, ?string $barrio, ?string $campana = null): array
-    {
-        $cargos = $this->parseCargos($cargo);
-        $tipos = $tipo ? explode(',', $tipo) : ['todos'];
-        $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
-        $electoralMatch = fn ($key) => $campana === null && $tipoMatch($key);
-        $barrios = $barrio ? explode(',', $barrio) : [];
-        $data = [];
-
-        $votesSubQuery = DB::table('electoral_results')
-            ->whereIn('metric_type', ['votes', 'nominal_votes'])
-            ->select('candidacy_id', DB::raw('SUM(value) as votos'))
-            ->groupBy('candidacy_id');
-
-        // Alcaldía
-        if ($electoralMatch('alcaldia')) {
-            $officeId = DB::table('offices')->where('name', 'Alcaldía')->value('id');
-            $query = DB::table('candidacies as c')
-                ->join('contests as con', 'c.contest_id', '=', 'con.id')
-                ->join('persons as p', 'c.person_id', '=', 'p.id')
-                ->where('con.office_id', $officeId)
-                ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
-                ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
-                ->leftJoin('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
-                ->leftJoinSub(clone $votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
-                ->select('p.full_name as nombre', 'g.canonical_name as municipio',
-                    DB::raw("'Alcaldía' as tipo"),
-                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Alcalde Electo' ELSE 'Candidato Alcaldía' END as cargo"),
-                    'po.canonical_name as partido', DB::raw('NULL as telefono'),
-                    DB::raw('COALESCE(res.votos, 0) as votos'));
-            if ($munId) $query->where('con.geographic_unit_id', $munId); else $this->scopeToTerritory($query, 'con.geographic_unit_id');
-            if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
-            $this->whereOutcomeCargoIn($query, 'Alcalde Electo', 'Candidato Alcaldía', $cargos);
-            $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // Concejo
-        if ($electoralMatch('concejo')) {
-            $corpId = DB::table('corporations')->where('name', 'Concejo')->value('id');
-            $query = DB::table('candidacies as c')
-                ->join('contests as con', 'c.contest_id', '=', 'con.id')
-                ->join('persons as p', 'c.person_id', '=', 'p.id')
-                ->where('con.corporation_id', $corpId)
-                ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
-                ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
-                ->leftJoin('geographic_units as g', 'con.geographic_unit_id', '=', 'g.id')
-                ->leftJoinSub(clone $votesSubQuery, 'res', 'res.candidacy_id', '=', 'c.id')
-                ->select('p.full_name as nombre', 'g.canonical_name as municipio',
-                    DB::raw("'Concejo' as tipo"),
-                    DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END as cargo"),
-                    'po.canonical_name as partido', DB::raw('NULL as telefono'),
-                    DB::raw('COALESCE(res.votos, 0) as votos'));
-            if ($munId) $query->where('con.geographic_unit_id', $munId); else $this->scopeToTerritory($query, 'con.geographic_unit_id');
-            if ($search) $query->where('p.full_name', 'ilike', '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%');
-            if (!empty($cargos)) $query->whereIn(DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Concejal' ELSE 'Candidato Concejo' END"), $cargos);
-            $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // Líderes
-        if ($tipoMatch('lideres')) {
-            $query = $this->visibleLideres()
-                ->select('nombre', 'municipio', DB::raw("'Líderes' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
-            if ($campana) $query->where('campaign_id', $campana);
-            if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
-            if ($search) $query->where(function ($q) use ($search) {
-                $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
-                $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
-            });
-            $this->whereCargoIn($query, $cargos);
-            if (!empty($barrios)) $query->where(function ($q) use ($barrios) {
-                foreach ($barrios as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
-            });
-            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // Directorio Municipal
-        if ($tipoMatch('directorio')) {
-            $query = $this->visibleLideres()
-                ->select('nombre', 'municipio', DB::raw("'Directorio Municipal' as tipo"), 'cargo', 'partido', 'telefono', 'votos', 'observacion');
-            if ($campana) $query->where('campaign_id', $campana);
-            $this->whereCargoIn($query, ['Directorio Municipal']);
-            $this->whereCargoIn($query, $cargos);
-            if ($munId) $query->where('geographic_unit_id', $munId); else $this->scopeToTerritory($query);
-            if ($search) $query->where(function ($q) use ($search) {
-                $s = str_replace(['%', '_'], ['\\%', '\\_'], $search);
-                $q->where('nombre', 'ilike', "%{$s}%")->orWhere('cedula', 'like', "%{$s}%");
-            });
-            if (!empty($barrios)) $query->where(function ($q) use ($barrios) {
-                foreach ($barrios as $b) $q->orWhere('barrio', 'ilike', '%' . str_replace(['%','_'], ['\\%','\\_'], trim($b)) . '%');
-            });
-            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // Senado / Cámara / Asamblea
-        $corpMap = ['senado' => 'Senado', 'camara' => 'Cámara de Representantes', 'asamblea' => 'Asamblea'];
-        foreach ($corpMap as $tipoKey => $corpName) {
-            if ($electoralMatch($tipoKey)) {
-                $data = array_merge($data, $this->getCorporacionData($corpName, $munId, $cargos));
-            }
-        }
-
-        // Filtrar por partido
-        if ($partido) {
-            $data = array_values(array_filter($data, fn ($row) => ($row['partido'] ?? '') === $partido));
-        }
-
-        return $this->withLiderObservations($data);
-    }
-
     // Electoral candidates have no notes of their own: take them from their lider record (same name and municipio).
     private function withLiderObservations(array $data): array
     {
-        $key = fn ($nombre, $municipio) => mb_strtolower(trim((string) $nombre)).'|'.mb_strtolower(trim((string) $municipio));
+        // "Malaga" and "Málaga" are the same municipio.
+        $key = fn ($nombre, $municipio) => mb_strtolower(trim((string) $nombre)).'|'.Str::lower(Str::ascii(trim((string) $municipio)));
         $missing = array_filter($data, fn ($r) => ! array_key_exists('observacion', $r) && ! empty($r['nombre']));
         if (! $missing) {
             return $data;
@@ -241,8 +128,7 @@ class ExportController extends Controller
         }, $data);
     }
 
-    // $cargos === null keeps the standalone corporation export (cargo = corporation name).
-    private function getCorporacionData(string $corpName, ?string $munId, ?array $cargos = null): array
+    private function getCorporacionData(string $corpName, ?string $munId): array
     {
         $corpId = DB::table('corporations')->where('name', $corpName)->value('id');
         if (!$corpId) return [];
@@ -258,15 +144,8 @@ class ExportController extends Controller
             ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
             ->joinSub($resQuery->select('candidacy_id', DB::raw('SUM(value) as votos'))->groupBy('candidacy_id'), 'res', 'res.candidacy_id', '=', 'c.id')
             ->select('p.full_name as nombre', DB::raw('NULL as municipio'), 'po.canonical_name as partido', DB::raw('NULL as telefono'), DB::raw('res.votos'))
-            ->selectRaw('? as tipo', [$corpName]);
-
-        if ($cargos === null || ! isset(self::CORP_CARGOS[$corpName])) {
-            $query->selectRaw('? as cargo', [$corpName]);
-        } else {
-            [$electo, $candidato] = array_values(self::CORP_CARGOS[$corpName]);
-            $query->selectRaw("CASE WHEN c.outcome = 'elected' THEN ? ELSE ? END as cargo", [$electo, $candidato]);
-            $this->whereOutcomeCargoIn($query, $electo, $candidato, $cargos);
-        }
+            ->selectRaw('? as tipo', [$corpName])
+            ->selectRaw('? as cargo', [$corpName]);
 
         return $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
     }
