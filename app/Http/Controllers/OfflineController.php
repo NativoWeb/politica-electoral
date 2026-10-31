@@ -14,7 +14,7 @@ class OfflineController extends Controller
      * Download all data for a municipio for offline use.
      * Returns: personas (alcalde+concejales), lideres, nexos, gobernador candidates.
      */
-    public function download(string $municipioId)
+    public function download(Request $request, string $municipioId)
     {
         $mun = DB::table('geographic_units as g')
             ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
@@ -163,8 +163,10 @@ class OfflineController extends Controller
                 ->get()->map(fn ($r) => (array) $r)->toArray();
         }
 
-        // Gobernador (same for all municipios)
-        $gobOffice = DB::table('offices')->where('name', 'Gobernación')->value('id');
+        // Gobernador (same for all municipios), only for whoever may open /gobernador
+        $gobOffice = $request->user()->hasPermission('view.gobernador')
+            ? DB::table('offices')->where('name', 'Gobernación')->value('id')
+            : null;
         $gobernador = [];
         if ($gobOffice) {
             $gobVotesSubQuery = DB::table('electoral_results')

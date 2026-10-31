@@ -12,7 +12,7 @@ const offline = vi.hoisted(() => ({
 }));
 vi.mock('./offlineDb', () => offline);
 
-import { syncServiceWorkerSession, clearUserOfflineState, resetSwSessionForTests, PRECACHE_URLS, writePendingLogout } from './swSession';
+import { syncServiceWorkerSession, clearUserOfflineState, resetSwSessionForTests, PRECACHE_URLS, precacheUrlsFor, writePendingLogout } from './swSession';
 import { userKey } from './userKey';
 
 function installWorker({ reply = { ok: true } } = {}) {
@@ -56,8 +56,8 @@ describe('swSession', () => {
         const worker = installWorker();
         const key = await userKey('user-a');
 
-        await syncServiceWorkerSession({ id: 'user-a' });
-        await syncServiceWorkerSession({ id: 'user-a' });
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['view.mapa', 'view.gobernador'] });
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['view.mapa', 'view.gobernador'] });
         await flush();
 
         expect(key).toMatch(/^[0-9a-f]{64}$/);
@@ -65,6 +65,16 @@ describe('swSession', () => {
         expect(worker.postMessage.mock.calls[0][0]).toEqual({ type: 'SESSION', user: key, precache: PRECACHE_URLS });
         expect(localStorage.getItem('electoral:offline-user')).toBe(key);
         expect(JSON.stringify(localStorage)).not.toContain('user-a');
+    });
+
+    it('no pide precargar /gobernador a quien no tiene view.gobernador', async () => {
+        const worker = installWorker();
+
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['view.mapa', 'write.data'] });
+
+        expect(worker.postMessage.mock.calls[0][0].precache).toEqual(['/mapa-politico']);
+        expect(precacheUrlsFor({ permissions: ['*'] })).toEqual(PRECACHE_URLS);
+        expect(precacheUrlsFor({ permissions: null })).toEqual(['/mapa-politico']);
     });
 
     it('al entrar otro usuario borra descargas y oculta (no adopta) los cambios ajenos', async () => {

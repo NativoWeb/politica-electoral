@@ -12,6 +12,8 @@ import {
 import { userKey } from './userKey';
 
 export const PRECACHE_URLS = ['/mapa-politico', '/gobernador'];
+// A page behind a permission the user lacks only answers 403, so it is not requested.
+const PRECACHE_PERMISSIONS = { '/gobernador': 'view.gobernador' };
 const LAST_USER_KEY = 'electoral:offline-user';
 // Set before every logout attempt and removed by the first page without a session. If the server
 // never got the logout (no network), the next online page of that same user finishes it.
@@ -108,6 +110,14 @@ export async function isLogoutPendingFor(user) {
     return Boolean(pendingFor && user?.id && pendingFor === (await userKey(user.id)));
 }
 
+export function precacheUrlsFor(user) {
+    const perms = user?.permissions ?? [];
+    return PRECACHE_URLS.filter((url) => {
+        const needed = PRECACHE_PERMISSIONS[url];
+        return !needed || perms.includes('*') || perms.includes(needed);
+    });
+}
+
 export async function syncServiceWorkerSession(user, { confirm: confirmFn = (m) => window.confirm(m) } = {}) {
     const id = user?.id ?? null;
     if (id === lastUserId) return;
@@ -129,7 +139,7 @@ export async function syncServiceWorkerSession(user, { confirm: confirmFn = (m) 
     const key = await pendingKey;
     if (key) forgetPreviousUserData(id, key, confirmFn);
 
-    const reply = await postToServiceWorker({ type: 'SESSION', user: key, precache: key ? PRECACHE_URLS : [] });
+    const reply = await postToServiceWorker({ type: 'SESSION', user: key, precache: key ? precacheUrlsFor(user) : [] });
     // No active SW yet (first install): let the next call retry.
     if (reply === null && lastUserId === id) lastUserId = undefined;
 }

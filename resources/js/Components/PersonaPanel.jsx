@@ -9,6 +9,7 @@ import InfoPoliticaManager from '@/Components/InfoPoliticaManager';
 import TagsPanel from '@/Components/TagsPanel';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
+import useEscapeKey from '@/lib/useEscapeKey';
 import {
     TIPO_OPTIONS, CARGOS_DISPONIBLES, PARENTESCOS,
     NIVEL_CONFIANZA_OPTIONS, NIVEL_CONFIANZA_COLORS,
@@ -45,7 +46,7 @@ function useConfirm() {
             </div>
         </>
     );
-    return { confirm, Dialog };
+    return { confirm, Dialog, isOpen: state.open, close };
 }
 
 function dateVal(v) {
@@ -104,7 +105,9 @@ function DataRow({ label, value }) {
 }
 
 export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, cargoCategorias = [], fallbackData = null, municipios = [] }) {
-    const { confirm, Dialog: ConfirmDialog } = useConfirm();
+    const { confirm, Dialog: ConfirmDialog, isOpen: confirmOpen, close: closeConfirm } = useConfirm();
+    // Escape closes an open confirmation first, otherwise the ficha just like its X button.
+    useEscapeKey(() => (confirmOpen ? closeConfirm() : onClose()));
     const campaign = useCampaign();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);

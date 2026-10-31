@@ -75,9 +75,10 @@ export async function downloadMunicipio(municipioId) {
         if (data.nexos?.length) {
             await db.nexos.bulkPut(data.nexos);
         }
-        if (data.gobernador?.length) {
+        // An empty list (user without view.gobernador) also wipes what an earlier download kept.
+        if (Array.isArray(data.gobernador)) {
             await db.gobernador.clear();
-            await db.gobernador.bulkPut(data.gobernador);
+            if (data.gobernador.length) await db.gobernador.bulkPut(data.gobernador);
         }
 
         // Mark download

@@ -212,6 +212,25 @@ describe('offlineDb', () => {
             );
         });
 
+        it('sin view.gobernador (lista vacía) borra los candidatos a gobernador guardados antes', async () => {
+            global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ municipioId: 'abc-123', personas: [], lideres: [], nexos: [], gobernador: [] }) });
+
+            await offlineDb.downloadMunicipio('abc-123');
+
+            expect(offlineDb.db.gobernador.clear).toHaveBeenCalledTimes(1);
+            expect(offlineDb.db.gobernador.bulkPut).not.toHaveBeenCalled();
+        });
+
+        it('con view.gobernador reemplaza los candidatos a gobernador', async () => {
+            const gob = [{ id: 'g1', nombre: 'Candidato' }];
+            global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ municipioId: 'abc-123', personas: [], lideres: [], nexos: [], gobernador: gob }) });
+
+            await offlineDb.downloadMunicipio('abc-123');
+
+            expect(offlineDb.db.gobernador.clear).toHaveBeenCalledTimes(1);
+            expect(offlineDb.db.gobernador.bulkPut).toHaveBeenCalledWith(gob);
+        });
+
         it('lanza error si el servidor responde con error', async () => {
             global.fetch.mockResolvedValue({ ok: false, status: 404 });
 

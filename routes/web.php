@@ -33,7 +33,7 @@ use Inertia\Inertia;
 
 // Auth routes (guest only)
 Route::get('/login', [LoginController::class, 'showLogin'])->name('login')->middleware('guest');
-Route::post('/login', [LoginController::class, 'login'])->middleware('guest');
+Route::post('/login', [LoginController::class, 'login'])->name('login.attempt')->middleware('guest');
 Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->middleware(['auth', 'audit']);
 
 // Password reset (guest only)
@@ -69,8 +69,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/camara/{id}', [LegislativoController::class, 'camaraMunicipio'])->name('camara.municipio');
     Route::get('/concejo', [LegislativoController::class, 'concejo'])->name('concejo');
     Route::get('/concejo/{id}', [LegislativoController::class, 'concejoMunicipio'])->name('concejo.municipio');
-    Route::get('/gobernador', [LegislativoController::class, 'gobernador'])->name('gobernador');
-    Route::get('/gobernador/{id}', [LegislativoController::class, 'gobernadorMunicipio'])->name('gobernador.municipio');
+    Route::get('/gobernador', [LegislativoController::class, 'gobernador'])->name('gobernador')->middleware('permission:view.gobernador');
+    Route::get('/gobernador/{id}', [LegislativoController::class, 'gobernadorMunicipio'])->name('gobernador.municipio')->middleware('permission:view.gobernador');
     Route::get('/asamblea', [LegislativoController::class, 'asamblea'])->name('asamblea');
     Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio');
     Route::get('/consultas', [LegislativoController::class, 'consultas'])->name('consultas');
@@ -104,15 +104,15 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::delete('/mapa-politico/persona/{id}/municipios-influencia/{influenciaId}', [MapaPoliticoController::class, 'destroyMunicipioInfluencia'])->name('mapa-politico.influencia.destroy');
 
         // Votantes write
-        Route::post('/votantes', [VotanteController::class, 'store']);
-        Route::put('/votantes/{id}', [VotanteController::class, 'update']);
-        Route::delete('/votantes/{id}', [VotanteController::class, 'destroy']);
-        Route::post('/votantes/{id}/contactos', [VotanteController::class, 'storeContacto']);
-        Route::put('/votantes/contactos/{id}', [VotanteController::class, 'updateContacto']);
-        Route::delete('/votantes/contactos/{id}', [VotanteController::class, 'destroyContacto']);
-        Route::post('/votantes/{id}/info-politica', [VotanteController::class, 'storeInfoPolitica']);
-        Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica']);
-        Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica']);
+        Route::post('/votantes', [VotanteController::class, 'store'])->name('votantes.store');
+        Route::put('/votantes/{id}', [VotanteController::class, 'update'])->name('votantes.update');
+        Route::delete('/votantes/{id}', [VotanteController::class, 'destroy'])->name('votantes.destroy');
+        Route::post('/votantes/{id}/contactos', [VotanteController::class, 'storeContacto'])->name('votantes.contactos.store');
+        Route::put('/votantes/contactos/{id}', [VotanteController::class, 'updateContacto'])->name('votantes.contactos.update');
+        Route::delete('/votantes/contactos/{id}', [VotanteController::class, 'destroyContacto'])->name('votantes.contactos.destroy');
+        Route::post('/votantes/{id}/info-politica', [VotanteController::class, 'storeInfoPolitica'])->name('votantes.info-politica.store');
+        Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica'])->name('votantes.info-politica.update');
+        Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica'])->name('votantes.info-politica.destroy');
     });
 
     // Change own password

@@ -88,6 +88,8 @@ class ExportController extends Controller
         }
 
         if ($source === 'gobernador') {
+            abort_unless($request->user()->hasPermission('view.gobernador'), 403);
+
             return $this->getGobernadorData();
         }
 

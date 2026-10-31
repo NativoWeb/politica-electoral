@@ -12,7 +12,7 @@ const TYPE_COLORS = {
     partido: 'bg-amber-100 text-amber-700',
 };
 
-function GlobalSearch() {
+export function GlobalSearch() {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -57,7 +57,8 @@ function GlobalSearch() {
                 value={query}
                 onChange={handleChange}
                 onKeyDown={(e) => {
-                    if (e.key === 'Escape') setShowDropdown(false);
+                    // Handled here: an open ficha must not also close on the same Escape (see useEscapeKey).
+                    if (e.key === 'Escape' && showDropdown) { e.preventDefault(); setShowDropdown(false); }
                     if (e.key === 'Enter' && results.length > 0) handleSelect(results[0].url);
                 }}
                 onFocus={() => results.length > 0 && setShowDropdown(true)}

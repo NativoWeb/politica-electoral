@@ -9,14 +9,29 @@ use App\Models\ElectoralResult;
 use App\Models\GeographicUnit;
 use App\Models\Person;
 use App\Models\PoliticalOrganization;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
-    public function index()
+    // Home is the first view the user may open. /perfil needs no permission, so a user without any view
+    // never bounces between "/" and a page that sends them back here.
+    private const LANDINGS = [
+        'view.mapa' => '/mapa-politico',
+        'view.votantes' => '/votantes',
+        'view.gobernador' => '/gobernador',
+    ];
+
+    public function index(Request $request)
     {
-        return redirect('/mapa-politico');
+        foreach (self::LANDINGS as $permission => $path) {
+            if ($request->user()->hasPermission($permission)) {
+                return redirect($path);
+            }
+        }
+
+        return redirect('/perfil');
     }
 
     private function getKpis($alcaldiaOffice): array

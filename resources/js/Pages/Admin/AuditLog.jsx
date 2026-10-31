@@ -165,11 +165,11 @@ export default function AuditLog({ logs, filters, users, entityTypes }) {
 
             {/* Pagination */}
             {logs.last_page > 1 && (
-                <div className="flex items-center justify-between px-4 lg:px-6 py-3 border-t border-[var(--color-line)] bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 lg:px-6 py-3 border-t border-[var(--color-line)] bg-white">
                     <span className="text-[12px] text-[var(--color-ink-faint)]">
                         {logs.from}-{logs.to} de {logs.total}
                     </span>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1 min-w-0">
                         {logs.links.map((link, i) => (
                             <button
                                 key={i}

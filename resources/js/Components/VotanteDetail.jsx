@@ -3,6 +3,7 @@ import VotanteContactos from '@/Components/VotanteContactos';
 import VotanteInfoPolitica from '@/Components/VotanteInfoPolitica';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
+import useEscapeKey from '@/lib/useEscapeKey';
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 const readCls = "text-[13px] text-[var(--color-ink)] py-1";
@@ -116,11 +117,15 @@ export default function VotanteDetail({
     const [refResults, setRefResults] = useState([]);
     const [refSearching, setRefSearching] = useState(false);
     const prevIdRef = useRef(null);
+    const rootRef = useRef(null);
     const campaign = useCampaign();
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
     const campaignReadOnly = !creating && campaign.isOther(data?.campaign_id);
     const campaignName = campaignReadOnly ? campaign.nameOf(data?.campaign_id) : null;
     const errorText = (err, fallback) => (err?.status === 403 ? forbiddenMessage(err.message, campaignName) : (err?.message || fallback));
+
+    // Escape closes the toggle confirmation first, otherwise the panel just like its X button.
+    useEscapeKey(() => (confirmDelete ? setConfirmDelete(false) : onClose()), rootRef);
 
     useEffect(() => {
         if (creating) {
@@ -271,7 +276,7 @@ export default function VotanteDetail({
     const readOnly = !editing;
 
     return (
-        <div className="bg-white lg:rounded-xl lg:border border-[var(--color-line)] flex flex-col min-h-screen lg:min-h-0 lg:max-h-[calc(100vh-200px)]">
+        <div ref={rootRef} className="bg-white lg:rounded-xl lg:border border-[var(--color-line)] flex flex-col min-h-screen lg:min-h-0 lg:max-h-[calc(100vh-200px)]">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-line)] bg-gray-50 rounded-t-xl flex-shrink-0">
                 <div className="min-w-0">
