@@ -50,6 +50,9 @@ class AdminController extends Controller
         ['key' => 'manage.territory', 'label' => 'Gestionar territorio', 'group' => 'Administración'],
         ['key' => 'manage.partidos', 'label' => 'Gestionar partidos', 'group' => 'Administración'],
         ['key' => 'audit.view', 'label' => 'Ver auditoría', 'group' => 'Administración'],
+        ['key' => 'view.eventos', 'label' => 'Ver eventos y asistentes', 'group' => 'Eventos'],
+        ['key' => 'manage.eventos', 'label' => 'Gestionar eventos (crear, abrir, aprobar asistentes)', 'group' => 'Eventos'],
+        ['key' => 'register.asistentes', 'label' => 'Registrar asistentes (modo operador)', 'group' => 'Eventos'],
     ];
 
     // The form only offers what the actor may hand out: a superadmin everything, anyone else the permissions they hold.

@@ -21,6 +21,9 @@ class DashboardController extends Controller
         'view.mapa' => '/mapa-politico',
         'view.votantes' => '/votantes',
         'view.gobernador' => '/gobernador',
+        'view.eventos' => '/eventos',
+        'manage.eventos' => '/eventos',
+        'register.asistentes' => '/eventos',
     ];
 
     public function index(Request $request)

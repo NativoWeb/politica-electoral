@@ -229,6 +229,7 @@ const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador' },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', permission: 'view.mapa' },
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
+    { name: 'EVENTOS', href: '/eventos', label: 'Eventos', permission: ['view.eventos', 'manage.eventos', 'register.asistentes'] },
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
     { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
@@ -237,7 +238,8 @@ const SIDEBAR_ITEMS = [
 // Platform administration (territory, parties, catalogs, elections...) is only for whoever edits the shared
 // electoral data; any other campaign's admin reaches its users from the same menu entry.
 function menuItems(items, auth, hasPerm) {
-    return items.filter(item => hasPerm(item.permission)).flatMap(item => {
+    const allowed = (permission) => [].concat(permission).some(hasPerm);
+    return items.filter(item => allowed(item.permission)).flatMap(item => {
         if (item.name !== 'ADMIN' || auth?.canEditElectoral !== false) return [item];
         return hasPerm('manage.users') ? [{ ...item, href: '/admin/usuarios', label: 'Usuarios', icon: 'USUARIOS' }] : [];
     });
@@ -257,6 +259,13 @@ function CampaignBadge({ campaign, className = '' }) {
 }
 
 const ICONS_EXTRA = {
+    EVENTOS: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <path d="M16 3v4M8 3v4M3 10h18" strokeLinecap="round" />
+            <path d="M8 14h2m4 0h2m-8 3h2" strokeLinecap="round" />
+        </svg>
+    ),
     ADMIN: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
             <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" strokeLinecap="round" strokeLinejoin="round" />
@@ -418,6 +427,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
     const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm);
     const canExport = canExportFrom(url.split('?')[0], hasPerm);
+    const tabItems = visibleItems.filter(item => !item.desktopOnly);
+    // Six tabs (with Exportar) at 360px only fit with the smaller label.
+    const tabLabelCls = tabItems.length + (canExport ? 1 : 0) > 5 ? 'text-[11px]' : 'text-[12px]';
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
@@ -599,7 +611,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
             {/* ══ Bottom Tab Bar — mobile only, BIG for elderly users ══ */}
             <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
                 <div className="flex items-stretch h-[72px]">
-                    {visibleItems.filter(item => !item.desktopOnly).map((item) => {
+                    {tabItems.map((item) => {
                         const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
                         return (
                             <Link
@@ -612,7 +624,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 <span className="w-7 h-7 flex items-center justify-center [&>svg]:w-7 [&>svg]:h-7">
                                     {ICONS[item.icon ?? item.name] || ICONS_EXTRA[item.icon ?? item.name]}
                                 </span>
-                                <span className="text-[12px] font-bold leading-tight">{item.label}</span>
+                                <span className={`${tabLabelCls} font-bold leading-tight text-center`}>{item.label}</span>
                                 {isActive && <span className="w-6 h-[3px] bg-[var(--color-accent)] rounded-full" />}
                             </Link>
                         );
@@ -627,7 +639,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <span className="text-[12px] font-bold leading-tight">Exportar</span>
+                        <span className={`${tabLabelCls} font-bold leading-tight`}>Exportar</span>
                     </button>
                     )}
                 </div>

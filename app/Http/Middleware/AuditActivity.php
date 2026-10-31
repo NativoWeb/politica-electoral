@@ -28,6 +28,8 @@ class AuditActivity
         'seguimientos' => 'seguimiento',
         'campaigns' => 'campana',
         'campanas' => 'campana',
+        'eventos' => 'evento',
+        'asistentes' => 'evento_asistente',
     ];
 
     public function handle(Request $request, Closure $next): Response

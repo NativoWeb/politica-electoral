@@ -29,6 +29,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('agent-reports', fn (Request $request) => Limit::perMinute(10)
             ->by('agent-reports|'.($request->user()?->id ?? $request->ip())));
 
+        // Public event registration (QR), per IP. Generous because attendees often share the venue Wi-Fi or a carrier
+        // NAT. The per-event quota is counted in EventoPublicoController on real registrations only, so bots cannot spend it.
+        RateLimiter::for('eventos-publico', fn (Request $request) => Limit::perMinute(60)->by('eventos-ip|'.$request->ip()));
+
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {
             URL::forceScheme('https');

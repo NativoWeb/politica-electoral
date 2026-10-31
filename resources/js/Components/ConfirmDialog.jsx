@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import useDialogFocus from '@/lib/useDialogFocus';
 
-export default function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm, onCancel }) {
+export default function ConfirmDialog({ title, message, confirmLabel, cancelLabel = 'Cancelar', danger, onConfirm, onCancel }) {
     const dialogRef = useRef(null);
     useDialogFocus(dialogRef);
 
@@ -15,7 +15,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, danger, on
                         <p id="confirm-message" className="text-[15px] text-[var(--color-ink-soft)] mt-2 leading-relaxed">{message}</p>
                     </div>
                     <div className="px-6 pb-6 flex gap-3">
-                        <button type="button" autoFocus onClick={onCancel} className="flex-1 px-4 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl active:bg-gray-100">Cancelar</button>
+                        <button type="button" autoFocus onClick={onCancel} className="flex-1 px-4 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl active:bg-gray-100">{cancelLabel}</button>
                         <button type="button" onClick={onConfirm} className={`flex-1 px-4 py-3 text-white text-[15px] font-bold rounded-xl ${danger ? 'bg-amber-600 active:bg-amber-700' : 'bg-emerald-600 active:bg-emerald-700'}`}>{confirmLabel}</button>
                     </div>
                 </div>

@@ -621,7 +621,7 @@ class CampaignAdminTest extends TestCase
             ->assertInertia(function (AssertableInertia $page) use (&$keys) {
                 $props = $page->toArray()['props'];
                 $keys = collect($props['availablePermissions'])->pluck('key')->sort()->values()->all();
-                $this->assertCount(9, $props['permissionLabels']);
+                $this->assertCount(12, $props['permissionLabels'], 'Every permission keeps a label (9 base + 3 of Eventos)');
             });
 
         return $keys;
@@ -633,7 +633,7 @@ class CampaignAdminTest extends TestCase
 
         $this->assertSame($sorted(self::CAMPAIGN_ADMIN_PERMS), $this->offeredPermissions($this->adminX));
         $this->assertSame($sorted(self::ADMIN_PERMS), $this->offeredPermissions($this->adminCd));
-        $this->assertSame($sorted(self::ADMIN_PERMS), $this->offeredPermissions($this->superadmin));
+        $this->assertSame($sorted([...self::ADMIN_PERMS, 'view.eventos', 'manage.eventos', 'register.asistentes']), $this->offeredPermissions($this->superadmin));
 
         // Everything offered is accepted; the hidden ones are still refused.
         $this->actingAs($this->adminX)->post('/admin/usuarios', $this->newUserPayload(['permissions' => self::CAMPAIGN_ADMIN_PERMS]))

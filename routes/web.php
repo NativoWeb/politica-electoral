@@ -12,6 +12,8 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EventoController;
+use App\Http\Controllers\EventoPublicoController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LegislativoController;
 use App\Http\Controllers\LiderController;
@@ -49,6 +51,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/forzar-cambio-password', [LoginController::class, 'showForceChangePassword'])->name('password.force-change');
     Route::post('/forzar-cambio-password', [LoginController::class, 'forceChangePassword'])->name('password.force-change.store');
 });
+
+// Eventos especiales: public registration by QR, no login (contract in docs/eventos-api.md)
+Route::get('/e/{token}', [EventoPublicoController::class, 'show'])->name('eventos.publico.show');
+Route::post('/e/{token}', [EventoPublicoController::class, 'store'])->name('eventos.publico.store')->middleware('throttle:eventos-publico');
 
 // Public API (no auth required)
 Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'])->name('search');
@@ -129,6 +135,38 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/votantes', [VotanteController::class, 'store'])->name('votantes.store');
             Route::put('/votantes/{id}', [VotanteController::class, 'update'])->name('votantes.update');
             Route::delete('/votantes/{id}', [VotanteController::class, 'destroy'])->name('votantes.destroy');
+        });
+    });
+
+    // Eventos especiales: managed with manage.eventos alone and operated with register.asistentes alone
+    // (neither needs write.data nor a write role); campaign and territory are checked in the controller.
+    Route::prefix('eventos')->name('eventos.')->group(function () {
+        Route::get('/', [EventoController::class, 'index'])->name('index')
+            ->middleware('permission:view.eventos|manage.eventos|register.asistentes');
+
+        Route::middleware('permission:manage.eventos')->group(function () {
+            Route::get('/buscar/organizadores', [EventoController::class, 'searchOrganizers'])->name('buscar.organizadores');
+            Route::get('/buscar/figuras', [EventoController::class, 'searchFigures'])->name('buscar.figuras');
+        });
+
+        Route::get('/{id}', [EventoController::class, 'show'])->name('show')->whereUuid('id')
+            ->middleware('permission:view.eventos|manage.eventos');
+
+        Route::middleware('permission:register.asistentes|manage.eventos')->group(function () {
+            Route::get('/{id}/operador', [EventoController::class, 'operador'])->name('operador')->whereUuid('id');
+            Route::post('/{id}/asistentes', [EventoController::class, 'registerAttendee'])->name('asistentes.store')->whereUuid('id');
+        });
+
+        Route::middleware('permission:manage.eventos')->group(function () {
+            Route::post('/', [EventoController::class, 'store'])->name('store');
+            Route::put('/{id}', [EventoController::class, 'update'])->name('update')->whereUuid('id');
+            Route::delete('/{id}', [EventoController::class, 'destroy'])->name('destroy')->whereUuid('id');
+            Route::post('/{id}/abrir', [EventoController::class, 'open'])->name('open')->whereUuid('id');
+            Route::post('/{id}/cerrar', [EventoController::class, 'close'])->name('close')->whereUuid('id');
+            Route::post('/{id}/cancelar', [EventoController::class, 'cancel'])->name('cancel')->whereUuid('id');
+            Route::post('/{id}/token', [EventoController::class, 'regenerateToken'])->name('token')->whereUuid('id');
+            Route::post('/{id}/asistentes/aprobar', [EventoController::class, 'approve'])->name('asistentes.approve')->whereUuid('id');
+            Route::post('/{id}/asistentes/descartar', [EventoController::class, 'discard'])->name('asistentes.discard')->whereUuid('id');
         });
     });
 

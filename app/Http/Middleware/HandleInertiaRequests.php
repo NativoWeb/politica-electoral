@@ -76,6 +76,7 @@ class HandleInertiaRequests extends Middleware
                     'territoryScope' => $user->territory_scope,
                     'permissions' => $permissions,
                     'canWrite' => in_array('*', $permissions) || in_array('write.data', $permissions),
+                    'canManageEventos' => in_array('*', $permissions) || in_array('manage.eventos', $permissions),
                     'whatsapp' => $this->whatsappLink($user),
                     'campaign' => $campaign->info(),
                     'canEditElectoral' => $campaign->canEditElectoral(),

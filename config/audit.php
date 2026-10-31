@@ -30,6 +30,7 @@ return [
             'telefono',
             'phone',
             'celular',
+            'fijo',
             'whatsapp',
             'whatsapp_phone',
             'whatsapp_number',

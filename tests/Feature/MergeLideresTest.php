@@ -86,6 +86,12 @@ class MergeLideresTest extends TestCase
             $t->uuid('tag_id');
             $t->uuid('taggable_id');
         });
+        foreach (['event_attendees', 'event_organizers', 'data_consents'] as $table) {
+            Schema::create($table, function (Blueprint $t) {
+                $t->uuid('id')->primary();
+                $t->uuid('lider_id')->nullable();
+            });
+        }
 
         $this->addCampaignColumns();
         $this->municipio = (string) Str::uuid();
@@ -130,6 +136,26 @@ class MergeLideresTest extends TestCase
         $this->assertSame(1, DB::table('lider_contactos')->where('lider_id', $drop)->count());
         $this->assertSame(1, DB::table('nexos_familiares')->where('person_id', $drop)->count());
         $this->assertSame(1, DB::table('lider_municipios_influencia')->count());
+    }
+
+    public function test_event_attendees_and_organizers_follow_the_survivor_but_consent_proofs_keep_their_id(): void
+    {
+        $keep = $this->lider(['nombre' => 'Ana Pérez', 'cedula' => '1098765432', 'telefono' => '3001234567', 'email' => 'ana@example.com']);
+        $drop = $this->lider(['nombre' => 'Ana Perez']);
+        $attendee = (string) Str::uuid();
+        $organizer = (string) Str::uuid();
+        $consent = (string) Str::uuid();
+        DB::table('event_attendees')->insert(['id' => $attendee, 'lider_id' => $drop]);
+        DB::table('event_organizers')->insert(['id' => $organizer, 'lider_id' => $drop]);
+        DB::table('data_consents')->insert(['id' => $consent, 'lider_id' => $drop]);
+
+        $merged = app(MergeLideres::class)->handle($keep, $drop);
+
+        $this->assertSame($keep, $merged->id);
+        $this->assertNull(DB::table('lideres')->where('id', $drop)->first());
+        $this->assertSame($keep, DB::table('event_attendees')->where('id', $attendee)->value('lider_id'));
+        $this->assertSame($keep, DB::table('event_organizers')->where('id', $organizer)->value('lider_id'));
+        $this->assertSame($drop, DB::table('data_consents')->where('id', $consent)->value('lider_id'), 'append-only: keeps the historical id');
     }
 
     public function test_merging_from_the_sparse_record_keeps_the_complete_one_and_the_fullest_name(): void
