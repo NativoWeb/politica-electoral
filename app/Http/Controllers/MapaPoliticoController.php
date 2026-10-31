@@ -113,10 +113,12 @@ class MapaPoliticoController extends Controller
     private function cargosPorTipo(): array
     {
         $catalogCargos = CargoCategory::active()->pluck('name')->toArray();
+        // "Lider" and "Líder" are one option: the catalog spelling wins, then the first one seen.
         $liderCargos = collect($catalogCargos)
             ->merge($this->visibleLideres()->select('cargo')->distinct()->pluck('cargo')
-                ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter())
-            ->unique()->values()->toArray();
+                ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->filter())
+            ->unique(fn ($c) => mb_strtolower(Str::ascii($c)))
+            ->values()->toArray();
 
         return [
             'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
