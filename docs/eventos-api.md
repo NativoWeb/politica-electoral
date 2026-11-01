@@ -1,4 +1,4 @@
-# Eventos especiales — contrato backend (Fase 1)
+# Eventos especiales — contrato backend (Fase 1 + Fase 2 backend: planilla PDF)
 
 Contrato entre el backend (Laravel) y el frontend (React + Inertia) del módulo **Eventos especiales**:
 eventos de campaña ("Del Senado al barrio", giras, novenas, reuniones) con registro de asistentes por
@@ -14,6 +14,10 @@ Convenciones:
   reglas de negocio de eventos, con estas claves: `consent` (abrir sin texto aprobado), `status` (transición inválida),
   `evento` (borrar con asistentes), `ids` (asistentes ajenos al evento), `organizadores` (líder no válido),
   `ends_at`/`registration_closes_at` (fechas), `consent_text_id` (texto cambiado). En Inertia llegan como `errors.<clave>`.
+- **404** JSON genérico e idéntico para "no existe", "id no UUID" y "es de otra campaña no visible":
+  `{ "message": "No se encontró lo que busca." }` (nunca nombra el modelo); en HTML, la página `errors/404`.
+  **429** JSON por límite (`throttle`): `{ "success": false, "message": "Demasiadas solicitudes. Espere un momento e intente de nuevo." }`
+  con `Retry-After`; en HTML, la página `errors/429`. El 429 del QR público por tope de evento conserva su propio mensaje.
 - Peticiones Inertia (`router.post/put/delete`) reciben redirect + flash (`flash.success`) o `errors` en la página.
   Peticiones con `Accept: application/json` (axios/fetch) reciben JSON con el código indicado.
 
@@ -59,6 +63,7 @@ Aislamiento por campaña (igual que Votantes):
 | GET | `/eventos/{id}` | `eventos.show` | `view.eventos\|manage.eventos` | Inertia `Eventos/Show` |
 | GET | `/eventos/{id}/operador` | `eventos.operador` | `register.asistentes\|manage.eventos` | Inertia `Eventos/Operador` |
 | POST | `/eventos/{id}/asistentes` | `eventos.asistentes.store` | `register.asistentes\|manage.eventos` | JSON 201 / 200 |
+| GET | `/eventos/{id}/planilla.pdf?paginas=N` | `eventos.planilla` | `register.asistentes\|manage.eventos` | PDF (descarga), ver §9 |
 | POST | `/eventos` | `eventos.store` | `manage.eventos` | 201 JSON / redirect a `/eventos/{id}` |
 | PUT | `/eventos/{id}` | `eventos.update` | `manage.eventos` | 200 JSON / redirect back |
 | DELETE | `/eventos/{id}` | `eventos.destroy` | `manage.eventos` | 200 JSON / redirect a `/eventos` |
@@ -313,7 +318,7 @@ Regenerar token invalida el QR anterior (el viejo da 404).
   "celular": "300 123 4567",           // requerido; 10 dígitos que empiezan por 3 (acepta +57/espacios/guiones)
   "barrio": "El Poblado",              // requerido, ≤ 120
   "fijo": "6076543210",                // opcional, 7–10 dígitos
-  "fecha_nacimiento": "1980-04-02",    // opcional; si viene, mayor de 18 años
+  "fecha_nacimiento": "1980-04-02",    // opcional; AAAA-MM-DD, fecha real del calendario, mayor de 18 años
   "direccion": "Cra 1 # 2-3"           // opcional, ≤ 255
 }
 ```
@@ -326,6 +331,11 @@ Respuestas:
 - **409** `{ success: false, message: "Ese registro pertenece a otro evento." }` si el `client_uuid` ya se usó en otro evento.
 - **410** `{ success: false, message: "El evento ya no recibe registros." }` (cerrado/cancelado).
 - **422** validación (`errors`) o texto de autorización cambiado (`errors.consent_text_id`).
+  `message` resume en español: el primer error más `(y 1 error más)` / `(y N errores más)` (`lang/es.json`).
+  Mensajes de `fecha_nacimiento` (uno solo por envío, en este orden): formato distinto de `AAAA-MM-DD` →
+  `"La fecha de nacimiento debe tener el formato AAAA-MM-DD."`; fecha que no existe (`2026-02-31`, `1981-02-29`) →
+  `"Esa fecha no existe."`; antes de 1900 → `"Revise la fecha de nacimiento."`; menor de 18 →
+  `"El registro es solo para mayores de 18 años."`. Igual en el registro público.
 - **403/404** aislamiento (ver §1).
 
 La respuesta **no** indica si la cédula ya existía en Votantes (el operador no lo ve; el detalle sí, con `view.eventos`).
@@ -428,3 +438,66 @@ comando, migrar y volver a ejecutar `data_consents_owner.sql`. El resto de migra
 - `RegisterAttendee` deja además su propia fila: `EVENTO_ASISTENTE_QR` / `EVENTO_ASISTENTE_OPERADOR`, entidad
   `evento_asistente`, `user_id` null en el QR, metadata `{ event_id, channel, resultado: nuevo|repetido }`, **sin cédula**.
 - Aprobar/descartar: `EVENTO_ASISTENTES_APROBADOS` / `EVENTO_ASISTENTES_DESCARTADOS` con ids y conteos.
+- Descarga de la planilla: `EVENTO_PLANILLA_DESCARGADA`, entidad `evento`, metadata
+  `{ route: "eventos.planilla", paginas, consent_text_id }` (el middleware `audit` no registra GET).
+
+---
+
+## 9. Planilla imprimible — `GET /eventos/{id}/planilla.pdf`
+
+Hoja para registrar asistentes a mano cuando no hay señal ni celular, y que luego se transcribe (operador) o se
+fotografía para lectura automática (Fase 5).
+
+- **Permiso:** `manage.eventos` o `register.asistentes`. Aislamiento **como el detalle** (lectura): campaña propia
+  y subcampañas visibles → 200; otra campaña no visible, evento borrado o id no UUID → **404**; fuera del territorio →
+  **403**. Sin el permiso: con `Accept: application/json` → 403; visita normal → redirect a `/` (regla general del
+  middleware `permission`). Sin sesión → `/login`. Cualquier estado del evento (también cerrado/cancelado).
+- **HEAD** (la app instalada sondea antes de navegar): mismas comprobaciones de acceso (404/403; sin permiso → 403),
+  responde 200 `application/pdf` con `Content-Disposition` y **sin cuerpo**; no renderiza ni audita. Cupo propio de
+  60/min por usuario, aparte de las 10 descargas GET.
+- **`?paginas=N`**: por defecto 3; se acota a 1–20 (un valor no entero usa 3). 12 filas por página.
+- **Límite:** 10 descargas por minuto **por usuario** (limitador `eventos-planilla`, propio para no compartir cuenta con
+  otras rutas `throttle`); la 11.ª → **429** con `Retry-After`. Protege la memoria del VPS (≈120 MB por PDF de 20 páginas).
+- **Respuesta:** `application/pdf`, `Content-Disposition: attachment; filename=planilla-{slug del nombre}-{AAAA-MM-DD}.pdf`.
+  Carta horizontal. 20 páginas ≈ 210 KB y ≈ 120 MB de memoria pico (el controlador sube `memory_limit` a 256M).
+- **Contenido por página:** tipo y nombre del evento, fecha y hora (inicio–fin, America/Bogota), lugar, municipio
+  (provincia), barrios; "Página X de Y"; código corto del evento (8 primeros caracteres del id) y **QR**.
+  Tabla de 12 filas numeradas: Nombres y Apellidos (MAYÚSCULAS), Cédula (10 casillas), Celular (10), Tel. fijo (7),
+  Fecha de nacimiento `DD / MM / AAAA` (8 casillas), Dirección, Barrio, casilla Autorizo y Firma; filas con
+  sombreado alterno; marcas de esquina en L negras en las 4 esquinas para enderezar fotos.
+  Pie: resumen del texto de autorización vigente de la campaña (cortado en una frase, con `[…]`) y su **versión**;
+  si el texto no está aprobado (o no hay) imprime **"TEXTO PROVISIONAL — no válido como autorización"**; indica que el
+  texto completo se lee a la persona y se pide al organizador; línea de trazabilidad con el id completo del evento.
+- **QR:** PNG (chillerlan/php-qrcode, ECC M) con el JSON `{"e":"<event id>","p":<página>}`. **Nunca** lleva el token
+  público. Para la Fase 5: leer el QR, ubicar el evento por `e` y la página por `p`; el total de páginas va impreso.
+- **Frontend:** `Eventos/Show` muestra el enlace "Planilla para imprimir" con `can.register` y estado ≠ cancelado.
+  El modo operador (otro desarrollador) puede enlazar la misma URL: `register.asistentes` basta.
+
+---
+
+## 10. Cola offline: cabecera `X-Offline-Owner`
+
+La sincronización de la cola offline (`runSync` en `resources/js/lib/offlineDb.js`) debe enviar en **cada** petición
+`X-Offline-Owner: <ownerKey del cambio>`, es decir el `owner` guardado con el cambio = `userKey(user.id)`
+(`resources/js/lib/userKey.js`: SHA-256 hex de `"electoral:" + id`, o `"id:" + id` sin WebCrypto).
+
+Rutas con el middleware `offline.owner` (`App\Http\Middleware\EnsureOfflineOwner`):
+
+| Método | URI |
+|--------|-----|
+| POST | `/eventos/{id}/asistentes` |
+| POST | `/mapa-politico/crear-lider` |
+| PUT | `/mapa-politico/persona/{id}` |
+| POST | `/mapa-politico/persona/{id}/nexos` |
+| DELETE | `/mapa-politico/nexos/{id}` |
+
+- **Sin la cabecera:** comportamiento de siempre (el uso en línea no cambia).
+- **Con la cabecera y coincide** con la cuenta de la sesión (se compara en minúsculas): sigue a los chequeos normales.
+- **Con la cabecera y no coincide** (otra cuenta, vacía o basura): **409** sin procesar nada (no guarda, no audita):
+  `{ "success": false, "code": "owner_mismatch", "message": "Estos cambios se guardaron sin conexión con otra cuenta. Inicie sesión con esa cuenta para enviarlos." }`
+- El chequeo corre **justo después de `auth`** y **antes** de `permission`, `can.write`, el aislamiento por campaña y la
+  validación: la cola de otra cuenta recibe siempre 409, nunca un 403/404/422 que la haga descartar. Sin sesión → 401
+  (JSON) primero.
+- **Frontend:** hoy `isDefinitiveRejection()` trata **todo 409** como rechazo definitivo (marca rechazado y borra el
+  registro local). Un 409 con `code: "owner_mismatch"` **no** es definitivo: hay que detener la sync y conservar la cola
+  (como un 401/419). El 409 de `/eventos/{id}/asistentes` sin `code` (client_uuid de otro evento) sí sigue siendo definitivo.

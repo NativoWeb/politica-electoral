@@ -104,6 +104,15 @@ async function precachePages(userId, urls) {
     precacheControllers.delete(controller);
 }
 
+// Pages a screen may ask to keep for offline use on top of the session precache: only the operator mode
+// of an event, same origin, for the user the SW already knows.
+const EXTRA_PRECACHE = /^\/eventos\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/operador$/i;
+
+function extraPrecacheUrls(urls) {
+    if (!Array.isArray(urls)) return [];
+    return urls.filter(u => typeof u === 'string' && EXTRA_PRECACHE.test(u)).slice(0, 30);
+}
+
 async function handleMessage(data) {
     if (data?.type === 'SESSION') {
         const userId = data.user || null;
@@ -113,6 +122,11 @@ async function handleMessage(data) {
         }
         // Not awaited: a LOGOUT queued behind this message must be able to abort it.
         return { reply: { ok: true }, work: precachePages(userId, Array.isArray(data.precache) ? data.precache : []) };
+    }
+    if (data?.type === 'PRECACHE') {
+        const userId = await getSessionUser();
+        if (!userId || data.user !== userId) return { reply: { ok: false } };
+        return { reply: { ok: true }, work: precachePages(userId, extraPrecacheUrls(data.urls)) };
     }
     if (data?.type === 'LOGOUT') {
         await purgeUserPages();

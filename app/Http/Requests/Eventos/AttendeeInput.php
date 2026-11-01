@@ -72,9 +72,18 @@ class AttendeeInput
             'celular' => ['required', 'string', 'regex:/^3\d{9}$/'],
             'barrio' => ['required', 'string', 'max:120'],
             'fijo' => ['nullable', 'string', 'regex:/^\d{7,10}$/'],
-            'fecha_nacimiento' => ['nullable', 'date_format:Y-m-d', 'after:1900-01-01', 'before_or_equal:'.now('America/Bogota')->subYears(18)->toDateString()],
+            'fecha_nacimiento' => ['bail', 'nullable', 'string', 'regex:/^\d{4}-\d{2}-\d{2}$/', self::existingDate(...), 'after:1900-01-01', 'before_or_equal:'.now('America/Bogota')->subYears(18)->toDateString()],
             'direccion' => ['nullable', 'string', 'max:255'],
         ];
+    }
+
+    // A well-formed date that is not on the calendar (2026-02-31) gets its own message, not the format one.
+    public static function existingDate(string $attribute, mixed $value, \Closure $fail): void
+    {
+        [$year, $month, $day] = array_map('intval', explode('-', $value));
+        if (! checkdate($month, $day, $year)) {
+            $fail('Esa fecha no existe.');
+        }
     }
 
     public static function messages(): array
@@ -92,7 +101,7 @@ class AttendeeInput
             'barrio.required' => 'Escriba el barrio.',
             'barrio.max' => 'El barrio no puede tener más de 120 caracteres.',
             'fijo.regex' => 'El teléfono fijo debe tener entre 7 y 10 dígitos.',
-            'fecha_nacimiento.date_format' => 'La fecha de nacimiento debe tener el formato AAAA-MM-DD.',
+            'fecha_nacimiento.regex' => 'La fecha de nacimiento debe tener el formato AAAA-MM-DD.',
             'fecha_nacimiento.before_or_equal' => 'El registro es solo para mayores de 18 años.',
             'fecha_nacimiento.after' => 'Revise la fecha de nacimiento.',
             'direccion.max' => 'La dirección no puede tener más de 255 caracteres.',

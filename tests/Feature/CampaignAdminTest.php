@@ -814,4 +814,32 @@ class CampaignAdminTest extends TestCase
 
         $this->artisan('campaign:list')->assertSuccessful()->expectsOutputToContain('alejandro-cardenas');
     }
+
+    // OBS-07: a role_id (or campaign_id) that is not a UUID is a 422, never a database error; user ids too (404).
+    public function test_a_role_id_that_is_not_a_uuid_is_a_422_with_a_spanish_message(): void
+    {
+        $this->actingAs($this->adminX)->postJson('/admin/usuarios', $this->newUserPayload(['role_id' => 'abc']))
+            ->assertStatus(422)->assertJsonPath('errors.role_id', ['El campo rol debe ser un UUID válido.']);
+        $this->actingAs($this->adminX)->putJson("/admin/usuarios/{$this->campoX->id}", ['name' => 'X', 'email' => 'x@test.local', 'role_id' => "1' OR 1=1"])
+            ->assertStatus(422)->assertJsonPath('errors.role_id', ['El campo rol debe ser un UUID válido.']);
+        $this->actingAs($this->superadmin)->postJson('/admin/usuarios', $this->newUserPayload(['campaign_id' => 'no-uuid']))
+            ->assertStatus(422)->assertJsonPath('errors.campaign_id', ['El campo campaña debe ser un UUID válido.']);
+        $this->actingAs($this->adminX)->putJson('/admin/usuarios/no-uuid', ['name' => 'X', 'email' => 'x@test.local'])->assertNotFound();
+
+        $this->assertSame(0, User::where('email', 'nuevo@test.local')->count());
+    }
+
+    // OBS-06: the user form fields have Spanish names in the messages.
+    public function test_user_form_messages_name_the_fields_in_spanish(): void
+    {
+        $this->actingAs($this->adminX)->postJson('/admin/usuarios', $this->newUserPayload([
+            'permissions' => 'view.mapa', 'territory_scope' => ['no-uuid'],
+        ]))->assertStatus(422)
+            ->assertJsonPath('errors.permissions', ['El campo permisos debe ser un arreglo.'])
+            ->assertJsonPath('errors', fn ($errors) => $errors['territory_scope.0'] === ['El campo municipio del territorio debe ser un UUID válido.']);
+        $this->actingAs($this->adminX)->postJson('/admin/usuarios', $this->newUserPayload(['permissions' => [['x']], 'territory_scope' => 'x']))
+            ->assertStatus(422)
+            ->assertJsonPath('errors', fn ($errors) => $errors['permissions.0'] === ['El campo permiso debe ser una cadena de texto.']
+                && $errors['territory_scope'] === ['El campo territorio debe ser un arreglo.']);
+    }
 }

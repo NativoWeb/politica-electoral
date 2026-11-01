@@ -14,12 +14,17 @@ import { userKey } from './userKey';
 export const PRECACHE_URLS = ['/mapa-politico', '/gobernador'];
 // A page behind a permission the user lacks only redirects home, so it is not requested.
 const PRECACHE_PERMISSIONS = { '/mapa-politico': 'view.mapa', '/gobernador': 'view.gobernador' };
+// Same key as SHARED_OWNER_KEY in offlineDb: the sync reads it to know which account this browser holds.
 const LAST_USER_KEY = 'electoral:offline-user';
 // Set before every logout attempt and removed by the first page without a session. If the server
 // never got the logout (no network), the next online page of that same user finishes it.
 const PENDING_LOGOUT_KEY = 'electoral:pending-logout';
 
 let lastUserId;
+// The last SESSION message: an extra precache waits for it, so the SW already knows the user.
+let sessionPosted = Promise.resolve(null);
+// Pages asked for before the SW knew the session (first install): sent once it confirms one.
+const waitingExtra = new Set();
 
 async function getWorker() {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
@@ -139,14 +144,62 @@ export async function syncServiceWorkerSession(user, { confirm: confirmFn = (m) 
     const key = await pendingKey;
     if (key) forgetPreviousUserData(id, key, confirmFn);
 
-    const reply = await postToServiceWorker({ type: 'SESSION', user: key, precache: key ? precacheUrlsFor(user) : [] });
+    sessionPosted = postToServiceWorker({ type: 'SESSION', user: key, precache: key ? precacheUrlsFor(user) : [] });
+    const reply = await sessionPosted;
     // No active SW yet (first install): let the next call retry.
     if (reply === null && lastUserId === id) lastUserId = undefined;
+    if (key && reply?.ok && waitingExtra.size) precacheExtraPages([]);
+}
+
+// Asks the SW to keep these pages of the current user for offline use (operator mode of events).
+// Resolves with the SW reply, or null without a SW or a session (the pages then wait for the next session).
+export async function precacheExtraPages(urls) {
+    (urls ?? []).forEach(url => waitingExtra.add(url));
+    await sessionPosted;
+    const key = await getOfflineOwnerKey();
+    if (!key || !waitingExtra.size) return null;
+    const batch = [...waitingExtra];
+    const reply = await postToServiceWorker({ type: 'PRECACHE', user: key, urls: batch });
+    if (reply?.ok) batch.forEach(url => waitingExtra.delete(url));
+    return reply;
+}
+
+const PRECACHED_KEY = 'electoral:precached-pages';
+
+function readPrecached(storageKey) {
+    try {
+        return new Set(JSON.parse(sessionStorage.getItem(storageKey) || '[]'));
+    } catch {
+        return new Set();
+    }
+}
+
+function writePrecached(storageKey, urls) {
+    try {
+        sessionStorage.setItem(storageKey, JSON.stringify([...urls]));
+    } catch {
+        // Blocked storage: the pages are just asked for again on the next visit.
+    }
+}
+
+// Like precacheExtraPages, but each page only once per tab session and account (the list of events is
+// visited often; the operator page refreshes its own copy every time it is opened).
+export async function precacheExtraPagesOnce(urls) {
+    const key = await getOfflineOwnerKey();
+    if (!key) return null;
+    const storageKey = `${PRECACHED_KEY}:${key}`;
+    const done = readPrecached(storageKey);
+    const fresh = (urls ?? []).filter(url => !done.has(url));
+    if (!fresh.length) return null;
+    const reply = await precacheExtraPages(fresh);
+    if (reply?.ok) writePrecached(storageKey, [...done, ...fresh]);
+    return reply;
 }
 
 // Purges everything this device keeps for the session. The device mark is only removed when the
 // local data really went away, so a later login still detects and wipes leftovers.
 export async function clearUserOfflineState() {
+    waitingExtra.clear();
     lastUserId = undefined;
     const owner = await getOfflineOwnerKey();
     setOfflineOwner(null);
@@ -172,4 +225,6 @@ async function purgeLeftovers(owner) {
 
 export function resetSwSessionForTests() {
     lastUserId = undefined;
+    sessionPosted = Promise.resolve(null);
+    waitingExtra.clear();
 }

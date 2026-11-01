@@ -15,7 +15,7 @@ function PublicShell({ title, children }) {
                         <span className="flex-1 bg-[#003893]" />
                         <span className="flex-1 bg-[#CE1126]" />
                     </div>
-                    <p className="text-[16px] font-extrabold tracking-wide">Registro de asistencia</p>
+                    <p className="text-[18px] font-extrabold tracking-wide">Registro de asistencia</p>
                 </div>
             </header>
             <main className="max-w-xl mx-auto px-4 py-5 pb-16 text-[18px]">{children}</main>
@@ -26,7 +26,7 @@ function PublicShell({ title, children }) {
 function EventHeader({ evento }) {
     return (
         <section className="bg-white border border-[var(--color-line)] rounded-2xl p-5 mb-5">
-            {evento.tipo && <p className="text-[15px] font-bold uppercase tracking-wide text-[var(--color-ink-soft)]">{evento.tipo}</p>}
+            {evento.tipo && <p className="text-[18px] font-bold uppercase tracking-wide text-[var(--color-ink-soft)]">{evento.tipo}</p>}
             <h1 className="text-[24px] leading-tight font-extrabold text-[var(--color-primary)] mt-1">{evento.nombre}</h1>
             <dl className="mt-3 space-y-2 text-[18px]">
                 <div>

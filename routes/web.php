@@ -105,11 +105,11 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     // Write routes — require can.write middleware (#4 RBAC)
     Route::middleware('can.write')->group(function () {
         Route::middleware('permission:view.mapa')->group(function () {
-            Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store');
-            Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update');
-            Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store');
+            Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store')->middleware('offline.owner');
+            Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update')->middleware('offline.owner');
+            Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store')->middleware('offline.owner');
             Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
-            Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy');
+            Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy')->middleware('offline.owner');
             Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
             Route::post('/mapa-politico/persona/{id}/unificar', [MapaPoliticoController::class, 'mergeLider'])->name('mapa-politico.persona.merge');
             Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store');
@@ -154,7 +154,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         Route::middleware('permission:register.asistentes|manage.eventos')->group(function () {
             Route::get('/{id}/operador', [EventoController::class, 'operador'])->name('operador')->whereUuid('id');
-            Route::post('/{id}/asistentes', [EventoController::class, 'registerAttendee'])->name('asistentes.store')->whereUuid('id');
+            Route::get('/{id}/planilla.pdf', [EventoController::class, 'planilla'])->name('planilla')->whereUuid('id')
+                ->middleware('throttle:eventos-planilla');
+            Route::post('/{id}/asistentes', [EventoController::class, 'registerAttendee'])->name('asistentes.store')->whereUuid('id')->middleware('offline.owner');
         });
 
         Route::middleware('permission:manage.eventos')->group(function () {
@@ -219,9 +221,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::middleware('permission:manage.users')->group(function () {
             Route::get('/usuarios', [AdminController::class, 'users'])->name('users');
             Route::post('/usuarios', [AdminController::class, 'storeUser'])->name('users.store');
-            Route::put('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('users.update');
-            Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle');
-            Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy');
+            Route::put('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('users.update')->whereUuid('id');
+            Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle')->whereUuid('id');
+            Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy')->whereUuid('id');
         });
 
         // Platform screens (shared electoral data): read and write only for whoever edits it, the rest get a 403.

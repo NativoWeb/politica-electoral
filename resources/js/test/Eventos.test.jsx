@@ -1,6 +1,7 @@
 // Lives outside Pages/: app.jsx bundles every Pages/**/*.jsx file into the app.
+import 'fake-indexeddb/auto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react';
 
 const mockRouterPost = vi.fn();
 const mockPage = { props: {}, url: '/eventos' };
@@ -36,6 +37,9 @@ import EventoFormModal from '@/Components/Eventos/EventoFormModal';
 import Show from '@/Pages/Eventos/Show';
 import Operador from '@/Pages/Eventos/Operador';
 import Publico from '@/Pages/Eventos/Publico';
+import { router } from '@inertiajs/react';
+import { attendeeFormFromPayload } from '@/lib/eventos';
+import { db, rememberEventUuid, setOfflineOwner } from '@/lib/offlineDb';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CD = { id: 'cd', name: 'Centro Democrático' };
@@ -55,7 +59,7 @@ const EVENTO = {
 };
 
 function jsonResponse(status, body) {
-    return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
+    return Promise.resolve({ ok: status >= 200 && status < 300, status, headers: new Headers({ 'Content-Type': 'application/json' }), json: () => Promise.resolve(body) });
 }
 
 function fillAttendee({ nombres = 'Ana', apellidos = 'Pérez', cedula = '1098765432', celular = '3001234567', barrio = 'El Poblado' } = {}) {
@@ -283,12 +287,35 @@ describe('Eventos/Operador', () => {
         return render(<Operador evento={OP_EVENTO} consent={consent} registrados={5} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
     }
 
-    beforeEach(() => {
+    let online = true;
+
+    function setOnline(value) {
+        online = value;
+        window.dispatchEvent(new Event(value ? 'online' : 'offline'));
+    }
+
+    async function register(person) {
+        fillAttendee(person);
+        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
+        await screen.findByText('Guardado en el teléfono');
+    }
+
+    beforeEach(async () => {
         mockPage.props = { auth: { user: { ...ADMIN, permissions: ['register.asistentes'] } }, visibleCampaigns: [], errors: {}, flash: {} };
         globalThis.fetch = vi.fn();
+        online = true;
+        Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+        await Promise.all([db.pendingChanges.clear(), db.eventos.clear(), db.eventUuids.clear()]);
+        setOfflineOwner('owner-test');
+        localStorage.setItem('electoral:offline-user', 'owner-test');
+        router.reload.mockClear();
     });
 
-    afterEach(cleanup);
+    afterEach(() => {
+        cleanup();
+        delete navigator.onLine;
+    });
 
     it('sends the client_uuid, clears the form, counts and focuses the first field', async () => {
         globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, message: 'Asistente registrado.', data: { id: 'x1', duplicate: false } }));
@@ -333,19 +360,307 @@ describe('Eventos/Operador', () => {
         expect(sentBody(1).client_uuid).toBe(sentBody(0).client_uuid);
     });
 
-    it('keeps the client_uuid after a network failure, so the retry cannot duplicate', async () => {
-        globalThis.fetch.mockReturnValueOnce(Promise.reject(new Error('offline')));
+    it('keeps a registration whose POST fails on the network in the phone, with its client_uuid', async () => {
+        globalThis.fetch.mockImplementationOnce(() => Promise.reject(new TypeError('Failed to fetch')));
+        renderOperador();
+        await register();
+
+        expect(screen.getByText(/Ana Pérez: se enviará al recuperar la señal/)).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+        expect(screen.getByTestId('session-count')).toHaveTextContent('1');
+        expect(screen.getByTestId('event-total')).toHaveTextContent('6');
+        const [queued] = await db.pendingChanges.toArray();
+        expect(queued.data.payload.client_uuid).toBe(sentBody(0).client_uuid);
+        expect(screen.getByLabelText(/^Nombres/)).toHaveValue('');
+    });
+
+    it('without signal registers 3 people in the phone, then sends them once when the signal is back', async () => {
+        online = false;
+        renderOperador();
+        expect(screen.getByTestId('connection-status')).toHaveTextContent('Sin señal');
+
+        await register({ nombres: 'Ana', cedula: '1098000001' });
+        await register({ nombres: 'Beto', cedula: '1098000002' });
+        await register({ nombres: 'Carla', cedula: '1098000003' });
+
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(await screen.findByRole('heading', { name: 'Pendientes de enviar (3)' })).toBeInTheDocument();
+        expect(screen.getByTestId('session-count')).toHaveTextContent('3');
+        expect(screen.getByTestId('event-total')).toHaveTextContent('8');
+        const uuids = (await db.pendingChanges.toArray()).map(c => c.data.payload.client_uuid);
+        expect(new Set(uuids).size).toBe(3);
+
+        const seen = new Set();
+        globalThis.fetch.mockImplementation((url, init) => {
+            const { client_uuid: id } = JSON.parse(init.body);
+            const duplicate = seen.has(id);
+            seen.add(id);
+            return jsonResponse(duplicate ? 200 : 201, { success: true, data: { client_uuid: id, duplicate } });
+        });
+        act(() => setOnline(true));
+
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /Pendientes de enviar/ })).not.toBeInTheDocument());
+        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+        expect(globalThis.fetch.mock.calls.every(([url]) => url === '/eventos/ev1/asistentes')).toBe(true);
+        expect(seen.size).toBe(3);
+        expect(screen.getByTestId('connection-status')).toHaveTextContent('Con señal');
+        expect(router.reload).toHaveBeenCalledWith({ only: ['registrados', 'mis_registros'] });
+
+        // Going offline and online again does not send them a second time.
+        act(() => setOnline(false));
+        act(() => setOnline(true));
+        await new Promise(r => setTimeout(r, 20));
+        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('shows a registration the server refused (422) with its reason, and "Corregir" puts it back in the form', async () => {
+        online = false;
+        renderOperador();
+        await register({ nombres: 'Ana', celular: '3009999999' });
+
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { cedula: ['La cédula debe tener entre 5 y 12 números.'] } }));
+        act(() => setOnline(true));
+
+        expect(await screen.findByRole('heading', { name: 'No se pudieron guardar (1)' })).toBeInTheDocument();
+        expect(screen.getByText('La cédula debe tener entre 5 y 12 números.')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /Pendientes de enviar/ })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Corregir' }));
+        await waitFor(() => expect(screen.getByLabelText(/^Nombres/)).toHaveValue('Ana'));
+        expect(screen.getByLabelText(/^Celular/)).toHaveValue('3009999999');
+        expect(screen.getByRole('checkbox')).toBeChecked();
+        // It stays in the list (and in the phone) until the corrected one is saved.
+        expect(screen.getByText('En el formulario: sale de esta lista al guardarlo.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Corregir' })).toBeNull();
+        expect(await db.pendingChanges.count()).toBe(1);
+
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, data: { id: 'x9', duplicate: false } }));
+        fireEvent.change(screen.getByLabelText(/^Cédula/), { target: { value: '1098765432' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
+        await screen.findByText('¡Registrado!');
+        expect(sentBody(1).cedula).toBe('1098765432');
+        expect(sentBody(1).client_uuid).not.toBe(sentBody(0).client_uuid);
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /No se pudieron guardar/ })).not.toBeInTheDocument());
+        expect(await db.pendingChanges.count()).toBe(0);
+    });
+
+    it('if the corrected one fails validation the refused one is kept; typed data is only replaced after confirming', async () => {
+        online = false;
+        renderOperador();
+        await register({ nombres: 'Ana' });
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { celular: ['El celular debe tener 10 dígitos y empezar por 3.'] } }));
+        act(() => setOnline(true));
+        await screen.findByRole('heading', { name: 'No se pudieron guardar (1)' });
+
+        fireEvent.change(screen.getByLabelText(/^Nombres/), { target: { value: 'Persona en curso' } });
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Corregir' }));
+        expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('El formulario tiene datos escritos'));
+        expect(screen.getByLabelText(/^Nombres/)).toHaveValue('Persona en curso');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Corregir' }));
+        await waitFor(() => expect(screen.getByLabelText(/^Nombres/)).toHaveValue('Ana'));
+        confirmSpy.mockRestore();
+
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { celular: ['El celular debe tener 10 dígitos y empezar por 3.'] } }));
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
+        expect(await screen.findAllByText('El celular debe tener 10 dígitos y empezar por 3.')).not.toHaveLength(0);
+        expect(await db.pendingChanges.count()).toBe(1);
+        expect(screen.getByRole('heading', { name: 'No se pudieron guardar (1)' })).toBeInTheDocument();
+    });
+
+    it('a corrected registration queued without signal also takes the refused one out of the list', async () => {
+        online = false;
+        renderOperador();
+        await register({ nombres: 'Ana' });
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(409, { success: false, message: 'Ese registro pertenece a otro evento.' }));
+        act(() => setOnline(true));
+        await screen.findByRole('heading', { name: 'No se pudieron guardar (1)' });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Corregir' }));
+        await waitFor(() => expect(screen.getByLabelText(/^Nombres/)).toHaveValue('Ana'));
+        act(() => setOnline(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
+        await screen.findByText('Guardado en el teléfono');
+
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /No se pudieron guardar/ })).not.toBeInTheDocument());
+        expect(screen.getByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+        const [left] = await db.pendingChanges.toArray();
+        expect(left.synced).toBe(0);
+    });
+
+    it('does not offer "Corregir" when the event no longer takes registrations', async () => {
+        await db.pendingChanges.add({
+            type: 'event_attendee', action: 'create', owner: 'owner-test', synced: 1, rejected: true, rejectedStatus: 410,
+            rejectedReason: 'El evento ya no recibe registros.', rejectedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
+            data: { eventId: 'ev1', payload: { nombres: 'Ana', apellidos: 'Pérez' } },
+        });
+        render(<Operador evento={{ ...OP_EVENTO, accepts_registrations: false }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+
+        expect(await screen.findByRole('heading', { name: 'No se pudieron guardar (1)' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Corregir' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Descartar' })).toBeInTheDocument();
+        expect(screen.getByText(/solo se pueden descartar/)).toBeInTheDocument();
+    });
+
+    it('a redirect that ends in an HTML page is not taken as saved: it stays in the phone', async () => {
+        globalThis.fetch.mockReturnValueOnce(Promise.resolve({ ok: true, status: 200, redirected: true, headers: new Headers({ 'Content-Type': 'text/html' }), json: () => Promise.reject(new Error('html')) }));
+        renderOperador();
+        await register();
+
+        expect(screen.queryByText('¡Registrado!')).toBeNull();
+        expect(screen.getByText('Debe cambiar su contraseña antes de seguir; lo guardado en el teléfono no se pierde.')).toBeInTheDocument();
+        expect(screen.getByText(/se enviará cuando cambie su contraseña\./)).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+        expect(screen.getByText('El servidor pidió una acción antes de recibirlos (por ejemplo, cambiar la contraseña).')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Cambiar contraseña' })).toHaveAttribute('href', '/forzar-cambio-password');
+        expect(screen.getByTestId('session-count')).toHaveTextContent('1');
+    });
+
+    it.each([
+        [401, 'Su sesión se cerró. Inicie sesión de nuevo; lo guardado en el teléfono no se pierde.'],
+        [419, 'Su sesión se cerró. Inicie sesión de nuevo; lo guardado en el teléfono no se pierde.'],
+        [503, 'El servidor no respondió; quedó guardado en el teléfono y se enviará después.'],
+    ])('with signal, a %i keeps the registration in the phone instead of losing what was typed', async (status, message) => {
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(status, { message: 'x' }));
+        renderOperador();
+        await register();
+
+        expect(screen.getByText(message)).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+        // The banner says when it will go out, by the cause (OBS-04): never "al recuperar la señal" with signal.
+        expect(screen.queryByText(/al recuperar la señal/)).toBeNull();
+        if (status === 503) {
+            expect(screen.getByText(/se enviará cuando el servidor responda\./)).toBeInTheDocument();
+        } else {
+            expect(screen.getByText(/se enviará cuando inicie sesión de nuevo\./)).toBeInTheDocument();
+            expect(screen.getByText(/Se enviarán cuando inicie sesión de nuevo/)).toBeInTheDocument();
+            expect(screen.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute('href', '/login');
+        }
+        const [queued] = await db.pendingChanges.toArray();
+        expect(queued.data.payload).toMatchObject({ nombres: 'Ana', client_uuid: sentBody(0).client_uuid });
+        expect(screen.getByLabelText(/^Nombres/)).toHaveValue('');
+    });
+
+    it('discards a refused registration only after confirming', async () => {
+        online = false;
+        renderOperador();
+        await register();
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(410, { success: false, message: 'El evento ya no recibe registros.' }));
+        act(() => setOnline(true));
+        expect(await screen.findByText('El evento ya no recibe registros.')).toBeInTheDocument();
+
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+        await new Promise(r => setTimeout(r, 20));
+        expect(await db.pendingChanges.count()).toBe(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /No se pudieron guardar/ })).not.toBeInTheDocument());
+        expect(await db.pendingChanges.count()).toBe(0);
+        confirmSpy.mockRestore();
+    });
+
+    it('keeps the queue when the session expired (401) and says to log in again', async () => {
+        online = false;
+        renderOperador();
+        await register();
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(401, { message: 'Unauthenticated.' }));
+        act(() => setOnline(true));
+
+        expect(await screen.findByText(/Su sesión se cerró/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /No se pudieron guardar/ })).not.toBeInTheDocument();
+    });
+
+    it('never reuses the client_uuid of a page restored from the cache once it was used', async () => {
+        await rememberEventUuid('ev1', '11111111-1111-4111-8111-111111111111');
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, data: { id: 'x1', duplicate: false } }));
         renderOperador();
         fillAttendee();
         fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
-        expect(await screen.findByText(/No hay conexión/)).toBeInTheDocument();
+        await screen.findByText('¡Registrado!');
+        expect(sentBody().client_uuid).toMatch(UUID_RE);
+        expect(sentBody().client_uuid).not.toBe('11111111-1111-4111-8111-111111111111');
+    });
 
-        globalThis.fetch.mockReturnValueOnce(jsonResponse(200, { success: true, message: 'Esta persona ya estaba registrada en el evento.', data: { id: 'x1', duplicate: true } }));
-        fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
-        expect(await screen.findByText('Ya estaba registrado')).toBeInTheDocument();
-        expect(sentBody(1).client_uuid).toBe(sentBody(0).client_uuid);
-        expect(screen.getByTestId('session-count')).toHaveTextContent('0');
+    it('opened without signal, uses the event and consent text saved in the phone', async () => {
+        await db.eventos.put({
+            id: 'ev1', owner: 'owner-test', savedAt: '2026-11-05T17:00:00.000Z',
+            evento: { ...OP_EVENTO, barrios: ['Barrio Guardado'] },
+            consent: { id: 'c2', version: 'v2', cuerpo: 'Texto guardado', approved: true },
+        });
+        online = false;
+        renderOperador();
+        expect(await screen.findByRole('button', { name: 'Barrio Guardado' })).toBeInTheDocument();
+        await register({ barrio: 'Barrio Guardado' });
+        const [queued] = await db.pendingChanges.toArray();
+        expect(queued.data.payload.consent_text_id).toBe('c2');
+    });
+
+    it('does not count in "Registrados por usted" the ones the server refused (OBS-03)', async () => {
+        online = false;
+        renderOperador();
+        await register({ nombres: 'Ana', cedula: '1098000001' });
+        await register({ nombres: 'Beto', cedula: '1098000002' });
+        expect(screen.getByTestId('session-count')).toHaveTextContent('2');
+
+        globalThis.fetch
+            .mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { cedula: ['Cédula inválida.'] } }))
+            .mockReturnValueOnce(jsonResponse(201, { success: true, data: { duplicate: false } }));
+        act(() => setOnline(true));
+
+        await screen.findByRole('heading', { name: 'No se pudieron guardar (1)' });
+        await waitFor(() => expect(screen.getByTestId('session-count')).toHaveTextContent('1'));
+    });
+
+    it.each([
+        ['owner_mismatch del servidor', () => jsonResponse(409, { success: false, code: 'owner_mismatch' }), 'Este navegador tiene abierta la sesión de otra cuenta', 'Iniciar sesión', '/login'],
+        ['cambio de contraseña forzado (redirect)', () => Promise.resolve({ ok: false, status: 0, type: 'opaqueredirect', headers: new Headers() }), 'El servidor pidió una acción antes de recibirlos \\(por ejemplo, cambiar la contraseña\\)', 'Cambiar contraseña', '/forzar-cambio-password'],
+        ['sesión vencida (419)', () => jsonResponse(419, { message: 'CSRF token mismatch.' }), 'Su sesión se cerró. Se enviarán cuando inicie sesión', 'Iniciar sesión', '/login'],
+    ])('when the sync stops by %s the pending list says what to do (OBS-05)', async (_name, response, text, linkName, href) => {
+        online = false;
+        renderOperador();
+        await register();
+        globalThis.fetch.mockImplementationOnce(response);
+        act(() => setOnline(true));
+
+        expect(await screen.findByText(new RegExp(text))).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: linkName })).toHaveAttribute('href', href);
+        expect(screen.getByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /No se pudieron guardar/ })).toBeNull();
+    });
+
+    it.each([
+        ['otra cuenta abierta en el navegador', 'owner-b', 'Este navegador tiene abierta la sesión de otra cuenta. Inicie sesión con su cuenta para enviarlos'],
+        ['ninguna cuenta abierta', null, 'Este navegador ya no tiene abierta su sesión. Inicie sesión con su cuenta para enviarlos.'],
+    ])('tells apart %s when the shared session is not this operator', async (_name, shared, text) => {
+        online = false;
+        renderOperador();
+        await register();
+        if (shared) localStorage.setItem('electoral:offline-user', shared);
+        else localStorage.removeItem('electoral:offline-user');
+        act(() => setOnline(true));
+
+        expect(await screen.findByText(text, { exact: false })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute('href', '/login');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(screen.getByRole('heading', { name: 'Pendientes de enviar (1)' })).toBeInTheDocument();
+    });
+
+    it('offers the printable sheet in the header to an operator, but not for a cancelled event (BUG-01)', () => {
+        const { unmount } = renderOperador();
+        expect(screen.getByRole('link', { name: 'Planilla para imprimir' })).toHaveAttribute('href', '/eventos/ev1/planilla.pdf');
+        unmount();
+
+        render(<Operador evento={{ ...OP_EVENTO, status: 'cancelado', accepts_registrations: false }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        expect(screen.queryByRole('link', { name: 'Planilla para imprimir' })).toBeNull();
+    });
+
+    it('turns a queued payload back into form values', () => {
+        const values = attendeeFormFromPayload({ nombres: 'Ana', apellidos: 'P', cedula: '123456', celular: '3001234567', barrio: 'Centro', fijo: null, direccion: null, fecha_nacimiento: '1980-04-02', autoriza_datos: true, consent_text_id: 'c1' }, { consentId: 'c1' });
+        expect(values).toMatchObject({ fijo: '', direccion: '', birth: { day: '2', month: '4', year: '1980' }, autoriza_datos: true });
+        expect(attendeeFormFromPayload({ autoriza_datos: true, consent_text_id: 'old' }, { consentId: 'c1' }).autoriza_datos).toBe(false);
     });
 
     it('does not send without the consent box and marks a provisional text', async () => {

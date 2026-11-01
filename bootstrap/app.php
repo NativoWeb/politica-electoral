@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureCampaignWhatsApp;
 use App\Http\Middleware\EnsureCanWrite;
 use App\Http\Middleware\EnsureElectoralPlatform;
 use App\Http\Middleware\EnsureHasPermission;
+use App\Http\Middleware\EnsureOfflineOwner;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsureSuperadmin;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -16,14 +17,17 @@ use App\Http\Middleware\VerifyAgentHmac;
 use App\Support\DatabaseErrorLog;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -36,6 +40,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Trusted proxies come from config/trustedproxy.php (env TRUSTED_PROXIES, empty = none).
         // The agent signature is checked before any limiter or auth, so unsigned traffic consumes nothing.
         $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: VerifyAgentHmac::class);
+        // Right after auth, before permission/can.write: a queue of another account gets 409, never a 403 that drops it.
+        $middleware->appendToPriorityList(after: AuthenticatesRequests::class, append: EnsureOfflineOwner::class);
         $middleware->web(append: [
             HandleInertiaRequests::class,
             EnsureAccountActive::class,
@@ -52,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'agent.user' => EnsureAgentUserEligible::class,
             'agent.can_write' => EnsureAgentCanWrite::class,
             'abilities' => CheckAbilities::class,
+            'offline.owner' => EnsureOfflineOwner::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -70,6 +77,16 @@ return Application::configure(basePath: dirname(__DIR__))
             return false;
         });
 
+        // Laravel's throttle text is English ("Too Many Attempts."); pages use errors/429.blade.php.
+        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
+            if ($request->is('api/agent/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Demasiadas solicitudes. Espere un momento e intente de nuevo.',
+                ], 429, $e->getHeaders());
+            }
+        });
+
         // The agent API always answers {success: false, message}; 5xx keep Laravel's generic message.
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/agent/*')) {
@@ -81,6 +98,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 $message = $e->getStatusCode() === 404 ? 'No encontrado.' : ($e->getMessage() ?: 'Solicitud no permitida.');
 
                 return response()->json(['success' => false, 'message' => $message], $e->getStatusCode(), $e->getHeaders());
+            }
+        });
+
+        // A JSON 404 never names the model ("No query results for model [App\Models\...]") and reads the same whether
+        // the record does not exist or belongs to a campaign the user cannot see. Messages the app wrote are kept.
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
+            $frameworkText = $e->getMessage() === '' || $e->getPrevious() instanceof ModelNotFoundException
+                || (str_starts_with($e->getMessage(), 'The route ') && str_ends_with($e->getMessage(), ' could not be found.'));
+            if ($request->expectsJson() && $frameworkText) {
+                return response()->json(['message' => 'No se encontró lo que busca.'], 404, $e->getHeaders());
             }
         });
     })->create();

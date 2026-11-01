@@ -194,7 +194,7 @@ class AdminController extends Controller
     // Superadmin picks the campaign (its own by default); anyone else always creates in their own campaign.
     private function campaignRule(): array
     {
-        return $this->campaign()->isSuperadmin() ? ['nullable', 'uuid', 'exists:campaigns,id'] : ['exclude'];
+        return $this->campaign()->isSuperadmin() ? ['nullable', 'bail', 'uuid', 'exists:campaigns,id'] : ['exclude'];
     }
 
     public function storeUser(Request $request)
@@ -202,7 +202,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'role_id' => 'nullable|exists:roles,id',
+            'role_id' => 'nullable|bail|uuid|exists:roles,id',
             'permissions' => 'nullable|array',
             'permissions.*' => 'string',
             'territory_scope' => 'nullable|array',
@@ -241,7 +241,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $user->id,
-            'role_id' => 'nullable|exists:roles,id',
+            'role_id' => 'nullable|bail|uuid|exists:roles,id',
             'password' => 'nullable|string|min:8',
             'permissions' => 'nullable|array',
             'permissions.*' => 'string',

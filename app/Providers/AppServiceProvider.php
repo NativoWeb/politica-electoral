@@ -33,6 +33,12 @@ class AppServiceProvider extends ServiceProvider
         // NAT. The per-event quota is counted in EventoPublicoController on real registrations only, so bots cannot spend it.
         RateLimiter::for('eventos-publico', fn (Request $request) => Limit::perMinute(60)->by('eventos-ip|'.$request->ip()));
 
+        // The sign-in sheet PDF takes up to ~120 MB to render (20 pages): 10 per minute per user on the 2 GB VPS.
+        // HEAD (the app's probe before navigating) renders nothing: its own, wider quota, apart from the downloads.
+        RateLimiter::for('eventos-planilla', fn (Request $request) => $request->isMethod('HEAD')
+            ? Limit::perMinute(60)->by('eventos-planilla-head|'.($request->user()?->id ?? $request->ip()))
+            : Limit::perMinute(10)->by('eventos-planilla|'.($request->user()?->id ?? $request->ip())));
+
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {
             URL::forceScheme('https');

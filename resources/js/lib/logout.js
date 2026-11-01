@@ -1,4 +1,6 @@
 import { router } from '@inertiajs/react';
+import { askLogoutWithPending } from '@/Components/PendingLogoutDialog';
+import { showGlobalToast } from './api';
 import { getPendingCount, syncPendingChanges } from './offlineDb';
 import { clearUserOfflineState, writePendingLogout } from './swSession';
 import { userKey } from './userKey';
@@ -13,10 +15,11 @@ function xsrfToken() {
 
 const defaults = {
     isOnline: () => navigator.onLine,
-    confirm: (message) => window.confirm(message),
+    confirmPending: (count) => askLogoutWithPending(count),
+    notify: (message) => showGlobalToast(message, 'info'),
     alert: (message) => window.alert(message),
     goTo: (url) => window.location.replace(url),
-    post: () => router.post('/logout'),
+    post: (onFinish) => router.post('/logout', {}, { onFinish }),
     clearHistory: () => router.clearHistory(),
     serverLogout: () => fetch('/logout', {
         method: 'POST',
@@ -26,16 +29,52 @@ const defaults = {
     }),
 };
 
-// Returns false when the user cancels because of unsynced changes.
-export async function logout(user, deps = {}) {
-    const { isOnline, confirm, alert, goTo, post, clearHistory } = { ...defaults, ...deps };
+export const SYNC_BEFORE_LOGOUT_MS = 8000;
 
-    let pending = await getPendingCount().catch(() => 0);
-    if (pending > 0 && isOnline()) {
-        await syncPendingChanges().catch(() => {});
-        pending = await getPendingCount().catch(() => 0);
+// The user's unsynced changes, or null when the queue cannot be read (then it is not assumed empty).
+async function countPending() {
+    try {
+        return await getPendingCount();
+    } catch {
+        return null;
     }
-    if (pending > 0 && !confirm(`Tienes ${pending} cambio(s) sin sincronizar. Si cierras sesión se descartarán de este equipo.\n\n¿Cerrar sesión de todas formas?`)) {
+}
+
+// Repeated taps while a logout is running are ignored. The flag goes back down when the user stays,
+// something fails or the logout request finishes (Inertia keeps the app alive for the next login).
+let logoutInFlight = false;
+
+export function resetLogoutForTests() {
+    logoutInFlight = false;
+}
+
+// Returns false when the user stays because of unsynced changes (logging out clears this device's queue),
+// or when another logout is already running.
+export async function logout(user, deps = {}) {
+    if (logoutInFlight) return false;
+    logoutInFlight = true;
+    const release = () => { logoutInFlight = false; };
+    try {
+        const leaving = await runLogout(user, deps, release);
+        if (!leaving) release();
+        return leaving;
+    } catch (err) {
+        release();
+        throw err;
+    }
+}
+
+async function runLogout(user, deps, release) {
+    const { isOnline, confirmPending, notify, alert, goTo, post, clearHistory, syncTimeoutMs = SYNC_BEFORE_LOGOUT_MS } = { ...defaults, ...deps };
+
+    let pending = await countPending();
+    if (pending > 0 && isOnline()) {
+        notify(`Enviando ${pending === 1 ? '1 registro pendiente' : `${pending} registros pendientes`} antes de cerrar sesión...`);
+        // A slow or hung sync never blocks the logout: whatever is left is asked about below.
+        await withTimeout(syncPendingChanges().catch(() => null), syncTimeoutMs, null);
+        pending = await countPending();
+    }
+    if (pending !== 0 && !(await confirmPending(pending))) {
         return false;
     }
 
@@ -49,7 +88,7 @@ export async function logout(user, deps = {}) {
         return true;
     }
 
-    post();
+    post(release);
     return true;
 }
 

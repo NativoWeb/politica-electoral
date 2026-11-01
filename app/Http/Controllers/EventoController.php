@@ -15,10 +15,13 @@ use App\Models\ConsentText;
 use App\Models\EventAttendee;
 use App\Models\EventType;
 use App\Support\Cedula;
+use App\Support\PlanillaQr;
 use App\Support\Provincias;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -34,6 +37,10 @@ class EventoController extends Controller
     use ScopesTerritory;
 
     public const TZ = 'America/Bogota';
+
+    public const PLANILLA_ROWS = 12;
+
+    public const PLANILLA_MAX_PAGES = 20;
 
     public function index(Request $request): Response
     {
@@ -244,6 +251,95 @@ class EventoController extends Controller
                 ->map(fn ($a) => ['id' => $a->id, 'nombres' => $a->nombres, 'apellidos' => $a->apellidos, 'created_at' => $this->iso($a->created_at)]),
             'client_uuid' => (string) Str::uuid(),
         ]);
+    }
+
+    // Printable sign-in sheet: 12 numbered rows per page, a QR with the event id and page number on each page.
+    public function planilla(Request $request, string $id): HttpResponse
+    {
+        $event = $this->findEvent($id);
+        $start = $event->starts_at?->copy()->setTimezone(self::TZ);
+        $filename = 'planilla-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento')
+            .($start ? '-'.$start->format('Y-m-d') : '').'.pdf';
+
+        // The installed app probes with HEAD before navigating: same access checks, no rendering and no audit.
+        if ($request->isMethod('HEAD')) {
+            return response('', 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename='.$filename,
+            ]);
+        }
+
+        $paginas = self::planillaPages($request->query('paginas'));
+        ini_set('memory_limit', '256M');
+        $consent = ConsentText::currentFor($event->campaign_id);
+
+        $pages = array_map(fn (int $page) => [
+            'numero' => $page,
+            'qr' => PlanillaQr::png(PlanillaQr::payload($event->id, $page)),
+        ], range(1, $paginas));
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'EVENTO_PLANILLA_DESCARGADA',
+            'entity_type' => 'evento',
+            'entity_id' => $event->id,
+            'metadata' => ['route' => 'eventos.planilla', 'paginas' => $paginas, 'consent_text_id' => $consent?->id],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return Pdf::loadView('eventos.planilla', [
+            'evento' => $event,
+            'pages' => $pages,
+            'total' => $paginas,
+            'filas' => self::PLANILLA_ROWS,
+            'cuando' => $this->planillaWhen($event),
+            'consent' => $consent,
+            'consentResumen' => $consent ? self::consentSummary($consent->cuerpo) : null,
+        ])->setPaper('letter', 'landscape')
+            ->setOption('isRemoteEnabled', false)
+            ->setOption('isPhpEnabled', false)
+            ->setOption('isFontSubsettingEnabled', true)
+            ->download($filename);
+    }
+
+    // ?paginas= defaults to 3 and is clamped to 1..20.
+    public static function planillaPages($value): int
+    {
+        $pages = filter_var($value, FILTER_VALIDATE_INT);
+
+        return $pages === false ? 3 : max(1, min(self::PLANILLA_MAX_PAGES, $pages));
+    }
+
+    // The consent text cut at a sentence (or word) end so the footer keeps one short paragraph.
+    public static function consentSummary(string $body, int $limit = 480): string
+    {
+        $body = trim(preg_replace('/\s+/u', ' ', $body));
+        if (mb_strlen($body) <= $limit) {
+            return $body;
+        }
+        $cut = mb_substr($body, 0, $limit);
+        $sentence = mb_strrpos($cut, '. ');
+        if ($sentence !== false && $sentence > $limit / 2) {
+            return mb_substr($cut, 0, $sentence + 1).' […]';
+        }
+
+        return rtrim(mb_substr($cut, 0, (int) mb_strrpos($cut, ' ')), ' ,;:').' […]';
+    }
+
+    private function planillaWhen(CampaignEvent $event): ?string
+    {
+        if (! $event->starts_at) {
+            return null;
+        }
+        $start = $event->starts_at->copy()->setTimezone(self::TZ)->locale('es');
+        $end = $event->ends_at?->copy()->setTimezone(self::TZ)->locale('es');
+        $text = $start->translatedFormat('l j \d\e F \d\e Y, g:i a');
+        if ($end) {
+            $text .= ' – '.($end->isSameDay($start) ? $end->translatedFormat('g:i a') : $end->translatedFormat('l j \d\e F, g:i a'));
+        }
+
+        return $text;
     }
 
     public function registerAttendee(OperatorAttendeeRequest $request, string $id, RegisterAttendee $register): JsonResponse

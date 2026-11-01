@@ -6,7 +6,7 @@ vi.mock('@inertiajs/react', () => ({ router: { post: vi.fn(), clearHistory: vi.f
 vi.mock('./offlineDb', () => offline);
 vi.mock('./swSession', async (importOriginal) => ({ ...(await importOriginal()), ...session }));
 
-import { logout, finishPendingLogout, handleLogoutNetworkError, resetPendingLogoutAttempts, withTimeout, OFFLINE_LOGOUT_MESSAGE } from './logout';
+import { logout, finishPendingLogout, handleLogoutNetworkError, resetLogoutForTests, resetPendingLogoutAttempts, withTimeout, OFFLINE_LOGOUT_MESSAGE } from './logout';
 import { userKey } from './userKey';
 
 const userA = { id: 'user-a' };
@@ -14,7 +14,8 @@ const userA = { id: 'user-a' };
 function deps(overrides = {}) {
     return {
         isOnline: () => true,
-        confirm: vi.fn(() => true),
+        confirmPending: vi.fn().mockResolvedValue(true),
+        notify: vi.fn(),
         alert: vi.fn(),
         goTo: vi.fn(),
         post: vi.fn(),
@@ -28,6 +29,7 @@ describe('logout', () => {
     beforeEach(() => {
         localStorage.clear();
         resetPendingLogoutAttempts();
+        resetLogoutForTests();
         offline.getPendingCount.mockReset().mockResolvedValue(0);
         offline.syncPendingChanges.mockReset().mockResolvedValue({ synced: 0, failed: 0 });
         session.clearUserOfflineState.mockReset().mockResolvedValue(undefined);
@@ -38,7 +40,7 @@ describe('logout', () => {
 
         await expect(logout(userA, d)).resolves.toBe(true);
 
-        expect(d.confirm).not.toHaveBeenCalled();
+        expect(d.confirmPending).not.toHaveBeenCalled();
         expect(session.clearUserOfflineState).toHaveBeenCalledTimes(1);
         expect(d.post).toHaveBeenCalledTimes(1);
         expect(session.clearUserOfflineState.mock.invocationCallOrder[0]).toBeLessThan(d.post.mock.invocationCallOrder[0]);
@@ -51,20 +53,98 @@ describe('logout', () => {
         await logout(userA, d);
 
         expect(offline.syncPendingChanges).toHaveBeenCalledTimes(1);
-        expect(d.confirm).not.toHaveBeenCalled();
+        expect(d.notify).toHaveBeenCalledWith('Enviando 2 registros pendientes antes de cerrar sesión...');
+        expect(d.confirmPending).not.toHaveBeenCalled();
         expect(d.post).toHaveBeenCalledTimes(1);
     });
 
     it('si quedan cambios sin sincronizar y el usuario cancela, no cierra ni borra nada', async () => {
         offline.getPendingCount.mockResolvedValue(3);
         offline.syncPendingChanges.mockRejectedValue(new Error('500'));
-        const d = deps({ confirm: vi.fn(() => false) });
+        const d = deps({ confirmPending: vi.fn().mockResolvedValue(false) });
 
         await expect(logout(userA, d)).resolves.toBe(false);
 
-        expect(d.confirm).toHaveBeenCalledWith(expect.stringContaining('3 cambio(s) sin sincronizar'));
+        expect(d.confirmPending).toHaveBeenCalledWith(3);
         expect(session.clearUserOfflineState).not.toHaveBeenCalled();
         expect(d.post).not.toHaveBeenCalled();
+        expect(localStorage.getItem('electoral:pending-logout')).toBeNull();
+    });
+
+    it('ignora los toques repetidos mientras el primer cierre está en curso', async () => {
+        offline.getPendingCount.mockResolvedValue(2);
+        let answer;
+        const d = deps({ confirmPending: vi.fn(() => new Promise(resolve => { answer = resolve; })), isOnline: () => false });
+
+        const first = logout(userA, d);
+        await vi.waitFor(() => expect(d.confirmPending).toHaveBeenCalledTimes(1));
+        await expect(logout(userA, d)).resolves.toBe(false);
+        await expect(logout(userA, d)).resolves.toBe(false);
+        expect(d.confirmPending).toHaveBeenCalledTimes(1);
+
+        answer(false);
+        await expect(first).resolves.toBe(false);
+        // The user stayed: the next tap works again.
+        const again = logout(userA, d);
+        await vi.waitFor(() => expect(d.confirmPending).toHaveBeenCalledTimes(2));
+        answer(false);
+        await again;
+    });
+
+    it('al terminar la petición de cierre se puede volver a cerrar sesión (Inertia no recarga la app)', async () => {
+        const d = deps();
+
+        await expect(logout(userA, d)).resolves.toBe(true);
+        await expect(logout(userA, d)).resolves.toBe(false);
+        expect(d.post).toHaveBeenCalledTimes(1);
+
+        d.post.mock.calls[0][0]();
+        await expect(logout(userA, d)).resolves.toBe(true);
+        expect(d.post).toHaveBeenCalledTimes(2);
+    });
+
+    it('si algo falla durante el cierre, libera la bandera', async () => {
+        session.clearUserOfflineState.mockRejectedValueOnce(new Error('boom'));
+        const d = deps();
+
+        await expect(logout(userA, d)).rejects.toThrow('boom');
+        await expect(logout(userA, d)).resolves.toBe(true);
+    });
+
+    it('si la sincronización se cuelga, no bloquea: al vencer el tiempo pregunta por lo que queda', async () => {
+        offline.getPendingCount.mockResolvedValue(2);
+        offline.syncPendingChanges.mockReturnValue(new Promise(() => {}));
+        const d = deps({ syncTimeoutMs: 20, confirmPending: vi.fn().mockResolvedValue(false) });
+
+        await expect(logout(userA, d)).resolves.toBe(false);
+
+        expect(d.confirmPending).toHaveBeenCalledWith(2);
+        expect(session.clearUserOfflineState).not.toHaveBeenCalled();
+    });
+
+    it('sin red y con pendientes no intenta enviar; solo cierra (y borra) si el usuario lo elige', async () => {
+        offline.getPendingCount.mockResolvedValue(4);
+        const d = deps({ isOnline: () => false });
+
+        await expect(logout(userA, d)).resolves.toBe(true);
+
+        expect(offline.syncPendingChanges).not.toHaveBeenCalled();
+        expect(d.notify).not.toHaveBeenCalled();
+        expect(d.confirmPending).toHaveBeenCalledWith(4);
+        expect(session.clearUserOfflineState).toHaveBeenCalledTimes(1);
+        expect(d.confirmPending.mock.invocationCallOrder[0]).toBeLessThan(session.clearUserOfflineState.mock.invocationCallOrder[0]);
+        expect(d.goTo).toHaveBeenCalledWith('/login');
+    });
+
+    it('si no se puede leer la cola no la da por vacía: pregunta antes de borrar', async () => {
+        offline.getPendingCount.mockRejectedValue(new Error('IndexedDB bloqueado'));
+        const d = deps({ confirmPending: vi.fn().mockResolvedValue(false) });
+
+        await expect(logout(userA, d)).resolves.toBe(false);
+
+        expect(d.confirmPending).toHaveBeenCalledWith(null);
+        expect(offline.syncPendingChanges).not.toHaveBeenCalled();
+        expect(session.clearUserOfflineState).not.toHaveBeenCalled();
     });
 
     it('sin red purga lo local, borra el historial cifrado, avisa y no manda el POST', async () => {

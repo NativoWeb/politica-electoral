@@ -9,6 +9,8 @@
  *  - nexos: nexos familiares
  *  - gobernador: gobernador candidates (shared across all municipios)
  *  - pendingChanges: offline edits queue { id, type, action, data, createdAt, synced }
+ *  - eventos: operator-mode snapshot of an event { id, owner, evento, consent, savedAt }
+ *  - eventUuids: client_uuid of every operator registration { clientUuid, eventId, owner, savedAt }
  */
 import Dexie from 'dexie';
 import { showGlobalToast } from './api';
@@ -24,6 +26,12 @@ db.version(1).stores({
     nexos: 'id, personId',
     gobernador: 'id, nombre',
     pendingChanges: '++id, type, action, synced, createdAt',
+});
+
+// v2 only adds tables: the pendingChanges queue is kept as it is.
+db.version(2).stores({
+    eventos: 'id, owner, savedAt',
+    eventUuids: 'clientUuid, eventId, owner',
 });
 
 // ─── Download all municipios in a province sequentially ───
@@ -201,7 +209,7 @@ export async function deleteDownload(municipioId) {
 // The pendingChanges queue is kept: it holds unsynced edits, not downloaded data.
 
 export async function clearDownloadedData() {
-    const tables = [db.municipios, db.downloads, db.personas, db.lideres, db.nexos, db.gobernador];
+    const tables = [db.municipios, db.downloads, db.personas, db.lideres, db.nexos, db.gobernador, db.eventos, db.eventUuids];
     await db.transaction('rw', tables, async () => {
         await Promise.all(tables.map(table => table.clear()));
     });
@@ -212,6 +220,24 @@ export async function clearDownloadedData() {
 // changes are listed, counted or synced, so another account never sends or sees them.
 
 let ownerKey = Promise.resolve(null);
+
+// Account whose session this browser holds right now, shared by all its tabs (written by swSession
+// once the session is confirmed). A tab still holding an older owner in memory must not send with it.
+export const SHARED_OWNER_KEY = 'electoral:offline-user';
+
+// Who holds this browser's session compared with this tab's owner: 'same', 'other' (another account)
+// or 'none' (logged out). Blocked storage cannot tell and counts as 'same': the server check
+// (X-Offline-Owner) still guards that case.
+function sharedOwnerState(owner) {
+    let shared;
+    try {
+        shared = localStorage.getItem(SHARED_OWNER_KEY);
+    } catch {
+        return 'same';
+    }
+    if (!shared) return 'none';
+    return shared === owner ? 'same' : 'other';
+}
 
 // Accepts the key or a promise of it (hashing is async).
 export function setOfflineOwner(key) {
@@ -227,7 +253,7 @@ export async function addPendingChange(type, action, data) {
     if (!owner) throw new Error('No hay una sesión activa para guardar cambios sin conexión.');
 
     return db.pendingChanges.add({
-        type,       // 'lider', 'persona', 'nexo'
+        type,       // 'lider', 'persona', 'nexo', 'event_attendee'
         action,     // 'create', 'update', 'delete'
         data,       // the payload
         owner,
@@ -239,13 +265,13 @@ export async function addPendingChange(type, action, data) {
 export async function getPendingChanges() {
     const owner = await ownerKey;
     if (!owner) return [];
-    return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner).toArray();
+    return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner && !c.hiddenSince).toArray();
 }
 
 export async function getPendingCount() {
     const owner = await ownerKey;
     if (!owner) return 0;
-    return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner).count();
+    return db.pendingChanges.where('synced').equals(0).and(c => c.owner === owner && !c.hiddenSince).count();
 }
 
 // Changes of other accounts (or saved before owners existed and not claimed) are kept hidden for
@@ -351,6 +377,26 @@ export function isExpiredResolvedChange(change, now = Date.now()) {
     return change.createdAt < new Date(now - SYNCED_RETENTION_MS).toISOString();
 }
 
+// Only a JSON answer tells what happened to the change. A followed or manual redirect (opaqueredirect,
+// status 0 or 3xx) and a 2xx page in HTML are not answers of the endpoint.
+export function isApiAnswer(res) {
+    if (res.type === 'opaqueredirect' || res.status === 0 || (res.status >= 300 && res.status < 400)) return false;
+    if (!res.ok) return true;
+    const type = res.headers?.get?.('Content-Type') ?? '';
+    return type.includes('application/json');
+}
+
+async function isOwnerMismatch(res) {
+    if (res.status !== 409) return false;
+    const body = await (typeof res.clone === 'function' ? res.clone() : res).json().catch(() => null);
+    return body?.code === 'owner_mismatch';
+}
+
+// An attendee change keeps the event id next to the payload; the server only gets the payload.
+function requestBody(change) {
+    return change.type === 'event_attendee' ? change.data.payload : change.data;
+}
+
 // ─── Sync Engine ───
 
 // Callers (auto-sync, manual button, login of the owner) share one run, so a change is never sent twice.
@@ -371,6 +417,8 @@ async function runSync() {
     let synced = 0;
     let failed = 0;
     let rejected = 0;
+    let stoppedStatus = null;
+    let stoppedReason = null;
     const messages = [];
     // Changes settled in this run (synced or refused for good).
     const resolved = new Set();
@@ -381,7 +429,13 @@ async function runSync() {
 
     for (const change of pending) {
         // The session changed mid-sync (logout / other account): stop, never send with someone else's cookie.
-        if ((await ownerKey) !== owner) break;
+        // Another tab logged in with another account (or logged out): stop without sending or discarding.
+        // stoppedReason: 'owner' (another account) or 'signed_out' (no account open in this browser).
+        const shared = sharedOwnerState(owner);
+        if ((await ownerKey) !== owner || shared !== 'same') {
+            stoppedReason = shared === 'none' ? 'signed_out' : 'owner';
+            break;
+        }
         let url, method;
 
         switch (change.type) {
@@ -407,6 +461,10 @@ async function runSync() {
                 url = `/mapa-politico/persona/${change.data.id}`;
                 method = 'PUT';
                 break;
+            case 'event_attendee':
+                url = `/eventos/${change.data.eventId}/asistentes`;
+                method = 'POST';
+                break;
         }
 
         if (!url) { failed++; continue; }
@@ -419,13 +477,24 @@ async function runSync() {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-XSRF-TOKEN': csrfToken,
+                    'X-Offline-Owner': owner,
                 },
                 credentials: 'same-origin',
-                body: change.action !== 'delete' ? JSON.stringify(change.data) : undefined,
+                // A redirect (password change, login) must never be followed and taken for a saved change.
+                redirect: 'manual',
+                body: change.action !== 'delete' ? JSON.stringify(requestBody(change)) : undefined,
             });
         } catch {
             // No network: later changes may depend on this one, keep the queue order for the next run.
             failed++;
+            break;
+        }
+
+        if (!isApiAnswer(res)) {
+            // Redirect or HTML instead of the JSON answer: nothing is known about the change, keep it queued.
+            failed++;
+            stoppedStatus = res.status;
+            stoppedReason = 'unexpected';
             break;
         }
 
@@ -436,11 +505,20 @@ async function runSync() {
             continue;
         }
 
+        // The server session belongs to another account than the one that queued the change.
+        if (await isOwnerMismatch(res)) {
+            failed++;
+            stoppedStatus = res.status;
+            stoppedReason = 'owner';
+            break;
+        }
+
         const definitive = isDefinitiveRejection(res.status)
             && !(res.status === 404 && waitsForQueuedCreate(change, pending, resolved));
         if (!definitive) {
             // Temporary (5xx, session, rate limit) or still waiting for its create: stop here, in order.
             failed++;
+            stoppedStatus = res.status;
             break;
         }
 
@@ -459,7 +537,7 @@ async function runSync() {
         showGlobalToast(`Un cambio hecho sin internet no se guardó${more}: ${messages[0]}`, 'error');
     }
 
-    return { synced, failed, rejected, messages };
+    return { synced, failed, rejected, messages, stoppedStatus, stoppedReason };
 }
 
 // ─── Offline CRUD (saves locally + queues for sync) ───
@@ -518,4 +596,61 @@ export async function offlineCreateNexo(personId, nexoData) {
 export async function offlineDeleteNexo(nexoId) {
     await db.nexos.delete(nexoId);
     await addPendingChange('nexo', 'delete', { id: nexoId });
+}
+
+// ─── Eventos: operator mode without signal ───
+
+// The last event data and consent text the operator saw online, to keep registering without signal.
+export async function saveEventSnapshot(evento, consent) {
+    const owner = await ownerKey;
+    if (!owner || !evento?.id) return;
+    await db.eventos.put({ id: evento.id, owner, evento, consent: consent ?? null, savedAt: new Date().toISOString() });
+}
+
+export async function getEventSnapshot(eventId) {
+    const owner = await ownerKey;
+    if (!owner) return null;
+    const snapshot = await db.eventos.get(eventId);
+    return snapshot?.owner === owner ? snapshot : null;
+}
+
+export async function rememberEventUuid(eventId, clientUuid) {
+    const owner = await ownerKey;
+    if (!owner || !clientUuid) return;
+    await db.eventUuids.put({ clientUuid, eventId, owner, savedAt: new Date().toISOString() });
+}
+
+// A client_uuid already saved or queued must never be reused for another person (a page restored
+// from the cache still carries the client_uuid the server suggested when it was stored).
+export async function isEventUuidUsed(clientUuid) {
+    return (await db.eventUuids.get(clientUuid)) !== undefined;
+}
+
+export async function queueEventAttendee(eventId, payload) {
+    const id = await addPendingChange('event_attendee', 'create', { eventId, payload });
+    await rememberEventUuid(eventId, payload.client_uuid);
+    return id;
+}
+
+// The owner's attendees of this event still waiting to be sent, and the ones the server refused.
+export async function getEventAttendeeChanges(eventId) {
+    const owner = await ownerKey;
+    if (!owner) return { pending: [], rejected: [] };
+    const changes = await db.pendingChanges
+        .where('type').equals('event_attendee')
+        .and(c => c.owner === owner && c.data?.eventId === eventId && !c.hiddenSince && (c.synced === 0 || c.rejected === true))
+        .toArray();
+
+    return {
+        pending: changes.filter(c => c.synced === 0),
+        rejected: changes.filter(c => c.rejected === true),
+    };
+}
+
+export async function discardEventAttendeeChange(id) {
+    const owner = await ownerKey;
+    const change = await db.pendingChanges.get(id);
+    if (!owner || change?.owner !== owner || change.type !== 'event_attendee') return false;
+    await db.pendingChanges.delete(id);
+    return true;
 }

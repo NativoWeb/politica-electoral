@@ -12,7 +12,7 @@ const offline = vi.hoisted(() => ({
 }));
 vi.mock('./offlineDb', () => offline);
 
-import { syncServiceWorkerSession, clearUserOfflineState, resetSwSessionForTests, PRECACHE_URLS, precacheUrlsFor, writePendingLogout } from './swSession';
+import { syncServiceWorkerSession, clearUserOfflineState, resetSwSessionForTests, PRECACHE_URLS, precacheExtraPages, precacheExtraPagesOnce, precacheUrlsFor, writePendingLogout } from './swSession';
 import { userKey } from './userKey';
 
 function installWorker({ reply = { ok: true } } = {}) {
@@ -255,5 +255,76 @@ describe('swSession', () => {
         expect(warn).toHaveBeenCalled();
         warn.mockRestore();
         vi.useRealTimers();
+    });
+
+    it('pide guardar páginas del modo operador con el hash de la sesión, después del mensaje SESSION', async () => {
+        const worker = installWorker();
+        const key = await userKey('user-a');
+        offline.getOfflineOwnerKey.mockResolvedValue(key);
+
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['register.asistentes'] });
+        await precacheExtraPages(['/eventos/e1/operador']);
+
+        expect(worker.postMessage.mock.calls.map(([m]) => m.type)).toEqual(['SESSION', 'PRECACHE']);
+        expect(worker.postMessage.mock.calls[1][0]).toEqual({ type: 'PRECACHE', user: key, urls: ['/eventos/e1/operador'] });
+    });
+
+    it('primera instalación: las páginas pedidas sin SW activo se envían cuando el SW confirma la sesión', async () => {
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: { controller: null, getRegistration: vi.fn().mockResolvedValue(undefined) },
+        });
+        const key = await userKey('user-a');
+        offline.getOfflineOwnerKey.mockResolvedValue(key);
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['register.asistentes'] });
+        expect(await precacheExtraPages(['/eventos/e1/operador'])).toBeNull();
+
+        const worker = installWorker();
+        await syncServiceWorkerSession({ id: 'user-a', permissions: ['register.asistentes'] });
+        await flush();
+
+        expect(worker.postMessage.mock.calls.map(([m]) => m.type)).toEqual(['SESSION', 'PRECACHE']);
+        expect(worker.postMessage.mock.calls[1][0].urls).toEqual(['/eventos/e1/operador']);
+    });
+
+    it('el listado pide cada página de operador una sola vez por sesión, y solo la marca si el SW la aceptó', async () => {
+        sessionStorage.clear();
+        const worker = installWorker();
+        offline.getOfflineOwnerKey.mockResolvedValue('owner-key');
+
+        await precacheExtraPagesOnce(['/eventos/e1/operador', '/eventos/e2/operador']);
+        await precacheExtraPagesOnce(['/eventos/e1/operador', '/eventos/e2/operador']);
+        await precacheExtraPagesOnce(['/eventos/e2/operador', '/eventos/e3/operador']);
+
+        expect(worker.postMessage.mock.calls.map(([m]) => m.urls)).toEqual([
+            ['/eventos/e1/operador', '/eventos/e2/operador'],
+            ['/eventos/e3/operador'],
+        ]);
+
+        // Another account in the same tab has its own list.
+        offline.getOfflineOwnerKey.mockResolvedValue('other-key');
+        await precacheExtraPagesOnce(['/eventos/e1/operador']);
+        expect(worker.postMessage).toHaveBeenCalledTimes(3);
+        sessionStorage.clear();
+    });
+
+    it('si el SW rechaza la precarga, la vuelve a pedir en la próxima visita', async () => {
+        sessionStorage.clear();
+        const worker = installWorker({ reply: { ok: false } });
+        offline.getOfflineOwnerKey.mockResolvedValue('owner-key');
+
+        await precacheExtraPagesOnce(['/eventos/e1/operador']);
+        await precacheExtraPagesOnce(['/eventos/e1/operador']);
+
+        expect(worker.postMessage).toHaveBeenCalledTimes(2);
+        sessionStorage.clear();
+    });
+
+    it('sin sesión no pide guardar páginas', async () => {
+        const worker = installWorker();
+        offline.getOfflineOwnerKey.mockResolvedValue(null);
+
+        expect(await precacheExtraPages(['/eventos/e1/operador'])).toBeNull();
+        expect(worker.postMessage).not.toHaveBeenCalled();
     });
 });

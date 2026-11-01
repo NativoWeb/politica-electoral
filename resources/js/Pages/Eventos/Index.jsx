@@ -1,12 +1,16 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import CampaignChip from '@/Components/CampaignChip';
 import { StatusBadge } from '@/Components/Eventos/EventoBadges';
 import EventoFormModal from '@/Components/Eventos/EventoFormModal';
+import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import Pagination from '@/Components/Eventos/Pagination';
 import { useCampaign } from '@/lib/campaign';
-import { EVENT_STATUS, canManageEventos, formatEventDate } from '@/lib/eventos';
+import { EVENT_STATUS, canManageEventos, formatEventRange } from '@/lib/eventos';
+import { precacheExtraPagesOnce } from '@/lib/swSession';
+
+const OPERABLE = ['borrador', 'abierto'];
 
 const selectCls = 'w-full px-3 py-2.5 border border-[var(--color-line)] rounded-lg text-[15px] bg-white focus:outline-none focus:border-[var(--color-primary)]';
 const labelCls = 'block text-[13px] font-bold text-[var(--color-ink-soft)] mb-1';
@@ -26,7 +30,7 @@ function EventCard({ e, canView, canOperate }) {
                 <CampaignChip campaignId={e.campaign?.id} />
             </div>
             <p className="mt-1.5 text-[16px] font-extrabold text-[var(--color-ink)] leading-snug">{e.nombre}</p>
-            <p className="mt-1 text-[14px] text-[var(--color-ink)] first-letter:uppercase">{formatEventDate(e.starts_at)}</p>
+            <p className="mt-1 text-[14px] text-[var(--color-ink)] first-letter:uppercase">{formatEventRange(e.starts_at, e.ends_at)}</p>
             <p className="text-[14px] text-[var(--color-ink-soft)]">{[e.sitio_encuentro, where].filter(Boolean).join(' — ')}</p>
             {e.barrios?.length > 0 && <p className="text-[13px] text-[var(--color-ink-faint)] mt-0.5 line-clamp-2">Barrios: {e.barrios.join(', ')}</p>}
         </>
@@ -39,17 +43,24 @@ function EventCard({ e, canView, canOperate }) {
             ) : (
                 <div className="flex-1 min-w-[min(14rem,100%)]">{body}</div>
             )}
-            <div className="flex items-center gap-3 ml-auto">
+            <div className="flex flex-wrap items-center justify-end gap-3 ml-auto">
                 {e.asistentes_total !== null && e.asistentes_total !== undefined && (
                     <div className="text-center px-2">
                         <p className="text-[22px] font-extrabold text-[var(--color-primary)] leading-none">{e.asistentes_total}</p>
                         <p className="text-[12px] font-semibold text-[var(--color-ink-faint)] mt-0.5">{e.asistentes_total === 1 ? 'asistente' : 'asistentes'}</p>
                     </div>
                 )}
-                {canOperate && ['borrador', 'abierto'].includes(e.status) && (
+                {canOperate && OPERABLE.includes(e.status) && (
                     <Link href={`/eventos/${e.id}/operador`} className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--color-accent)] text-[var(--color-primary-dark)] text-[14px] font-extrabold flex items-center">
                         Registrar asistentes
                     </Link>
+                )}
+                {canOperate && e.status !== 'cancelado' && (
+                    <PlanillaLink
+                        eventId={e.id}
+                        className="min-h-[44px] px-3.5 py-2 rounded-xl border-2 border-[var(--color-line-strong)] text-[var(--color-ink)] text-[14px] font-bold flex items-center"
+                        messageClassName="text-red-700 max-w-[16rem]"
+                    />
                 )}
             </div>
         </li>
@@ -71,6 +82,17 @@ export default function Index({ eventos, filters = {}, provincias = [], tipos = 
         if (filters.provincia) return provincias.find(p => p.id === filters.provincia)?.municipios ?? [];
         return provincias.flatMap(p => p.municipios);
     }, [provincias, filters.provincia]);
+
+    const canRegister = !!can.register;
+    // The operator mode of the events this user can run is kept on the phone, to open it later without signal.
+    const operatorUrls = useMemo(
+        () => (canRegister ? rows.filter(e => OPERABLE.includes(e.status) && !isOther(e.campaign?.id)).map(e => `/eventos/${e.id}/operador`) : []),
+        [rows, canRegister, isOther],
+    );
+    const operatorUrlsKey = operatorUrls.join(',');
+    useEffect(() => {
+        if (operatorUrlsKey && navigator.onLine) precacheExtraPagesOnce(operatorUrlsKey.split(','));
+    }, [operatorUrlsKey]);
 
     const knownBarrios = useMemo(() => [...new Set(rows.flatMap(e => e.barrios ?? []))], [rows]);
     const activeCount = ['provincia', 'municipio', 'barrio', 'tipo', 'status', 'desde', 'hasta', 'campana'].filter(k => filters[k]).length;
@@ -193,7 +215,7 @@ export default function Index({ eventos, filters = {}, provincias = [], tipos = 
                 {rows.length > 0 ? (
                     <ul className="space-y-2" aria-label="Eventos">
                         {rows.map(e => (
-                            <EventCard key={e.id} e={e} canView={!!can.view} canOperate={!!can.register && !isOther(e.campaign?.id)} />
+                            <EventCard key={e.id} e={e} canView={!!can.view} canOperate={canRegister && !isOther(e.campaign?.id)} />
                         ))}
                     </ul>
                 ) : (

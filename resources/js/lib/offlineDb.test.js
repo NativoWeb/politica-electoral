@@ -26,6 +26,8 @@ vi.mock('dexie', () => {
             this.nexos = mockTable();
             this.gobernador = mockTable();
             this.pendingChanges = mockTable();
+            this.eventos = mockTable();
+            this.eventUuids = mockTable();
         }
         version() { return { stores: vi.fn() }; }
         transaction(_mode, _tables, fn) { return fn(); }
@@ -45,6 +47,7 @@ describe('offlineDb', () => {
         global.fetch.mockReset();
         offlineDb = await import('./offlineDb.js');
         offlineDb.setOfflineOwner('owner-test');
+        localStorage.setItem('electoral:offline-user', 'owner-test');
     });
 
     describe('downloadProvincia', () => {
@@ -469,7 +472,7 @@ describe('offlineDb', () => {
 
             await offlineDb.clearDownloadedData();
 
-            for (const table of ['municipios', 'downloads', 'personas', 'lideres', 'nexos', 'gobernador']) {
+            for (const table of ['municipios', 'downloads', 'personas', 'lideres', 'nexos', 'gobernador', 'eventos', 'eventUuids']) {
                 expect(db[table].clear).toHaveBeenCalledTimes(1);
             }
             expect(db.pendingChanges.clear).not.toHaveBeenCalled();

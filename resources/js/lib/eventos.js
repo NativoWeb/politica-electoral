@@ -205,6 +205,25 @@ export function attendeePayload(data, { clientUuid, consentId }) {
     };
 }
 
+// A queued payload back into the form (to correct a refused registration). The consent box stays checked
+// only when the person accepted the same text that is shown now.
+export function attendeeFormFromPayload(payload, { consentId } = {}) {
+    const [year = '', month = '', day = ''] = String(payload?.fecha_nacimiento ?? '').split('-');
+    const text = v => (typeof v === 'string' ? v : '');
+
+    return {
+        nombres: text(payload?.nombres),
+        apellidos: text(payload?.apellidos),
+        cedula: text(payload?.cedula),
+        celular: text(payload?.celular),
+        barrio: text(payload?.barrio),
+        fijo: text(payload?.fijo),
+        direccion: text(payload?.direccion),
+        birth: year && month && day ? { day: String(Number(day)), month: String(Number(month)), year } : { day: '', month: '', year: '' },
+        autoriza_datos: !!payload?.autoriza_datos && !!consentId && payload?.consent_text_id === consentId,
+    };
+}
+
 // Laravel 422 → { field: 'first message' }.
 export function firstErrors(errors) {
     return Object.fromEntries(Object.entries(errors || {}).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));

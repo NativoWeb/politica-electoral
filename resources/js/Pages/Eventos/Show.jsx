@@ -7,6 +7,7 @@ import { LinkStatusBadge, StatusBadge } from '@/Components/Eventos/EventoBadges'
 import EventoFormModal from '@/Components/Eventos/EventoFormModal';
 import EventoQr from '@/Components/Eventos/EventoQr';
 import Pagination from '@/Components/Eventos/Pagination';
+import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import { useCampaign } from '@/lib/campaign';
 import { allSelected, approveMessage, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, provisionalCount, pruneSelection, toggleAll, toggleSelected } from '@/lib/eventos';
 
@@ -197,6 +198,13 @@ export default function Show({ evento, asistentes, kpis, filters, consent, tipos
                             <Link href={`/eventos/${evento.id}/operador`} className="min-h-[44px] px-4 py-2.5 bg-[var(--color-accent)] text-[var(--color-primary-dark)] rounded-xl text-[15px] font-extrabold flex items-center">
                                 Modo operador
                             </Link>
+                        )}
+                        {can?.register && evento.status !== 'cancelado' && (
+                            <PlanillaLink
+                                eventId={evento.id}
+                                className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center active:bg-white/25"
+                                messageClassName="text-amber-200"
+                            />
                         )}
                         {editable && evento.status !== 'cancelado' && (
                             <button type="button" onClick={() => setEditing(true)} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold active:bg-white/25">
