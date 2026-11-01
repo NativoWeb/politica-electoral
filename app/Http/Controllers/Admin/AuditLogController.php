@@ -14,7 +14,8 @@ class AuditLogController extends Controller
 {
     private function escapeLike(string $value): string
     {
-        return str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $value);
+        // The backslash first: escaping it after % and _ would double the escapes just added.
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     public function index(Request $request)

@@ -143,7 +143,7 @@ class EventOperatorTest extends TestCase
         $this->assertSame('El Poblado', $lider->barrio);
         $this->assertSame('1980-04-02', substr($lider->fecha_nacimiento, 0, 10));
         $this->assertEquals(0, $lider->autoriza_datos, 'Accepted over the provisional text: not an authorization in Votantes');
-        $this->assertStringContainsString('Gira Girón', $lider->observacion);
+        $this->assertNull($lider->observacion, 'The ficha never names the event: attendance is only seen with view.eventos');
         $this->assertSame('6076543210', DB::table('lider_contactos')->where('lider_id', $lider->id)->where('tipo', 'fijo')->value('valor'));
 
         $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => [$id]])

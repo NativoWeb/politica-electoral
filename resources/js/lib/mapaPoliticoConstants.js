@@ -1,3 +1,7 @@
+// Fichas created from event attendees: their own tipo, off by default ("Todos" does not include it).
+export const ASISTENTES_EVENTO = 'asistentes_evento';
+export const ASISTENTES_EVENTO_LABEL = 'Asistentes a eventos';
+
 export const TIPO_OPTIONS = [
     { value: 'todos', label: 'Todos' },
     { value: 'alcaldia', label: 'Alcaldía' },
@@ -8,7 +12,21 @@ export const TIPO_OPTIONS = [
     { value: 'senado', label: 'Senado' },
     { value: 'camara', label: 'Cámara' },
     { value: 'asamblea', label: 'Asamblea' },
+    { value: ASISTENTES_EVENTO, label: ASISTENTES_EVENTO_LABEL },
 ];
+
+// The attendee tipo exists only for who may see event attendees; anyone else sees those fichas as Líderes.
+export function tipoOptionsFor(canSeeEventos) {
+    return canSeeEventos ? TIPO_OPTIONS : TIPO_OPTIONS.filter(o => o.value !== ASISTENTES_EVENTO);
+}
+
+// Every tipo checked is the same as "Todos" (plus the event attendees): the page then groups rows in sections.
+export function coversAllTipos(tipoFilter, options = TIPO_OPTIONS) {
+    if (!tipoFilter || tipoFilter === 'todos') return true;
+    const selected = new Set(tipoFilter.split(','));
+
+    return options.filter(o => o.value !== 'todos').every(o => selected.has(o.value));
+}
 
 export const CARGOS_DISPONIBLES = [
     'Líder',

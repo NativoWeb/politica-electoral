@@ -9,10 +9,7 @@ use Illuminate\Validation\Validator;
 // {"columnas": {field: column index | null}}. The indexes must exist in the uploaded file (checked in the controller).
 class ImportMappingRequest extends FormRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
+    use AuthorizesEventImport;
 
     public function rules(): array
     {

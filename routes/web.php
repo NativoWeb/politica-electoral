@@ -14,6 +14,7 @@ use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EventoController;
 use App\Http\Controllers\EventoImportController;
+use App\Http\Controllers\EventoIntegracionController;
 use App\Http\Controllers\EventoPublicoController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LegislativoController;
@@ -148,6 +149,15 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::middleware('permission:manage.eventos')->group(function () {
             Route::get('/buscar/organizadores', [EventoController::class, 'searchOrganizers'])->name('buscar.organizadores');
             Route::get('/buscar/figuras', [EventoController::class, 'searchFigures'])->name('buscar.figuras');
+        });
+
+        // Phase 4: who attended what, outside the event's own page (needs to see attendees)
+        Route::middleware('permission:view.eventos|manage.eventos')->group(function () {
+            Route::get('/territorio', [EventoIntegracionController::class, 'territorio'])->name('territorio');
+            Route::get('/territorio/excel', [EventoIntegracionController::class, 'territorioExcel'])->name('territorio.excel');
+            Route::get('/persona/{liderId}', [EventoIntegracionController::class, 'persona'])->name('persona')
+                ->middleware('permission:view.mapa|view.votantes');
+            Route::get('/{id}/asistentes.xlsx', [EventoController::class, 'exportAttendees'])->name('asistentes.excel')->whereUuid('id');
         });
 
         Route::get('/{id}', [EventoController::class, 'show'])->name('show')->whereUuid('id')

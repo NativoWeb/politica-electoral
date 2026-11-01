@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Eventos\ApproveAttendees;
 use App\Actions\Votantes\AddNexo;
 use App\Actions\Votantes\AddReferido;
 use App\Actions\Votantes\FindPossibleDuplicates;
@@ -13,6 +14,7 @@ use App\Models\Campaign;
 use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Services\CachedQueries;
+use App\Services\Eventos\EventScope;
 use App\Support\Cedula;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
@@ -29,7 +31,8 @@ class MapaPoliticoController extends Controller
     // #3: Escape LIKE wildcards to prevent wildcard injection
     private function escapeLike(string $value): string
     {
-        return str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $value);
+        // The backslash first: escaping it after % and _ would double the escapes just added.
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     // #7/#8: Cache static IDs that never change
@@ -37,6 +40,14 @@ class MapaPoliticoController extends Controller
     {
         return Cache::remember("office_id:{$name}", 3600, fn () => DB::table('offices')->where('name', $name)->value('id'));
     }
+
+    // Fichas created by approving event attendees (lideres.tipo = asistente_evento) are their own section, off by
+    // default: only ?tipo=...asistentes_evento lists them, so the default counts stay as before. Only for who may see
+    // event attendees (view.eventos or manage.eventos): anyone else sees those fichas as ordinary lideres, with no
+    // mention of events anywhere (sections, labels, filters, exports, offline).
+    public const ASISTENTES_EVENTO = 'asistentes_evento';
+
+    public const ASISTENTES_EVENTO_LABEL = 'Asistentes a eventos';
 
     // Cámara candidates endorsed by a party that ran inside a coalition list; votes are reported under the list name.
     private const CAMARA_LIST_BY_PARTY = [
@@ -113,6 +124,7 @@ class MapaPoliticoController extends Controller
     // #7: Cached cargos por tipo
     private function cargosPorTipo(): array
     {
+        $seesEventos = self::seesEventos();
         $catalogCargos = CargoCategory::active()->pluck('name')->toArray();
         $liderCargos = self::uniqueCargos(collect($catalogCargos)
             ->merge($this->visibleLideres()->select('cargo')->distinct()->pluck('cargo')
@@ -125,6 +137,7 @@ class MapaPoliticoController extends Controller
             'lideres' => $liderCargos,
             'nuevos_lideres' => $liderCargos,
             'directorio' => $liderCargos,
+            ...($seesEventos ? [self::ASISTENTES_EVENTO => $liderCargos] : []),
             'senado' => ['Senador', 'Candidato Senado'],
             'camara' => ['Representante', 'Candidato Cámara'],
             'asamblea' => ['Diputado', 'Candidato Asamblea'],
@@ -152,6 +165,9 @@ class MapaPoliticoController extends Controller
         $barriosQuery = $this->visibleLideres();
         $applyEstado($barriosQuery);
         $barriosQuery->select('barrio')->distinct()->whereNotNull('barrio')->where('barrio', '!=', '');
+        if (self::seesEventos() && ! in_array(self::ASISTENTES_EVENTO, self::effectiveTipos($request), true)) {
+            $barriosQuery->where(fn ($q) => $q->where('tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('tipo'));
+        }
         if ($munId) {
             $barriosQuery->where('geographic_unit_id', $munId);
         } else {
@@ -179,10 +195,52 @@ class MapaPoliticoController extends Controller
             'sectionCounts' => $sectionCounts,
             'partyTotals' => $partyTotals,
             'filters' => array_merge(
-                $request->only(['municipio', 'tipo', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion', 'estado']),
+                $request->only(['municipio', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion', 'estado']),
+                $request->has('tipo') ? ['tipo' => implode(',', self::effectiveTipos($request))] : [],
                 $campana ? ['campana' => $campana] : [],
             ),
         ]);
+    }
+
+    // The ?tipo= list; without view.eventos the attendee tipo is ignored as if it had not been sent.
+    public static function effectiveTipos(Request $request): array
+    {
+        $raw = $request->input('tipo', 'todos');
+        $tipos = array_values(array_filter(explode(',', is_string($raw) && $raw !== '' ? $raw : 'todos'), fn ($t) => $t !== ''));
+        if (! EventScope::canSeeAttendees($request->user())) {
+            $tipos = array_values(array_diff($tipos, [self::ASISTENTES_EVENTO]));
+        }
+
+        return $tipos ?: ['todos'];
+    }
+
+    // Whether the current user may see who attended events (and so the attendee tipo).
+    public static function seesEventos(): bool
+    {
+        return EventScope::canSeeAttendees(request()->user());
+    }
+
+    // Without view.eventos an attendee ficha reads as an ordinary lider.
+    public static function liderTipoLabel(?string $tipo, bool $seesEventos = true): string
+    {
+        return match (true) {
+            $tipo === 'nuevo_lider' => 'Nuevos Líderes',
+            $tipo === ApproveAttendees::TIPO && $seesEventos => self::ASISTENTES_EVENTO_LABEL,
+            default => 'Líderes',
+        };
+    }
+
+    // The ficha's tipo from the checked labels: an event attendee stays one until "Líderes" (or "Nuevos Líderes") is checked.
+    public static function liderTipoFromLabels(array $labels): string
+    {
+        if (in_array('Nuevos Líderes', $labels, true)) {
+            return 'nuevo_lider';
+        }
+        if (in_array(self::ASISTENTES_EVENTO_LABEL, $labels, true) && ! in_array('Líderes', $labels, true)) {
+            return ApproveAttendees::TIPO;
+        }
+
+        return 'directorio';
     }
 
     private static function tipoLabels(string $tipos): array
@@ -216,8 +274,8 @@ class MapaPoliticoController extends Controller
     public function rows(Request $request, bool $forExport = false): array
     {
         $munId = $request->input('municipio');
-        $tipoRaw = $request->input('tipo', 'todos');
-        $tipos = $tipoRaw ? explode(',', $tipoRaw) : ['todos'];
+        $tipos = self::effectiveTipos($request);
+        $tipoRaw = implode(',', $tipos);
         $tipo = $tipoRaw; // keep for backward compat
         $tipoMatch = fn ($key) => in_array('todos', $tipos) || in_array($key, $tipos);
         $cargoRaw = $request->input('cargo');
@@ -244,6 +302,7 @@ class MapaPoliticoController extends Controller
 
         // Territory scope: restrict municipios for users with territory_scope
         $user = $request->user();
+        $seesEventos = EventScope::canSeeAttendees($user);
         $allowedGeoIds = $user?->allowedGeoIds();
         if ($allowedGeoIds) {
             $municipios = array_values(array_filter($municipios, fn ($m) => in_array($m['id'], $allowedGeoIds)));
@@ -378,8 +437,8 @@ class MapaPoliticoController extends Controller
             if ($campana) {
                 $query->where('campaign_id', $campana);
             }
-            $query->where(function ($q) {
-                    $q->where('tipo', '!=', 'nuevo_lider')->orWhereNull('tipo');
+            $query->where(function ($q) use ($seesEventos) {
+                    $q->whereNotIn('tipo', $seesEventos ? ['nuevo_lider', ApproveAttendees::TIPO] : ['nuevo_lider'])->orWhereNull('tipo');
                 })
                 ->select(
                     'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
@@ -404,7 +463,7 @@ class MapaPoliticoController extends Controller
             if (! empty($barrios_filter)) {
                 $query->where(function ($q) use ($barrios_filter) {
                     foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($b)).'%');
+                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
                     }
                 });
             }
@@ -446,7 +505,7 @@ class MapaPoliticoController extends Controller
             if (! empty($barrios_filter)) {
                 $query->where(function ($q) use ($barrios_filter) {
                     foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($b)).'%');
+                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
                     }
                 });
             }
@@ -465,6 +524,9 @@ class MapaPoliticoController extends Controller
                 $query->where('campaign_id', $campana);
             }
             $this->whereCargoIn($query, ['Directorio Municipal']);
+            if ($seesEventos) {
+                $query->where(fn ($q) => $q->where('tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('tipo'));
+            }
             $query->select(
                     'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
                     'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
@@ -488,7 +550,49 @@ class MapaPoliticoController extends Controller
             if (! empty($barrios_filter)) {
                 $query->where(function ($q) use ($barrios_filter) {
                     foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.str_replace(['%', '_'], ['\\%', '\\_'], trim($b)).'%');
+                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
+                    }
+                });
+            }
+            if ($noGeoFilter && empty($cargos) && ! $forExport) {
+                $query->limit(200);
+            }
+
+            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
+        }
+
+        // === ASISTENTES A EVENTOS (off unless asked for: 'todos' does not include it) ===
+        if ($seesEventos && in_array(self::ASISTENTES_EVENTO, $tipos, true)) {
+            $query = $this->visibleLideres();
+            $applyEstado($query);
+            if ($campana) {
+                $query->where('campaign_id', $campana);
+            }
+            $query->where('tipo', ApproveAttendees::TIPO)
+                ->select(
+                    'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
+                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'), 'votos',
+                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'campaign_id'
+                )
+                ->selectRaw('? as tipo_registro', [self::ASISTENTES_EVENTO_LABEL]);
+
+            if ($munId) {
+                $query->where('geographic_unit_id', $munId);
+            } elseif ($provinciaIds) {
+                $query->whereIn('geographic_unit_id', $provinciaIds);
+            }
+            if ($searchEscaped) {
+                $query->where(function ($q) use ($searchEscaped) {
+                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
+                });
+            }
+            if (! empty($cargos)) {
+                $this->whereCargoIn($query, $cargos);
+            }
+            if (! empty($barrios_filter)) {
+                $query->where(function ($q) use ($barrios_filter) {
+                    foreach ($barrios_filter as $b) {
+                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
                     }
                 });
             }
@@ -970,18 +1074,17 @@ class MapaPoliticoController extends Controller
             'observacion' => $bestLider->observacion ?? null,
             'partido' => $partido,
             'partidos' => $partidos,
+            // Never [null]: a ficha without cargo (e.g. created from an event attendee) has no cargos.
             'cargos' => $source === 'lider'
-                ? [$person->cargo]
-                : $liderRows->pluck('cargo')->unique()->values()->toArray(),
+                ? array_values(array_filter([$person->cargo], fn ($c) => is_string($c) && trim($c) !== ''))
+                : $liderRows->pluck('cargo')->filter(fn ($c) => is_string($c) && trim($c) !== '')->unique()->values()->toArray(),
             'direccion' => $bestLider->direccion ?? null,
             'barrio' => $bestLider->barrio ?? null,
             'zona' => $bestLider->zona ?? null,
             'destacado' => (bool) ($bestLider->destacado ?? false),
             'profesion' => $bestLider->profesion ?? null,
             'cedula' => $bestLider->cedula ?? $person->cedula ?? null,
-            'tipo_registro' => $source === 'lider'
-                ? (($person->tipo ?? '') === 'nuevo_lider' ? 'Nuevos Líderes' : 'Líderes')
-                : null,
+            'tipo_registro' => $source === 'lider' ? self::liderTipoLabel($person->tipo ?? null, self::seesEventos()) : null,
             'votos' => $source === 'lider'
                 ? (int) ($bestLider->votos ?? 0)
                 : $this->candidateVotos($id),
@@ -1296,7 +1399,10 @@ class MapaPoliticoController extends Controller
                     }
                 }
                 if (array_key_exists('tipos', $data)) {
-                    $updateData['tipo'] = in_array('Nuevos Líderes', $data['tipos'] ?? []) ? 'nuevo_lider' : 'directorio';
+                    // Who cannot see events saw the attendee as a lider: saving keeps it an attendee (unless Nuevos Líderes).
+                    $keepsAttendee = ($lider->tipo ?? null) === ApproveAttendees::TIPO && ! self::seesEventos()
+                        && ! in_array('Nuevos Líderes', $data['tipos'] ?? [], true);
+                    $updateData['tipo'] = $keepsAttendee ? ApproveAttendees::TIPO : self::liderTipoFromLabels($data['tipos'] ?? []);
                 }
 
                 // Extended fields — only update when explicitly sent

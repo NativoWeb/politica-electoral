@@ -94,7 +94,6 @@ class ApproveAttendees
 
     private function createLider(CampaignEvent $event, EventAttendee $attendee, ?object $place): string
     {
-        $fecha = $event->starts_at->copy()->setTimezone('America/Bogota')->format('d/m/Y');
         $lider = new Lider([
             'nombre' => trim($attendee->nombres.' '.$attendee->apellidos),
             'municipio' => $place->municipio ?? '',
@@ -108,7 +107,8 @@ class ApproveAttendees
             'direccion' => $attendee->direccion,
             'barrio' => $attendee->barrio,
             'autoriza_datos' => (bool) $attendee->autoriza_datos && self::consentApproved($attendee->consent_id),
-            'observacion' => "Registrado en el evento {$event->nombre} ({$fecha}).",
+            // No event name here: the ficha is read by users who may not see events; the link lives in event_attendees.
+            'observacion' => null,
             'is_active' => true,
             'destacado' => false,
             'votos' => 0,

@@ -39,6 +39,8 @@ class TerritoryScopeTest extends TestCase
         $this->withoutVite();
         $this->createSchema();
         $this->addCampaignColumns();
+        // Votantes counts each ficha's events for whoever may see attendees (the superadmin here).
+        (require database_path('migrations/2026_10_31_000001_create_eventos_tables.php'))->up();
         $this->seedTerritory();
     }
 

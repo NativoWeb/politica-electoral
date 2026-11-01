@@ -20,7 +20,7 @@ vi.mock('@inertiajs/react', () => ({
 
 import { sourceLabel } from '@/lib/eventos';
 import {
-    NEEDS_APPROVED_TEXT, changedValues, columnOptions, confirmBlocker, leftOutSummary, confirmDialogMessage, confirmSummary, currentStep, importErrorMessage, mappingProblem, rowStatusKey,
+    NEEDS_APPROVED_TEXT, changedValues, columnOptions, confirmBlocker, leftOutSummary, confirmDialogMessage, confirmDialogTitle, confirmSummary, currentStep, importErrorMessage, mappingProblem, rowStatusKey,
     setMapping, uploadProblem, ROW_FILTERS,
 } from '@/lib/eventosImport';
 import ImportRowCard from '@/Components/Eventos/ImportRowCard';
@@ -85,7 +85,11 @@ describe('eventosImport helpers', () => {
 
     it('only imports authorized people and says why the rest are left out', () => {
         expect(confirmSummary({ a_importar: 42 })).toMatch('Se registrarán 42 personas en el evento, con su autorización de datos.');
-        expect(confirmSummary({ a_importar: 1 })).toMatch('Se registrarán 1 persona en el evento');
+        expect(confirmSummary({ a_importar: 1 })).toBe('Se registrará 1 persona en el evento, con su autorización de datos. '
+            + 'Si es nueva, queda pendiente de aprobar antes de pasar a Votantes.');
+        expect(confirmDialogMessage({ a_importar: 1 })).toBe('Se importará 1 persona. Esta acción no se puede deshacer.');
+        expect(confirmDialogTitle({ a_importar: 1 })).toBe('¿Importar a esta persona?');
+        expect(confirmDialogTitle({ a_importar: 42 })).toBe('¿Importar estas personas?');
         expect(leftOutSummary({ errores: 2, duplicadas: 1, omitidas: 0, no_autorizaron: 3, en_evento: 1 }))
             .toBe('Quedan fuera: 2 con error, 1 repetida en el archivo, 3 que no autorizaron (no dice SÍ), 1 que ya está en el evento.');
         expect(leftOutSummary({ omitidas: 1 })).toBe('Quedan fuera: 1 marcada «No importar».');

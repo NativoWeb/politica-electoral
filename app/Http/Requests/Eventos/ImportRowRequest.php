@@ -9,10 +9,7 @@ use Illuminate\Foundation\Http\FormRequest;
 // again) and/or the decision. A wrong value is not a 422: it stays on the row with its error.
 class ImportRowRequest extends FormRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
+    use AuthorizesEventImport;
 
     public function rules(): array
     {

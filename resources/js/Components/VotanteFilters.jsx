@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { useCampaign } from '@/lib/campaign';
+import { formatEventDate } from '@/lib/eventos';
+import { eventOptionLabel } from '@/lib/eventosIntegracion';
 
 const NIVEL_OPTIONS = [
     { value: '', label: 'Todos' },
@@ -12,7 +14,36 @@ const NIVEL_OPTIONS = [
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 
-export default function VotanteFilters({ filters, municipios, onApply, onClear }) {
+// The active event filter as a chip, visible even with the (mobile) filters panel closed.
+export function EventFilterChips({ filters, eventos = [], onRemove }) {
+    const chips = [];
+    if (filters?.evento) {
+        const evento = eventos.find(e => e.id === filters.evento);
+        chips.push({ key: 'evento', label: `Asistió a: ${evento?.nombre ?? 'un evento'}` });
+    } else if (filters?.asistentes_eventos) {
+        chips.push({ key: 'asistentes_eventos', label: 'Asistentes a eventos' });
+    }
+    if (!chips.length) return null;
+
+    return (
+        <div className="flex flex-wrap gap-2 mb-3" aria-label="Filtros de eventos activos">
+            {chips.map(c => (
+                <span key={c.key} className="inline-flex items-center gap-1 pl-3 pr-1 min-h-[40px] rounded-full bg-orange-100 text-orange-900 text-[14px] font-semibold">
+                    {c.label}
+                    <button type="button" onClick={() => onRemove(c.key)} aria-label={`Quitar filtro ${c.label}`} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-orange-200">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </span>
+            ))}
+        </div>
+    );
+}
+
+export default function VotanteFilters({ filters, municipios, onApply, onClear, eventos = [], canViewEventos = false }) {
+    // The panel is rendered twice (desktop and mobile): ids must be unique per instance.
+    const uid = useId();
+    const eventoId = `${uid}-evento`;
+    const campanaId = `${uid}-campana`;
     const [search, setSearch] = useState(filters.search || '');
     const [municipio, setMunicipio] = useState(filters.municipio || '');
     const [partido, setPartido] = useState(filters.partido || '');
@@ -22,6 +53,8 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
     const [granElector, setGranElector] = useState(filters.gran_elector === '1' || filters.gran_elector === true);
     const [militante, setMilitante] = useState(filters.militante === '1' || filters.militante === true);
     const [campana, setCampana] = useState(filters.campana || '');
+    const [evento, setEvento] = useState(filters.evento || '');
+    const [asistentesEventos, setAsistentesEventos] = useState(filters.asistentes_eventos === '1' || filters.asistentes_eventos === true);
     const campaign = useCampaign();
     const [munSearch, setMunSearch] = useState('');
     const [munOpen, setMunOpen] = useState(false);
@@ -58,6 +91,8 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
             ...(verificado ? { verificado: '1' } : {}),
             ...(granElector ? { gran_elector: '1' } : {}),
             ...(militante ? { militante: '1' } : {}),
+            ...(canViewEventos && evento ? { evento } : {}),
+            ...(canViewEventos && !evento && asistentesEventos ? { asistentes_eventos: '1' } : {}),
             ...overrides,
         };
         onApply(vals);
@@ -73,6 +108,8 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
         setGranElector(false);
         setMilitante(false);
         setCampana('');
+        setEvento('');
+        setAsistentesEventos(false);
         onClear();
     }
 
@@ -186,11 +223,27 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear }
 
             {campaign.hasMultiple && (
                 <div>
-                    <label htmlFor="votantes-filtro-campana" className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Campaña</label>
-                    <select id="votantes-filtro-campana" value={campana} onChange={e => setCampana(e.target.value)} className={inputCls}>
+                    <label htmlFor={campanaId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Campaña</label>
+                    <select id={campanaId} value={campana} onChange={e => setCampana(e.target.value)} className={inputCls}>
                         <option value="">Todas</option>
                         {campaign.list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
+                </div>
+            )}
+
+            {canViewEventos && (
+                <div className="space-y-2">
+                    <div>
+                        <label htmlFor={eventoId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Asistió al evento…</label>
+                        <select id={eventoId} value={evento} onChange={e => setEvento(e.target.value)} className={inputCls}>
+                            <option value="">Cualquiera o ninguno</option>
+                            {eventos.map(e => <option key={e.id} value={e.id}>{eventOptionLabel(e, iso => formatEventDate(iso, { withTime: false }))}</option>)}
+                        </select>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={asistentesEventos || !!evento} disabled={!!evento} onChange={e => setAsistentesEventos(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
+                        <span className="text-[13px] text-[var(--color-ink)]">Asistentes a eventos (cualquiera)</span>
+                    </label>
                 </div>
             )}
 

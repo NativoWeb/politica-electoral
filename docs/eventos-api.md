@@ -1,4 +1,4 @@
-# Eventos especiales — contrato backend (Fase 1 + Fase 2: planilla PDF + Fase 3: cargue desde Excel)
+# Eventos especiales — contrato backend (Fase 1 + Fase 2: planilla PDF + Fase 3: cargue desde Excel + Fase 4: integración)
 
 Contrato entre el backend (Laravel) y el frontend (React + Inertia) del módulo **Eventos especiales**:
 eventos de campaña ("Del Senado al barrio", giras, novenas, reuniones) con registro de asistentes por
@@ -81,6 +81,10 @@ Aislamiento por campaña (igual que Votantes):
 | PATCH | `/eventos/{id}/importar/{import}/filas/{fila}` | `eventos.importar.fila` | `manage.eventos` | 200 JSON / redirect back |
 | POST | `/eventos/{id}/importar/{import}/confirmar` | `eventos.importar.confirmar` | `manage.eventos` | 200 JSON / redirect back |
 | DELETE | `/eventos/{id}/importar/{import}` | `eventos.importar.descartar` | `manage.eventos` | 200 JSON / redirect a `/eventos/{id}/importar` |
+| GET | `/eventos/{id}/asistentes.xlsx?link_status=&source=&q=` | `eventos.asistentes.excel` | `view.eventos\|manage.eventos` | Excel (descarga), ver §12 |
+| GET | `/eventos/persona/{liderId}` | `eventos.persona` | `view.eventos\|manage.eventos` **y** `view.mapa\|view.votantes` | JSON, ver §12 |
+| GET | `/eventos/territorio?municipio=&barrio=&page=&pagina_lideres=` | `eventos.territorio` | `view.eventos\|manage.eventos` | Inertia `Eventos/Territorio`, ver §12 |
+| GET | `/eventos/territorio/excel?municipio=&barrio=` | `eventos.territorio.excel` | `view.eventos\|manage.eventos` | Excel (descarga), ver §12 |
 
 `{id}` que no es UUID → 404. Sin el permiso: GET de página → redirect a `/`; JSON o no-GET → 403.
 
@@ -380,7 +384,8 @@ Aprobar (solo `pendiente`; los demás se omiten):
 - Si la cédula ya existe en Votantes de la campaña del evento → se vincula (`vinculado`, `lider_id`), **sin tocar la ficha**.
 - Si no → crea la ficha en `lideres` en la **campaña del evento** con `tipo = "asistente_evento"`, municipio del
   evento, barrio/dirección/fecha de nacimiento del asistente, `telefono = celular`, `autoriza_datos = true` **solo si
-  el consentimiento fue sobre un texto aprobado** (con el texto provisional queda `false`), `observacion = "Registrado en el evento <nombre> (<fecha>)."` y el fijo como contacto; el asistente
+  el consentimiento fue sobre un texto aprobado** (con el texto provisional queda `false`), `observacion` vacía (nunca el
+  nombre del evento: la ficha la leen usuarios sin `view.eventos`; el vínculo queda en `event_attendees.lider_id`) y el fijo como contacto; el asistente
   pasa a `aprobado` con `lider_id`.
 - Aprobar dos veces no duplica.
 
@@ -711,3 +716,164 @@ los mensajes lo dicen; para que sean 5 MB, en `/etc/php/8.3/fpm/php.ini` poner `
 
 Medido con 2000 filas, todas con SÍ (test `EventImportPostgresTest::test_two_thousand_rows_on_postgresql`, PostgreSQL 16
 local en Docker): subir 0,3 s, revisar 1,0 s, confirmar 0,5 s; pico de memoria del proceso de test ~102 MB.
+
+---
+
+## 12. Integración con Votantes, Mapa Político y vista por territorio (Fase 4)
+
+**Regla de permisos (decisión de la Fase 4):** saber a qué eventos fue una persona es dato sensible (opinión
+política, Ley 1581) y en el módulo solo lo ve quien tiene `view.eventos` o `manage.eventos` (el detalle con
+asistentes). Por eso, **sin `view.eventos`/`manage.eventos` no se muestra nada de eventos** fuera del módulo: ni la
+pestaña/sección "Eventos" de la ficha, ni el filtro ni la columna "N eventos" de Votantes, ni la vista por territorio
+(tampoco el conteo). `register.asistentes` solo no basta. En el frontend: `canSeeEventAttendees(auth.user)`
+(`resources/js/lib/eventosIntegracion.js`).
+
+Alcance de todo lo de esta sección (`App\Services\Eventos\EventScope`): eventos **no borrados** de las campañas
+**visibles** (propia + subcampañas) y, si el usuario tiene `territory_scope`, cuyo `municipio_id` está en su territorio.
+Nada de campañas no visibles llega a la pantalla ni al Excel.
+
+### Ficha de la persona — `GET /eventos/persona/{liderId}`
+
+Eventos a los que la ficha (líder) **asistió** (`event_attendees.lider_id`) o que **organizó**
+(`event_organizers.lider_id`). Permisos: `view.eventos|manage.eventos` **y** `view.mapa|view.votantes`.
+Líder inexistente, id no UUID o de una campaña no visible → **404**; líder fuera del territorio → **403**; sin permiso →
+**403** (JSON). Un evento fuera del territorio del usuario no se lista aunque la ficha sí esté en él.
+
+```jsonc
+{ "success": true, "data": {
+    "total": 2,          // eventos distintos
+    "asistio": 2, "organizo": 1,
+    "eventos": [         // una fila por participación (asistió y organizó el mismo evento = 2 filas), starts_at desc
+      { "id": "uuid", "nombre": "...", "tipo": "Gira", "status": "cerrado", "starts_at": "ISO", "municipio": "Girón",
+        "barrios": ["San Martín"], "campaign_id": "uuid",
+        "participacion": "asistente|organizador",
+        "rol": "Asistente" | "Organizador" | "Organizador (Coordinadora)",
+        "origen": "qr|operador|excel" | null,   // solo para asistente
+        "url": "/eventos/{id}" }
+    ] } }
+```
+
+Frontend: pestaña **Eventos** en `PersonaPanel` (Mapa Político; solo fichas `source = lider` y en línea) y sección
+**Eventos** en `VotanteDetail` (/votantes); ambas cargan al abrirse (`Components/Eventos/PersonaEventos.jsx`).
+
+### Votantes — filtros, columna y contadores
+
+- `?evento=<uuid>` → "Asistió al evento…": fichas con una fila en `event_attendees` de ese evento. Un evento no visible
+  (otra campaña, borrado, fuera del territorio) o un valor que no es UUID **se ignora** (como `campana`).
+- `?asistentes_eventos=1` → "Asistentes a eventos (cualquiera)": asistió a algún evento visible. Con `evento` manda
+  `evento`. Organizar un evento **no** cuenta como asistir.
+- Los contadores (`counters.total`, `gran_elector`, `con_referidos`) y el export (`/exportar/excel|pdf?source=votantes`,
+  que reenvía la misma query) respetan el filtro: mismas filas que la pantalla.
+- Cada fila trae `eventos_count` (eventos visibles distintos a los que asistió); la tabla muestra la insignia
+  "N eventos". Sin `view.eventos` la clave no viene y `evento`/`asistentes_eventos` se ignoran.
+- Props nuevas de `Votantes`: `canViewEventos` (bool) y `eventos` (`[{ id, nombre, starts_at, municipio }]`, los 300
+  más recientes visibles; `[]` sin permiso). `filters` devuelve `evento` y `asistentes_eventos` solo si se aplicaron.
+
+### Mapa Político — tipo "Asistentes a eventos"
+
+**Sin `view.eventos`/`manage.eventos` no existe este tipo** (decisión del orquestador): para ese usuario las fichas
+`asistente_evento` son líderes normales en todo el Mapa Político: salen en la sección "Líderes" con la etiqueta
+"Líderes", la ficha dice `tipo_registro = "Líderes"`, `tipo=asistentes_evento` se ignora, el filtro de tipo no ofrece la
+opción, `cargosPorTipo` no trae la clave, el export las etiqueta "Líderes" y la copia offline las incluye como líderes.
+Si ese usuario guarda la ficha, sigue siendo `asistente_evento` (salvo que marque "Nuevos Líderes"). Ningún JSON ni
+prop le devuelve el valor crudo: `EventScope::visibleTipo()` lo cambia por `directorio` en `/votantes` (props y
+`GET /votantes/{id}`) y en `/lideres/{municipio}`; ficha del Mapa, offline, búsqueda de líderes, referidos y export
+de Votantes no envían `tipo`. Lo que sigue aplica
+solo a quien **sí** tiene el permiso:
+
+- Las fichas creadas al aprobar asistentes (`lideres.tipo = asistente_evento`) son un tipo propio,
+  **apagado por defecto**: `tipo=todos` (o sin `tipo`) **no** las incluye, así que los conteos no cambian. Salen de
+  "Líderes" y de "Directorio Municipal" (y de la copia offline del municipio).
+- Se activan con `tipo=asistentes_evento` (valor del filtro; etiqueta **"Asistentes a eventos"** en filtros, chips,
+  sección, columna Tipo y exports). Con todos los tipos marcados la página vuelve a agrupar por secciones e incluye la
+  sección "Asistentes a eventos" (lista plana, como Líderes). `cargosPorTipo.asistentes_evento` = cargos de líderes.
+- Opciones de barrio (`barrios`): con el tipo apagado no incluyen los barrios de fichas `asistente_evento`. Para quien no
+  tiene el permiso sí los incluyen, porque ahí esas fichas son líderes listados y su barrio debe poder filtrarse.
+- La ficha muestra `tipo_registro = "Asistentes a eventos"` y, solo en esas fichas, la casilla "Asistentes a eventos" en
+  Tipo. Al guardar sigue siendo asistente mientras esa casilla siga marcada y no se marque "Líderes" ni "Nuevos Líderes";
+  marcar "Líderes" o desmarcar la casilla la convierte en líder. "Crear líder" no ofrece este tipo.
+- Verificado con la BD local: los conteos por sección de los 87 municipios y de la vista general son idénticos antes y
+  después del cambio (en producción hoy no hay fichas `asistente_evento`).
+
+### Vista por territorio — `GET /eventos/territorio` (Inertia `Eventos/Territorio`)
+
+Query: `municipio` (uuid de municipio; fuera del territorio → **403**; otro valor → sin selección), `barrio` (texto
+opcional, ≤ 120), `page` (asistentes, 50 por página), `pagina_lideres` (líderes, 25 por página).
+Enlace "Ver por territorio" en `/eventos` (con `can.view`).
+
+**Barrio normalizado:** se compara la clave `AttendeeInput::barrioKey` = minúsculas, sin tildes y con espacios
+colapsados (la misma que ya guardan `event_barrios.nombre_normalizado` y `event_attendees.barrio_normalizado`);
+"San Martín", "SAN  MARTIN" y "san martin" son el mismo barrio. `lideres.barrio` no tiene columna normalizada: se
+toman las grafías del municipio que dan esa clave.
+
+```jsonc
+{
+  "filters": { "municipio": "uuid|null", "barrio": "San Martín|null" },     // barrio con espacios colapsados
+  "municipio": { "id", "nombre": "Girón", "provincia": "Área Metropolitana" } | null,
+  "provincias": [ ... ],                       // como en Index, limitadas al territorio
+  "barrios": [ { "nombre": "San Martín", "key": "san martin", "total": 5 } ],  // sugerencias del municipio: una por clave,
+                                               // con la grafía más usada (lideres.barrio, event_barrios, event_attendees.barrio)
+  "resultado": null | {
+    "kpis": { "lideres": 2, "eventos": 1, "asistentes": 4, "personas": 4, "en_votantes": 3 },
+    "lideres": paginador de { id, nombre, cedula, telefono, barrio, cargo, partido, campaign_id },
+    "eventos": [ { id, nombre, tipo, status, starts_at, campaign_id, asistentes, asistentes_barrio|null, url } ],  // máx. 200
+    "asistentes": paginador de { id, nombres, apellidos, cedula, celular, barrio, source, link_status, en_votantes,
+                                  evento: { id, nombre, starts_at }, campaign_id }
+  }
+}
+```
+
+- **Líderes:** fichas activas del municipio (con barrio: las de ese barrio), de campañas visibles, **sin** las de tipo
+  `asistente_evento` (esas personas salen en Asistentes).
+- **Eventos:** del municipio; con barrio, los que tienen ese barrio en sus barrios (`event_barrios`).
+  `asistentes` = total del evento; `asistentes_barrio` = los que viven en ese barrio (null sin barrio).
+- **Asistentes:** de los eventos del municipio; con barrio, los que viven en él (`event_attendees.barrio_normalizado`).
+- **KPIs:** `asistentes` = registros de asistencia; `personas` = cédulas distintas; `en_votantes` = fichas distintas
+  vinculadas.
+
+### Exportes Excel
+
+Ambos usan `GenericExport` (las celdas que empiezan por `=`, `+`, `-` o `@` se guardan con `'` delante) y dejan
+auditoría (el middleware `audit` no registra GET), sin datos personales en la metadata.
+`GenericExport` escribe como **texto** (tipo `s` y formato `@`) las columnas `cedula`, `documento`,
+`referente_documento`, `celular`, `fijo` y `telefono` en todos los Excel que lo usan (también Mapa Político y Votantes;
+el export de Votantes ahora trae `cedula` disponible para `?columns=`).
+
+- **Asistentes del evento** — `GET /eventos/{id}/asistentes.xlsx` (botón "Descargar Excel" en el detalle). Mismo
+  acceso que el detalle (404/403 de campaña y territorio; sin permiso: JSON 403, visita → `/`) y **mismos filtros**
+  (`link_status`, `source`, `q`), sin paginar. Columnas: Nombres, Apellidos, Cédula, Celular, Teléfono fijo, Fecha de
+  nacimiento, Dirección, Barrio, Autorizó datos, Texto de autorización (Aprobado/Provisional), Origen (QR/Operador/Excel),
+  Registrado por, Estado de vínculo, En Votantes, Fecha de registro. Nombre `asistentes-<evento>.xlsx`. Auditoría
+  `EVENTO_ASISTENTES_EXPORTADOS` `{ route, filas, filtros }`.
+- **Territorio** — `GET /eventos/territorio/excel?municipio=&barrio=` (sin municipio → 404). Libro con 3 hojas,
+  **Líderes**, **Eventos** y **Asistentes**, con las mismas consultas que la pantalla sin paginar (eventos sin el tope
+  de 200). Columna Campaña en las tres hojas, solo si el usuario ve más de una campaña. Nombre `territorio-<municipio>[-<barrio>].xlsx`. Auditoría
+  `EVENTOS_TERRITORIO_EXPORTADO` `{ route, municipio_id, barrio (bool), lideres, eventos, asistentes }`.
+- El botón "Exportar" del encabezado (que exporta el Mapa Político) ya no aparece en las páginas `/eventos/*`.
+
+### Importación desde Excel: aislamiento antes de validar (OBS-07)
+
+`ImportUploadRequest`, `ImportMappingRequest`, `ImportRowRequest` e `ImportConfirmRequest` comprueban en `authorize()`
+(`AuthorizesEventImport`) el evento (campaña propia, territorio) y que la carga sea de ese evento **antes** de validar
+el cuerpo: otra campaña → **404** y subcampaña visible → **403** aunque el cuerpo sea inválido (antes respondía 422).
+
+### Índices
+
+Migración `2026_11_02_000001_add_lider_indexes_to_event_tables`: `event_attendees(lider_id)` y
+`event_organizers(lider_id)`. No toca `data_consents` (no hace falta el script de dueño).
+
+### Correcciones del QA de la Fase 4
+
+- `GET /mapa-politico/persona/{id}`: `cargos` nunca trae `null` (una ficha sin cargo, p. ej. creada al aprobar un
+  asistente, manda `[]`). Las fichas de asistentes siguen naciendo con `cargo = null` (no se inventa un cargo).
+  `PersonaPanel` solo usa la copia guardada en el teléfono cuando la petición falla (sin señal, error del servidor); si la
+  ficha llega pero no se puede mostrar, dice "La ficha llegó pero no se pudo mostrar. Avise al equipo técnico.".
+- Mapa Político sin `view.eventos`: `?tipo=asistentes_evento` se quita como si no viniera (si era el único tipo, queda
+  `todos`); `filters.tipo` devuelve el tipo efectivo (`MapaPoliticoController::effectiveTipos`).
+- `/votantes`: los contadores cuentan las mismas filas que el listado, con **todos** los filtros activos (búsqueda,
+  municipio, partido, confianza, etiquetas, estado, campaña, eventos).
+- Búsquedas con `LIKE` (Votantes, Mapa Político, Auditoría y el filtro de barrio del Mapa): `_` y `%` se buscan como
+  caracteres (se escapa primero la barra invertida).
+- `/votantes`: los paneles de filtros de escritorio y móvil usan ids distintos; el filtro de evento activo se ve como
+  chip ("Asistió a: …" / "Asistentes a eventos") con botón para quitarlo, aunque el panel esté cerrado.
+- `/eventos/territorio`: con el barrio vacío se muestran los barrios sugeridos.

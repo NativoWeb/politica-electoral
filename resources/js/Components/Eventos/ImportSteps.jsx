@@ -2,8 +2,8 @@ import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import {
-    NEEDS_APPROVED_TEXT, STEPS, TOO_LARGE, columnOptions, confirmBlocker, confirmDialogMessage, confirmSummary, consentReady, leftOutSummary,
-    mappingProblem, plural, setMapping, uploadProblem,
+    NEEDS_APPROVED_TEXT, STEPS, TOO_LARGE, columnOptions, confirmBlocker, confirmDialogMessage, confirmDialogTitle, confirmSummary,
+    consentReady, leftOutSummary, mappingProblem, plural, setMapping, uploadProblem,
 } from '@/lib/eventosImport';
 
 const CARD = 'bg-white border border-[var(--color-line)] rounded-2xl p-4 lg:p-5';
@@ -196,7 +196,7 @@ export function ImportConfirm({ eventId, importacion, consent }) {
             </button>
             {asking && (
                 <ConfirmDialog
-                    title="¿Importar estas personas?"
+                    title={confirmDialogTitle(counts)}
                     message={confirmDialogMessage(counts)}
                     confirmLabel="Sí, importar"
                     cancelLabel="No, revisar otra vez"

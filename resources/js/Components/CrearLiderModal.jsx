@@ -4,7 +4,7 @@ import { offlineCreateLider } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
 import SearchableDropdown from '@/Components/SearchableDropdown';
 import {
-    TIPO_OPTIONS, CARGOS_DISPONIBLES, GENERO_OPTIONS,
+    TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, GENERO_OPTIONS,
     TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
     NIVEL_CONFIANZA_OPTIONS,
 } from '@/lib/mapaPoliticoConstants';
@@ -209,7 +209,7 @@ export default function CrearLiderModal({ open, onClose, municipios, provincias 
                         <div>
                             <label className={`${labelCls} mb-2`}>Tipo</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {TIPO_OPTIONS.filter(o => o.value !== 'todos').map(o => {
+                                {TIPO_OPTIONS.filter(o => o.value !== 'todos' && o.value !== ASISTENTES_EVENTO).map(o => {
                                     const checked = (form.tipos || []).includes(o.label);
                                     return (
                                         <label key={o.value} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-blue-50 border-[var(--color-primary)] font-bold text-[var(--color-primary)]' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>

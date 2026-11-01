@@ -118,11 +118,18 @@ export default function Index({ eventos, filters = {}, provincias = [], tipos = 
                         {eventos?.total ?? 0} {eventos?.total === 1 ? 'evento' : 'eventos'}{activeCount || filters.q ? ' con los filtros elegidos' : ''}
                     </p>
                 </div>
-                {canCreate && (
-                    <button type="button" onClick={() => setCreating(true)} className="min-h-[44px] px-4 py-2.5 bg-white/15 text-white text-[15px] font-bold rounded-xl active:bg-white/25 border border-white/20 flex-shrink-0">
-                        + Nuevo evento
-                    </button>
-                )}
+                <div className="flex flex-wrap justify-end gap-2">
+                    {can.view && (
+                        <Link href="/eventos/territorio" className="min-h-[44px] px-4 py-2.5 bg-white/15 text-white text-[15px] font-bold rounded-xl active:bg-white/25 border border-white/20 flex items-center flex-shrink-0">
+                            Ver por territorio
+                        </Link>
+                    )}
+                    {canCreate && (
+                        <button type="button" onClick={() => setCreating(true)} className="min-h-[44px] px-4 py-2.5 bg-white/15 text-white text-[15px] font-bold rounded-xl active:bg-white/25 border border-white/20 flex-shrink-0">
+                            + Nuevo evento
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="bg-white border-b border-[var(--color-line)] px-4 lg:px-6 py-2.5 lg:py-3 space-y-2">

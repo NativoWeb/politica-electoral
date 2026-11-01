@@ -1,7 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useCallback } from 'react';
-import VotanteFilters from '@/Components/VotanteFilters';
+import VotanteFilters, { EventFilterChips } from '@/Components/VotanteFilters';
 import VotanteTable from '@/Components/VotanteTable';
 import VotanteDetail from '@/Components/VotanteDetail';
 
@@ -42,7 +42,7 @@ function KpiCard({ icon, label, value, accent }) {
     );
 }
 
-export default function Votantes({ votantes, counters, municipios, filters }) {
+export default function Votantes({ votantes, counters, municipios, filters, eventos = [], canViewEventos = false }) {
     const [selectedId, setSelectedId] = useState(null);
     const [detailData, setDetailData] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
@@ -193,15 +193,27 @@ export default function Votantes({ votantes, counters, municipios, filters }) {
                             municipios={municipios}
                             onApply={handleApplyFilters}
                             onClear={handleClearFilters}
+                            eventos={eventos}
+                            canViewEventos={canViewEventos}
                         />
                     </div>
 
                     {/* Table */}
                     <div className="flex-1 min-w-0">
+                        <EventFilterChips
+                            filters={filters}
+                            eventos={eventos}
+                            onRemove={key => {
+                                const next = { ...filters };
+                                delete next[key];
+                                router.get('/votantes', next, { preserveState: false, preserveScroll: true });
+                            }}
+                        />
                         <VotanteTable
                             votantes={votantes}
                             selectedId={selectedId}
                             onSelect={selectVotante}
+                            showEventos={canViewEventos}
                         />
                     </div>
 
@@ -240,6 +252,8 @@ export default function Votantes({ votantes, counters, municipios, filters }) {
                             municipios={municipios}
                             onApply={handleApplyFilters}
                             onClear={handleClearFilters}
+                            eventos={eventos}
+                            canViewEventos={canViewEventos}
                         />
                     </div>
                 </>

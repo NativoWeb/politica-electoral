@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { getOfflinePersona, offlineUpdatePersona, offlineCreateNexo, offlineDeleteNexo } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
 import { FullScreenSpinner } from '@/Components/Spinner';
@@ -7,11 +7,13 @@ import TabBar from '@/Components/TabBar';
 import ContactosManager from '@/Components/ContactosManager';
 import InfoPoliticaManager from '@/Components/InfoPoliticaManager';
 import TagsPanel from '@/Components/TagsPanel';
+import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
+import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 import {
-    TIPO_OPTIONS, CARGOS_DISPONIBLES, PARENTESCOS,
+    TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, PARENTESCOS,
     NIVEL_CONFIANZA_OPTIONS, NIVEL_CONFIANZA_COLORS,
     GENERO_OPTIONS, TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
 } from '@/lib/mapaPoliticoConstants';
@@ -54,9 +56,11 @@ function dateVal(v) {
     return String(v).split('T')[0];
 }
 
-function buildFormFromData(d) {
+export function buildFormFromData(d) {
     const rawCargos = d.cargos || (d.cargo ? [d.cargo] : []);
-    const splitCargos = [...new Set((Array.isArray(rawCargos) ? rawCargos : [rawCargos]).flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))];
+    // A ficha without cargo (e.g. created from an event attendee) may come as [null].
+    const splitCargos = [...new Set((Array.isArray(rawCargos) ? rawCargos : [rawCargos])
+        .filter(c => typeof c === 'string').flatMap(c => c.split(',').map(s => s.trim())).filter(Boolean))];
     const tipos = d.tipo_registro ? d.tipo_registro.split(',').map(s => s.trim()) : [];
     return {
         nombre: d.nombre || '', telefono: d.telefono || '', email: d.email || '',
@@ -109,6 +113,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     // Escape closes an open confirmation first, otherwise the ficha just like its X button.
     useEscapeKey(() => (confirmOpen ? closeConfirm() : onClose()));
     const campaign = useCampaign();
+    const canSeeEventos = canSeeEventAttendees(usePage().props.auth?.user);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
@@ -163,6 +168,8 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             .catch(() => setPosibles([]));
     }
 
+    // Only a failed request (no signal, server error) falls back to the copy saved on the phone; a ficha the
+    // server sent but this screen could not show is an error, never passed off as "saved data".
     function loadData(id = viewId || personId) {
         return apiFetch(`/mapa-politico/persona/${id}`, { method: 'GET' })
             .then(r => {
@@ -172,12 +179,17 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 return r.json();
             })
             .then(d => {
-                setData(d);
-                setLoadError(false);
-                setForm(buildFormFromData(d));
-                if (d?.id) loadPosibles(d.id);
-            })
-            .catch(async () => {
+                try {
+                    const nextForm = buildFormFromData(d);
+                    setData(d);
+                    setLoadError(false);
+                    setForm(nextForm);
+                    if (d?.id) loadPosibles(d.id);
+                } catch {
+                    setData(null);
+                    setLoadError('app');
+                }
+            }, async () => {
                 const offlineData = await getOfflinePersona(id).catch(() => null);
                 const source = offlineData || fallbackData;
                 if (source) {
@@ -496,7 +508,11 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[400px] p-8 text-center">
                     <svg className="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
                     <p className="text-[16px] font-bold text-[var(--color-ink)] mb-2">No se pudo cargar la ficha</p>
-                    <p className="text-[14px] text-[var(--color-ink-faint)] mb-6">Revisa tu conexion a internet e intenta de nuevo.</p>
+                    <p className="text-[14px] text-[var(--color-ink-faint)] mb-6">
+                        {loadError === 'app'
+                            ? 'La ficha llegó pero no se pudo mostrar. Avise al equipo técnico.'
+                            : 'Revisa tu conexion a internet e intenta de nuevo.'}
+                    </p>
                     <div className="flex gap-3 justify-center">
                         <button onClick={() => { setLoading(true); setLoadError(false); loadData().finally(() => setLoading(false)); }} className="px-6 py-3 bg-[var(--color-primary)] text-white text-[15px] font-bold rounded-xl">Reintentar</button>
                         <button onClick={onClose} className="px-6 py-3 border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] rounded-xl">Cerrar</button>
@@ -506,7 +522,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
         </>
     );
 
-    const tabsWithCounts = TABS.map(t => {
+    // Only a lider ficha takes part in events (attendees and organizers link to lideres), and only online.
+    const showEventos = canSeeEventos && data.source === 'lider' && !data._offline;
+    const tabsWithCounts = [...TABS, ...(showEventos ? [{ key: 'eventos', label: 'Eventos' }] : [])].map(t => {
         if (t.key === 'nexos') return { ...t, count: data.nexos?.length ?? 0 };
         if (t.key === 'contactos') return { ...t, count: (data.contactos?.length ?? 0) };
         if (t.key === 'politica') return { ...t, count: (data.info_politica?.length ?? 0) };
@@ -1010,7 +1028,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         <div>
                                             <label className={`${labelCls} mb-2`}>Tipo</label>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                {TIPO_OPTIONS.filter(o => o.value !== 'todos').map(o => {
+                                                {TIPO_OPTIONS.filter(o => o.value !== 'todos' && (o.value !== ASISTENTES_EVENTO || (canSeeEventos && (data.tipo_registro || '').includes(o.label)))).map(o => {
                                                     const checked = (form.tipos || []).includes(o.label);
                                                     return (
                                                         <label key={o.value} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors text-[13px] ${checked ? 'bg-blue-50 border-[var(--color-primary)] font-bold text-[var(--color-primary)]' : 'border-[var(--color-line)] text-[var(--color-ink-soft)]'}`}>
@@ -1366,6 +1384,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 ))}
                             </div>
                         )}
+
+                        {/* ── EVENTOS ── */}
+                        {activeTab === 'eventos' && showEventos && <PersonaEventos liderId={data.id} />}
 
                         {/* ── OPCIONES ── */}
                         {activeTab === 'opciones' && (

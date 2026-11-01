@@ -8,6 +8,7 @@ import EventoFormModal from '@/Components/Eventos/EventoFormModal';
 import EventoQr from '@/Components/Eventos/EventoQr';
 import Pagination from '@/Components/Eventos/Pagination';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
+import { attendeesExcelUrl } from '@/lib/eventosIntegracion';
 import { useCampaign } from '@/lib/campaign';
 import { allSelected, approveMessage, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, provisionalCount, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
 
@@ -279,7 +280,14 @@ export default function Show({ evento, asistentes, kpis, filters, consent, tipos
 
                 <section aria-labelledby="asistentes-title" className="bg-white border border-[var(--color-line)] rounded-2xl overflow-hidden">
                     <div className="px-4 pt-4 pb-3 space-y-3 border-b border-[var(--color-line)]">
-                        <h2 id="asistentes-title" className="text-[16px] font-extrabold text-[var(--color-ink)]">Asistentes ({asistentes?.total ?? 0})</h2>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h2 id="asistentes-title" className="text-[16px] font-extrabold text-[var(--color-ink)]">Asistentes ({asistentes?.total ?? 0})</h2>
+                            {(asistentes?.total ?? 0) > 0 && (
+                                <a href={attendeesExcelUrl(evento.id, filters)} className="min-h-[44px] px-4 py-2 rounded-xl border-2 border-[var(--color-line-strong)] text-[15px] font-bold text-[var(--color-ink)] flex items-center">
+                                    Descargar Excel{filters?.link_status || filters?.source || filters?.q ? ' (con el filtro)' : ''}
+                                </a>
+                            )}
+                        </div>
                         <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-0.5 [scrollbar-width:none]" role="group" aria-label="Filtrar por estado">
                             {LINK_FILTERS.map(f => {
                                 const active = (filters?.link_status ?? null) === f.value;

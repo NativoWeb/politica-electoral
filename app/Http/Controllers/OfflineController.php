@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Eventos\ApproveAttendees;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Services\Eventos\EventScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -88,6 +90,10 @@ class OfflineController extends Controller
                 $q->where('cargo', 'not ilike', '%Directorio Municipal%')
                   ->orWhereNull('cargo');
             })
+            // Event attendees are off by default in the Mapa Político for who may see events, so the offline copy
+            // leaves them out too; anyone else has them as ordinary lideres.
+            ->when(EventScope::canSeeAttendees($request->user()), fn ($query) => $query
+                ->where(fn ($q) => $q->where('tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('tipo')))
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
                 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
                 'votos', 'destacado', 'profesion', 'cedula', 'campaign_id')

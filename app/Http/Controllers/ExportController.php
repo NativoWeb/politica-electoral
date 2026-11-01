@@ -147,7 +147,7 @@ class ExportController extends Controller
     private function getVotantesData(Request $request, ?int $limit = null): array
     {
         return app(VotanteController::class)->listing($request)
-            ->select(['lideres.nombre', 'lideres.municipio', 'lideres.cargo', 'lideres.partido', 'lideres.telefono', 'lideres.votos', 'lideres.observacion'])
+            ->select(['lideres.nombre', 'lideres.municipio', 'lideres.cargo', 'lideres.partido', 'lideres.telefono', 'lideres.votos', 'lideres.observacion', 'lideres.cedula'])
             ->orderBy('lideres.nombre')
             ->when($limit, fn ($q) => $q->limit($limit))
             ->get()
@@ -160,6 +160,7 @@ class ExportController extends Controller
                 'telefono' => $l->telefono,
                 'votos' => $l->votos,
                 'observacion' => $l->observacion,
+                'cedula' => $l->cedula,
             ])->all();
     }
 

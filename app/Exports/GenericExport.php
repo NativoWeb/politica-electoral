@@ -3,13 +3,23 @@
 namespace App\Exports;
 
 use Maatwebsite\Excel\Concerns\FromArray;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Concerns\WithStyles;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class GenericExport implements FromArray, WithHeadings, WithTitle, WithStyles
+class GenericExport extends DefaultValueBinder implements FromArray, WithHeadings, WithTitle, WithStyles, WithCustomValueBinder, WithColumnFormatting
 {
+    // Documents and phones are text: Excel would drop leading zeros or show long numbers as 1,09877E+09.
+    public const TEXT_COLUMNS = ['cedula', 'documento', 'referente_documento', 'celular', 'fijo', 'telefono'];
+
     private array $data;
     private array $columns;
     private string $title;
@@ -27,11 +37,13 @@ class GenericExport implements FromArray, WithHeadings, WithTitle, WithStyles
         'observacion' => 'OBSERVACIONES',
     ];
 
-    public function __construct(array $data, array $columns, string $title)
+    // $labels: column => heading, for columns outside the default list.
+    public function __construct(array $data, array $columns, string $title, array $labels = [])
     {
         $this->data = $data;
         $this->columns = $columns;
         $this->title = $title;
+        $this->columnLabels = array_merge($this->columnLabels, $labels);
     }
 
     public function array(): array
@@ -48,6 +60,34 @@ class GenericExport implements FromArray, WithHeadings, WithTitle, WithStyles
             }
             return $out;
         }, $this->data);
+    }
+
+    public function bindValue(Cell $cell, $value): bool
+    {
+        if ($cell->getRow() > 1 && $value !== null && in_array($cell->getColumn(), $this->textColumnLetters(), true)) {
+            $cell->setValueExplicit((string) $value, DataType::TYPE_STRING);
+
+            return true;
+        }
+
+        return parent::bindValue($cell, $value);
+    }
+
+    public function columnFormats(): array
+    {
+        return array_fill_keys($this->textColumnLetters(), NumberFormat::FORMAT_TEXT);
+    }
+
+    private function textColumnLetters(): array
+    {
+        $letters = [];
+        foreach ($this->columns as $i => $col) {
+            if (in_array($col, self::TEXT_COLUMNS, true)) {
+                $letters[] = Coordinate::stringFromColumnIndex($i + 1);
+            }
+        }
+
+        return $letters;
     }
 
     public function headings(): array

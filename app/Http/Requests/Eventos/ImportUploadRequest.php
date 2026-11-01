@@ -4,16 +4,14 @@ namespace App\Http\Requests\Eventos;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-// Route middleware already requires manage.eventos; campaign and territory are checked in the controller. The
-// content is not trusted by its MIME type: the reader for the extension either parses it or rejects it.
+// Route middleware already requires manage.eventos; campaign and territory are checked in authorize() before the
+// file is validated (AuthorizesEventImport). The content is not trusted by its MIME type: the reader for the
+// extension either parses it or rejects it.
 class ImportUploadRequest extends FormRequest
 {
-    public const MAX_KB = 5120;
+    use AuthorizesEventImport;
 
-    public function authorize(): bool
-    {
-        return true;
-    }
+    public const MAX_KB = 5120;
 
     // 5 MB, or less if PHP accepts less (upload_max_filesize / post_max_size), so the screen and the messages tell
     // the limit that really applies.

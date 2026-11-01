@@ -39,6 +39,7 @@ trait BuildsEventosScenario
         (require database_path('migrations/2026_10_19_000001_add_whatsapp_link_to_users.php'))->up();
         (require database_path('migrations/2026_10_31_000001_create_eventos_tables.php'))->up();
         (require database_path('migrations/2026_11_01_000001_create_event_imports_tables.php'))->up();
+        (require database_path('migrations/2026_11_02_000001_add_lider_indexes_to_event_tables.php'))->up();
         $this->seedBase();
     }
 
@@ -172,6 +173,69 @@ trait BuildsEventosScenario
             $t->text('user_agent')->nullable();
             $t->string('correlation_id', 50)->nullable();
             $t->timestamp('created_at')->useCurrent();
+        });
+    }
+
+    // The rest of what /votantes and /mapa-politico read (phase 4 tests open those screens).
+    protected function addMapaVotantesTables(): void
+    {
+        Schema::table('candidacies', fn (Blueprint $t) => $t->string('outcome')->nullable());
+        Schema::create('lider_info_politica', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('lider_id');
+            foreach (['cargo_politico', 'departamento', 'municipio', 'partido', 'aliado', 'observacion', 'estado'] as $col) {
+                $t->string($col)->nullable();
+            }
+            $t->integer('votos')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('nexos_familiares', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('campaign_id');
+            $t->uuid('person_id');
+            foreach (['nombre', 'parentesco', 'cargo', 'gustos', 'observaciones', 'cedula', 'telefono'] as $col) {
+                $t->string($col)->nullable();
+            }
+            $t->integer('edad')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('lider_municipios_influencia', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('lider_id');
+            $t->uuid('geographic_unit_id');
+            $t->string('municipio_name')->nullable();
+            $t->string('provincia_name')->nullable();
+            $t->string('nota')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('political_organizations', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->string('canonical_name');
+        });
+        Schema::create('candidacy_endorsements', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('candidacy_id');
+            $t->uuid('organization_id');
+            $t->boolean('is_primary')->default(true);
+            $t->string('endorsement_type')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('electoral_results', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('candidacy_id')->nullable();
+            $t->uuid('contest_id')->nullable();
+            $t->uuid('organization_id')->nullable();
+            $t->uuid('geographic_unit_id')->nullable();
+            $t->string('metric_type');
+            $t->integer('value')->nullable();
+        });
+        Schema::create('cargo_categories', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->string('name');
+            $t->integer('display_order')->default(0);
+            $t->boolean('is_highlighted')->default(false);
+            $t->boolean('is_active')->default(true);
+            $t->timestamps();
         });
     }
 

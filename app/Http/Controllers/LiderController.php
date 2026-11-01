@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Services\Eventos\EventScope;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -37,7 +38,7 @@ class LiderController extends Controller
                 'id' => $r->id,
                 'nombre' => $r->nombre,
                 'cargo' => $r->cargo,
-                'tipo' => $r->tipo,
+                'tipo' => EventScope::visibleTipo($r->tipo, request()->user()),
                 'telefono' => $r->telefono,
                 'email' => $r->email,
             ])

@@ -1,10 +1,11 @@
 import AppLayout from '@/Layouts/AppLayout';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { downloadMunicipio, downloadProvincia, isDownloaded, getAllOfflineData } from '@/lib/offlineDb';
 import { fmt, partyLogo, partyColor } from '@/lib/electoral';
 import { apiFetch } from '@/lib/api';
-import { TIPO_OPTIONS, CARGOS_DISPONIBLES, AREA_METROPOLITANA } from '@/lib/mapaPoliticoConstants';
+import { CARGOS_DISPONIBLES, AREA_METROPOLITANA, ASISTENTES_EVENTO_LABEL, coversAllTipos, tipoOptionsFor } from '@/lib/mapaPoliticoConstants';
+import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 import PersonaPanel from '@/Components/PersonaPanel';
 import CrearLiderModal from '@/Components/CrearLiderModal';
 import SearchableDropdown from '@/Components/SearchableDropdown';
@@ -20,6 +21,7 @@ const TIPO_COLORS = {
     'Senado': 'bg-indigo-100 text-indigo-700',
     'Cámara': 'bg-cyan-100 text-cyan-700',
     'Asamblea': 'bg-teal-100 text-teal-700',
+    [ASISTENTES_EVENTO_LABEL]: 'bg-orange-100 text-orange-800',
 };
 
 const TIPO_ICONS = {
@@ -47,9 +49,14 @@ const TIPO_ICONS = {
     'Asamblea': (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
     ),
+    [ASISTENTES_EVENTO_LABEL]: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+    ),
 };
 
-const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Senado', 'Cámara', 'Asamblea'];
+const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Senado', 'Cámara', 'Asamblea', ASISTENTES_EVENTO_LABEL];
+// People, not candidates: a flat list instead of party accordions.
+const FLAT_SECTIONS = ['Líderes', 'Nuevos Líderes', ASISTENTES_EVENTO_LABEL];
 
 /* ── Acordeón por Partido (estilo Registraduría) ── */
 function PartyAccordion({ partyName, rows, index, onSelectPerson, partyTotal }) {
@@ -246,7 +253,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                     <h3 className="text-[16px] font-extrabold text-[var(--color-ink)] uppercase">{tipo}</h3>
                     <p className="text-[12px] text-[var(--color-ink-faint)]">
                         {rows.length} {rows.length === 1 ? 'registro' : 'registros'}
-                        {byParty.length > 0 && tipo !== 'Líderes' && tipo !== 'Nuevos Líderes' && ` · ${byParty.length} partido${byParty.length > 1 ? 's' : ''}`}
+                        {byParty.length > 0 && !FLAT_SECTIONS.includes(tipo) && ` · ${byParty.length} partido${byParty.length > 1 ? 's' : ''}`}
                         {totalVotos > 0 && ` · ${fmt(totalVotos)} votos`}
                     </p>
                 </div>
@@ -282,7 +289,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                         </div>
                     )}
                     <div className="px-4 py-3 space-y-1">
-                        {(tipo === 'Líderes' || tipo === 'Nuevos Líderes') ? (
+                        {FLAT_SECTIONS.includes(tipo) ? (
                             <div className="space-y-1">
                                 {rows.map((row, i) => (
                                     <PersonRow
@@ -314,6 +321,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
 
 /* ── MAIN ── */
 export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, cargoCategorias = [], barrios = [], sectionCounts = {}, partyTotals = {}, filters: serverFilters = {} }) {
+    const tipoOptions = tipoOptionsFor(canSeeEventAttendees(usePage().props.auth?.user));
     const [allData, setAllData] = useState(() => serverData);
     const [localFilters, setLocalFilters] = useState({});
     const [localSearch, setLocalSearch] = useState(serverFilters.search ?? '');
@@ -375,7 +383,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         }
         if (f.tipo && f.tipo !== 'todos') {
             const tipos = f.tipo.split(',');
-            const tipoLabels = tipos.map(v => TIPO_OPTIONS.find(o => o.value === v)?.label).filter(Boolean);
+            const tipoLabels = tipos.map(v => tipoOptions.find(o => o.value === v)?.label).filter(Boolean);
             result = result.filter(r => {
                 const rowTipos = (r.tipo_registro || '').split(',').map(t => t.trim());
                 return tipoLabels.some(tl => rowTipos.includes(tl));
@@ -484,7 +492,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
 
     // Determine if we should show collapsible sections or flat table
     const tipoFilter = filters.tipo ?? 'todos';
-    const tipoIsAll = tipoFilter === 'todos';
+    const tipoIsAll = coversAllTipos(tipoFilter, tipoOptions);
     const hasSpecificFilters = filters.search || filters.cargo || filters.barrio || filters.destacado || filters.profesion;
     const showSections = tipoIsAll && !hasSpecificFilters;
 
@@ -542,7 +550,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const activeChips = [];
     if (selectedProv) activeChips.push({ key: 'prov', label: selectedProv, onRemove: () => { setSelectedProv(''); applyFilters({ provincia: undefined, municipio: undefined }); } });
     if (filters.municipio) activeChips.push({ key: 'mun', label: municipios.find(m => m.id === filters.municipio)?.name || 'Municipio', onRemove: () => applyFilters({ municipio: undefined }) });
-    if (filters.tipo && filters.tipo !== 'todos') filters.tipo.split(',').forEach(t => activeChips.push({ key: `tipo-${t}`, label: TIPO_OPTIONS.find(o => o.value === t)?.label || t, onRemove: () => applyFilters({ tipo: removeFromList(filters.tipo, t) || 'todos' }) }));
+    if (filters.tipo && filters.tipo !== 'todos') filters.tipo.split(',').filter(t => tipoOptions.some(o => o.value === t)).forEach(t => activeChips.push({ key: `tipo-${t}`, label: tipoOptions.find(o => o.value === t).label, onRemove: () => applyFilters({ tipo: removeFromList(filters.tipo, t) || 'todos' }) }));
     if (filters.cargo) filters.cargo.split(',').forEach(c => activeChips.push({ key: `cargo-${c}`, label: c, onRemove: () => { const next = removeFromList(filters.cargo, c); setSelectedCargos(next ? next.split(',') : []); applyFilters({ cargo: next }); } }));
     if (filters.partido) activeChips.push({ key: 'partido', label: filters.partido, onRemove: () => applyFilters({ partido: undefined }) });
     if (filters.profesion) activeChips.push({ key: 'profesion', label: filters.profesion, onRemove: () => applyFilters({ profesion: undefined }) });
@@ -655,11 +663,11 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         <div className="col-span-1">
                             <SearchableDropdown
                                 label="Tipo"
-                                options={TIPO_OPTIONS.filter(o => o.value !== 'todos').map(o => o.label)}
-                                selected={filters.tipo && filters.tipo !== 'todos' ? filters.tipo.split(',').map(v => TIPO_OPTIONS.find(o => o.value === v)?.label).filter(Boolean).join(',') : undefined}
+                                options={tipoOptions.filter(o => o.value !== 'todos').map(o => o.label)}
+                                selected={filters.tipo && filters.tipo !== 'todos' ? filters.tipo.split(',').map(v => tipoOptions.find(o => o.value === v)?.label).filter(Boolean).join(',') || undefined : undefined}
                                 onChange={val => {
                                     if (!val) { applyFilters({ tipo: 'todos' }); return; }
-                                    const values = val.split(',').map(label => TIPO_OPTIONS.find(o => o.label === label)?.value).filter(Boolean).join(',');
+                                    const values = val.split(',').map(label => tipoOptions.find(o => o.label === label)?.value).filter(Boolean).join(',');
                                     applyFilters({ tipo: values || 'todos' });
                                 }}
                                 multi={true}

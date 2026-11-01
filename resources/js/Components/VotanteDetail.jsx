@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { usePage } from '@inertiajs/react';
 import VotanteContactos from '@/Components/VotanteContactos';
 import VotanteInfoPolitica from '@/Components/VotanteInfoPolitica';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
+import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
+import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 const readCls = "text-[13px] text-[var(--color-ink)] py-1";
@@ -119,6 +122,7 @@ export default function VotanteDetail({
     const prevIdRef = useRef(null);
     const rootRef = useRef(null);
     const campaign = useCampaign();
+    const canSeeEventos = canSeeEventAttendees(usePage().props.auth?.user);
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
     const campaignReadOnly = !creating && campaign.isOther(data?.campaign_id);
     const campaignName = campaignReadOnly ? campaign.nameOf(data?.campaign_id) : null;
@@ -617,6 +621,13 @@ export default function VotanteDetail({
                         ))}
                     </div>
                 </Accordion>
+
+                {/* Eventos: loaded when the section is opened */}
+                {!creating && canSeeEventos && data?.id && (
+                    <Accordion title="Eventos">
+                        <PersonaEventos liderId={data.id} compact />
+                    </Accordion>
+                )}
 
                 {/* Nexos Familiares (read-only) */}
                 {!creating && localNexos.length > 0 && (

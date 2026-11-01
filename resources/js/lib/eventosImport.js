@@ -119,7 +119,12 @@ export function confirmSummary(counts) {
     const total = counts?.a_importar ?? 0;
     if (total === 0) return 'No hay filas para importar. Revise las filas con error o cargue otro archivo.';
 
-    return `Se registrarán ${plural(total, 'persona', 'personas')} en el evento, con su autorización de datos. `
+    if (total === 1) {
+        return 'Se registrará 1 persona en el evento, con su autorización de datos. '
+            + 'Si es nueva, queda pendiente de aprobar antes de pasar a Votantes.';
+    }
+
+    return `Se registrarán ${total} personas en el evento, con su autorización de datos. `
         + 'Las nuevas quedan pendientes de aprobar antes de pasar a Votantes.';
 }
 
@@ -136,10 +141,15 @@ export function leftOutSummary(counts) {
     return parts.length ? `Quedan fuera: ${parts.join(', ')}.` : null;
 }
 
+export function confirmDialogTitle(counts) {
+    return (counts?.a_importar ?? 0) === 1 ? '¿Importar a esta persona?' : '¿Importar estas personas?';
+}
+
 export function confirmDialogMessage(counts) {
     const total = counts?.a_importar ?? 0;
+    const verb = total === 1 ? 'Se importará' : 'Se importarán';
 
-    return `Se importarán ${plural(total, 'persona', 'personas')}. Esta acción no se puede deshacer.`;
+    return `${verb} ${plural(total, 'persona', 'personas')}. Esta acción no se puede deshacer.`;
 }
 
 // Why the import cannot be confirmed yet, or null.

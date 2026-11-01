@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 import CampaignChip from '@/Components/CampaignChip';
+import { eventCountLabel } from '@/lib/eventosIntegracion';
 
 const NIVEL_BADGE = {
     sin_llamar: { label: 'Sin llamar', cls: 'bg-gray-100 text-gray-600' },
@@ -27,7 +28,7 @@ function TagDot({ active, label, color }) {
     );
 }
 
-export default function VotanteTable({ votantes, selectedId, onSelect }) {
+export default function VotanteTable({ votantes, selectedId, onSelect, showEventos = false }) {
     const { data, current_page, last_page, links, from, to, total } = votantes;
 
     function goToPage(url) {
@@ -61,6 +62,7 @@ export default function VotanteTable({ votantes, selectedId, onSelect }) {
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider hidden sm:table-cell">Tel</th>
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider">Confianza</th>
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider hidden sm:table-cell">Referidos</th>
+                            {showEventos && <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider">Eventos</th>}
                             <th className="px-3 py-2.5 text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider w-[60px]">Tags</th>
                         </tr>
                     </thead>
@@ -122,6 +124,17 @@ export default function VotanteTable({ votantes, selectedId, onSelect }) {
                                             <span className="text-[13px] text-gray-300">-</span>
                                         )}
                                     </td>
+                                    {showEventos && (
+                                        <td className="px-3 py-2.5">
+                                            {(v.eventos_count || 0) > 0 ? (
+                                                <span className="inline-block px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 text-[12px] font-bold whitespace-nowrap">
+                                                    {eventCountLabel(v.eventos_count)}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[13px] text-gray-300">-</span>
+                                            )}
+                                        </td>
+                                    )}
                                     <td className="px-3 py-2.5">
                                         <div className="flex items-center gap-1">
                                             <TagDot active={v.gran_elector} label="Gran Elector" color="bg-amber-400" />

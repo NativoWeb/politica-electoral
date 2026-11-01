@@ -11,6 +11,7 @@ use App\Models\Lider;
 use App\Models\LiderContacto;
 use App\Models\LiderInfoPolitica;
 use App\Services\CachedQueries;
+use App\Services\Eventos\EventScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +22,12 @@ class VotanteController extends Controller
 {
     use ScopesTerritory;
 
+    private array $eventFilters = [];
+
     private function escapeLike(string $value): string
     {
-        return str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $value);
+        // The backslash first: escaping it after % and _ would double the escapes just added.
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     // The Votantes listing with the screen's filters and scope, unpaginated: the screen and its export share it.
@@ -39,6 +43,10 @@ class VotanteController extends Controller
         $query = Lider::query()
             ->addSelect(['lideres.*'])
             ->addSelect(['referidos_count' => $referidosCount]);
+        if (EventScope::canSeeAttendees($request->user())) {
+            $query->addSelect(['eventos_count' => app(EventScope::class)->attendedCount('lideres.id')]);
+        }
+        $this->applyEventFilters($query, $request);
 
         // Estado filter (activos by default)
         $estado = $request->input('estado', 'activos');
@@ -94,22 +102,13 @@ class VotanteController extends Controller
 
     public function index(Request $request)
     {
-        $estado = $request->input('estado', 'activos');
         $campana = $this->campaign()->filterId($request->input('campana'));
         $user = $request->user();
-        $paginated = $this->listing($request)->orderBy('nombre')->paginate(20)->withQueryString();
+        $paginated = $this->listing($request)->orderBy('nombre')->paginate(20)->withQueryString()
+            ->through(fn (Lider $l) => $l->setAttribute('tipo', EventScope::visibleTipo($l->tipo, $user)));
 
-        // Counters also respect territory scope and estado filter
-        $counterBase = Lider::query();
-        if ($estado === 'activos' || $estado === null) {
-            $counterBase->where('is_active', true);
-        } elseif ($estado === 'inactivos') {
-            $counterBase->where('is_active', false);
-        }
-        $this->scopeToTerritory($counterBase);
-        if ($campana) {
-            $counterBase->where('campaign_id', $campana);
-        }
+        // Counters count the same rows as the listing: every active filter, territory and campaign.
+        $counterBase = $this->listing($request);
         $total = (clone $counterBase)->count();
         $granElectorCount = (clone $counterBase)->where('gran_elector', true)->count();
         // A referente's cédula only refers inside the referente's own campaign.
@@ -129,6 +128,9 @@ class VotanteController extends Controller
             $municipios = array_values(array_filter($municipios, fn ($m) => in_array($m['id'], $allowedGeoIds)));
         }
 
+        $canSeeEventos = EventScope::canSeeAttendees($user);
+        [$evento, $anyEvent] = $this->eventFilters($request);
+
         return Inertia::render('Votantes', [
             'votantes' => $paginated,
             'counters' => [
@@ -140,8 +142,37 @@ class VotanteController extends Controller
             'filters' => array_merge(
                 $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado']),
                 $campana ? ['campana' => $campana] : [],
+                $evento ? ['evento' => $evento] : [],
+                $anyEvent ? ['asistentes_eventos' => '1'] : [],
             ),
+            'canViewEventos' => $canSeeEventos,
+            'eventos' => $canSeeEventos ? app(EventScope::class)->options() : [],
         ]);
+    }
+
+    // [visible event id | null, any attendance]: only for who can see event attendees; anything else is ignored.
+    // Resolved once per request (listing, counters and props all use it).
+    private function eventFilters(Request $request): array
+    {
+        $key = spl_object_id($request);
+        if (isset($this->eventFilters[$key])) {
+            return $this->eventFilters[$key];
+        }
+        if (! EventScope::canSeeAttendees($request->user())) {
+            return $this->eventFilters[$key] = [null, false];
+        }
+        $evento = app(EventScope::class)->visibleEventId($request->input('evento'));
+
+        return $this->eventFilters[$key] = [$evento, ! $evento && filter_var($request->input('asistentes_eventos'), FILTER_VALIDATE_BOOLEAN)];
+    }
+
+    // "Asistió al evento…" or "Asistentes a eventos (cualquiera)": attendance through event_attendees.lider_id.
+    private function applyEventFilters(Builder $query, Request $request): void
+    {
+        [$evento, $anyEvent] = $this->eventFilters($request);
+        if ($evento || $anyEvent) {
+            $query->whereExists(fn ($q) => app(EventScope::class)->attendanceOf($q, 'lideres.id', $evento));
+        }
     }
 
     public function show(string $id)
@@ -189,6 +220,7 @@ class VotanteController extends Controller
         return response()->json([
             'success' => true,
             'data' => array_merge($lider->toArray(), [
+                'tipo' => EventScope::visibleTipo($lider->tipo, request()->user()),
                 'nexos' => $nexos,
                 'referidos' => $referidos,
                 'referidos_count' => $referidosCount,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Eventos\ApproveAttendees;
 use App\Actions\Eventos\RegisterAttendee;
+use App\Exports\GenericExport;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Http\Requests\Eventos\AttendeeIdsRequest;
 use App\Http\Requests\Eventos\AttendeeInput;
@@ -28,6 +29,8 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 // Eventos especiales (contract in docs/eventos-api.md). Campaign isolation as in Votantes: events of the own
 // campaign and its subcampaigns are visible, only the own campaign's are written; a user with a territory only
@@ -95,24 +98,10 @@ class EventoController extends Controller
     public function show(Request $request, string $id): Response
     {
         $event = $this->findEvent($id);
-        $filters = [
-            'link_status' => in_array($request->query('link_status'), EventAttendee::LINK_STATUSES, true) ? $request->query('link_status') : null,
-            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel'], true) ? $request->query('source') : null,
-            'q' => $this->textOrNull($request->query('q')),
-        ];
+        $filters = $this->attendeeFilters($request);
 
-        $asistentes = EventAttendee::where('event_id', $event->id)->with('registeredBy:id,name')
-            ->when($filters['link_status'], fn ($q, $v) => $q->where('link_status', $v))
-            ->when($filters['source'], fn ($q, $v) => $q->where('source', $v))
-            ->when($filters['q'], function ($q, $v) {
-                $q->where(fn ($w) => $this->whereContains($w, "nombres || ' ' || apellidos", $v)
-                    ->orWhere('cedula', 'like', '%'.$this->escapeLike(Cedula::normalize($v)).'%'));
-            })
-            ->orderByDesc('created_at')
-            ->paginate(50)->withQueryString();
-        $approvedConsents = DB::table('data_consents as d')->join('consent_texts as t', 'd.consent_text_id', '=', 't.id')
-            ->whereIn('d.id', $asistentes->getCollection()->pluck('consent_id')->filter())
-            ->pluck('t.approved', 'd.id');
+        $asistentes = $this->attendeesQuery($event, $filters)->paginate(50)->withQueryString();
+        $approvedConsents = $this->approvedConsents($asistentes->getCollection());
         $asistentes->through(fn (EventAttendee $a) => $this->attendee($a) + [
             'consentimiento_provisional' => $a->consent_id === null || ! ($approvedConsents[$a->consent_id] ?? false),
         ]);
@@ -131,6 +120,56 @@ class EventoController extends Controller
                 'edit' => $this->canManage() && $this->campaign()->isOwn($event->campaign_id),
             ],
         ]);
+    }
+
+    // GET /eventos/{id}/asistentes.xlsx: the attendees the detail shows with the same filters, unpaginated.
+    public function exportAttendees(Request $request, string $id): BinaryFileResponse
+    {
+        $event = $this->findEvent($id);
+        $filters = $this->attendeeFilters($request);
+        ini_set('memory_limit', '256M');
+
+        $attendees = $this->attendeesQuery($event, $filters)->get();
+        $approvedConsents = $this->approvedConsents($attendees);
+        $rows = $attendees->map(fn (EventAttendee $a) => [
+            'nombres' => $a->nombres,
+            'apellidos' => $a->apellidos,
+            'cedula' => $a->cedula,
+            'celular' => $a->celular,
+            'fijo' => $a->fijo,
+            'fecha_nacimiento' => $a->fecha_nacimiento?->format('d/m/Y'),
+            'direccion' => $a->direccion,
+            'barrio' => $a->barrio,
+            'autoriza' => $a->autoriza_datos ? 'Sí' : 'No',
+            'texto' => $a->consent_id !== null && ($approvedConsents[$a->consent_id] ?? false) ? 'Aprobado' : 'Provisional',
+            'origen' => EventoIntegracionController::SOURCES[$a->source] ?? $a->source,
+            'registrado_por' => $a->registeredBy?->name,
+            'estado' => EventoIntegracionController::LINK_STATUSES[$a->link_status] ?? $a->link_status,
+            'en_votantes' => $a->lider_id ? 'Sí' : 'No',
+            'fecha_registro' => $a->created_at?->copy()->setTimezone(self::TZ)->format('d/m/Y g:i a'),
+        ])->all();
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'EVENTO_ASISTENTES_EXPORTADOS',
+            'entity_type' => 'evento',
+            'entity_id' => $event->id,
+            'metadata' => ['route' => 'eventos.asistentes.excel', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $columns = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autoriza',
+            'texto', 'origen', 'registrado_por', 'estado', 'en_votantes', 'fecha_registro'];
+        $labels = [
+            'nombres' => 'NOMBRES', 'apellidos' => 'APELLIDOS', 'cedula' => 'CÉDULA', 'celular' => 'CELULAR', 'fijo' => 'TELÉFONO FIJO',
+            'fecha_nacimiento' => 'FECHA DE NACIMIENTO', 'direccion' => 'DIRECCIÓN', 'barrio' => 'BARRIO', 'autoriza' => 'AUTORIZÓ DATOS',
+            'texto' => 'TEXTO DE AUTORIZACIÓN', 'origen' => 'ORIGEN', 'registrado_por' => 'REGISTRADO POR',
+            'estado' => 'ESTADO DE VÍNCULO', 'en_votantes' => 'EN VOTANTES', 'fecha_registro' => 'FECHA DE REGISTRO',
+        ];
+        $filename = 'asistentes-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento').'.xlsx';
+
+        return Excel::download(new GenericExport($rows, $columns, 'Asistentes', $labels), $filename);
     }
 
     public function store(EventRequest $request): JsonResponse|RedirectResponse
@@ -627,6 +666,35 @@ class EventoController extends Controller
             'registered_by' => $a->registeredBy ? ['id' => $a->registeredBy->id, 'name' => $a->registeredBy->name] : null,
             'created_at' => $this->iso($a->created_at),
         ];
+    }
+
+    private function attendeeFilters(Request $request): array
+    {
+        return [
+            'link_status' => in_array($request->query('link_status'), EventAttendee::LINK_STATUSES, true) ? $request->query('link_status') : null,
+            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel'], true) ? $request->query('source') : null,
+            'q' => $this->textOrNull($request->query('q')),
+        ];
+    }
+
+    private function attendeesQuery(CampaignEvent $event, array $filters)
+    {
+        return EventAttendee::where('event_id', $event->id)->with('registeredBy:id,name')
+            ->when($filters['link_status'], fn ($q, $v) => $q->where('link_status', $v))
+            ->when($filters['source'], fn ($q, $v) => $q->where('source', $v))
+            ->when($filters['q'], function ($q, $v) {
+                $q->where(fn ($w) => $this->whereContains($w, "nombres || ' ' || apellidos", $v)
+                    ->orWhere('cedula', 'like', '%'.$this->escapeLike(Cedula::normalize($v)).'%'));
+            })
+            ->orderByDesc('created_at')->orderBy('id');
+    }
+
+    // consent id => whether its text was approved.
+    private function approvedConsents($attendees)
+    {
+        return DB::table('data_consents as d')->join('consent_texts as t', 'd.consent_text_id', '=', 't.id')
+            ->whereIn('d.id', $attendees->pluck('consent_id')->filter()->values())
+            ->pluck('t.approved', 'd.id');
     }
 
     private function kpis(CampaignEvent $event): array

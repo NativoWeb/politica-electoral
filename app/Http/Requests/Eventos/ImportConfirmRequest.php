@@ -8,10 +8,7 @@ use Illuminate\Foundation\Http\FormRequest;
 // Required: only authorized people are imported (same rule as the QR and the operator).
 class ImportConfirmRequest extends FormRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
+    use AuthorizesEventImport;
 
     public function rules(): array
     {
