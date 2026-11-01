@@ -11,6 +11,8 @@
  *  - last4: the key becomes "<key>_last4" with the last 4 digits of the value (null if it has none).
  *  - email: "p***@dominio.com" (first character of the local part + domain).
  *  - omit:  the value becomes "[omitido]".
+ *  - keep:  an array whose values are all int or null is stored as it is, although its keys look like personal fields
+ *    (the column indexes of an Excel import: {"cedula": 2, "celular": 3}); any other value is masked as usual.
  *  - by_type: contact values whose kind lives in a sibling key (person contacts send {type, value}):
  *    a phone-like type gives "<key>_last4", an email type the email mask, any other type "[omitido]".
  *    Without a type/tipo sibling the value is kept (e.g. vote counts of /admin/elecciones/results).
@@ -38,6 +40,10 @@ return [
 
         'email' => [
             'email',
+        ],
+
+        'keep' => [
+            'columnas',
         ],
 
         'omit' => [

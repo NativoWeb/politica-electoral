@@ -38,6 +38,7 @@ trait BuildsEventosScenario
         $this->createBaseSchema();
         (require database_path('migrations/2026_10_19_000001_add_whatsapp_link_to_users.php'))->up();
         (require database_path('migrations/2026_10_31_000001_create_eventos_tables.php'))->up();
+        (require database_path('migrations/2026_11_01_000001_create_event_imports_tables.php'))->up();
         $this->seedBase();
     }
 

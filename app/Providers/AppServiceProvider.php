@@ -39,6 +39,14 @@ class AppServiceProvider extends ServiceProvider
             ? Limit::perMinute(60)->by('eventos-planilla-head|'.($request->user()?->id ?? $request->ip()))
             : Limit::perMinute(10)->by('eventos-planilla|'.($request->user()?->id ?? $request->ip())));
 
+        // Excel imports of attendees parse and validate up to 2000 rows in the request: upload, mapping and confirm
+        // share a per-user quota on the 2 GB VPS.
+        RateLimiter::for('eventos-importar', fn (Request $request) => Limit::perMinute(20)
+            ->by('eventos-importar|'.($request->user()?->id ?? $request->ip())));
+        // Correcting or skipping preview rows (one request per click) and discarding: cheap, but still bounded.
+        RateLimiter::for('eventos-importar-fila', fn (Request $request) => Limit::perMinute(120)
+            ->by('eventos-importar-fila|'.($request->user()?->id ?? $request->ip())));
+
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {
             URL::forceScheme('https');

@@ -97,7 +97,7 @@ class EventoController extends Controller
         $event = $this->findEvent($id);
         $filters = [
             'link_status' => in_array($request->query('link_status'), EventAttendee::LINK_STATUSES, true) ? $request->query('link_status') : null,
-            'source' => in_array($request->query('source'), ['qr', 'operador'], true) ? $request->query('source') : null,
+            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel'], true) ? $request->query('source') : null,
             'q' => $this->textOrNull($request->query('q')),
         ];
 
@@ -644,6 +644,7 @@ class EventoController extends Controller
             'descartados' => (int) ($byStatus['descartado'] ?? 0),
             'qr' => (int) ($bySource['qr'] ?? 0),
             'operador' => (int) ($bySource['operador'] ?? 0),
+            'excel' => (int) ($bySource['excel'] ?? 0),
         ];
     }
 

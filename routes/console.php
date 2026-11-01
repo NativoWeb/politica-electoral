@@ -28,3 +28,7 @@ Artisan::command('cache:prune-expired', function () {
 })->purpose('Delete expired rows from the database cache tables');
 
 Schedule::command('cache:prune-expired')->daily();
+
+// Retention of the Excel import staging of Eventos (docs/eventos-api.md section 11). Needs the system cron
+// "* * * * * php artisan schedule:run" on the server.
+Schedule::command('eventos:limpiar-importaciones')->dailyAt('03:30');

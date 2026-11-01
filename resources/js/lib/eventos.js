@@ -141,6 +141,13 @@ export function approveMessage(provisional) {
     return `${base} Atención: ${who}, porque aceptó el texto provisional de la campaña.`;
 }
 
+export function sourceLabel(attendee) {
+    if (attendee?.source === 'qr') return 'Por QR';
+    const who = attendee?.registered_by?.name ? `: ${attendee.registered_by.name}` : '';
+
+    return attendee?.source === 'excel' ? `Por Excel${who}` : `Operador${who}`;
+}
+
 /* ── Birth date with three selects ── */
 
 export function birthYears(now = new Date()) {

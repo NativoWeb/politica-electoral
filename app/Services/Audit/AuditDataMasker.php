@@ -25,7 +25,9 @@ class AuditDataMasker
 
             $name = strtolower($key);
 
-            if ($this->matches($name, 'omit')) {
+            if ($this->matches($name, 'keep') && $this->onlyIndexes($value)) {
+                $out[$key] = $value;
+            } elseif ($this->matches($name, 'omit')) {
                 $out[$key] = $value === null ? null : $this->placeholder();
             } elseif ($this->isTypedValueKey($name) && $this->hasTypeSibling($data)) {
                 $kind = $this->siblingType($data);
@@ -48,6 +50,21 @@ class AuditDataMasker
         }
 
         return $out;
+    }
+
+    // "keep" keys hold column indexes ({"cedula": 2}); anything else under them is masked as usual.
+    private function onlyIndexes(mixed $value): bool
+    {
+        if (! is_array($value)) {
+            return false;
+        }
+        foreach ($value as $item) {
+            if ($item !== null && ! is_int($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function isTypedValueKey(string $name): bool

@@ -13,6 +13,7 @@ use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EventoController;
+use App\Http\Controllers\EventoImportController;
 use App\Http\Controllers\EventoPublicoController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LegislativoController;
@@ -169,6 +170,21 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/{id}/token', [EventoController::class, 'regenerateToken'])->name('token')->whereUuid('id');
             Route::post('/{id}/asistentes/aprobar', [EventoController::class, 'approve'])->name('asistentes.approve')->whereUuid('id');
             Route::post('/{id}/asistentes/descartar', [EventoController::class, 'discard'])->name('asistentes.discard')->whereUuid('id');
+
+            // Attendees from an Excel/CSV file (phase 3)
+            Route::get('/{id}/plantilla.xlsx', [EventoImportController::class, 'template'])->name('importar.plantilla')->whereUuid('id');
+            Route::get('/{id}/importar', [EventoImportController::class, 'index'])->name('importar')->whereUuid('id');
+            Route::post('/{id}/importar', [EventoImportController::class, 'store'])->name('importar.subir')->whereUuid('id')
+                ->middleware('throttle:eventos-importar');
+            Route::get('/{id}/importar/{import}', [EventoImportController::class, 'show'])->name('importar.ver')->whereUuid(['id', 'import']);
+            Route::put('/{id}/importar/{import}/columnas', [EventoImportController::class, 'mapping'])->name('importar.columnas')->whereUuid(['id', 'import'])
+                ->middleware('throttle:eventos-importar');
+            Route::patch('/{id}/importar/{import}/filas/{fila}', [EventoImportController::class, 'updateRow'])->name('importar.fila')->whereUuid(['id', 'import', 'fila'])
+                ->middleware('throttle:eventos-importar-fila');
+            Route::post('/{id}/importar/{import}/confirmar', [EventoImportController::class, 'confirm'])->name('importar.confirmar')->whereUuid(['id', 'import'])
+                ->middleware('throttle:eventos-importar');
+            Route::delete('/{id}/importar/{import}', [EventoImportController::class, 'destroy'])->name('importar.descartar')->whereUuid(['id', 'import'])
+                ->middleware('throttle:eventos-importar-fila');
         });
     });
 

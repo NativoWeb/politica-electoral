@@ -9,7 +9,7 @@ import EventoQr from '@/Components/Eventos/EventoQr';
 import Pagination from '@/Components/Eventos/Pagination';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import { useCampaign } from '@/lib/campaign';
-import { allSelected, approveMessage, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, provisionalCount, pruneSelection, toggleAll, toggleSelected } from '@/lib/eventos';
+import { allSelected, approveMessage, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, provisionalCount, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
 
 const STATUS_ACTIONS = {
     open: {
@@ -97,7 +97,7 @@ function AttendeeRow({ a, selectable, checked, onToggle }) {
                 </div>
                 <p className="text-[13px] text-[var(--color-ink-soft)] mt-0.5">{contact}</p>
                 <p className="text-[12px] text-[var(--color-ink-faint)] mt-0.5">
-                    {a.source === 'qr' ? 'Por QR' : `Operador${a.registered_by?.name ? `: ${a.registered_by.name}` : ''}`} · {formatShortDate(a.created_at)}
+                    {sourceLabel(a)} · {formatShortDate(a.created_at)}
                 </p>
             </div>
         </li>
@@ -205,6 +205,11 @@ export default function Show({ evento, asistentes, kpis, filters, consent, tipos
                                 className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center active:bg-white/25"
                                 messageClassName="text-amber-200"
                             />
+                        )}
+                        {editable && evento.status !== 'cancelado' && (
+                            <Link href={`/eventos/${evento.id}/importar`} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center active:bg-white/25">
+                                Cargar Excel
+                            </Link>
                         )}
                         {editable && evento.status !== 'cancelado' && (
                             <button type="button" onClick={() => setEditing(true)} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold active:bg-white/25">

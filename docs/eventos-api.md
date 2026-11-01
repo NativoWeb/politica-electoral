@@ -1,4 +1,4 @@
-# Eventos especiales — contrato backend (Fase 1 + Fase 2 backend: planilla PDF)
+# Eventos especiales — contrato backend (Fase 1 + Fase 2: planilla PDF + Fase 3: cargue desde Excel)
 
 Contrato entre el backend (Laravel) y el frontend (React + Inertia) del módulo **Eventos especiales**:
 eventos de campaña ("Del Senado al barrio", giras, novenas, reuniones) con registro de asistentes por
@@ -73,6 +73,14 @@ Aislamiento por campaña (igual que Votantes):
 | POST | `/eventos/{id}/token` | `eventos.token` | `manage.eventos` | 200 JSON / redirect back |
 | POST | `/eventos/{id}/asistentes/aprobar` | `eventos.asistentes.approve` | `manage.eventos` | 200 JSON / redirect back |
 | POST | `/eventos/{id}/asistentes/descartar` | `eventos.asistentes.discard` | `manage.eventos` | 200 JSON / redirect back |
+| GET | `/eventos/{id}/plantilla.xlsx` | `eventos.importar.plantilla` | `manage.eventos` | Excel (descarga), ver §11 |
+| GET | `/eventos/{id}/importar` | `eventos.importar` | `manage.eventos` | Inertia `Eventos/Importar` (paso 1) |
+| POST | `/eventos/{id}/importar` | `eventos.importar.subir` | `manage.eventos` | 201 JSON / redirect a `/eventos/{id}/importar/{import}` |
+| GET | `/eventos/{id}/importar/{import}?estado=&page=` | `eventos.importar.ver` | `manage.eventos` | Inertia `Eventos/Importar` |
+| PUT | `/eventos/{id}/importar/{import}/columnas` | `eventos.importar.columnas` | `manage.eventos` | 200 JSON / redirect back |
+| PATCH | `/eventos/{id}/importar/{import}/filas/{fila}` | `eventos.importar.fila` | `manage.eventos` | 200 JSON / redirect back |
+| POST | `/eventos/{id}/importar/{import}/confirmar` | `eventos.importar.confirmar` | `manage.eventos` | 200 JSON / redirect back |
+| DELETE | `/eventos/{id}/importar/{import}` | `eventos.importar.descartar` | `manage.eventos` | 200 JSON / redirect a `/eventos/{id}/importar` |
 
 `{id}` que no es UUID → 404. Sin el permiso: GET de página → redirect a `/`; JSON o no-GET → 403.
 
@@ -178,7 +186,9 @@ Las `provincias` vienen filtradas por el territorio del usuario (solo municipios
 
 ### `Eventos/Show` — `GET /eventos/{id}`
 
-Query de la tabla de asistentes: `link_status`, `source` (`qr|operador`), `q` (nombre o cédula), `page`.
+Query de la tabla de asistentes: `link_status`, `source` (`qr|operador|excel`), `q` (nombre o cédula), `page`.
+`kpis` trae además `excel` (asistentes cargados desde Excel; todos con autorización, ver §11). `source` del asistente
+puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
 
 ```jsonc
 {
@@ -411,8 +421,10 @@ municipio/departamento de la contienda (null en circunscripción nacional).
 unificar líderes no se reasigna, mientras que `event_attendees.lider_id` y `event_organizers.lider_id` sí pasan al
 líder que sobrevive). Todas con PK UUID. Únicos: `events.public_token`,
 `event_attendees.client_uuid`, `event_attendees (event_id, cedula)` parcial (cédula no nula).
-`link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado` (`sin_cedula` queda reservado para
-fases de importación; en Fase 1 la cédula es obligatoria).
+`link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado` (`sin_cedula` queda reservado; en Fases
+1–3 la cédula es obligatoria). `event_attendees.source`: `qr | operador | excel` (CHECK en PostgreSQL; `excel` lo agrega
+la migración `2026_11_01_000001`, que no toca `data_consents`). Fase 3 agrega `event_imports`, `event_import_rows` y
+`event_attendees.import_id` (FK nullable a `event_imports`) (§11).
 
 ### Paso de despliegue obligatorio: dueño de `data_consents` (PostgreSQL)
 
@@ -440,6 +452,14 @@ comando, migrar y volver a ejecutar `data_consents_owner.sql`. El resto de migra
 - Aprobar/descartar: `EVENTO_ASISTENTES_APROBADOS` / `EVENTO_ASISTENTES_DESCARTADOS` con ids y conteos.
 - Descarga de la planilla: `EVENTO_PLANILLA_DESCARGADA`, entidad `evento`, metadata
   `{ route: "eventos.planilla", paginas, consent_text_id }` (el middleware `audit` no registra GET).
+- Cargue desde Excel (§11): el middleware `audit` registra `POST eventos.importar.subir`, `PUT eventos.importar.columnas`,
+  `PATCH eventos.importar.fila`, `POST eventos.importar.confirmar` y `DELETE eventos.importar.descartar` (entidad
+  `evento_importacion`) **solo** con `columnas` (índices), `decision`, `declaracion` y `campos` (nombres de los campos
+  enviados): nunca los valores corregidos ni el archivo. `columnas` (índices de columna, sin datos personales) se guarda
+  tal cual: está en `config/audit.php` → `mask.keep`, para que `{"cedula": 2}` no se convierta en `cedula_last4`. Además: `EVENTO_PLANTILLA_EXCEL_DESCARGADA` (entidad `evento`),
+  `EVENTO_IMPORTACION_SUBIDA` `{ event_id, sha256, filas }`, `EVENTO_IMPORTACION_COLUMNAS` `{ campos }`,
+  `EVENTO_IMPORTACION_CONFIRMADA` `{ nuevos, ya_estaban, declaro_planillas, consent_text_id }`,
+  `EVENTO_IMPORTACION_DESCARTADA` y `EVENTO_IMPORTACIONES_LIMPIEZA` (comando, sin usuario), entidad `evento_importacion`. Los asistentes de un Excel no dejan una fila por persona.
 
 ---
 
@@ -501,3 +521,193 @@ Rutas con el middleware `offline.owner` (`App\Http\Middleware\EnsureOfflineOwner
 - **Frontend:** hoy `isDefinitiveRejection()` trata **todo 409** como rechazo definitivo (marca rechazado y borra el
   registro local). Un 409 con `code: "owner_mismatch"` **no** es definitivo: hay que detener la sync y conservar la cola
   (como un 401/419). El 409 de `/eventos/{id}/asistentes` sin `code` (client_uuid de otro evento) sí sigue siendo definitivo.
+
+---
+
+## 11. Cargue de asistentes desde Excel (Fase 3)
+
+Solo `manage.eventos`, en eventos de la **campaña propia** y del territorio (igual que editar: otra campaña no visible →
+404, subcampaña visible → 403, fuera de territorio → 403). Evento `cancelado` → 422 `errors.evento`
+(`"El evento está cancelado: no se pueden cargar asistentes."`); se puede cargar en `borrador`, `abierto` y `cerrado`
+(las planillas suelen llegar después del evento). Sin cola: todo corre en la petición (límites abajo).
+
+**Regla de autorización (igual que QR y operador; decisión del orquestador en ausencia de Marly):** solo se registra a
+quien autorizó el tratamiento de sus datos. Una fila es importable **solo si `Autorizó` = SÍ**, y confirmar **exige** la
+declaración "Tengo las planillas firmadas que respaldan las autorizaciones de este archivo". Por tanto **todo asistente
+importado queda con autorización** (`autoriza_datos = true` y su fila en `data_consents`). No existe importar "sin
+autorización".
+
+**Texto aprobado obligatorio (como el QR público):** subir un archivo y confirmar exigen que el texto de autorización
+vigente de la campaña esté **aprobado**. Con solo el texto provisional (o sin texto) → **422** `errors.consent`
+`"Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo."`, sin guardar nada
+(ni archivo ni staging). La pantalla muestra ese aviso en rojo una sola vez y deshabilita subir y confirmar. Plantilla,
+listado y revisión de columnas/filas sí funcionan (para preparar el archivo mientras se aprueba el texto).
+
+### Plantilla — `GET /eventos/{id}/plantilla.xlsx`
+
+Hoja **Asistentes** con encabezados fijos: `Nombres`, `Apellidos`, `Cédula`, `Celular`, `Teléfono fijo`,
+`Fecha de nacimiento (DD/MM/AAAA)`, `Dirección`, `Barrio`, `Autorizó (SÍ/NO)`. Columnas C–F (cédula, celular, fijo y
+fecha) con formato **texto** en las filas 2–2001 (Excel no muestra `1,09877E+09` ni quita ceros) y lista `SÍ,NO` en
+`Autorizó`. Hoja **Instrucciones** con cómo llenarla ("solo se cargan las personas con SÍ") y el texto de autorización
+vigente de la campaña con su **versión**; si es provisional, una advertencia en amarillo.
+Nombre: `plantilla-asistentes-<evento>.xlsx`.
+
+### Flujo y estados de `event_imports.status`
+
+1. `POST /eventos/{id}/importar` (multipart, campo `archivo`): `.xlsx`, `.xls` o `.csv` (por extensión; el contenido lo
+   valida el lector), **máx. 5 MB** (o lo que permita PHP, ver límites) y **2000 filas** con datos. Se guarda en el disco
+   **privado** (`storage/app/private/eventos/importaciones/{event}/{import}.{ext}`, sin URL pública) con su `sha256`,
+   se leen las filas a staging y se adivinan las columnas → `subido`.
+   - CSV: separador `;`, `,` o tabulador (el más frecuente en la primera línea); UTF-8 o Windows-1252.
+   - Fila de encabezados: la que más encabezados conocidos tenga entre las 10 primeras (admite un título arriba).
+   - Más de 2000 filas → 422. Se detecta aunque haya filas vacías en medio: en `.xlsx/.xls` cualquier celda (incluso
+     solo con formato) por debajo de la fila 2011 cuenta como exceso; en CSV, cualquier línea **no vacía** por debajo.
+     Mensaje: `"El archivo tiene más de 2000 filas. Divídalo en varios archivos y cárguelos uno por uno. Si no son tantas
+     personas, borre las filas que sobren al final de la hoja."`.
+   - `.xlsx` inflado (zip bomb): antes de abrirlo se revisa el zip; si descomprimido pasa de **50 MB** o una entrada de
+     1 MB o más está comprimida más de **100:1** → 422 `"El archivo es demasiado grande por dentro para leerlo. Copie solo
+     las filas de los asistentes en un libro nuevo de Excel, guárdelo como .xlsx e intente de nuevo."`.
+   - Mismo archivo (mismo `sha256`) ya subido a **este** evento: no se vuelve a guardar. Si esa carga ya se confirmó →
+     JSON 200 `{ success: false, message: "Este archivo ya fue cargado en este evento. No se volvió a importar.",
+     data: { id, status, repetido: true, filas } }` (Inertia: redirect a esa carga con `flash.error`); si no se había
+     confirmado → `"Este archivo ya estaba subido: puede seguir donde lo dejó."`.
+   - Otros 422 en `errors.archivo`: tipo, tamaño, archivo ilegible, sin filas.
+   - Cuerpo por encima de `post_max_size` de PHP → **413** antes de llegar a la app: JSON
+     `{ success: false, message, errors: { archivo: ["El archivo es demasiado grande para subirlo. Divídalo en varios
+     archivos más pequeños e intente de nuevo."] } }`; en navegación, la página `errors/413` en español. La pantalla
+     revisa el tamaño antes de enviar, así que normalmente no se llega a este caso.
+   - Éxito: **201** `{ success: true, message: "Archivo recibido: N filas. Revise las columnas.", data: { id, status: "subido", repetido: false, filas } }`
+     ("1 fila" en singular).
+   - Columnas adivinadas: primero el **último mapeo revisado de la campaña** (por nombre de encabezado), después
+     sinónimos (`CC`, `C.C.`, `Documento`, `No. cédula`, `Cédula de ciudadanía` → cédula; `Nombre completo`, `Nombres y
+     apellidos` → nombre completo; `Tel`, `Teléfono`, `Móvil`, `Celular`, `WhatsApp` → celular; un segundo teléfono →
+     fijo; `Autorizó`, `Autoriza`, `Firmó`, `Acepta` → autorizó). Una sola columna `Nombre` sin columna de apellidos se
+     toma como nombre completo.
+2. `PUT .../columnas` `{ "columnas": { campo: índice de columna | null } }` con campos `nombres`, `apellidos`,
+   `nombre_completo`, `cedula`, `celular`, `fijo`, `fecha_nacimiento`, `direccion`, `barrio`, `autoriza`. Obligatorios:
+   `cedula`, `celular`, **`autoriza`** y (`nombres` + `apellidos`) o `nombre_completo`; una columna no puede usarse dos
+   veces (422 `errors.columnas`). Aplica el mapeo a **todas** las filas (borra correcciones previas), valida y clasifica
+   → `revisado`; este mapeo queda guardado para la próxima carga de la campaña. **200** `{ success, message, data: { counts } }`.
+3. `PATCH .../filas/{fila}` (solo en `revisado`): cualquiera de `nombres`, `apellidos`, `cedula`, `celular`, `fijo`,
+   `fecha_nacimiento`, `direccion`, `barrio` y/o `decision: "importar" | "omitir"`. **`autoriza` no es editable** (se
+   ignora si llega): vale lo que dice la planilla. Una fila `no_autorizo` **no se puede cambiar** (ni celdas ni
+   decisión): 422 `errors.fila` `"Esta fila no se puede cambiar: en «Autorizó» no dice SÍ, la persona no autorizó el
+   tratamiento de sus datos."`. Un valor malo **no** es 422: se guarda y la fila queda con su error.
+   `importar` en una fila que no es `valida` → 422 `errors.decision` (p. ej. `"Esta fila no se puede importar: en
+   «Autorizó» no dice SÍ: la persona no autorizó el tratamiento de sus datos."`). Revalida la fila y reclasifica el
+   archivo. **200** `{ success, message, data: { fila: Fila, counts } }`.
+4. `POST .../confirmar` `{ "declaracion": true }` (desde `revisado`/`confirmado`). Sin la declaración → 422
+   `errors.declaracion` (`"Para importar, marque «Tengo las planillas firmadas que respaldan las autorizaciones de este
+   archivo»."`). Sin texto de autorización **aprobado** → 422 `errors.consent` (ver arriba). Registra **solo** las filas `valida`
+   (que ya exigen SÍ) con decisión distinta de `omitir` y sin asistente, por lotes de **200** en transacción, a través
+   de `RegisterAttendee::handleMany` (mismas reglas que `handle`, con una consulta y un insert por tabla por lote; lo ya
+   registrado o un choque de índice único pasa por `handle`): `source = "excel"`, `import_id` = la carga,
+   `registered_by` = quien confirma, `client_uuid` = UUID v5 de (`import_id`, `fila-<n>`). Confirmar otra vez no crea
+   nada (`nuevos: 0`). **200** `{ success, message, data: { nuevos, ya_estaban } }` (mensaje `"Se registraron N
+   asistentes nuevos, con autorización de datos."`, en singular con 1). Los nuevos quedan `pendiente`
+   (o `vinculado` si la cédula ya existe en Votantes de la campaña): pasar a Votantes sigue siendo manual (§6, aprobar).
+   - `event_imports.status/consent_text_id/consent_declared/confirmed_by/confirmed_at` se fijan en la **primera**
+     confirmación y no cambian después.
+   - Cada fila importada guarda los suyos: `event_import_rows.declared`, `confirmed_by`, `confirmed_at`.
+5. `DELETE /eventos/{id}/importar/{import}` (no confirmada): borra la carga, sus filas y el archivo.
+   Una carga `confirmado` no se puede cambiar ni descartar (422 `errors.importacion`).
+
+### Validación por fila (mismas reglas que QR/operador, `AttendeeInput`, con estas diferencias)
+
+- Cédula: se normaliza (`App\Support\Cedula`) y además se arreglan los números de Excel: celda numérica
+  (`1098765432` leído como `1098765432.0`), `"1098765432.0"` (5 o más dígitos antes del punto) y notación científica
+  **exacta** (tantos decimales como el exponente: `"1.098765432E9"` → `1098765432`); `"1.098.765.432"` queda
+  `1098765432`. Debe tener **5 a 10 dígitos**.
+- Notación científica **redondeada** (Excel ya perdió dígitos: `1,09877E+09`) en cédula, celular o fijo → error de esa
+  celda: `"La cédula llegó en notación científica (1,09877E+09); escríbala completa."` (y lo mismo para `"El celular…"`,
+  `"El teléfono fijo…"`, "escríbalo completo"). Se corrige en la vista previa.
+- Celular obligatorio (10 dígitos, empieza por 3; acepta +57, espacios, guiones). Fijo opcional (7–10 dígitos).
+- Nombres y apellidos obligatorios. `Nombre completo` se divide si no vienen por separado: 2–3 palabras → 1 nombre +
+  el resto apellidos; 4 o más → 2 nombres + el resto. Una sola palabra → error en apellidos (corregible).
+- Fecha: `DD/MM/AAAA`, `D-M-AAAA`, `DD.MM.AAAA`, `AAAA-MM-DD` o fecha de Excel; formato malo → `"La fecha de nacimiento
+  debe tener el formato DD/MM/AAAA."`; inexistente → `"Esa fecha no existe."`; menor de 18 → mensaje de siempre.
+- Barrio **opcional** (en QR/operador es obligatorio). Dirección opcional.
+- `Autorizó`: `SÍ/SI/S/X/1/VERDADERO` = sí. Cualquier otra cosa (NO, vacío, "quizás") = **no autorizó**.
+
+Estados de fila (`event_import_rows.status`), en este orden de prioridad: `no_autorizo` (no dice SÍ: nunca importable,
+no se puede seleccionar ni corregir), `error`, `duplicada` (misma cédula que una fila importable anterior del archivo;
+una fila `no_autorizo` o con error no "ocupa" la cédula), `en_evento` (la cédula ya está registrada en el evento),
+`valida` y `pendiente` (sin revisar). `match_lider_id` = líder de la **campaña del evento** con esa cédula ("Ya estaba en
+la plataforma"). Decisión: `crear` (válida nueva), `vincular` (válida en la plataforma) u `omitir` (el resto, o elegida
+por el operador).
+
+`counts`: `{ total, autorizaron, no_autorizaron, validas, en_plataforma, nuevas, errores, duplicadas, en_evento,
+a_importar, omitidas, importadas }` (`validas = nuevas + en_plataforma`; `autorizaron = total - no_autorizaron`;
+`omitidas` = válidas marcadas "No importar").
+
+### Prueba de la autorización en `data_consents` (Ley 1581)
+
+- **Canal `operador`, no `excel`.** `data_consents` es de dueño `postgres` en producción y su CHECK solo admite
+  `qr|operador`; ampliarlo exigiría correr `data_consents_owner_revert.sql`, migrar y volver a correr
+  `data_consents_owner.sql`. Se usa el canal ya permitido (la autorización la recogió un operador en papel) y la
+  migración de Fase 3 **no toca** `data_consents`.
+- **Trazabilidad del origen Excel** sin depender del staging: `data_consents.attendee_id` → `event_attendees`
+  (`source = 'excel'`, **`import_id`** → `event_imports`, que conserva `file_sha256`, el archivo, `consent_text_id`,
+  `consent_declared`, `confirmed_by`, `confirmed_at`) y `event_import_rows` (`attendee_id`, `declared`, `confirmed_by`,
+  `confirmed_at`, número de fila).
+- `data_consents.accepted_at`, `ip` y `user_agent` son los de la **confirmación** en la plataforma (quién declaró tener
+  las planillas, desde qué navegador y cuándo), **no** el día ni el lugar en que la persona firmó la planilla de papel.
+  El texto guardado es el vigente **aprobado** de la campaña al confirmar (con el provisional no se puede confirmar), así
+  que al pasarlos a Votantes quedan con `autoriza_datos = true`.
+
+### Retención del staging — `php artisan eventos:limpiar-importaciones`
+
+`raw` y `mapped` contienen datos personales. El comando, programado en `routes/console.php` a diario a las 03:30:
+- borra las cargas **no confirmadas** con más de **7 días** (filas y archivo);
+- a las cargas **confirmadas** hace más de **30 días** les pone `raw` y `mapped` en null y marca
+  `event_imports.staging_purged_at`; conserva número de fila, estado, decisión, `attendee_id`, `declared`, quién y
+  cuándo confirmó, el archivo y su `sha256`. La página de esa carga avisa que el contenido de las filas ya se borró.
+- Deja una fila de auditoría `EVENTO_IMPORTACIONES_LIMPIEZA` con los conteos (sin datos personales).
+
+**Paso de despliegue (cron):** hoy producción **no** tiene el cron del scheduler. Hace falta agregar en el servidor
+(usuario `www-data`): `* * * * * cd /var/www/electoral && php artisan schedule:run >> /dev/null 2>&1`. Sin él, ni esta
+limpieza ni `cache:prune-expired` corren solas (se pueden correr a mano).
+
+### Página `Eventos/Importar`
+
+```jsonc
+{
+  "evento": { "id", "nombre", "status", "starts_at", "municipio", "campaign": { "id", "nombre" }, "acepta_cargas": true },
+  "consent": { "id", "version", "approved" } | null,   // null o approved=false ⇒ no se puede subir ni importar (aviso en rojo)
+  "importacion": null | {
+    "id", "nombre", "status": "subido|revisado|confirmado", "filas": 50, "fila_encabezados": 1,
+    "encabezados": ["Nombres", "..."], "columnas": { "cedula": 2, "nombres": 0 }, "counts": { } | null,
+    "declaro_planillas": true, "datos_borrados": false, "created_at", "confirmed_at"
+  },
+  "muestra": [ { "0": "Ana", "2": 1098765432 } ],    // 3 primeras filas tal como se leyeron (solo en "subido")
+  "filas": null | paginador (50) de Fila,            // ?estado=nuevas|plataforma|error|no_autorizo|duplicada|en_evento|omitidas
+  "filters": { "estado": null },
+  "campos": [ { "key": "nombres", "label": "Nombres" } ],
+  "limites": { "filas": 2000, "mb": 5 },
+  "recientes": [ { "id", "nombre", "status", "filas", "importadas", "created_at", "created_by" } ]   // 10 últimas del evento
+}
+```
+
+`Fila`: `{ id, fila (número en el Excel), status, decision, en_plataforma, importada, corregida, valores: { campo: texto },
+errores: { campo: mensaje } }` (`valores` vacío después de la limpieza de 30 días).
+
+UI: conteos (con SÍ, válidas, ya en la plataforma, no autorizaron, con error, repetidas, ya en el evento), filtros por
+estado incluidos "No autorizaron" y "No importar", resumen de lo que queda fuera al confirmar ("Quedan fuera: 2 con
+error, 1 repetida en el archivo, 1 marcada «No importar», 3 que no autorizaron (no dice SÍ)…"), el botón **Importar N
+personas** queda deshabilitado hasta marcar la declaración y pide confirmación ("Se importarán N personas. Esta acción no
+se puede deshacer."). Textos de 16 px o más (18 px en lo que lee el operador) y enlaces/botones de 44 px de alto o más.
+
+### Límites y rendimiento
+
+Síncrono (no hay worker de colas en producción): `memory_limit` se sube a 256M solo si el actual es menor (nunca se
+baja) y `set_time_limit(120)` en subir, columnas y confirmar. Throttle `eventos-importar` (20/min por usuario) en subir,
+columnas y confirmar, y `eventos-importar-fila` (120/min por usuario) en corregir/omitir una fila y en descartar: es una
+petición por clic, así que 20/min frenaría a quien revisa una planilla larga.
+
+**Paso de despliegue (PHP-FPM):** producción tiene `upload_max_filesize = 2M` (nginx ya permite 50M). El límite
+efectivo es el menor entre 5 MB y lo que permita PHP (`ImportUploadRequest::maxKb()`), y la pantalla, la plantilla y
+los mensajes lo dicen; para que sean 5 MB, en `/etc/php/8.3/fpm/php.ini` poner `upload_max_filesize = 6M` (con
+`post_max_size = 8M`, que ya está) y `systemctl reload php8.3-fpm`.
+
+Medido con 2000 filas, todas con SÍ (test `EventImportPostgresTest::test_two_thousand_rows_on_postgresql`, PostgreSQL 16
+local en Docker): subir 0,3 s, revisar 1,0 s, confirmar 0,5 s; pico de memoria del proceso de test ~102 MB.

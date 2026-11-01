@@ -22,6 +22,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -84,6 +85,16 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => 'Demasiadas solicitudes. Espere un momento e intente de nuevo.',
                 ], 429, $e->getHeaders());
+            }
+        });
+
+        // A body over post_max_size (an attendee Excel too big for PHP). It is rejected before the session starts, so
+        // there is no redirect with errors: JSON gets the message, a page gets errors/413.blade.php (Spanish).
+        $exceptions->render(function (PostTooLargeException $e, Request $request) {
+            if ($request->is('api/agent/*') || $request->expectsJson()) {
+                $message = 'El archivo es demasiado grande para subirlo. Divídalo en varios archivos más pequeños e intente de nuevo.';
+
+                return response()->json(['success' => false, 'message' => $message, 'errors' => ['archivo' => [$message]]], 413);
             }
         });
 

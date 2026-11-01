@@ -30,7 +30,11 @@ class AuditActivity
         'campanas' => 'campana',
         'eventos' => 'evento',
         'asistentes' => 'evento_asistente',
+        'importar' => 'evento_importacion',
     ];
+
+    // Excel imports of attendees: the corrected cells (names included) never reach the log, only which fields changed.
+    private const IMPORT_KEYS = ['columnas', 'decision', 'declaracion'];
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -83,6 +87,13 @@ class AuditActivity
         // WhatsApp linking: the one-time code is a credential and is never stored.
         if ($request->is('perfil/whatsapp*', 'api/agent/*/link')) {
             unset($data['code']);
+        }
+
+        if (str_starts_with((string) $request->route()?->getName(), 'eventos.importar.')) {
+            $kept = array_intersect_key($data, array_flip(self::IMPORT_KEYS));
+            $fields = array_values(array_diff(array_keys($data), self::IMPORT_KEYS));
+
+            return $fields === [] ? $kept : $kept + ['campos' => $fields];
         }
 
         // Personal data (cedula, phones, email, address...) is masked by AuditLog on insert, see config/audit.php.
