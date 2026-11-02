@@ -40,6 +40,7 @@ trait BuildsEventosScenario
         (require database_path('migrations/2026_10_31_000001_create_eventos_tables.php'))->up();
         (require database_path('migrations/2026_11_01_000001_create_event_imports_tables.php'))->up();
         (require database_path('migrations/2026_11_02_000001_add_lider_indexes_to_event_tables.php'))->up();
+        (require database_path('migrations/2026_11_03_000001_add_ocr_to_eventos.php'))->up();
         $this->seedBase();
     }
 

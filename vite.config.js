@@ -21,5 +21,7 @@ export default defineConfig({
         environment: 'jsdom',
         globals: true,
         setupFiles: ['./resources/js/test/setup.js'],
+        // Only the app's tests: composer packages may ship their own (e.g. standard-webhooks, via anthropic-ai/sdk).
+        include: ['resources/js/**/*.{test,spec}.{js,jsx,ts,tsx}'],
     },
 });

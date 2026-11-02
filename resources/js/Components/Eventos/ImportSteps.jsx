@@ -9,12 +9,12 @@ import {
 const CARD = 'bg-white border border-[var(--color-line)] rounded-2xl p-4 lg:p-5';
 const PRIMARY_BTN = 'min-h-[52px] px-5 py-3 rounded-xl bg-[var(--color-primary)] text-white text-[18px] font-extrabold disabled:opacity-50';
 
-export function ImportStepper({ step }) {
-    const current = STEPS.findIndex(s => s.key === step);
+export function ImportStepper({ step, steps = STEPS, label = 'Pasos para cargar el Excel' }) {
+    const current = steps.findIndex(s => s.key === step);
 
     return (
-        <ol className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" aria-label="Pasos para cargar el Excel">
-            {STEPS.map((s, i) => {
+        <ol className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" aria-label={label}>
+            {steps.map((s, i) => {
                 const state = i < current ? 'hecho' : i === current ? 'actual' : 'pendiente';
                 const cls = state === 'actual'
                     ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
@@ -31,11 +31,11 @@ export function ImportStepper({ step }) {
 }
 
 // Excel loads need the campaign's APPROVED authorization text (everything imported is authorized), like the public QR.
-export function ConsentNote({ consent }) {
+export function ConsentNote({ consent, missingText = NEEDS_APPROVED_TEXT }) {
     if (!consentReady(consent)) {
         return (
             <p role="alert" className="px-4 py-3 rounded-xl bg-red-50 border border-red-300 text-[17px] font-semibold text-red-800">
-                {NEEDS_APPROVED_TEXT}
+                {missingText}
             </p>
         );
     }
@@ -155,14 +155,17 @@ export function ImportMapping({ eventId, importacion, muestra, campos }) {
     );
 }
 
-export function ImportConfirm({ eventId, importacion, consent }) {
+const DECLARATION = 'Tengo las planillas firmadas que respaldan las autorizaciones de este archivo.';
+
+// summary / declarationLabel / missingText: the texts of an OCR load (§13), which confirms through this same form.
+export function ImportConfirm({ eventId, importacion, consent, summary, declarationLabel = DECLARATION, missingText, leftOutText }) {
     const [declared, setDeclared] = useState(false);
     const [asking, setAsking] = useState(false);
     const [busy, setBusy] = useState(false);
     const counts = importacion.counts || {};
     const ready = consentReady(consent);
     const blocker = confirmBlocker({ consent, declared, counts });
-    const leftOut = leftOutSummary(counts);
+    const leftOut = leftOutText !== undefined ? leftOutText : leftOutSummary(counts);
 
     function submit(e) {
         e.preventDefault();
@@ -181,16 +184,16 @@ export function ImportConfirm({ eventId, importacion, consent }) {
     return (
         <form onSubmit={submit} className={`${CARD} border-2 border-[var(--color-primary)]`} aria-labelledby="confirmar-title">
             <h2 id="confirmar-title" className="text-[20px] font-extrabold text-[var(--color-ink)]">Confirmar la carga</h2>
-            <p className="text-[18px] text-[var(--color-ink)] mt-1.5">{confirmSummary(counts)}</p>
+            <p className="text-[18px] text-[var(--color-ink)] mt-1.5">{summary ?? confirmSummary(counts)}</p>
             {leftOut && <p className="text-[17px] text-[var(--color-ink-soft)] mt-1">{leftOut}</p>}
             <label className="mt-3 flex items-start gap-3 min-h-[48px] cursor-pointer px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)]">
                 <input type="checkbox" checked={declared} disabled={!ready} onChange={e => setDeclared(e.target.checked)} className="mt-0.5 w-7 h-7 flex-shrink-0 accent-[var(--color-primary)]" />
                 <span className="text-[18px] font-semibold text-[var(--color-ink)]">
-                    Tengo las planillas firmadas que respaldan las autorizaciones de este archivo.
+                    {declarationLabel}
                 </span>
             </label>
             {blocker && ready && <p className="mt-2 text-[17px] font-semibold text-amber-800" aria-live="polite">{blocker}</p>}
-            <div className="mt-3"><ConsentNote consent={consent} /></div>
+            <div className="mt-3"><ConsentNote consent={consent} missingText={missingText} /></div>
             <button type="submit" disabled={busy || !!blocker} className={`${PRIMARY_BTN} mt-4 w-full sm:w-auto`}>
                 {busy ? 'Registrando…' : `Importar ${plural(counts.a_importar ?? 0, 'persona', 'personas')}`}
             </button>

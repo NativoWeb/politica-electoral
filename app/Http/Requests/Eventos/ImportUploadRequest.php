@@ -17,9 +17,15 @@ class ImportUploadRequest extends FormRequest
     // the limit that really applies.
     public static function maxKb(): int
     {
+        return min(self::MAX_KB, self::phpMaxKb() ?? self::MAX_KB);
+    }
+
+    // What PHP accepts (upload_max_filesize / post_max_size), null when it does not limit it.
+    public static function phpMaxKb(): ?int
+    {
         $limits = array_filter([self::iniKb('upload_max_filesize'), self::iniKb('post_max_size')]);
 
-        return min(self::MAX_KB, ...($limits ?: [self::MAX_KB]));
+        return $limits ? min($limits) : null;
     }
 
     public static function maxMb(): int|float

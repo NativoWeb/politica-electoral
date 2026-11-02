@@ -15,6 +15,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EventoController;
 use App\Http\Controllers\EventoImportController;
 use App\Http\Controllers\EventoIntegracionController;
+use App\Http\Controllers\EventoOcrController;
 use App\Http\Controllers\EventoPublicoController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LegislativoController;
@@ -195,6 +196,18 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
                 ->middleware('throttle:eventos-importar');
             Route::delete('/{id}/importar/{import}', [EventoImportController::class, 'destroy'])->name('importar.descartar')->whereUuid(['id', 'import'])
                 ->middleware('throttle:eventos-importar-fila');
+
+            // Printed sheets read with AI (phase 5, OFF unless EVENTOS_OCR_ENABLED and campaigns.ocr_enabled). Review,
+            // corrections, confirmation and discard use the import routes above.
+            Route::middleware('eventos.ocr')->prefix('/{id}/importar/ocr')->name('importar.ocr.')->whereUuid('id')->group(function () {
+                Route::get('/', [EventoOcrController::class, 'index'])->name('index');
+                Route::post('/', [EventoOcrController::class, 'store'])->name('subir')->middleware('throttle:eventos-ocr');
+                Route::get('/{import}', [EventoOcrController::class, 'show'])->name('ver')->whereUuid('import');
+                Route::post('/{import}/procesar', [EventoOcrController::class, 'process'])->name('procesar')->whereUuid('import')
+                    ->middleware('throttle:eventos-ocr');
+                Route::get('/{import}/paginas/{pagina}/archivo', [EventoOcrController::class, 'file'])->name('archivo')
+                    ->whereUuid(['import', 'pagina'])->middleware('throttle:eventos-importar-fila');
+            });
         });
     });
 

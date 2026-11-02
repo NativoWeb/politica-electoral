@@ -10,6 +10,7 @@ use App\Models\EventAttendee;
 use App\Models\EventImport;
 use App\Models\EventImportRow;
 use App\Models\User;
+use App\Services\Eventos\Ocr\OcrSettings;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -158,9 +159,19 @@ class EventImportService
             if ($values !== []) {
                 $mapped = array_merge($row->mapped ?? [], $values);
                 $errors = $this->validator->validate($mapped)['errors'];
-                $row->forceFill(['mapped' => $mapped, 'errors' => $errors ?: null, 'edited' => true])->save();
+                $fill = ['mapped' => $mapped, 'errors' => $errors ?: null, 'edited' => true];
+                if ($row->confidence !== null) {
+                    // A cell a person corrected while looking at the photo is no longer doubtful (OCR rows).
+                    $fill['confidence'] = array_merge($row->confidence, array_fill_keys(array_keys($values), 1.0));
+                }
+                $row->forceFill($fill)->save();
                 $this->classify($import, $event);
                 $row->refresh();
+                // A doubtful cédula corrected by a person: the row goes back to its default decision (import).
+                if (isset($values['cedula']) && $row->confidence !== null && $row->status === 'valida' && $row->decision === 'omitir' && $decision === null) {
+                    $row->forceFill(['decision' => $row->match_lider_id ? 'vincular' : 'crear'])->save();
+                    $this->recount($import);
+                }
             }
 
             if ($decision !== null) {
@@ -214,7 +225,8 @@ class EventImportService
                     }
 
                     $linked = [];
-                    $outcomes = $this->register->handleMany($event, $consent, $items, 'excel', $user, $ip, $userAgent, 'operador', $import->id);
+                    $source = $import->isOcr() ? 'ocr' : 'excel';
+                    $outcomes = $this->register->handleMany($event, $consent, $items, $source, $user, $ip, $userAgent, 'operador', $import->id);
                     foreach ($outcomes as $rowId => $outcome) {
                         if ($outcome['conflict'] || $outcome['attendee_id'] === null) {
                             continue;
@@ -227,7 +239,7 @@ class EventImportService
             });
 
         $this->recount($import);
-        $this->audit($user, 'EVENTO_IMPORTACION_CONFIRMADA', $import, $result + ['declaro_planillas' => true, 'consent_text_id' => $consent->id]);
+        $this->audit($user, 'EVENTO_IMPORTACION_CONFIRMADA', $import, $result + ['declaro_planillas' => true, 'consent_text_id' => $consent->id, 'tipo' => $import->kind ?? 'excel']);
 
         return $result;
     }
@@ -254,15 +266,17 @@ class EventImportService
     }
 
     // Retention of the staging (personal data): unconfirmed imports older than UNCONFIRMED_DAYS are deleted with their
-    // file; confirmed ones older than CONFIRMED_DAYS lose the cells of their rows (raw/mapped), keeping row number,
-    // status, decision, attendee, declaration, who/when, the file and its sha256. Returns ['descartadas', 'vaciadas'].
+    // file (the photos of an OCR load); confirmed ones older than CONFIRMED_DAYS lose the cells of their rows
+    // (raw/mapped), keeping row number, status, decision, attendee, declaration, who/when, the file and its sha256 (the
+    // photos of a confirmed OCR load are kept: they are the evidence of the signed authorizations, §13).
+    // Returns ['descartadas', 'vaciadas'].
     public function purge(): array
     {
         $result = ['descartadas' => 0, 'vaciadas' => 0];
         EventImport::where('status', '!=', 'confirmado')->where('created_at', '<', now()->subDays(self::UNCONFIRMED_DAYS))
             ->lazyById(self::$purgeChunk)->each(function (EventImport $import) use (&$result) {
                 DB::transaction(fn () => $import->delete());
-                Storage::disk(self::DISK)->delete($import->file_path);
+                self::deleteFiles($import);
                 $result['descartadas']++;
             });
 
@@ -293,7 +307,15 @@ class EventImportService
     {
         $this->audit($user, 'EVENTO_IMPORTACION_DESCARTADA', $import, ['filas' => $import->total_rows]);
         DB::transaction(fn () => $import->delete());
-        Storage::disk(self::DISK)->delete($import->file_path);
+        self::deleteFiles($import);
+    }
+
+    // An Excel load has one file; an OCR load (§13) a folder with its photos.
+    public static function deleteFiles(EventImport $import): void
+    {
+        $import->isOcr()
+            ? Storage::disk(self::DISK)->deleteDirectory($import->file_path)
+            : Storage::disk(self::DISK)->delete($import->file_path);
     }
 
     // Deterministic per (import, row): a retried or repeated confirmation finds the attendee it already created.
@@ -310,7 +332,8 @@ class EventImportService
     public function classify(EventImport $import, CampaignEvent $event): void
     {
         $rows = EventImportRow::where('import_id', $import->id)->orderBy('row_number')
-            ->get(['id', 'row_number', 'mapped', 'errors', 'status', 'decision', 'match_lider_id', 'attendee_id']);
+            ->get(['id', 'row_number', 'mapped', 'errors', 'status', 'decision', 'match_lider_id', 'attendee_id', 'confidence']);
+        $threshold = OcrSettings::threshold();
 
         $cedulas = [];
         $authorized = [];
@@ -348,9 +371,17 @@ class EventImportService
                 $seen[$value] = true;
             }
 
-            $default = $status === 'valida' ? ($match ? 'vincular' : 'crear') : 'omitir';
+            $toImport = $status === 'valida' ? ($match ? 'vincular' : 'crear') : 'omitir';
+            // An OCR row whose cédula the AI was not sure of starts as "No importar" until a person corrects it (its
+            // confidence becomes 1) or ticks "Importar" by hand, which a later classification keeps.
+            $doubtful = $row->confidence !== null && ($row->confidence['cedula'] ?? 0) < $threshold;
+            $default = $doubtful ? 'omitir' : $toImport;
             $changed = $status !== $row->status || $match !== $row->match_lider_id;
-            $decision = $changed || $row->decision !== 'omitir' ? $default : 'omitir';
+            $decision = match (true) {
+                $changed => $default,
+                $row->decision === 'omitir' => 'omitir',
+                default => $toImport,
+            };
             if ($status !== $row->status || $match !== $row->match_lider_id || $decision !== $row->decision) {
                 $updates["{$status}|{$decision}|{$match}"][] = $row->id;
             }

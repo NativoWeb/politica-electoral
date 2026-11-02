@@ -212,6 +212,11 @@ export default function Show({ evento, asistentes, kpis, filters, consent, tipos
                                 Cargar Excel
                             </Link>
                         )}
+                        {editable && can?.ocr && evento.status !== 'cancelado' && (
+                            <Link href={`/eventos/${evento.id}/importar/ocr`} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center active:bg-white/25">
+                                Leer planillas con IA
+                            </Link>
+                        )}
                         {editable && evento.status !== 'cancelado' && (
                             <button type="button" onClick={() => setEditing(true)} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold active:bg-white/25">
                                 Editar

@@ -16,6 +16,8 @@ use App\Services\Eventos\AttendeeSheetReader;
 use App\Services\Eventos\AttendeeTemplate;
 use App\Services\Eventos\EventImportService;
 use App\Services\Eventos\ImportColumns;
+use App\Services\Eventos\Ocr\OcrImportService;
+use App\Services\Eventos\Ocr\OcrSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,7 +31,8 @@ use RuntimeException;
 
 // Eventos especiales, phase 3: attendees from an Excel/CSV file (contract in docs/eventos-api.md §11).
 // Same isolation as the rest of the module: manage.eventos (route), own campaign (403 for a visible subcampaign,
-// 404 for an invisible one) and the user's territory (403).
+// 404 for an invisible one) and the user's territory (403). The review, corrections, confirmation and discard of an
+// OCR load (photos of the printed sheet read with AI, §13) go through these same routes, with its two switches.
 class EventoImportController extends Controller
 {
     use ScopesTerritory;
@@ -47,7 +50,7 @@ class EventoImportController extends Controller
     {
         $event = $this->findEvent($id);
         $consent = ConsentText::currentFor($event->campaign_id);
-        $this->raiseMemoryLimit();
+        self::raiseMemoryLimit();
         $content = (new AttendeeTemplate)->build($event, $consent);
 
         AuditLog::create([
@@ -107,10 +110,13 @@ class EventoImportController extends Controller
         return redirect("/eventos/{$event->id}/importar/{$import->id}")->with($result['repeated'] ? 'error' : 'success', $message);
     }
 
-    public function show(Request $request, string $id, string $importId): Response
+    public function show(Request $request, string $id, string $importId): Response|\Symfony\Component\HttpFoundation\Response
     {
         $event = $this->findEvent($id);
         $import = $this->findImport($event, $importId);
+        if ($import->isOcr()) {
+            return Inertia::location("/eventos/{$event->id}/importar/ocr/{$import->id}");
+        }
         $filter = in_array($request->query('estado'), self::FILTERS, true) ? $request->query('estado') : null;
 
         return $this->page($event, $import, $filter, $request);
@@ -120,6 +126,7 @@ class EventoImportController extends Controller
     {
         $event = $this->findEvent($id);
         $import = $this->findImport($event, $importId);
+        abort_if($import->isOcr(), 404);
         $this->assertEditable($import);
         $mapping = $request->mapping();
         foreach ($mapping as $index) {
@@ -139,7 +146,7 @@ class EventoImportController extends Controller
         $import = $this->findImport($event, $importId);
         $this->assertEditable($import);
         if ($import->status !== 'revisado') {
-            throw ValidationException::withMessages(['fila' => 'Primero revise las columnas del archivo.']);
+            throw ValidationException::withMessages(['fila' => $import->isOcr() ? 'Primero termine de leer las páginas.' : 'Primero revise las columnas del archivo.']);
         }
         abort_unless(Str::isUuid($rowId), 404);
         $row = EventImportRow::where('import_id', $import->id)->findOrFail($rowId);
@@ -154,7 +161,7 @@ class EventoImportController extends Controller
         }
 
         return $this->done($request, $row->errors ? 'Fila guardada: todavía tiene datos por corregir.' : 'Fila guardada.', [
-            'fila' => $this->row($row), 'counts' => $import->fresh()->counts,
+            'fila' => self::rowProps($row), 'counts' => $import->fresh()->counts,
         ]);
     }
 
@@ -164,15 +171,18 @@ class EventoImportController extends Controller
         $this->assertAcceptsImports($event);
         $import = $this->findImport($event, $importId);
         if ($import->status === 'subido') {
-            throw ValidationException::withMessages(['confirmar' => 'Primero revise las columnas del archivo.']);
+            throw ValidationException::withMessages(['confirmar' => $import->isOcr() ? 'Primero termine de leer las páginas.' : 'Primero revise las columnas del archivo.']);
         }
-        $this->assertApprovedText($event);
+        $this->assertApprovedText($event, $import->isOcr() ? EventoOcrController::NEEDS_APPROVED_TEXT : self::NEEDS_APPROVED_TEXT);
         $this->limits();
 
         try {
             $result = $this->imports->confirm($import, $event, $request->user(), $request->ip(), $request->userAgent());
         } catch (RuntimeException $e) {
             throw ValidationException::withMessages(['confirmar' => $e->getMessage()]);
+        }
+        if ($import->isOcr()) {
+            app(OcrImportService::class)->afterConfirm($import);
         }
 
         $message = $result['nuevos'] === 0 && $result['ya_estaban'] === 0
@@ -195,7 +205,9 @@ class EventoImportController extends Controller
             return response()->json(['success' => true, 'message' => 'Carga descartada.']);
         }
 
-        return redirect("/eventos/{$event->id}/importar")->with('success', 'Carga descartada: no se registró a nadie.');
+        $back = $import->isOcr() ? "/eventos/{$event->id}/importar/ocr" : "/eventos/{$event->id}/importar";
+
+        return redirect($back)->with('success', 'Carga descartada: no se registró a nadie.');
     }
 
     private function page(CampaignEvent $event, ?EventImport $import, ?string $filter, ?Request $request): Response
@@ -204,48 +216,59 @@ class EventoImportController extends Controller
         $filas = null;
         if ($import && $import->status !== 'subido') {
             $filas = EventImportRow::where('import_id', $import->id)
-                ->when($filter, fn ($q, $f) => match ($f) {
-                    'no_autorizo' => $q->where('status', 'no_autorizo'),
-                    'nuevas' => $q->where('status', 'valida')->whereNull('match_lider_id'),
-                    'plataforma' => $q->where('status', 'valida')->whereNotNull('match_lider_id'),
-                    'omitidas' => $q->where('status', 'valida')->where('decision', 'omitir'),
-                    default => $q->where('status', $f),
-                })
+                ->when($filter, fn ($q, $f) => self::filterRows($q, $f))
                 ->orderBy('row_number')
                 ->paginate(self::ROWS_PER_PAGE)->withQueryString()
-                ->through(fn (EventImportRow $r) => $this->row($r));
+                ->through(fn (EventImportRow $r) => self::rowProps($r));
         }
 
         return Inertia::render('Eventos/Importar', [
-            'evento' => [
-                'id' => $event->id,
-                'nombre' => $event->nombre,
-                'status' => $event->status,
-                'starts_at' => $event->starts_at?->copy()->setTimezone(EventoController::TZ)->toIso8601String(),
-                'municipio' => $event->municipio?->canonical_name,
-                'campaign' => $event->campaign ? ['id' => $event->campaign->id, 'nombre' => $event->campaign->name] : null,
-                'acepta_cargas' => $event->status !== 'cancelado',
-            ],
+            'evento' => self::eventProps($event),
             'consent' => $consent ? ['id' => $consent->id, 'version' => $consent->version, 'approved' => $consent->approved] : null,
-            'importacion' => $import ? $this->importProps($import) : null,
+            'importacion' => $import ? self::importProps($import) : null,
             'muestra' => $import && $import->status === 'subido' ? $this->sample($import) : [],
             'filas' => $filas,
             'filters' => ['estado' => $filter],
             'campos' => ImportColumns::fieldOptions(),
             'limites' => ['filas' => AttendeeSheetReader::MAX_ROWS, 'mb' => ImportUploadRequest::maxMb()],
-            'recientes' => EventImport::where('event_id', $event->id)->with('creator:id,name')->orderByDesc('created_at')->limit(10)->get()
+            'recientes' => EventImport::where('event_id', $event->id)->where('kind', 'excel')->with('creator:id,name')->orderByDesc('created_at')->limit(10)->get()
                 ->map(fn (EventImport $i) => [
                     'id' => $i->id, 'nombre' => $i->original_name, 'status' => $i->status, 'filas' => $i->total_rows,
-                    'importadas' => (int) ($i->counts['importadas'] ?? 0), 'created_at' => $this->iso($i->created_at),
+                    'importadas' => (int) ($i->counts['importadas'] ?? 0), 'created_at' => self::iso($i->created_at),
                     'created_by' => $i->creator?->name,
                 ])->values()->all(),
         ]);
     }
 
-    private function importProps(EventImport $import): array
+    public static function eventProps(CampaignEvent $event): array
+    {
+        return [
+            'id' => $event->id,
+            'nombre' => $event->nombre,
+            'status' => $event->status,
+            'starts_at' => $event->starts_at?->copy()->setTimezone(EventoController::TZ)->toIso8601String(),
+            'municipio' => $event->municipio?->canonical_name,
+            'campaign' => $event->campaign ? ['id' => $event->campaign->id, 'nombre' => $event->campaign->name] : null,
+            'acepta_cargas' => $event->status !== 'cancelado',
+        ];
+    }
+
+    public static function filterRows($query, string $filter)
+    {
+        return match ($filter) {
+            'no_autorizo' => $query->where('status', 'no_autorizo'),
+            'nuevas' => $query->where('status', 'valida')->whereNull('match_lider_id'),
+            'plataforma' => $query->where('status', 'valida')->whereNotNull('match_lider_id'),
+            'omitidas' => $query->where('status', 'valida')->where('decision', 'omitir'),
+            default => $query->where('status', $filter),
+        };
+    }
+
+    public static function importProps(EventImport $import): array
     {
         return [
             'id' => $import->id,
+            'tipo' => $import->kind,
             'nombre' => $import->original_name,
             'status' => $import->status,
             'filas' => $import->total_rows,
@@ -255,8 +278,8 @@ class EventoImportController extends Controller
             'counts' => $import->counts,
             'declaro_planillas' => $import->consent_declared,
             'datos_borrados' => $import->staging_purged_at !== null,
-            'created_at' => $this->iso($import->created_at),
-            'confirmed_at' => $this->iso($import->confirmed_at),
+            'created_at' => self::iso($import->created_at),
+            'confirmed_at' => self::iso($import->confirmed_at),
         ];
     }
 
@@ -267,9 +290,11 @@ class EventoImportController extends Controller
             ->map(fn ($r) => array_map(fn ($v) => is_string($v) ? Str::limit($v, 40) : $v, $r->raw ?? []))->values()->all();
     }
 
-    private function row(EventImportRow $r): array
+    // An OCR row also carries its row on the printed page, the AI's confidence per field and, when it is not
+    // importable for lack of authorization, why.
+    public static function rowProps(EventImportRow $r): array
     {
-        return [
+        $props = [
             'id' => $r->id,
             'fila' => $r->row_number,
             'status' => $r->status,
@@ -280,6 +305,15 @@ class EventoImportController extends Controller
             'valores' => $r->mapped ?? [],
             'errores' => $r->errors ?? (object) [],
         ];
+        if ($r->page_id !== null) {
+            $props['fila_pagina'] = $r->page_row;
+            $props['confianza'] = $r->confidence ?? (object) [];
+            $props['motivo'] = $r->status === 'no_autorizo' && $r->mapped !== null
+                ? OcrImportService::authorizationReason($r->mapped, $r->confidence ?? [])
+                : null;
+        }
+
+        return $props;
     }
 
     private function findEvent(string $id): CampaignEvent
@@ -292,11 +326,17 @@ class EventoImportController extends Controller
         return $event;
     }
 
+    // An OCR load answers 404 while the global switch is off and 403 while its campaign's is off.
     private function findImport(CampaignEvent $event, string $importId): EventImport
     {
         abort_unless(Str::isUuid($importId), 404);
+        $import = EventImport::where('event_id', $event->id)->findOrFail($importId);
+        if ($import->isOcr()) {
+            abort_unless(OcrSettings::enabled(), 404);
+            abort_unless(OcrSettings::enabledFor($event->campaign_id), 403, OcrSettings::DISABLED_FOR_CAMPAIGN);
+        }
 
-        return EventImport::where('event_id', $event->id)->findOrFail($importId);
+        return $import;
     }
 
     private function assertAcceptsImports(CampaignEvent $event): void
@@ -306,10 +346,11 @@ class EventoImportController extends Controller
         }
     }
 
-    private function assertApprovedText(CampaignEvent $event): void
+    // $message: the Excel text, or the one of the printed sheets read with AI (§13) for an OCR load.
+    private function assertApprovedText(CampaignEvent $event, string $message = self::NEEDS_APPROVED_TEXT): void
     {
         if (! ConsentText::currentFor($event->campaign_id)?->approved) {
-            throw ValidationException::withMessages(['consent' => self::NEEDS_APPROVED_TEXT]);
+            throw ValidationException::withMessages(['consent' => $message]);
         }
     }
 
@@ -328,12 +369,12 @@ class EventoImportController extends Controller
     // 2000 rows are processed in the request (no queue worker in production).
     private function limits(): void
     {
-        $this->raiseMemoryLimit();
+        self::raiseMemoryLimit();
         set_time_limit(120);
     }
 
     // 256M unless PHP already allows more (never lowers it).
-    private function raiseMemoryLimit(): void
+    public static function raiseMemoryLimit(): void
     {
         $current = (string) ini_get('memory_limit');
         if ($current === '-1') {
@@ -356,7 +397,7 @@ class EventoImportController extends Controller
         return back()->with('success', $message);
     }
 
-    private function iso($date): ?string
+    private static function iso($date): ?string
     {
         return $date ? Carbon::parse($date)->setTimezone(EventoController::TZ)->toIso8601String() : null;
     }

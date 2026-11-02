@@ -123,6 +123,8 @@ class OfflineOwnerTest extends TestCase
 
     public function test_the_planilla_allows_10_downloads_per_minute_per_user(): void
     {
+        // Frozen clock: the 11 renders take seconds and must not cross into the next minute window of the limiter.
+        $this->freezeTime();
         for ($i = 1; $i <= 10; $i++) {
             $this->actingAs($this->operator)->get("/eventos/{$this->event->id}/planilla.pdf?paginas=1")->assertOk();
         }

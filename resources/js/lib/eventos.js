@@ -145,7 +145,10 @@ export function sourceLabel(attendee) {
     if (attendee?.source === 'qr') return 'Por QR';
     const who = attendee?.registered_by?.name ? `: ${attendee.registered_by.name}` : '';
 
-    return attendee?.source === 'excel' ? `Por Excel${who}` : `Operador${who}`;
+    if (attendee?.source === 'excel') return `Por Excel${who}`;
+    if (attendee?.source === 'ocr') return `Planilla leída con IA${who}`;
+
+    return `Operador${who}`;
 }
 
 /* ── Birth date with three selects ── */

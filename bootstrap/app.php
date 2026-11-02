@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureAgentUserEligible;
 use App\Http\Middleware\EnsureCampaignWhatsApp;
 use App\Http\Middleware\EnsureCanWrite;
 use App\Http\Middleware\EnsureElectoralPlatform;
+use App\Http\Middleware\EnsureEventosOcrEnabled;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsureOfflineOwner;
 use App\Http\Middleware\EnsurePasswordChanged;
@@ -60,6 +61,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'agent.can_write' => EnsureAgentCanWrite::class,
             'abilities' => CheckAbilities::class,
             'offline.owner' => EnsureOfflineOwner::class,
+            'eventos.ocr' => EnsureEventosOcrEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

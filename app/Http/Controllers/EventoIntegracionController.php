@@ -25,7 +25,7 @@ class EventoIntegracionController extends Controller
 {
     use ScopesTerritory;
 
-    public const SOURCES = ['qr' => 'QR', 'operador' => 'Operador', 'excel' => 'Excel'];
+    public const SOURCES = ['qr' => 'QR', 'operador' => 'Operador', 'excel' => 'Excel', 'ocr' => 'Planilla leída con IA'];
 
     public const LINK_STATUSES = [
         'vinculado' => 'Ya estaba en Votantes', 'pendiente' => 'Pendiente de aprobar', 'aprobado' => 'Aprobado (en Votantes)',

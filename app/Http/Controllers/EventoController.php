@@ -15,6 +15,7 @@ use App\Models\CampaignEvent;
 use App\Models\ConsentText;
 use App\Models\EventAttendee;
 use App\Models\EventType;
+use App\Services\Eventos\Ocr\OcrSettings;
 use App\Support\Cedula;
 use App\Support\PlanillaQr;
 use App\Support\Provincias;
@@ -118,6 +119,8 @@ class EventoController extends Controller
                 'manage' => $this->canManage(),
                 'register' => $this->canRegister(),
                 'edit' => $this->canManage() && $this->campaign()->isOwn($event->campaign_id),
+                // Reading printed sheets with AI (§13): only while both switches are on.
+                'ocr' => $this->canManage() && $this->campaign()->isOwn($event->campaign_id) && OcrSettings::enabledFor($event->campaign_id),
             ],
         ]);
     }
@@ -672,7 +675,7 @@ class EventoController extends Controller
     {
         return [
             'link_status' => in_array($request->query('link_status'), EventAttendee::LINK_STATUSES, true) ? $request->query('link_status') : null,
-            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel'], true) ? $request->query('source') : null,
+            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel', 'ocr'], true) ? $request->query('source') : null,
             'q' => $this->textOrNull($request->query('q')),
         ];
     }
@@ -713,6 +716,7 @@ class EventoController extends Controller
             'qr' => (int) ($bySource['qr'] ?? 0),
             'operador' => (int) ($bySource['operador'] ?? 0),
             'excel' => (int) ($bySource['excel'] ?? 0),
+            'ocr' => (int) ($bySource['ocr'] ?? 0),
         ];
     }
 

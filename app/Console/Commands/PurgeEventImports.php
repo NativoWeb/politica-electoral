@@ -10,7 +10,7 @@ class PurgeEventImports extends Command
 {
     protected $signature = 'eventos:limpiar-importaciones';
 
-    protected $description = 'Borra las cargas de Excel sin confirmar de más de 7 días y vacía las celdas de las confirmadas hace más de 30 días';
+    protected $description = 'Borra las cargas (Excel o fotos de planillas) sin confirmar de más de 7 días y vacía las celdas de las confirmadas hace más de 30 días';
 
     public function handle(EventImportService $imports): int
     {

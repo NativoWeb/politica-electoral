@@ -7,12 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-// An Excel/CSV file of attendees uploaded to an event: subido (columns pending) → revisado (preview) → confirmado.
+// Attendees uploaded to an event, kind 'excel' (an Excel/CSV file: subido = columns pending) or 'ocr' (photos of the
+// printed sheet read with AI, §13: subido = pages pending reading, file_path = the folder of its pages)
+// → revisado (preview) → confirmado.
 class EventImport extends Model
 {
     use HasUuids;
 
     public const STATUSES = ['subido', 'revisado', 'confirmado'];
+
+    public const KINDS = ['excel', 'ocr'];
 
     protected $guarded = ['*'];
 
@@ -33,6 +37,16 @@ class EventImport extends Model
     public function rows(): HasMany
     {
         return $this->hasMany(EventImportRow::class, 'import_id');
+    }
+
+    public function pages(): HasMany
+    {
+        return $this->hasMany(EventImportPage::class, 'import_id');
+    }
+
+    public function isOcr(): bool
+    {
+        return $this->kind === 'ocr';
     }
 
     public function creator(): BelongsTo

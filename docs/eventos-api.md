@@ -1,4 +1,4 @@
-# Eventos especiales — contrato backend (Fase 1 + Fase 2: planilla PDF + Fase 3: cargue desde Excel + Fase 4: integración)
+# Eventos especiales — contrato backend (Fase 1 + Fase 2: planilla PDF + Fase 3: cargue desde Excel + Fase 4: integración + Fase 5: planillas con IA, apagada)
 
 Contrato entre el backend (Laravel) y el frontend (React + Inertia) del módulo **Eventos especiales**:
 eventos de campaña ("Del Senado al barrio", giras, novenas, reuniones) con registro de asistentes por
@@ -427,8 +427,8 @@ unificar líderes no se reasigna, mientras que `event_attendees.lider_id` y `eve
 líder que sobrevive). Todas con PK UUID. Únicos: `events.public_token`,
 `event_attendees.client_uuid`, `event_attendees (event_id, cedula)` parcial (cédula no nula).
 `link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado` (`sin_cedula` queda reservado; en Fases
-1–3 la cédula es obligatoria). `event_attendees.source`: `qr | operador | excel` (CHECK en PostgreSQL; `excel` lo agrega
-la migración `2026_11_01_000001`, que no toca `data_consents`). Fase 3 agrega `event_imports`, `event_import_rows` y
+1–3 la cédula es obligatoria). `event_attendees.source`: `qr | operador | excel | ocr` (CHECK en PostgreSQL; `excel` lo agrega
+la migración `2026_11_01_000001` y `ocr` la `2026_11_03_000001` (§13); ninguna toca `data_consents`). Fase 3 agrega `event_imports`, `event_import_rows` y
 `event_attendees.import_id` (FK nullable a `event_imports`) (§11).
 
 ### Paso de despliegue obligatorio: dueño de `data_consents` (PostgreSQL)
@@ -877,3 +877,242 @@ Migración `2026_11_02_000001_add_lider_indexes_to_event_tables`: `event_attende
 - `/votantes`: los paneles de filtros de escritorio y móvil usan ids distintos; el filtro de evento activo se ve como
   chip ("Asistió a: …" / "Asistentes a eventos") con botón para quitarlo, aunque el panel esté cerrado.
 - `/eventos/territorio`: con el barrio vacío se muestran los barrios sugeridos.
+
+---
+
+## 13. Lectura de planillas impresas con IA (Fase 5) — CONSTRUIDA PERO APAGADA
+
+Fotos (o PDF) de la planilla impresa de §9, llenas a mano, que una IA (Claude, de Anthropic) transcribe; una persona
+revisa **todo** contra la foto y confirma igual que el Excel de §11. **Nada** llega a `event_attendees` antes de esa
+confirmación. Está apagada por defecto y así debe quedar hasta cumplir los pasos de activación (abajo).
+
+### Interruptores
+
+| Interruptor | Dónde | Apagado → |
+|-------------|-------|-----------|
+| Global `EVENTOS_OCR_ENABLED` (por defecto `false`) | `.env` → `config/eventos.php` (`eventos.ocr.enabled`) | Todas las rutas de §13 → **404** (middleware `eventos.ocr`, antes de permisos), y las rutas de §11 sobre una carga de tipo `ocr` → 404. El botón no aparece. |
+| Por campaña `campaigns.ocr_enabled` (por defecto `false`) | `php artisan eventos:ocr-campana {campaña} --activar` o `--desactivar` (solo consola, R01/devops; deja `EVENTO_OCR_CAMPANA_ACTIVADA/DESACTIVADA` en la auditoría; sin opciones muestra el estado) | Rutas de §13 → **403** `"La lectura de planillas con IA no está activada para esta campaña."`. El botón no aparece. |
+
+La campaña es la **del evento** (una subcampaña necesita su propio interruptor). `Eventos/Show` recibe `can.ocr`
+(= `manage.eventos` + campaña propia + los dos interruptores) y solo entonces muestra **"Leer planillas con IA"**.
+
+**Sin clave** (`ANTHROPIC_API_KEY` vacía) con los interruptores encendidos: la pantalla abre y dice
+`"La lectura con IA no está lista: falta configurar la clave del proveedor (ANTHROPIC_API_KEY). Avise al administrador de la plataforma."`;
+subir y leer responden **422** `errors.ocr` con ese texto (nunca 500) y no se guarda nada.
+
+### Modelo y costos
+
+- `EVENTOS_OCR_MODEL`, por defecto **`claude-opus-5-5`** (el más capaz de uso general hoy). Alternativa más barata:
+  **`claude-sonnet-5-5`** (mitad de precio por token). Decidir con el piloto (abajo). Claude Fable **no** sirve: exige
+  retención de datos de 30 días, incompatible con ZDR.
+- `EVENTOS_OCR_EFFORT` (`low|medium|high|xhigh|max`, por defecto `medium`); `low` es más rápido y barato.
+- Precios (USD por millón de tokens: entrada / salida / escritura de caché / lectura de caché) en
+  `config/eventos.php` → `eventos.ocr.prices`: Opus 5.5 4 / 20 / 5 / 0,20; Sonnet 5.5 2 / 10 / 2,50 / 0,20. El costo
+  que registra la plataforma es una **estimación** con esa tabla (no la factura). Revisar
+  https://platform.claude.com/docs/en/about-claude/pricing antes de decidir.
+- Llamada: SDK oficial `anthropic-ai/sdk` (PHP, v1.3), `beta->messages->create` con salida estructurada (JSON schema de
+  `App\Services\Eventos\Ocr\PlanillaPrompt`), `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`: si el
+  modelo declina por políticas, la API reintenta con su modelo de respaldo en la misma llamada; se registra el modelo
+  que respondió), `timeout` `EVENTOS_OCR_TIMEOUT` (150 s) y **sin reintentos automáticos** (`maxRetries: 0`: cada
+  llamada se paga; la pantalla ofrece "Intentar de nuevo"). Un PDF va con caché de prompt, así que sus páginas 2..N
+  cuestan poco de entrada. Errores 404/422 de la API (modelo o parámetros inválidos) → `"La configuración del modelo de
+  IA no es válida. Avise al administrador de la plataforma."` (no reintentable).
+- Precios también para `claude-opus-4-8`, el respaldo por defecto de Opus 5.5. Un modelo sin precio en la tabla se
+  registra con costo 0 y deja un warning en el log (`Eventos OCR: el modelo no tiene precio…`).
+- Tope de costo: `EVENTOS_OCR_MAX_PAGINAS_DIA` (300) **llamadas a la IA** por campaña y día (hora de Bogotá), cuenten o
+  no como página leída (fallidas, rechazadas por la IA o incompletas incluidas; `event_import_pages.api_calls` y
+  `last_call_at`). Al pasarlo: `"La campaña ya hizo N lecturas con IA hoy, el máximo diario. Continúe mañana."`.
+- Máximo **3 llamadas por página** (`OcrImportService::MAX_CALLS_PER_PAGE`): a la tercera falla la página queda
+  `rechazada` con `"… Esta página ya se intentó leer 3 veces: tome otra foto y súbala en una carga nueva, o registre a
+  las personas en el modo operador."` y "Intentar de nuevo" ya no la lee.
+- Una respuesta que se cobró pero no sirve (cortada por `max_tokens`, rechazada, JSON ilegible) suma sus tokens y su
+  costo a la página y a la auditoría de esa llamada.
+
+### Rutas (`manage.eventos`, middleware `eventos.ocr`; campaña propia, territorio y `campaigns.ocr_enabled`)
+
+| Método | URI | Nombre | Respuesta |
+|--------|-----|--------|-----------|
+| GET | `/eventos/{id}/importar/ocr` | `eventos.importar.ocr.index` | Inertia `Eventos/Planillas` (paso 1) |
+| POST | `/eventos/{id}/importar/ocr` | `eventos.importar.ocr.subir` | JSON 201 (throttle `eventos-ocr` 60/min) |
+| GET | `/eventos/{id}/importar/ocr/{import}?pagina=&estado=` | `eventos.importar.ocr.ver` | Inertia `Eventos/Planillas` |
+| POST | `/eventos/{id}/importar/ocr/{import}/procesar` | `eventos.importar.ocr.procesar` | JSON 200 (throttle `eventos-ocr`) |
+| GET | `/eventos/{id}/importar/ocr/{import}/paginas/{pagina}/archivo` | `eventos.importar.ocr.archivo` | La foto/PDF, `inline` |
+
+Corregir filas, confirmar y descartar usan las rutas de §11 (`PATCH .../importar/{import}/filas/{fila}`,
+`POST .../confirmar`, `DELETE .../importar/{import}`), que aplican los mismos interruptores a una carga `ocr`.
+`GET /eventos/{id}/importar/{import}` de una carga `ocr` redirige a su URL de §13; `PUT .../columnas` → 404.
+Otra campaña no visible → 404; subcampaña visible → 403; fuera del territorio → 403; sin `manage.eventos` → 403 (JSON)
+o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto de autorización **aprobado** → 422
+`errors.consent` `"Falta el texto de autorización aprobado por la campaña; no se pueden leer planillas hasta tenerlo."`.
+
+### Flujo
+
+1. **Fotos.** Un archivo por petición (`foto`, multipart; `importacion` = id de la carga a la que se agrega, vacío = carga
+   nueva): la pantalla las envía una tras otra ("Subiendo 3 de 7…"), así el límite de PHP nunca es la suma.
+   - Fotos de más de **24 megapíxeles** (ancho × alto leído de la cabecera, antes de decodificarla con GD) → 422
+     `"La foto tiene demasiada resolución para leerla (más de 24 megapíxeles). Tómela de nuevo con menos resolución."`.
+     Medido en el peor caso (decodificar + copia del tamaño de la API + rotación EXIF): 24 MP usan +118 MB (pico 146 MB
+     con Laravel) de los 256 MB de una petición de lectura; un celular toma 12–16 MP. Esa medición es con el GD
+     *bundled* de PHP (local). **Producción usa el GD del sistema (libgd 2.3.3)**, que reserva los píxeles fuera de
+     `memory_limit`: allí `memory_limit` no frena la imagen y cada lectura de una foto de 24 MP ocupa ~120–150 MB de RAM
+     real del proceso PHP-FPM (el VPS tiene 2 GB y `pm.max_children = 5`: no leer varias cargas a la vez). El test de
+     memoria se salta solo cuando GD no es *bundled*.
+   - PDF cuyas páginas no se pueden contar (objetos comprimidos) → 422 `"No se pudieron contar las páginas de este PDF.
+     Suba fotos de las páginas (JPG o PNG)."`; más de 3 MB por página → 422 `"Este PDF pesa demasiado por página. Suba
+     fotos de las páginas (JPG o PNG)."`.
+   - Tipos por **contenido** (finfo), no por nombre: JPG, PNG, WEBP o PDF. HEIC → 422 con
+     `"Las fotos HEIC del iPhone no se pueden leer. Súbalas desde la galería …"` (convertir HEIC exige Imagick con libheif,
+     que el servidor no tiene; el iPhone las convierte a JPG al subirlas desde el navegador). Otro tipo →
+     `"Solo se aceptan fotos JPG, PNG o WEBP, o un PDF."`.
+   - Máx. **10 MB** por archivo (o lo que permita PHP, ver activación) y **20 páginas** por carga (un PDF cuenta sus
+     páginas al subirlo).
+   - Disco **privado** `storage/app/private/eventos/ocr/{evento}/{carga}/{n}.{ext}`, con su `sha256`. La misma foto (mismo
+     `sha256`) ya subida a **este** evento → 422 `"Esta foto ya se subió a este evento (nombre): no se vuelve a leer."`.
+   - **201** `{ success, message, data: { id, paginas, total_paginas } }`. La carga queda `subido` (`event_imports.kind = 'ocr'`).
+2. **Lectura con IA**, una página por petición (`POST .../procesar`, cuerpo opcional `reintentar` / `continuar`). La
+   pantalla **no** empieza sola (leer cuesta): botón "Leer N páginas con IA", barra de progreso y peticiones sucesivas.
+   Cada petición: `set_time_limit(timeout + 60)`, `memory_limit` ≥ 256M. Concurrencia: un candado por carga de
+   `timeout + 120` s (más que una llamada, que no se reintenta sola; si hay otra lectura en curso → `data.ocupado = true`,
+   la pantalla espera 3 s); la llamada se reserva con un UPDATE condicional (`status = 'pendiente'` y el mismo
+   `api_calls`), las filas se guardan solo si el UPDATE final a `procesada` encuentra la página aún `pendiente` (si no,
+   no se guarda nada y la auditoría dice `descartada_ya_leida`), y `event_import_rows` tiene único `(page_id, page_row)`.
+   - **QR**: se decodifica en el servidor (chillerlan, sobre una copia de 1600 px, ~0,7 s) **antes** de llamar a la IA.
+     Si es de otro evento → página `rechazada` `"Esta página es de otro evento (código XXXXXXXX): no se leyó. Súbala en la carga de ese evento."`
+     sin gastar en la IA. Si el QR no se lee (foto movida, PDF), vale el id completo que la IA lee en la línea de pie
+     ("Evento <id> · Página X de Y") o el código de 8 caracteres; si dice otro evento → `rechazada` y **no** se guardan
+     sus filas; si no se lee ninguno → la página se procesa con el aviso
+     `"No se pudo leer el código del evento en esta página: confirme en la imagen que es de este evento."`.
+   - La foto se decodifica **una sola vez**, se reduce primero a 2576 px de lado mayor (y se libera el original), después
+     se endereza (EXIF) y de esa copia salen la imagen para la API (JPEG de hasta 3,7 MB; en base64 queda por debajo de los
+     5 MB por imagen de la API) y la copia de 1600 px para el QR. Esto ocurre **antes** de reservar la llamada: si la foto
+     no se puede preparar, la página queda con error sin gastar intentos ni el tope diario. El original se guarda tal cual.
+   - La IA responde, por cada fila con algo escrito (las vacías se omiten): `nombres, apellidos, cedula, celular, fijo,
+     fecha_nacimiento, direccion, barrio` (texto o null), `autorizo` y `firma_presente` (booleanos), cada uno con
+     `confianza` 0–1; más `es_planilla`, `evento_id`, `codigo_evento`, `pagina`, `total_paginas`, `paginas_documento`.
+     `es_planilla = false` → página `rechazada` `"Esta imagen no parece una planilla de asistencia de la plataforma: no se leyó."`.
+   - Las filas van a `event_import_rows` como una fila de Excel ya mapeada (`mapped`, `errors` con `ImportRowValidator`)
+     + `page_id`, `page_row` (N.º impreso) y `confidence` (jsonb por campo). `row_number = (página − 1) × 12 + N.º`.
+   - Fallo de la API (sin conexión, ocupada, tiempo agotado, respuesta incompleta o ilegible, rechazo) → página `error`
+     con un mensaje en español sin datos; **200** `{ success: false, message, data: progreso }`. La pantalla ofrece
+     "Intentar de nuevo" (`reintentar`) o "Seguir sin las páginas que fallaron" (`continuar`).
+   - Respuesta: `{ success, message, data: { status, total, pendientes, procesadas, rechazadas, errores, filas, costo_usd, listo, ocupado } }`.
+     Cuando no queda ninguna página pendiente (ni con error, salvo `continuar`) se clasifican las filas (cruce con
+     líderes de la campaña por cédula, repetidas, ya en el evento) y la carga pasa a `revisado` (`listo = true`).
+3. **Revisión humana obligatoria** (`Eventos/Planillas`): pestañas por página (filas leídas y cuántas tienen celdas
+   dudosas), a un lado la foto (o el PDF en esa página) servida por la ruta autenticada y al otro las filas de esa
+   página. Celdas con confianza `< EVENTOS_OCR_UMBRAL` (0,85) en **amarillo** ("Dudoso: compárelo con la foto"),
+   inválidas en **rojo** (mismas reglas que §11: cédula 5–10 dígitos, celular obligatorio, fecha DD/MM/AAAA, mayor de
+   edad…). "Ya estaba en la plataforma" si la cédula es de un líder de la campaña del evento. Corregir una celda la
+   revalida y pone su confianza en 1 (ya no es dudosa). Una fila válida cuya **cédula** tiene confianza bajo el umbral
+   arranca en **"No importar"** hasta que alguien la corrija (vuelve a "Importar") o marque "Importar" a mano (se respeta
+   aunque se corrijan otras filas). Filtros de §11.
+   - **Regla de consentimiento** (igual que QR, operador y Excel): una fila es importable **solo** si la IA vio
+     **marcada la casilla «Autorizo» Y una firma**, las dos con confianza ≥ umbral. Si no, queda `no_autorizo` con el
+     motivo (`"La IA no vio marcada la casilla «Autorizo»…"`, `"La IA no vio la firma de esta fila…"`,
+     `"La IA no está segura de la casilla «Autorizo» o de la firma…"`) y **no se puede cambiar** en la revisión (vale lo
+     que leyó la IA en la planilla; si la persona sí autorizó, se registra por el modo operador). Decisión del
+     orquestador: no se permite marcar a mano una autorización que la IA no vio.
+4. **Confirmar**: `POST .../importar/{import}/confirmar` `{ "declaracion": true }`, con la casilla
+   "Revisé las filas contra las fotos y tengo las planillas firmadas que respaldan estas autorizaciones." y texto
+   **aprobado**. Registra con `RegisterAttendee::handleMany`: `source = 'ocr'`, `import_id`, consentimiento en
+   `data_consents` con canal `operador` (como Excel; `data_consents` no se toca). Los nuevos quedan `pendiente` o
+   `vinculado`; pasar a Votantes sigue siendo manual. Tras confirmar: se vacían `raw` y `mapped` de las filas
+   `no_autorizo` (minimización: lo leído de quien no autorizó no se conserva) y se borran los archivos que no tienen
+   ninguna página leída (de otro evento, no planilla, fallidas).
+
+### Tablas (migración `2026_11_03_000001_add_ocr_to_eventos`, aditiva; no toca `data_consents`)
+
+- `campaigns.ocr_enabled` boolean default false.
+- `event_imports.kind` `excel|ocr` (CHECK en PostgreSQL). En una carga `ocr`: `file_path` = carpeta de sus fotos,
+  `file_sha256` = hash de `"ocr:" + id` (solo para el único `(event_id, file_sha256)`), `headers = []`.
+- `event_import_pages`: `import_id` (cascade), `event_id`, `sequence`, `original_name`, `file_path`, `file_sha256`,
+  `mime`, `page_in_file`, `file_pages`, `status` (`pendiente|procesada|rechazada|error`, CHECK), `message`,
+  `qr_event_id`, `printed_page`, `qr_origin` (`codigo` = QR, `ia` = leído por la IA), `rows_found`, `model`,
+  `input_tokens`, `output_tokens`, `cache_write_tokens`, `cache_read_tokens`, `cost_usd` (suma de todas las llamadas de
+  la página), `duration_ms`, `attempts`, `api_calls`, `last_call_at`, `processed_at`. Únicos `(import_id, sequence)` y
+  `(event_id, file_sha256, page_in_file)`. **Sin datos personales.**
+- `event_import_rows.page_id` (cascade), `page_row`, `confidence` (jsonb); único `(page_id, page_row)`.
+- `event_attendees.source` CHECK `qr|operador|excel|ocr`. El `down()` falla mientras haya asistentes `ocr` (a propósito)
+  y no borra las fotos del disco.
+- Dry-run en producción (2026-11-01, repetido tras la revisión con `api_calls`, `last_call_at` y el único
+  `(page_id, page_row)`; F3 y F4 aún sin desplegar): las migraciones `2026_11_01_000001`, `2026_11_02_000001`
+  y `2026_11_03_000001` aplicadas como rol `electoral` dentro de `BEGIN … ROLLBACK` sin errores; después no existen ni
+  las tablas ni la columna; archivo temporal borrado.
+
+### Auditoría (sin datos personales: nunca lo que se leyó)
+
+- Middleware `audit` (rutas `eventos.importar.ocr.*` y las de §11): solo los **nombres** de los campos enviados.
+- `EVENTO_OCR_ARCHIVO_SUBIDO` `{ event_id, tipo: foto|pdf, paginas, sha256_archivo }`.
+- `EVENTO_OCR_PAGINA_LEIDA` (una por intento) `{ event_id, pagina, resultado: procesada|rechazada|error|descartada_ya_leida,
+  model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, cost_usd` (de esa llamada)`, duration_ms, filas,
+  qr: coincide|ilegible|otro_evento|no_planilla|demasiados_intentos, qr_origen, reintentable }`; un error cobrado lleva
+  sus tokens y costo; una página rechazada después de leerla, `cost_usd_pagina`.
+- `EVENTO_OCR_LECTURA_TERMINADA` `{ event_id, paginas, filas, modelos, input_tokens, output_tokens, cache_write_tokens,
+  cache_read_tokens, costo_usd, duracion_ms }`.
+- Confirmación: `EVENTO_IMPORTACION_CONFIRMADA` con `tipo: "ocr"`. Descarte: `EVENTO_IMPORTACION_DESCARTADA`.
+
+### Privacidad y retención (Ley 1581 de 2012)
+
+- **Transmisión internacional**: cada foto (con los datos de todas las personas de la página, también las que no
+  autorizaron) se envía a **Anthropic** (EE. UU.) para leerla. Asistir a un evento político es dato **sensible**
+  (opinión política, art. 5). Por eso está apagada por defecto. Antes de encenderla hace falta: contrato de
+  transmisión de datos con Anthropic como encargado (DPA), **Zero Data Retention (ZDR)** habilitado en la organización de
+  la API, y que el texto de autorización de la campaña mencione el envío a un proveedor tecnológico en el exterior.
+- Fotos en disco **privado**, nunca por URL pública: solo por `eventos.importar.ocr.archivo` con las mismas comprobaciones
+  (sesión, `manage.eventos`, campaña propia, territorio, interruptores), `Cache-Control: private, no-store`,
+  `X-Content-Type-Options: nosniff` y, en las fotos, `Content-Security-Policy: sandbox`. Los PDF van sin `sandbox`
+  porque Chrome no muestra un PDF bajo CSP sandbox (su contenido se comprobó como PDF al subirlo). Sin sesión → `/login`
+  (401 en JSON).
+- Lo leído de quien **no autorizó** se vacía al confirmar; el resto se vacía a los 30 días (abajo).
+- `php artisan eventos:limpiar-importaciones` (diario 03:30; necesita el cron del scheduler, §11):
+  - cargas **no confirmadas** de más de **7 días** → se borran con su carpeta de fotos;
+  - cargas **confirmadas** hace más de **30 días** → `raw`/`mapped` de sus filas en null (lo leído por la IA), como §11;
+  - **decisión**: las fotos de una carga confirmada **se conservan** como respaldo de las autorizaciones firmadas
+    (art. 9: el responsable debe conservar prueba de la autorización); al confirmar se borran las fotos que no
+    respaldan a nadie (páginas de otro evento, no planillas o fallidas). Esas fotos también muestran filas de personas
+    que no autorizaron: el acceso queda restringido como arriba y la planilla en papel sigue siendo el original. Si la
+    campaña fija un plazo de retención, se agrega al comando.
+- Ni el log ni la auditoría guardan la respuesta de la IA ni las imágenes; el log solo registra la clase del error y el
+  código HTTP cuando la API falla.
+
+### Piloto — `php artisan eventos:ocr-piloto {carpeta} {verdad.csv} [--model=] [--json=informe.json] [--force]`
+
+Lee todas las fotos/PDF de una carpeta con el modelo indicado (por defecto `EVENTOS_OCR_MODEL`) y compara con un CSV de
+verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca tablas de eventos ni la auditoría, pero
+**sí envía las imágenes a Anthropic** (pregunta antes, salvo `--force`): con planillas reales, solo después del DPA/ZDR.
+
+- CSV (`,` o `;`, UTF-8) con las columnas `archivo`, `pagina` (página del archivo; 1 en una foto), `fila` (N.º 1–12),
+  `nombres`, `apellidos`, `cedula`, `celular`, `fijo`, `fecha_nacimiento`, `direccion`, `barrio`, `autorizo` (SI/NO) y
+  `firma` (SI/NO). Una fila por persona escrita.
+- Informe: por página (filas, QR leído o no, modelo que respondió, tokens, costo estimado, segundos, error); filas en la
+  verdad / detectadas / omitidas / sobrantes; **precisión por campo** (cédula, celular, nombres, apellidos, fecha,
+  autorizó, firma, y fijo, dirección, barrio) comparando dígitos, fechas normalizadas y texto en mayúsculas sin tildes; y
+  **errores con confianza alta** (los que la revisión no resaltaría: el número a vigilar); total y costo/segundos por página.
+- Ejemplo para probar el comando: `docs/ocr-piloto-ejemplo/` (2 planillas **sintéticas** generadas por la plataforma con
+  datos **falsos** en texto escrito a máquina + `verdad.csv`; se regeneran con `php artisan eventos:ocr-piloto-ejemplo {carpeta}`).
+  **No** sirve para medir la precisión real (letra a mano).
+- Para decidir el modelo: 20 planillas reales fotografiadas como en campo, su verdad transcrita por una persona, correr
+  el piloto con `--model=claude-opus-5-5` y con `--model=claude-sonnet-5-5`, y comparar precisión de cédula/celular,
+  errores con confianza alta, autorizó/firma, segundos y costo por página.
+
+### Activación paso a paso (cuando Marly lo decida)
+
+1. Firmar el DPA con Anthropic y pedir **ZDR** para la organización de la API; crear una API key de esa organización
+   (workspace propio, con límite de gasto mensual en la consola de Anthropic).
+2. Cargar con `php artisan eventos:consent-text {campaña} {archivo} --text-version=… --approve` un texto de autorización
+   que diga, además de lo actual, algo como: *"Autorizo que la fotografía de esta planilla sea procesada por un proveedor
+   tecnológico ubicado fuera de Colombia (Anthropic, Estados Unidos), como encargado, únicamente para transcribir mis
+   datos a la plataforma de la campaña."* Reimprimir las planillas (el pie muestra la versión).
+3. Piloto: `php artisan eventos:ocr-piloto {carpeta} {verdad.csv} --model=…` con 20 planillas reales (ver arriba).
+   Elegir modelo, effort y umbral.
+4. Servidor (PHP-FPM): hoy `upload_max_filesize = 2M` y `post_max_size = 8M`; con eso una foto de más de 2 MB se rechaza
+   (la pantalla y el mensaje dicen el límite real). Para fotos de celular poner `upload_max_filesize = 12M` y
+   `post_max_size = 16M` en `/etc/php/8.3/fpm/php.ini` y `systemctl reload php8.3-fpm`. nginx ya tiene
+   `client_max_body_size 50M` y `fastcgi_read_timeout 300` (una página tarda hasta `EVENTOS_OCR_TIMEOUT` + el QR).
+   GD y exif ya están instalados. Con `pm.max_children = 5`, cada lectura ocupa un proceso PHP mientras espera a la IA:
+   no leer varias cargas a la vez.
+5. `.env`: `ANTHROPIC_API_KEY=…`, `EVENTOS_OCR_MODEL=…`, `EVENTOS_OCR_ENABLED=true` (y si se quiere `EVENTOS_OCR_EFFORT`,
+   `EVENTOS_OCR_UMBRAL`, `EVENTOS_OCR_MAX_PAGINAS_DIA`); `php artisan optimize:clear && php artisan optimize`.
+6. `php artisan eventos:ocr-campana {campaña} --activar` solo para las campañas que cumplieron lo anterior.
+7. Primera carga real acompañada: revisar en la auditoría `EVENTO_OCR_LECTURA_TERMINADA` el costo por página.
+   Para apagar: `EVENTOS_OCR_ENABLED=false` (todo 404 tras `optimize`) o `--desactivar` por campaña.

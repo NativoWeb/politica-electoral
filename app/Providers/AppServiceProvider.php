@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\Eventos\Ocr\AnthropicOcrClient;
+use App\Services\Eventos\Ocr\OcrClient;
 use App\Support\CurrentCampaign;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -14,6 +16,8 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(CurrentCampaign::class);
+        // Tests bind a fake here: they never call the real API.
+        $this->app->bind(OcrClient::class, AnthropicOcrClient::class);
     }
 
     public function boot(): void
@@ -46,6 +50,9 @@ class AppServiceProvider extends ServiceProvider
         // Correcting or skipping preview rows (one request per click) and discarding: cheap, but still bounded.
         RateLimiter::for('eventos-importar-fila', fn (Request $request) => Limit::perMinute(120)
             ->by('eventos-importar-fila|'.($request->user()?->id ?? $request->ip())));
+        // AI reading of printed sheets: one request per photo uploaded and one per page read (each waits for the API).
+        RateLimiter::for('eventos-ocr', fn (Request $request) => Limit::perMinute(60)
+            ->by('eventos-ocr|'.($request->user()?->id ?? $request->ip())));
 
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {

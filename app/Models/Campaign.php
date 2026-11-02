@@ -24,6 +24,7 @@ class Campaign extends Model
     protected $casts = [
         'whatsapp_enabled' => 'boolean',
         'is_active' => 'boolean',
+        'ocr_enabled' => 'boolean',
     ];
 
     public function parent(): BelongsTo

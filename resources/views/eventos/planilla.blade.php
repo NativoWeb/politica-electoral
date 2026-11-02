@@ -43,6 +43,10 @@
         .grid td.ok { text-align: center; background: #fff; }
         .grid td.ok span { display: inline-block; width: 5mm; height: 5mm; border: 0.4mm solid #111; }
         .grid tr.end td { border-bottom: 0.5mm solid #111; }
+        .grid td.t { font-size: 8pt; padding: 0 0.8mm; vertical-align: middle; }
+        .grid td.t.n { font-family: 'DejaVu Sans Mono', monospace; letter-spacing: 1.1mm; text-align: center; }
+        .grid td.t.s { font-family: 'DejaVu Serif', serif; font-style: italic; font-size: 9pt; }
+        .grid td.ok span b { display: block; font-size: 10pt; line-height: 4.6mm; }
         .grid td.g, .grid th.g { border-left: 0.6mm solid #111; }
 
         .foot { margin-top: 1.5mm; border: 0.3mm solid #003B71; padding: 1.4mm 2mm; font-size: 6.3pt; line-height: 1.3; }
@@ -80,6 +84,8 @@
             return ['src' => 'data:image/svg+xml;base64,'.base64_encode($svg), 'mm' => $x / 10];
         };
         $grupos = ['cedula' => $strip([10]), 'celular' => $strip([10]), 'fijo' => $strip([7]), 'fecha' => $strip([2, '/', 2, '/', 4])];
+        // Only for the synthetic sheets of `eventos:ocr-piloto-ejemplo` (typed fake data): [page][row] => values.
+        $relleno = $relleno ?? [];
     @endphp
 
     @foreach ($pages as $page)
@@ -129,17 +135,30 @@
                 </thead>
                 <tbody>
                     @for ($row = 1; $row <= $filas; $row++)
+                        @php $dato = $relleno[$page['numero']][$row] ?? null; @endphp
                         <tr class="{{ $row % 2 === 0 ? 'alt' : '' }} {{ $row === $filas ? 'end' : '' }}">
                             <td class="num">{{ $row }}</td>
-                            <td class="f"></td>
-                            <td class="f"></td>
-                            @foreach ($grupos as $grupo)
-                                <td class="d g"><img src="{{ $grupo['src'] }}" style="width: {{ $grupo['mm'] }}mm;" alt=""></td>
-                            @endforeach
-                            <td class="f g"></td>
-                            <td class="f"></td>
-                            <td class="ok"><span></span></td>
-                            <td class="f"></td>
+                            @if ($dato)
+                                <td class="f t">{{ $dato['nombres'] }}</td>
+                                <td class="f t">{{ $dato['apellidos'] }}</td>
+                                @foreach (['cedula', 'celular', 'fijo', 'fecha_nacimiento'] as $campo)
+                                    <td class="d g t n">{{ $dato[$campo] }}</td>
+                                @endforeach
+                                <td class="f g t">{{ $dato['direccion'] }}</td>
+                                <td class="f t">{{ $dato['barrio'] }}</td>
+                                <td class="ok"><span>@if ($dato['autorizo'])<b>X</b>@endif</span></td>
+                                <td class="f t s">{{ $dato['firma'] ? $dato['nombres'].' '.mb_substr($dato['apellidos'], 0, 1).'.' : '' }}</td>
+                            @else
+                                <td class="f"></td>
+                                <td class="f"></td>
+                                @foreach ($grupos as $grupo)
+                                    <td class="d g"><img src="{{ $grupo['src'] }}" style="width: {{ $grupo['mm'] }}mm;" alt=""></td>
+                                @endforeach
+                                <td class="f g"></td>
+                                <td class="f"></td>
+                                <td class="ok"><span></span></td>
+                                <td class="f"></td>
+                            @endif
                         </tr>
                     @endfor
                 </tbody>
