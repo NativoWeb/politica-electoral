@@ -65,6 +65,11 @@ class AgentIdentityController extends Controller
                     return $this->campaignWithoutWhatsapp();
                 }
 
+                // Same refusal, without burning the code: the assistant was revoked after the code was issued.
+                if (! $user->loadMissing('role')->canUseWhatsappAssistant()) {
+                    return $this->assistantNotGranted();
+                }
+
                 if (User::where('whatsapp_phone', $phone)->whereKeyNot($user->id)->exists()) {
                     $this->registerFailure($failKey);
 
@@ -146,6 +151,11 @@ class AgentIdentityController extends Controller
     private function campaignWithoutWhatsapp(): JsonResponse
     {
         return response()->json(['success' => false, 'message' => 'Tu campaña no tiene habilitado el agente de WhatsApp.'], 403);
+    }
+
+    private function assistantNotGranted(): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => 'No tienes habilitado el Asistente de WhatsApp.'], 403);
     }
 
     private function invalidCode(): JsonResponse

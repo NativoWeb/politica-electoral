@@ -10,6 +10,8 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -235,5 +237,42 @@ class MinorQaFixesTest extends TestCase
         $this->actingAs($nada)->get('/')->assertRedirect('/perfil');
         $this->actingAs($nada)->followingRedirects()->get('/gobernador')->assertOk();
         $this->assertSame('/perfil', parse_url(url()->current(), PHP_URL_PATH));
+    }
+
+    public function test_emails_are_stored_in_lower_case_and_login_ignores_case(): void
+    {
+        $campo = $this->user('R09_CAMPO', ['view.mapa']);
+        $campo->update(['email' => '  Pedro.Campo@Test.Local ']);
+        $this->assertSame('pedro.campo@test.local', DB::table('users')->where('id', $campo->id)->value('email'));
+
+        $this->post('/login', ['email' => 'PEDRO.CAMPO@test.local', 'password' => 'secret123'], $this->inertiaHeaders())
+            ->assertRedirect();
+        $this->assertAuthenticatedAs($campo);
+    }
+
+    public function test_a_row_stored_with_capitals_before_normalization_still_logs_in_and_resets(): void
+    {
+        Schema::create('password_reset_tokens', function (Blueprint $t) {
+            $t->string('email')->primary();
+            $t->string('token');
+            $t->timestamp('created_at')->nullable();
+        });
+        $legacy = $this->user('R09_CAMPO', ['view.mapa']);
+        DB::table('users')->where('id', $legacy->id)->update(['email' => 'Legacy.User@Test.Local']);
+
+        $this->post('/login', ['email' => 'legacy.user@test.local', 'password' => 'secret123'], $this->inertiaHeaders())
+            ->assertRedirect();
+        $this->assertAuthenticatedAs($legacy);
+        $this->post('/logout');
+        $this->app['auth']->forgetGuards();
+
+        $this->post('/olvide-password', ['email' => 'LEGACY.user@test.local'])->assertSessionHas('status');
+        $this->assertSame(1, DB::table('password_reset_tokens')->where('email', 'Legacy.User@Test.Local')->count());
+
+        $token = Password::createToken($legacy->fresh());
+        $this->post('/resetear-password', [
+            'token' => $token, 'email' => 'legacy.user@TEST.local', 'password' => 'NuevaClave123', 'password_confirmation' => 'NuevaClave123',
+        ])->assertSessionHasNoErrors();
+        $this->assertTrue(Hash::check('NuevaClave123', DB::table('users')->where('id', $legacy->id)->value('password')));
     }
 }

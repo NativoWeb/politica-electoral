@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,6 +40,29 @@ class User extends Authenticatable
         ];
     }
 
+    // Emails are stored trimmed and in lower case, whoever writes them.
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => self::normalizeEmail($value));
+    }
+
+    public static function normalizeEmail(?string $email): ?string
+    {
+        return $email === null ? null : mb_strtolower(trim($email));
+    }
+
+    // The email as stored for a typed one, matched case-insensitively so rows saved before normalization still log in.
+    public static function storedEmail(string $typed): string
+    {
+        $normalized = self::normalizeEmail($typed);
+
+        // An exact match wins, so two rows differing only in case always resolve to the same one.
+        return self::query()->whereRaw('lower(email) = ?', [$normalized])
+            ->orderByRaw('case when email = ? then 0 else 1 end', [$normalized])
+            ->orderBy('id')
+            ->value('email') ?? $normalized;
+    }
+
     public function campaign(): BelongsTo
     {
         return $this->belongsTo(Campaign::class);
@@ -63,6 +87,12 @@ class User extends Authenticatable
     public function campaignHasWhatsapp(): bool
     {
         return (bool) DB::table('campaigns')->where('id', $this->campaignId())->value('whatsapp_enabled');
+    }
+
+    // Per-user grant on top of the campaign switch; a superadmin holds it implicitly ('*').
+    public function canUseWhatsappAssistant(): bool
+    {
+        return $this->hasPermission('use.whatsapp');
     }
 
     // Why the user may not log in or keep using the system, or null when they may. Only an explicit false

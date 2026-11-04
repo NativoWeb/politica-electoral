@@ -49,11 +49,11 @@ class AgentIdentityTest extends TestCase
 
         $this->campo = User::create([
             'name' => 'Campo A', 'email' => 'campo@test.local', 'password' => 'secret123',
-            'role_id' => $campoRole->id, 'territory_scope' => [$this->munA], 'permissions' => ['view.mapa', 'write.data'],
+            'role_id' => $campoRole->id, 'territory_scope' => [$this->munA], 'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
         ]);
         $this->otro = User::create([
             'name' => 'Otro', 'email' => 'otro@test.local', 'password' => 'secret123',
-            'role_id' => $consultaRole->id, 'territory_scope' => null,
+            'role_id' => $consultaRole->id, 'territory_scope' => null, 'permissions' => ['use.whatsapp'],
         ]);
     }
 
@@ -102,6 +102,21 @@ class AgentIdentityTest extends TestCase
             $t->string('key')->primary();
             $t->string('owner');
             $t->integer('expiration');
+        });
+
+        Schema::create('audit_logs', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('user_id')->nullable();
+            $t->string('action', 80);
+            $t->string('entity_type', 80)->nullable();
+            $t->uuid('entity_id')->nullable();
+            $t->json('metadata')->nullable();
+            $t->json('before_state')->nullable();
+            $t->json('after_state')->nullable();
+            $t->string('ip_address', 45)->nullable();
+            $t->text('user_agent')->nullable();
+            $t->string('correlation_id', 50)->nullable();
+            $t->timestamp('created_at')->useCurrent();
         });
 
         $this->addCampaignColumns();
@@ -375,7 +390,7 @@ class AgentIdentityTest extends TestCase
             'id' => $this->campo->id,
             'name' => 'Campo A',
             'role_code' => 'R09_CAMPO',
-            'permissions' => ['view.mapa', 'write.data'],
+            'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
             'territory' => ['restricted' => true, 'municipios' => [['id' => $this->munA, 'name' => 'Girón']]],
             'can_write' => true,
             'campaign' => ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático'],
@@ -458,6 +473,93 @@ class AgentIdentityTest extends TestCase
         $this->whoami()->assertNotFound();
         $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertNotFound();
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
+    }
+
+    public function test_without_use_whatsapp_no_code_is_issued(): void
+    {
+        $this->campo->forceFill(['permissions' => ['view.mapa', 'write.data']])->save();
+
+        $this->actingAs($this->campo)->postJson('/perfil/whatsapp/codigo', ['phone' => self::PHONE])
+            ->assertForbidden()
+            ->assertJson(['success' => false, 'message' => 'No tienes habilitado el Asistente de WhatsApp. Pídeselo al administrador.']);
+        $this->assertSame(0, WhatsAppLinkCode::where('user_id', $this->campo->id)->count());
+    }
+
+    public function test_a_linked_user_without_use_whatsapp_is_not_served_and_keeps_the_link(): void
+    {
+        $user = $this->linkedCampo();
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertOk()->json('token');
+
+        $user->forceFill(['permissions' => ['view.mapa', 'write.data']])->save();
+
+        // Same neutral answers as an unknown number: nothing about the user leaks.
+        $this->whoami()->assertNotFound()->assertExactJson(['success' => false, 'message' => 'Not found.']);
+        $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertNotFound();
+        $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertUnauthorized();
+        $this->agent('POST', '/api/agent/v1/votantes', ['nombre' => 'X', 'municipio_id' => $this->munA], ['token' => $token])
+            ->assertUnauthorized();
+        $this->assertSame(0, $user->tokens()->count());
+
+        // The number stays linked, inactive: granting it again needs no new code.
+        $this->assertSame(self::PHONE, $user->refresh()->whatsapp_phone);
+        $user->forceFill(['permissions' => ['view.mapa', 'write.data', 'use.whatsapp']])->save();
+        $this->whoami()->assertOk()->assertJson(['id' => $user->id]);
+    }
+
+    public function test_a_code_issued_before_the_permission_was_revoked_does_not_link(): void
+    {
+        $code = $this->generateCode($this->campo);
+        $this->campo->forceFill(['permissions' => ['view.mapa']])->save();
+
+        $this->link($code)->assertForbidden()->assertJson(['success' => false, 'message' => 'No tienes habilitado el Asistente de WhatsApp.']);
+        $this->assertNull($this->campo->refresh()->whatsapp_phone);
+
+        $this->campo->forceFill(['permissions' => ['view.mapa', 'use.whatsapp']])->save();
+        $this->link($code)->assertOk();
+    }
+
+    public function test_superadmin_uses_the_assistant_without_an_explicit_permission(): void
+    {
+        $super = User::create([
+            'name' => 'Super', 'email' => 'super@test.local', 'password' => 'secret123',
+            'role_id' => Role::create(['code' => 'R01_SUPERADMIN', 'name' => 'Superadmin', 'level' => 5])->id,
+        ]);
+
+        $this->link($this->generateCode($super))->assertOk();
+        $this->whoami()->assertOk()->assertJson(['id' => $super->id, 'permissions' => ['*']]);
+    }
+
+    public function test_admin_revoking_use_whatsapp_cuts_the_agent_now_and_granting_it_back_restores_it(): void
+    {
+        $super = User::create([
+            'name' => 'Super', 'email' => 'super@test.local', 'password' => 'secret123',
+            'role_id' => Role::create(['code' => 'R01_SUPERADMIN', 'name' => 'Superadmin', 'level' => 5])->id,
+        ]);
+        $user = $this->linkedCampo();
+        $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertOk();
+        $pending = $this->generateCode($user, '+573009999999');
+        $payload = fn (array $permissions) => [
+            'name' => 'Campo A', 'email' => 'campo@test.local', 'role_id' => $user->role_id,
+            'permissions' => $permissions, 'territory_scope' => [$this->munA],
+        ];
+
+        $this->actingAs($super)->put("/admin/usuarios/{$user->id}", $payload(['view.mapa', 'write.data']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(['view.mapa', 'write.data'], $user->refresh()->permissions);
+        $this->assertSame(0, $user->tokens()->count(), 'revoking deletes the agent tokens right away');
+        $log = DB::table('audit_logs')->where('action', 'AGENT_TOKEN_REVOKED')->first();
+        $this->assertNotNull($log, 'and records it');
+        $this->assertSame([$super->id, $user->id], [$log->user_id, $log->entity_id]);
+        $this->assertSame(['motivo' => 'permiso_retirado', 'ruta' => 'admin.users.update', 'tokens' => 1], json_decode($log->metadata, true));
+        $this->assertSame(0, WhatsAppLinkCode::active()->where('user_id', $user->id)->count(), 'and expires pending codes');
+        $this->assertSame(self::PHONE, $user->whatsapp_phone);
+        $this->whoami()->assertNotFound();
+        $this->link($pending, '+573009999999')->assertStatus(422);
+
+        $this->actingAs($super)->put("/admin/usuarios/{$user->id}", $payload(['view.mapa', 'write.data', 'use.whatsapp']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->whoami()->assertOk()->assertJson(['id' => $user->id]);
     }
 
     public function test_a_deactivated_campaign_cannot_link_nor_use_the_agent(): void

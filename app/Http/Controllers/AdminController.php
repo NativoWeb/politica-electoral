@@ -3,16 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Mail\WelcomeCredentials;
+use App\Models\AuditLog;
 use App\Models\ImportJob;
 use App\Models\PoliticalOrganization;
 use App\Models\Role;
 use App\Models\SourceFile;
 use App\Models\User;
+use App\Models\WhatsAppLinkCode;
+use App\Services\Agent\AgentIdentityService;
 use App\Support\CurrentCampaign;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class AdminController extends Controller
@@ -53,6 +57,9 @@ class AdminController extends Controller
         ['key' => 'view.eventos', 'label' => 'Ver eventos y asistentes', 'group' => 'Eventos'],
         ['key' => 'manage.eventos', 'label' => 'Gestionar eventos (crear, abrir, aprobar asistentes)', 'group' => 'Eventos'],
         ['key' => 'register.asistentes', 'label' => 'Registrar asistentes (modo operador)', 'group' => 'Eventos'],
+        ['key' => 'use.whatsapp', 'label' => 'Asistente de WhatsApp', 'group' => 'WhatsApp',
+            'description' => 'Vincular su número en Mi perfil y consultar o registrar datos con el asistente por WhatsApp.',
+            'requiresWhatsapp' => true],
     ];
 
     // The form only offers what the actor may hand out: a superadmin everything, anyone else the permissions they hold.
@@ -151,7 +158,7 @@ class AdminController extends Controller
             ]),
             'filters' => ['search' => $search],
             'campaigns' => $this->campaign()->isSuperadmin()
-                ? DB::table('campaigns')->orderBy('name')->get(['id', 'name', 'parent_id'])
+                ? DB::table('campaigns')->orderBy('name')->get(['id', 'name', 'parent_id', 'whatsapp_enabled'])
                 : [],
             'roles' => $this->assignableRoles()
                 ->whereIn('code', self::LISTED_ROLES)
@@ -171,7 +178,9 @@ class AdminController extends Controller
 
     // Only a superadmin may grant superadmin or '*', or touch a superadmin; territory-restricted users cannot manage users at all.
     // Anyone else works inside their own campaign (managedUsers) and can neither hand out nor touch a role above
-    // their own or outside CAMPAIGN_ROLES, nor grant permissions they do not have.
+    // their own or outside CAMPAIGN_ROLES, nor grant or remove permissions they do not have. A permission the actor lacks
+    // is kept as it is in the database ($target is always loaded from it), so the user can still be edited and toggled.
+    // $permissions null = the request does not touch permissions (toggle, delete).
     private function authorizeUserWrite(?User $target = null, ?string $roleId = null, ?array $permissions = null): void
     {
         $actor = request()->user();
@@ -184,11 +193,58 @@ class AdminController extends Controller
         abort_if(in_array('*', $permissions ?? [], true), 403, 'Solo un superadministrador puede otorgar todos los permisos.');
 
         abort_if($target?->role_id && ! $this->assignableRoles()->whereKey($target->role_id)->exists(), 403, 'No puedes modificar a un usuario con ese rol.');
-        abort_if($target && array_diff($target->permissions ?? [], $actor->resolvedPermissions()) !== [], 403, 'No puedes modificar a un usuario con permisos que no tienes.');
         abort_if($roleId && ! $this->assignableRoles()->whereKey($roleId)->exists(), 403, 'No puedes asignar ese rol.');
 
         $granted = array_diff($permissions ?? [], $target?->permissions ?? []);
         abort_if(array_diff($granted, $actor->resolvedPermissions()) !== [], 403, 'No puedes otorgar permisos que no tienes.');
+
+        $removed = $permissions === null ? [] : array_diff($target?->permissions ?? [], $permissions);
+        abort_if(array_diff($removed, $actor->resolvedPermissions()) !== [], 403, 'Solo el superadministrador puede quitar permisos que tú no tienes.');
+    }
+
+    // The target holds a permission the actor lacks: the actor may edit and toggle them, but not take over the account
+    // (email, password) nor delete it.
+    private function outranksActor(User $target): bool
+    {
+        return ! $this->campaign()->isSuperadmin()
+            && array_diff($target->permissions ?? [], request()->user()->resolvedPermissions()) !== [];
+    }
+
+    // The WhatsApp assistant is only handed out to users whose campaign has WhatsApp enabled (superadmin included).
+    // A user who already holds it keeps it when the campaign is switched off: the agent ignores it meanwhile.
+    private function authorizeWhatsappGrant(?User $target, ?array $permissions, string $campaignId): void
+    {
+        $granted = array_diff($permissions ?? [], $target?->permissions ?? []);
+        if (! in_array('use.whatsapp', $granted, true)) {
+            return;
+        }
+
+        if (! DB::table('campaigns')->where('id', $campaignId)->value('whatsapp_enabled')) {
+            throw ValidationException::withMessages([
+                'permissions' => 'La campaña de este usuario no tiene WhatsApp activo; no se le puede dar el Asistente de WhatsApp.',
+            ]);
+        }
+    }
+
+    // Validated (unique) and compared in the same form it is stored in.
+    private function normalizeEmailInput(Request $request): void
+    {
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => User::normalizeEmail($request->input('email'))]);
+        }
+    }
+
+    // Case-insensitive, so an address stored with capitals before normalization cannot be taken again in lower case.
+    private function uniqueEmail(?string $ignoreId = null): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($ignoreId) {
+            $taken = User::query()->whereRaw('lower(email) = ?', [User::normalizeEmail((string) $value)])
+                ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
+                ->exists();
+            if ($taken) {
+                $fail('Ya existe un usuario con ese correo.');
+            }
+        };
     }
 
     // Superadmin picks the campaign (its own by default); anyone else always creates in their own campaign.
@@ -199,9 +255,10 @@ class AdminController extends Controller
 
     public function storeUser(Request $request)
     {
+        $this->normalizeEmailInput($request);
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
+            'email' => ['required', 'email', $this->uniqueEmail()],
             'role_id' => 'nullable|bail|uuid|exists:roles,id',
             'permissions' => 'nullable|array',
             'permissions.*' => 'string',
@@ -210,6 +267,7 @@ class AdminController extends Controller
             'campaign_id' => $this->campaignRule(),
         ]);
         $this->authorizeUserWrite(null, $data['role_id'] ?? null, $data['permissions'] ?? null);
+        $this->authorizeWhatsappGrant(null, $data['permissions'] ?? null, $data['campaign_id'] ?? $this->campaign()->ownId());
 
         $plainPassword = \Illuminate\Support\Str::random(10);
 
@@ -238,9 +296,10 @@ class AdminController extends Controller
     public function updateUser(Request $request, string $id)
     {
         $user = $this->managedUsers()->findOrFail($id);
+        $this->normalizeEmailInput($request);
         $data = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $user->id,
+            'email' => ['required', 'email', $this->uniqueEmail($user->id)],
             'role_id' => 'nullable|bail|uuid|exists:roles,id',
             'password' => 'nullable|string|min:8',
             'permissions' => 'nullable|array',
@@ -249,7 +308,11 @@ class AdminController extends Controller
             'territory_scope.*' => 'uuid',
             'campaign_id' => $this->campaignRule(),
         ]);
-        $this->authorizeUserWrite($user, $data['role_id'] ?? null, $data['permissions'] ?? null);
+        $this->authorizeUserWrite($user, $data['role_id'] ?? null, $data['permissions'] ?? []);
+        abort_if($this->outranksActor($user) && (! empty($data['password']) || $data['email'] !== User::normalizeEmail($user->email)),
+            403, 'No puedes cambiar el correo ni la contraseña de un usuario con permisos que no tienes.');
+        $this->authorizeWhatsappGrant($user, $data['permissions'] ?? null, $data['campaign_id'] ?? $user->campaignId());
+        $hadWhatsapp = in_array('use.whatsapp', $user->permissions ?? [], true);
 
         $user->name = $data['name'];
         $user->email = $data['email'];
@@ -262,7 +325,24 @@ class AdminController extends Controller
         if (! empty($data['campaign_id'])) {
             $user->campaign_id = $data['campaign_id'];
         }
-        $user->save();
+        DB::transaction(function () use ($user, $hadWhatsapp) {
+            $user->save();
+            // Revoking the assistant ends its agent sessions and pending codes now; the linked number is kept, inactive.
+            if ($hadWhatsapp && ! in_array('use.whatsapp', $user->permissions ?? [], true)) {
+                $revoked = $user->tokens()->where('name', AgentIdentityService::TOKEN_NAME)->delete();
+                WhatsAppLinkCode::active()->where('user_id', $user->id)->update(['expires_at' => now()]);
+                if ($revoked > 0) {
+                    AuditLog::create([
+                        'user_id' => request()->user()->id,
+                        'action' => 'AGENT_TOKEN_REVOKED',
+                        'entity_type' => 'usuario',
+                        'entity_id' => $user->id,
+                        'metadata' => ['motivo' => 'permiso_retirado', 'ruta' => 'admin.users.update', 'tokens' => $revoked],
+                        'ip_address' => request()->ip(),
+                    ]);
+                }
+            }
+        });
 
         return back()->with('success', 'Usuario actualizado.');
     }
@@ -274,6 +354,8 @@ class AdminController extends Controller
         if ($user->id === request()->user()->id) {
             return back()->withErrors(['toggle' => 'No puedes desactivar tu propia cuenta']);
         }
+        // Deactivating a user with permissions the actor lacks is allowed; bringing them back is the superadmin's call.
+        abort_if(! $user->is_active && $this->outranksActor($user), 403, 'Solo el superadmin puede reactivar a este usuario.');
         $user->update(['is_active' => !$user->is_active]);
         return back();
     }
@@ -282,6 +364,7 @@ class AdminController extends Controller
     {
         $user = $this->managedUsers()->findOrFail($id);
         $this->authorizeUserWrite($user);
+        abort_if($this->outranksActor($user), 403, 'Solo el superadministrador puede eliminar a un usuario con permisos que tú no tienes.');
         if ($user->id === request()->user()->id) {
             return back()->withErrors(['delete' => 'No puedes eliminar tu propia cuenta']);
         }

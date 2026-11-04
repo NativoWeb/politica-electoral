@@ -6,6 +6,26 @@ export function withHiddenPermissions(current, visibleKeys, next) {
     return [...new Set([...hidden, ...next])];
 }
 
+// Whether the campaign the edited user belongs to has WhatsApp: a superadmin picks it in the form, anyone else
+// manages users of their own campaign only.
+export function campaignHasWhatsapp({ isSuperadmin, campaignId, campaigns, ownCampaign }) {
+    const picked = isSuperadmin ? (campaigns || []).find(c => c.id === campaignId) : null;
+
+    return Boolean(picked ? picked.whatsapp_enabled : ownCampaign?.whatsapp_enabled);
+}
+
+// Permissions that cannot be granted to this user, with the reason shown next to them. Only a new grant is
+// blocked: a permission the user already holds can still be removed.
+export const WHATSAPP_OFF_REASON = 'Su campaña no tiene WhatsApp activo.';
+
+export function blockedPermissions(availablePermissions, whatsappEnabled, selected = []) {
+    if (whatsappEnabled) return {};
+
+    return Object.fromEntries((availablePermissions || [])
+        .filter(p => p.requiresWhatsapp && !(selected || []).includes(p.key))
+        .map(p => [p.key, WHATSAPP_OFF_REASON]));
+}
+
 // The app's error page (resources/views/errors) marks the abort() reason; Laravel's default one puts it next to the code.
 function serverReason(data) {
     if (data && typeof data === 'object') {

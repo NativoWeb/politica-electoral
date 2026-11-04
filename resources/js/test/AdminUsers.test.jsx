@@ -106,19 +106,55 @@ describe('Admin Users page', () => {
         expect(screen.getByText('Gestionar partidos')).toBeInTheDocument();
     });
 
-    it('locks the users holding permissions the actor cannot grant', () => {
+    it('lets the actor edit and toggle a user holding permissions they cannot grant, but not delete them', () => {
         renderUsers();
-        const locked = rowOf('Luisa Partidos');
+        const stronger = rowOf('Luisa Partidos');
 
-        expect(locked).toHaveTextContent('No puedes modificar a este usuario porque tiene permisos que tú no tienes.');
-        expect(within(locked).queryByTitle('Editar')).not.toBeInTheDocument();
-        expect(within(locked).queryByTitle('Eliminar')).not.toBeInTheDocument();
-        expect(within(locked).queryByRole('button', { name: /Desactivar/ })).not.toBeInTheDocument();
+        expect(stronger).toHaveTextContent('Tiene permisos que tú no tienes');
+        expect(within(stronger).getByTitle('Editar')).toBeInTheDocument();
+        expect(within(stronger).getByRole('button', { name: 'Desactivar a Luisa Partidos' })).toBeInTheDocument();
+        expect(within(stronger).queryByTitle('Eliminar')).not.toBeInTheDocument();
 
         const editable = rowOf('Pedro Operador');
-        expect(editable).not.toHaveTextContent('No puedes modificar a este usuario');
-        expect(within(editable).getByTitle('Editar')).toBeInTheDocument();
+        expect(editable).not.toHaveTextContent('Tiene permisos que tú no tienes');
         expect(within(editable).getByTitle('Eliminar')).toBeInTheDocument();
+    });
+
+    it('warns that only the superadmin can reactivate a user holding permissions the actor cannot grant', () => {
+        renderUsers();
+        fireEvent.click(screen.getByRole('button', { name: 'Desactivar a Luisa Partidos' }));
+        expect(screen.getByRole('alertdialog')).toHaveTextContent('Solo el superadmin podrá reactivarlo.');
+        fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Desactivar a Pedro Operador' }));
+        expect(screen.getByRole('alertdialog')).toHaveTextContent('No podrá entrar hasta que lo actives de nuevo.');
+    });
+
+    it('does not offer reactivating an inactive user holding permissions the actor cannot grant', () => {
+        renderUsers([SELF, { ...STRONGER, isActive: false }, { ...OPERADOR, isActive: false }]);
+        const stronger = rowOf('Luisa Partidos');
+
+        expect(stronger).toHaveTextContent('Solo el superadmin puede reactivar a este usuario.');
+        expect(within(stronger).queryByRole('button', { name: /Activar/ })).not.toBeInTheDocument();
+        expect(within(rowOf('Pedro Operador')).getByRole('button', { name: 'Activar a Pedro Operador' })).toBeInTheDocument();
+    });
+
+    it('keeps the permissions the actor cannot grant locked and resends them untouched', () => {
+        renderUsers();
+        editRow('Luisa Partidos');
+
+        const kept = screen.getByLabelText(/Gestionar partidos/);
+        expect(kept).toBeChecked();
+        expect(kept).toBeDisabled();
+        expect(screen.getByText('Solo el superadmin puede cambiar esto.')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('luisa@x.test')).toBeDisabled();
+        expect(screen.getByPlaceholderText('Dejar vacio para mantener')).toBeDisabled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Ninguno' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+        expect(mockSubmit).toHaveBeenCalledWith('put', '/admin/usuarios/u-strong', expect.objectContaining({
+            permissions: ['manage.partidos'],
+        }), expect.anything());
     });
 
     it('lets a superadmin manage every user', () => {
@@ -208,5 +244,56 @@ describe('Admin Users page', () => {
 
         expect(screen.queryByRole('button', { name: `Desactivar a ${ME.name}` })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Desactivar a Pedro Operador' })).toBeInTheDocument();
+    });
+
+    describe('Asistente de WhatsApp', () => {
+        const WHATSAPP = {
+            key: 'use.whatsapp', label: 'Asistente de WhatsApp', group: 'WhatsApp', requiresWhatsapp: true,
+            description: 'Vincular su número en Mi perfil y consultar o registrar datos con el asistente por WhatsApp.',
+        };
+        const withWhatsapp = (enabled, list = [SELF, OPERADOR]) => {
+            mockPage.props = { auth: { user: { ...ME, permissions: [...ME.permissions, 'use.whatsapp'], campaign: { ...ME.campaign, whatsapp_enabled: enabled } } } };
+            return render(
+                <Users users={{ data: list }} roles={ROLES} municipios={[]} provincias={[]}
+                    availablePermissions={[...GRANTABLE, WHATSAPP]} permissionLabels={{ ...LABELS, 'use.whatsapp': 'Asistente de WhatsApp' }} filters={{}} />,
+            );
+        };
+
+        it('is offered with its description when the campaign has WhatsApp and is sent on save', () => {
+            withWhatsapp(true);
+            editRow('Pedro Operador');
+            const box = screen.getByLabelText(/Asistente de WhatsApp/);
+
+            expect(box).toBeEnabled();
+            expect(screen.getByText(WHATSAPP.description)).toBeInTheDocument();
+            fireEvent.click(box);
+            fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+            expect(mockSubmit).toHaveBeenCalledWith('put', '/admin/usuarios/u-op', expect.objectContaining({
+                permissions: ['view.mapa', 'write.data', 'use.whatsapp'],
+            }), expect.anything());
+        });
+
+        it('is disabled with the reason when the campaign has no WhatsApp, and "Todos" skips it', () => {
+            withWhatsapp(false);
+            fireEvent.click(screen.getByRole('button', { name: '+ Crear' }));
+            const box = screen.getByLabelText(/Asistente de WhatsApp/);
+
+            expect(box).toBeDisabled();
+            expect(screen.getByText('Su campaña no tiene WhatsApp activo.')).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: 'Todos' }));
+            expect(box).not.toBeChecked();
+            expect(screen.getByLabelText('Gestionar usuarios')).toBeChecked();
+        });
+
+        it('can still be removed from a user who holds it in a campaign without WhatsApp', () => {
+            withWhatsapp(false, [userRow({ id: 'u-wa', name: 'Wilson Whats', email: 'w@x.test', permissions: ['view.mapa', 'use.whatsapp'] })]);
+            editRow('Wilson Whats');
+            const box = screen.getByLabelText(/Asistente de WhatsApp/);
+            expect(box).toBeEnabled();
+            expect(box).toBeChecked();
+            fireEvent.click(box);
+            fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+            expect(mockSubmit).toHaveBeenCalledWith('put', '/admin/usuarios/u-wa', expect.objectContaining({ permissions: ['view.mapa'] }), expect.anything());
+        });
     });
 });

@@ -51,7 +51,7 @@ class AgentWriteApiPostgresTest extends TestCase
         $role = Role::where('code', 'R09_CAMPO')->firstOrFail();
         $this->campo = User::create([
             'name' => 'Campo PG', 'email' => 'campo-pg-'.Str::random(8).'@test.local', 'password' => 'secret123',
-            'role_id' => $role->id, 'territory_scope' => [$this->geo], 'permissions' => ['view.votantes', 'write.data'],
+            'role_id' => $role->id, 'territory_scope' => [$this->geo], 'permissions' => ['view.votantes', 'write.data', 'use.whatsapp'],
         ]);
         $this->campo->forceFill(['whatsapp_phone' => '+5730'.random_int(10000000, 99999999), 'whatsapp_verified_at' => now()])->save();
     }

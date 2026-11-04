@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia;
 use Tests\Concerns\WithCampaignColumns;
@@ -99,6 +101,31 @@ class WhatsAppLinkSharedPropsTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->where('auth.user.whatsapp.linked', false));
+    }
+
+    public function test_whatsapp_card_is_offered_only_with_use_whatsapp_and_a_campaign_with_whatsapp(): void
+    {
+        $allowed = fn (bool $expected) => $this->actingAs($this->user->fresh())->get('/perfil')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('auth.user.whatsapp.allowed', $expected));
+
+        $allowed(false);
+
+        $this->user->forceFill(['permissions' => ['view.mapa', 'use.whatsapp']])->save();
+        $allowed(true);
+
+        DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->update(['whatsapp_enabled' => false]);
+        $allowed(false);
+    }
+
+    public function test_superadmin_is_offered_the_card_without_an_explicit_permission(): void
+    {
+        $super = User::create([
+            'name' => 'Super', 'email' => 'super@test.local', 'password' => 'secret123',
+            'role_id' => Role::create(['code' => 'R01_SUPERADMIN', 'name' => 'Superadmin', 'level' => 5])->id,
+        ]);
+
+        $this->actingAs($super)->get('/perfil')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('auth.user.whatsapp.allowed', true));
     }
 
     public function test_profile_page_requires_login(): void

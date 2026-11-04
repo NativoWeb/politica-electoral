@@ -59,7 +59,7 @@ class VotanteRenamePostgresTest extends TestCase
         $user = User::create([
             'name' => 'Admin PG', 'email' => 'admin-pg-'.Str::random(8).'@test.local', 'password' => 'secret123',
             'role_id' => Role::where('code', 'R02_ADMIN_FUNCIONAL')->value('id'),
-            'territory_scope' => [$candidate->geo_id], 'permissions' => ['view.votantes', 'view.mapa', 'write.data'],
+            'territory_scope' => [$candidate->geo_id], 'permissions' => ['view.votantes', 'view.mapa', 'write.data', 'use.whatsapp'],
         ]);
         $user->forceFill(['whatsapp_phone' => '+5731'.random_int(10000000, 99999999), 'whatsapp_verified_at' => now()])->save();
 

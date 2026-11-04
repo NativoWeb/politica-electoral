@@ -335,19 +335,62 @@ class CampaignAdminTest extends TestCase
         $this->assertEquals($before, DB::table('users')->orderBy('id')->get()->toArray());
     }
 
-    public function test_a_user_with_permissions_the_actor_lacks_cannot_be_touched(): void
+    public function test_a_user_with_permissions_the_actor_lacks_keeps_them_and_cannot_be_taken_over(): void
     {
         $stronger = $this->user('fuerte-x', $this->campX, 'R02_ADMIN_FUNCIONAL', [...self::CAMPAIGN_ADMIN_PERMS, 'manage.partidos']);
         $before = (array) DB::table('users')->where('id', $stronger->id)->first();
-
-        $this->actingAs($this->adminX)->put("/admin/usuarios/{$stronger->id}", [
+        $payload = fn (array $extra) => array_merge([
             'name' => 'Usuario fuerte-x', 'email' => 'fuerte-x@test.local', 'role_id' => $this->roles['R02_ADMIN_FUNCIONAL'],
-            'permissions' => self::CAMPAIGN_ADMIN_PERMS, 'password' => 'NuevaClave123',
-        ])->assertForbidden();
-        $this->actingAs($this->adminX)->post("/admin/usuarios/{$stronger->id}/toggle")->assertForbidden();
-        $this->actingAs($this->adminX)->delete("/admin/usuarios/{$stronger->id}")->assertForbidden();
+            'permissions' => [...self::CAMPAIGN_ADMIN_PERMS, 'manage.partidos'],
+        ], $extra);
 
+        // Removing the permission the actor lacks, or taking over the account (password, email), is refused...
+        $this->actingAs($this->adminX)->put("/admin/usuarios/{$stronger->id}", $payload(['permissions' => self::CAMPAIGN_ADMIN_PERMS]))
+            ->assertForbidden();
+        $this->actingAs($this->adminX)->put("/admin/usuarios/{$stronger->id}", $payload(['password' => 'NuevaClave123']))->assertForbidden();
+        $this->actingAs($this->adminX)->put("/admin/usuarios/{$stronger->id}", $payload(['email' => 'mia@test.local']))->assertForbidden();
+        $this->actingAs($this->adminX)->delete("/admin/usuarios/{$stronger->id}")->assertForbidden();
         $this->assertSame($before, (array) DB::table('users')->where('id', $stronger->id)->first());
+
+        // Changing only the case of the email is not a change: it is stored normalized, the user keeps logging in.
+        $this->actingAs($this->adminX)->put("/admin/usuarios/{$stronger->id}", $payload(['email' => ' FUERTE-X@TEST.LOCAL ']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('fuerte-x@test.local', $stronger->fresh()->email);
+
+        // ...while keeping it untouched lets the actor edit and toggle the user.
+        $this->actingAs($this->adminX)->put("/admin/usuarios/{$stronger->id}", $payload(['name' => 'Renombrado']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Renombrado', $stronger->fresh()->name);
+        $this->assertSame([...self::CAMPAIGN_ADMIN_PERMS, 'manage.partidos'], $stronger->fresh()->permissions);
+        $this->assertSame($before['password'], DB::table('users')->where('id', $stronger->id)->value('password'));
+
+        $this->actingAs($this->adminX)->post("/admin/usuarios/{$stronger->id}/toggle")->assertRedirect();
+        $this->assertFalse($stronger->fresh()->is_active);
+
+        // Bringing them back is only for the superadmin.
+        $this->actingAs($this->adminX)->post("/admin/usuarios/{$stronger->id}/toggle")->assertForbidden();
+        $this->assertFalse($stronger->fresh()->is_active);
+        $this->actingAs($this->superadmin)->post("/admin/usuarios/{$stronger->id}/toggle")->assertRedirect();
+        $this->assertTrue($stronger->fresh()->is_active);
+
+        // An inactive user the actor fully outranks is still reactivated by the actor.
+        $this->campoX->forceFill(['is_active' => false])->save();
+        $this->actingAs($this->adminX)->post("/admin/usuarios/{$this->campoX->id}/toggle")->assertRedirect();
+        $this->assertTrue($this->campoX->fresh()->is_active);
+    }
+
+    public function test_new_users_get_a_normalized_email_that_cannot_be_taken_again_in_another_case(): void
+    {
+        $this->actingAs($this->superadmin)->post('/admin/usuarios', $this->newUserPayload(['email' => ' Nueva.Persona@Test.Local ']))
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('users', ['email' => 'nueva.persona@test.local']);
+
+        $this->actingAs($this->superadmin)->post('/admin/usuarios', $this->newUserPayload(['email' => 'NUEVA.PERSONA@test.local']))
+            ->assertSessionHasErrors('email');
+        DB::table('users')->where('id', $this->campoX->id)->update(['email' => 'Campo-X@Test.Local']);
+        $this->actingAs($this->superadmin)->post('/admin/usuarios', $this->newUserPayload(['email' => 'campo-x@test.local']))
+            ->assertSessionHasErrors('email');
+        $this->assertSame(1, User::whereRaw('lower(email) = ?', ['campo-x@test.local'])->count());
     }
 
     public function test_the_users_page_needs_manage_users(): void
@@ -621,7 +664,7 @@ class CampaignAdminTest extends TestCase
             ->assertInertia(function (AssertableInertia $page) use (&$keys) {
                 $props = $page->toArray()['props'];
                 $keys = collect($props['availablePermissions'])->pluck('key')->sort()->values()->all();
-                $this->assertCount(12, $props['permissionLabels'], 'Every permission keeps a label (9 base + 3 of Eventos)');
+                $this->assertCount(13, $props['permissionLabels'], 'Every permission keeps a label (9 base + 3 of Eventos + WhatsApp)');
             });
 
         return $keys;
@@ -633,7 +676,7 @@ class CampaignAdminTest extends TestCase
 
         $this->assertSame($sorted(self::CAMPAIGN_ADMIN_PERMS), $this->offeredPermissions($this->adminX));
         $this->assertSame($sorted(self::ADMIN_PERMS), $this->offeredPermissions($this->adminCd));
-        $this->assertSame($sorted([...self::ADMIN_PERMS, 'view.eventos', 'manage.eventos', 'register.asistentes']), $this->offeredPermissions($this->superadmin));
+        $this->assertSame($sorted([...self::ADMIN_PERMS, 'view.eventos', 'manage.eventos', 'register.asistentes', 'use.whatsapp']), $this->offeredPermissions($this->superadmin));
 
         // Everything offered is accepted; the hidden ones are still refused.
         $this->actingAs($this->adminX)->post('/admin/usuarios', $this->newUserPayload(['permissions' => self::CAMPAIGN_ADMIN_PERMS]))
@@ -644,25 +687,125 @@ class CampaignAdminTest extends TestCase
         $this->assertDatabaseMissing('users', ['email' => 'otro@test.local']);
     }
 
+    public function test_the_whatsapp_assistant_is_granted_only_in_a_campaign_with_whatsapp(): void
+    {
+        // Superadmin: refused for a user of a campaign without WhatsApp, accepted in one with it.
+        $this->actingAs($this->superadmin)->post('/admin/usuarios', $this->newUserPayload([
+            'email' => 'nuevo-x@test.local', 'campaign_id' => $this->campX, 'permissions' => ['view.mapa', 'use.whatsapp'],
+        ]))->assertSessionHasErrors('permissions');
+        $this->assertDatabaseMissing('users', ['email' => 'nuevo-x@test.local']);
+
+        $this->actingAs($this->superadmin)->post('/admin/usuarios', $this->newUserPayload([
+            'email' => 'nuevo-cd@test.local', 'campaign_id' => Campaign::DEFAULT_ID, 'permissions' => ['view.mapa', 'use.whatsapp'],
+        ]))->assertSessionHasNoErrors();
+        $this->assertSame(['view.mapa', 'use.whatsapp'], User::where('email', 'nuevo-cd@test.local')->first()->permissions);
+
+        // ...and edits users of any campaign with WhatsApp, not only its own.
+        $this->actingAs($this->superadmin)->put("/admin/usuarios/{$this->campoY->id}", [
+            'name' => $this->campoY->name, 'email' => $this->campoY->email, 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(['view.mapa', 'write.data', 'use.whatsapp'], $this->campoY->fresh()->permissions);
+        $this->actingAs($this->superadmin)->put("/admin/usuarios/{$this->campoX->id}", [
+            'name' => $this->campoX->name, 'email' => $this->campoX->email, 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
+        ])->assertSessionHasErrors('permissions');
+
+        // A campaign admin of a campaign without WhatsApp cannot hand it out even when holding it.
+        $this->adminX->forceFill(['permissions' => [...self::CAMPAIGN_ADMIN_PERMS, 'use.whatsapp']])->save();
+        $this->actingAs($this->adminX->fresh())->put("/admin/usuarios/{$this->campoX->id}", [
+            'name' => $this->campoX->name, 'email' => $this->campoX->email, 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
+        ])->assertSessionHasErrors('permissions');
+        $this->assertSame(['view.mapa', 'write.data'], $this->campoX->fresh()->permissions);
+    }
+
+    public function test_a_campaign_admin_grants_and_removes_the_whatsapp_assistant_only_if_holding_it(): void
+    {
+        $payload = fn (array $permissions) => [
+            'name' => $this->campoCd->name, 'email' => $this->campoCd->email, 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => $permissions,
+        ];
+
+        $this->actingAs($this->adminCd)->put("/admin/usuarios/{$this->campoCd->id}", $payload(['view.mapa', 'write.data', 'use.whatsapp']))
+            ->assertForbidden();
+        $this->assertNotContains('use.whatsapp', $this->campoCd->fresh()->permissions);
+
+        $this->adminCd->forceFill(['permissions' => [...self::ADMIN_PERMS, 'use.whatsapp']])->save();
+        $this->assertContains('use.whatsapp', $this->offeredPermissions($this->adminCd->fresh()));
+
+        $this->actingAs($this->adminCd->fresh())->put("/admin/usuarios/{$this->campoCd->id}", $payload(['view.mapa', 'write.data', 'use.whatsapp']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(['view.mapa', 'write.data', 'use.whatsapp'], $this->campoCd->fresh()->permissions);
+
+        // The change lands in the audit trail like any other permission change.
+        $log = DB::table('audit_logs')->where('action', 'PUT admin.users.update')->where('entity_id', $this->campoCd->id)->latest('created_at')->first();
+        $this->assertNotNull($log);
+        $this->assertSame($this->adminCd->id, $log->user_id);
+        $this->assertContains('use.whatsapp', json_decode($log->metadata, true)['permissions']);
+    }
+
+    public function test_the_superadmin_users_form_knows_which_campaigns_have_whatsapp(): void
+    {
+        $this->actingAs($this->superadmin)->get('/admin/usuarios')->assertOk()
+            ->assertInertia(function (AssertableInertia $page) {
+                $props = $page->toArray()['props'];
+                $byId = collect($props['campaigns'])->keyBy('id');
+                $this->assertTrue((bool) $byId[Campaign::DEFAULT_ID]['whatsapp_enabled']);
+                $this->assertFalse((bool) $byId[$this->campX]['whatsapp_enabled']);
+
+                $whatsapp = collect($props['availablePermissions'])->firstWhere('key', 'use.whatsapp');
+                $this->assertSame('Asistente de WhatsApp', $whatsapp['label']);
+                $this->assertTrue($whatsapp['requiresWhatsapp']);
+                $this->assertNotEmpty($whatsapp['description']);
+            });
+    }
+
     public function test_saving_a_user_keeps_the_permissions_the_actor_cannot_see(): void
     {
         $cdUser = $this->user('con-partidos', Campaign::DEFAULT_ID, 'R09_CAMPO', ['view.mapa', 'manage.partidos']);
         $limitedCdAdmin = $this->user('admin-cd-limitado', Campaign::DEFAULT_ID, 'R09_CAMPO', ['view.admin', 'manage.users', 'view.mapa']);
-
-        // The form resends the hidden permission untouched; an actor without it cannot edit that user at all.
-        $this->actingAs($limitedCdAdmin)->put("/admin/usuarios/{$cdUser->id}", [
+        $put = fn (User $actor, array $permissions) => $this->actingAs($actor)->put("/admin/usuarios/{$cdUser->id}", [
             'name' => 'Cambiado', 'email' => 'con-partidos@test.local', 'role_id' => $this->roles['R09_CAMPO'],
-            'permissions' => ['view.mapa', 'manage.partidos'],
-        ])->assertForbidden();
-        $this->assertSame(['view.mapa', 'manage.partidos'], $cdUser->fresh()->permissions);
+            'permissions' => $permissions,
+        ]);
 
-        // Whoever holds it edits the user and the permission stays.
-        $this->actingAs($this->adminCd)->put("/admin/usuarios/{$cdUser->id}", [
-            'name' => 'Cambiado', 'email' => 'con-partidos@test.local', 'role_id' => $this->roles['R09_CAMPO'],
-            'permissions' => ['view.mapa', 'manage.partidos'],
-        ])->assertRedirect();
+        // The form resends the hidden permission untouched: the edit goes through and it stays; dropping it does not.
+        $put($limitedCdAdmin, ['view.mapa', 'manage.partidos'])->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame('Cambiado', $cdUser->fresh()->name);
         $this->assertSame(['view.mapa', 'manage.partidos'], $cdUser->fresh()->permissions);
+        $put($limitedCdAdmin, ['view.mapa'])->assertForbidden();
+        $this->assertSame(['view.mapa', 'manage.partidos'], $cdUser->fresh()->permissions);
+
+        // Whoever holds it may remove it.
+        $put($this->adminCd, ['view.mapa'])->assertRedirect();
+        $this->assertSame(['view.mapa'], $cdUser->fresh()->permissions);
+    }
+
+    public function test_an_operator_managing_users_keeps_use_whatsapp_but_cannot_change_it(): void
+    {
+        // adminCd is one of the production R09 that manage users, without use.whatsapp.
+        $withWhatsapp = $this->user('con-wa', Campaign::DEFAULT_ID, 'R09_CAMPO', ['view.mapa', 'use.whatsapp']);
+        $put = fn (array $extra) => $this->actingAs($this->adminCd)->put("/admin/usuarios/{$withWhatsapp->id}", array_merge([
+            'name' => 'Con WhatsApp', 'email' => 'con-wa@test.local', 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'use.whatsapp'],
+        ], $extra));
+
+        $put([])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Con WhatsApp', $withWhatsapp->fresh()->name);
+        $this->assertSame(['view.mapa', 'use.whatsapp'], $withWhatsapp->fresh()->permissions);
+
+        $put(['permissions' => ['view.mapa']])->assertForbidden();
+        $this->assertSame(['view.mapa', 'use.whatsapp'], $withWhatsapp->fresh()->permissions);
+        $this->actingAs($this->adminCd)->put("/admin/usuarios/{$this->campoCd->id}", [
+            'name' => $this->campoCd->name, 'email' => $this->campoCd->email, 'role_id' => $this->roles['R09_CAMPO'],
+            'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
+        ])->assertForbidden();
+
+        $this->actingAs($this->adminCd)->post("/admin/usuarios/{$withWhatsapp->id}/toggle")->assertRedirect();
+        $this->assertFalse($withWhatsapp->fresh()->is_active);
+        $this->actingAs($this->adminCd)->delete("/admin/usuarios/{$withWhatsapp->id}")->assertForbidden();
+        $this->assertDatabaseHas('users', ['id' => $withWhatsapp->id]);
     }
 
     public function test_deactivating_the_own_account_is_refused_with_a_message(): void

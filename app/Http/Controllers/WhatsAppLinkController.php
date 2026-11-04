@@ -17,6 +17,9 @@ class WhatsAppLinkController extends Controller
         if (! $user->campaignHasWhatsapp()) {
             return response()->json(['success' => false, 'message' => 'Tu campaña no tiene habilitado el agente de WhatsApp.'], 403);
         }
+        if (! $user->canUseWhatsappAssistant()) {
+            return response()->json(['success' => false, 'message' => 'No tienes habilitado el Asistente de WhatsApp. Pídeselo al administrador.'], 403);
+        }
         $ttl = (int) config('agent.link_code_ttl_minutes', 10);
         $phoneHash = WhatsAppLinkCode::hashPhone($request->validated('phone'));
 
@@ -45,6 +48,7 @@ class WhatsAppLinkController extends Controller
         ])->header('Cache-Control', 'no-store');
     }
 
+    // Unlinking stays open without use.whatsapp: anyone may remove their own number.
     public function destroy(Request $request): JsonResponse
     {
         $user = $request->user();

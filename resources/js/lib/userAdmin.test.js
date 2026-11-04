@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { saveErrorMessage, unshownErrors, withHiddenPermissions } from './userAdmin';
+import { blockedPermissions, campaignHasWhatsapp, saveErrorMessage, unshownErrors, withHiddenPermissions } from './userAdmin';
 
 const laravel403 = reason => `<!DOCTYPE html><html><body><div class="flex"><h1 class="px-4">403</h1><div class="ml-4">${reason}</div></div></body></html>`;
 
@@ -35,5 +35,27 @@ describe('unshownErrors', () => {
         const errors = { name: 'Falta el nombre', role_id: 'Rol inválido', 'permissions.0': 'Permiso inválido', 'permissions.1': 'Permiso inválido' };
         expect(unshownErrors(errors, ['name', 'email'])).toEqual(['Rol inválido', 'Permiso inválido']);
         expect(unshownErrors(undefined, ['name'])).toEqual([]);
+    });
+});
+
+describe('campaignHasWhatsapp', () => {
+    const campaigns = [{ id: 'cd', whatsapp_enabled: true }, { id: 'x', whatsapp_enabled: 0 }];
+
+    it('reads the campaign picked by a superadmin and the own campaign for anyone else', () => {
+        expect(campaignHasWhatsapp({ isSuperadmin: true, campaignId: 'cd', campaigns, ownCampaign: { whatsapp_enabled: false } })).toBe(true);
+        expect(campaignHasWhatsapp({ isSuperadmin: true, campaignId: 'x', campaigns, ownCampaign: { whatsapp_enabled: true } })).toBe(false);
+        expect(campaignHasWhatsapp({ isSuperadmin: false, campaignId: 'cd', campaigns, ownCampaign: { whatsapp_enabled: false } })).toBe(false);
+        expect(campaignHasWhatsapp({ isSuperadmin: false, campaignId: undefined, campaigns: [], ownCampaign: { whatsapp_enabled: true } })).toBe(true);
+        expect(campaignHasWhatsapp({ isSuperadmin: false, campaigns: [], ownCampaign: null })).toBe(false);
+    });
+});
+
+describe('blockedPermissions', () => {
+    const available = [{ key: 'view.mapa' }, { key: 'use.whatsapp', requiresWhatsapp: true }];
+
+    it('blocks only new grants of WhatsApp permissions in a campaign without WhatsApp', () => {
+        expect(blockedPermissions(available, true, [])).toEqual({});
+        expect(blockedPermissions(available, false, [])).toEqual({ 'use.whatsapp': 'Su campaña no tiene WhatsApp activo.' });
+        expect(blockedPermissions(available, false, ['use.whatsapp'])).toEqual({});
     });
 });

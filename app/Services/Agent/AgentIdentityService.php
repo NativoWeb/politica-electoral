@@ -23,15 +23,24 @@ class AgentIdentityService
         return preg_match(self::PHONE_REGEX, $phone) ? $phone : null;
     }
 
+    // Checked on every agent call (whoami, token, and each acting-as-user request), so revoking use.whatsapp,
+    // deactivating the user or switching off the campaign's WhatsApp cuts the assistant on the next message.
     public function isEligible(?User $user): bool
     {
-        return $user !== null
-            && $user->is_active
-            && $user->accessBlockedReason() === null
-            && ! $user->must_change_password
-            && $user->whatsapp_phone !== null
-            && $user->whatsapp_verified_at !== null
-            && $user->campaignHasWhatsapp();
+        return $user !== null && $this->ineligibilityReason($user) === null;
+    }
+
+    // Why a user may not use the agent (a code for the audit trail, no personal data), or null when they may.
+    public function ineligibilityReason(User $user): ?string
+    {
+        return match (true) {
+            ! $user->is_active, $user->accessBlockedReason() !== null => 'cuenta_bloqueada',
+            (bool) $user->must_change_password => 'debe_cambiar_contrasena',
+            $user->whatsapp_phone === null, $user->whatsapp_verified_at === null => 'numero_desvinculado',
+            ! $user->campaignHasWhatsapp() => 'campana_sin_whatsapp',
+            ! $user->canUseWhatsappAssistant() => 'permiso_retirado',
+            default => null,
+        };
     }
 
     public function findEligibleByPhone(?string $phone): ?User

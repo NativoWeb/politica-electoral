@@ -3,7 +3,7 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState, useMemo, useRef } from 'react';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import { preselectedCampaign } from '@/lib/campaignAdmin';
-import { saveErrorMessage, unshownErrors, withHiddenPermissions } from '@/lib/userAdmin';
+import { blockedPermissions, campaignHasWhatsapp, saveErrorMessage, unshownErrors, withHiddenPermissions } from '@/lib/userAdmin';
 
 function RoleChip({ code, name }) {
     const isSuperadmin = code === 'R01_SUPERADMIN';
@@ -177,9 +177,13 @@ function FormAlert({ messages }) {
     );
 }
 
-function PermissionSelector({ selected, availablePermissions, onChange }) {
+const SUPERADMIN_ONLY = 'Solo el superadmin puede cambiar esto.';
+
+function PermissionSelector({ selected, availablePermissions, onChange, blocked = {}, permissionLabels = {} }) {
     const visibleKeys = useMemo(() => availablePermissions.map(p => p.key), [availablePermissions]);
     const shown = selected.filter(k => visibleKeys.includes(k));
+    // Held permissions the actor cannot grant: shown and kept as they are, never editable here.
+    const kept = selected.filter(k => !visibleKeys.includes(k));
     const set = next => onChange(withHiddenPermissions(selected, visibleKeys, next));
     const grouped = useMemo(() => {
         const map = {};
@@ -199,7 +203,7 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
             <div className="flex items-center justify-between mb-1">
                 <label className="block text-[12px] font-bold text-[var(--color-ink-faint)]">Permisos</label>
                 <div className="flex gap-2">
-                    <button type="button" onClick={() => set(visibleKeys)} className="text-[10px] text-blue-500 font-bold hover:text-blue-700">Todos</button>
+                    <button type="button" onClick={() => set(visibleKeys.filter(k => !blocked[k]))} className="text-[10px] text-blue-500 font-bold hover:text-blue-700">Todos</button>
                     <button type="button" onClick={() => set([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">Ninguno</button>
                 </div>
             </div>
@@ -210,18 +214,39 @@ function PermissionSelector({ selected, availablePermissions, onChange }) {
                             {group}
                         </div>
                         {perms.map(p => (
-                            <label key={p.key} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-[var(--color-line)] last:border-0">
+                            <label key={p.key} className={`flex items-start gap-2 px-3 py-2 border-b border-[var(--color-line)] last:border-0 ${blocked[p.key] ? 'cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50 cursor-pointer'}`}>
                                 <input
                                     type="checkbox"
                                     checked={selected.includes(p.key)}
+                                    disabled={!!blocked[p.key]}
                                     onChange={() => toggle(p.key)}
-                                    className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    className="w-4 h-4 mt-0.5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)] disabled:opacity-50"
                                 />
-                                <span className="text-[13px] text-[var(--color-ink)]">{p.label}</span>
+                                <span className="min-w-0">
+                                    <span className={`block text-[13px] ${blocked[p.key] ? 'text-[var(--color-ink-faint)]' : 'text-[var(--color-ink)]'}`}>{p.label}</span>
+                                    {p.description && <span className="block text-[11px] text-[var(--color-ink-faint)]">{p.description}</span>}
+                                    {blocked[p.key] && <span className="block text-[11px] font-semibold text-amber-700">{blocked[p.key]}</span>}
+                                </span>
                             </label>
                         ))}
                     </div>
                 ))}
+                {kept.length > 0 && (
+                    <div>
+                        <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-[var(--color-line)]">
+                            Asignados por el superadmin
+                        </div>
+                        {kept.map(key => (
+                            <label key={key} className="flex items-start gap-2 px-3 py-2 border-b border-[var(--color-line)] last:border-0 cursor-not-allowed bg-gray-50">
+                                <input type="checkbox" checked disabled readOnly className="w-4 h-4 mt-0.5 rounded border-gray-300 disabled:opacity-50" />
+                                <span className="min-w-0">
+                                    <span className="block text-[13px] text-[var(--color-ink-faint)]">{permissionLabels[key] || key}</span>
+                                    <span className="block text-[11px] font-semibold text-amber-700">{SUPERADMIN_ONLY}</span>
+                                </span>
+                            </label>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -240,7 +265,9 @@ export default function Users({ users, roles, municipios, provincias, availableP
     const canEditElectoral = authUser?.canEditElectoral !== false;
     // The server refuses to touch a user holding a permission the actor cannot grant (a superadmin can grant them all).
     const grantableKeys = useMemo(() => availablePermissions.map(p => p.key), [availablePermissions]);
-    const isLocked = user => !isSuperadmin && (user.permissions || []).some(k => !grantableKeys.includes(k));
+    // A user holding a permission the actor cannot grant can still be edited and toggled (the permission is kept), but
+    // only a superadmin changes that permission, their email or password, or deletes them.
+    const outranks = user => !isSuperadmin && (user.permissions || []).some(k => !grantableKeys.includes(k));
     const defaultCampaignId = ownCampaign?.id || campaigns[0]?.id || '';
     const preselected = isSuperadmin ? preselectedCampaign(page.url, campaigns) : null;
     const campaignField = isSuperadmin ? { campaign_id: preselected || defaultCampaignId } : {};
@@ -269,6 +296,10 @@ export default function Users({ users, roles, municipios, provincias, availableP
     });
 
     const editForm = useForm({ name: '', email: '', role_id: '', password: '', permissions: [], territory_scope: [], ...campaignField });
+
+    const whatsappFor = campaignId => campaignHasWhatsapp({ isSuperadmin, campaignId, campaigns, ownCampaign });
+    const createBlocked = blockedPermissions(availablePermissions, whatsappFor(data.campaign_id), data.permissions);
+    const editBlocked = blockedPermissions(availablePermissions, whatsappFor(editForm.data.campaign_id), editForm.data.permissions);
 
     const selectedRoleCode = roles.find(r => r.id === data.role_id)?.code;
     const editRoleCode = roles.find(r => r.id === editForm.data.role_id)?.code;
@@ -401,6 +432,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                             <PermissionSelector
                                 selected={data.permissions}
                                 availablePermissions={availablePermissions}
+                                blocked={createBlocked}
                                 onChange={val => setData('permissions', val)}
                             />
                         )}
@@ -435,7 +467,12 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                 </div>
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Correo</label>
-                                    <input type="email" className={inputCls} value={editForm.data.email} onChange={e => editForm.setData('email', e.target.value)} required />
+                                    <input type="email" className={`${inputCls} disabled:opacity-60 disabled:cursor-not-allowed`} value={editForm.data.email} onChange={e => editForm.setData('email', e.target.value)} required disabled={outranks(user)} aria-describedby={outranks(user) ? `edit-user-locked-${user.id}` : undefined} />
+                                    {outranks(user) && (
+                                        <p id={`edit-user-locked-${user.id}`} className="text-[12px] font-semibold text-amber-700 mt-1">
+                                            Tiene permisos que tú no tienes: solo el superadmin puede cambiar su correo y su contraseña.
+                                        </p>
+                                    )}
                                     {editForm.errors.email && <p className="text-[12px] text-red-500 mt-1">{editForm.errors.email}</p>}
                                 </div>
                                 <CampaignField
@@ -460,6 +497,8 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                     <PermissionSelector
                                         selected={editForm.data.permissions}
                                         availablePermissions={availablePermissions}
+                                        blocked={editBlocked}
+                                        permissionLabels={permissionLabels}
                                         onChange={val => editForm.setData('permissions', val)}
                                     />
                                 )}
@@ -472,7 +511,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                 )}
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Nueva contraseña (dejar vacio para no cambiar)</label>
-                                    <input type="password" className={inputCls} value={editForm.data.password} onChange={e => editForm.setData('password', e.target.value)} placeholder="Dejar vacio para mantener" />
+                                    <input type="password" className={`${inputCls} disabled:opacity-60 disabled:cursor-not-allowed`} value={editForm.data.password} onChange={e => editForm.setData('password', e.target.value)} placeholder="Dejar vacio para mantener" disabled={outranks(user)} />
                                     {editForm.errors.password && <p className="text-[12px] text-red-500 mt-1">{editForm.errors.password}</p>}
                                 </div>
                                 <FormAlert messages={[editError, ...unshownErrors(editForm.errors, EDIT_FIELDS)]} />
@@ -512,18 +551,19 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                     {user.roleCode === 'R09_CAMPO' && (
                                         <TerritoryBadges scope={user.territoryScope} municipios={municipios} />
                                     )}
-                                    {isLocked(user) && (
+                                    {outranks(user) && (
                                         <p className="text-[13px] text-[var(--color-ink-soft)] mt-2 leading-snug">
-                                            No puedes modificar a este usuario porque tiene permisos que tú no tienes.
+                                            {user.isActive
+                                                ? 'Tiene permisos que tú no tienes: puedes editarlo y desactivarlo, pero solo el superadmin cambia esos permisos, su correo o contraseña, lo reactiva o lo elimina.'
+                                                : 'Solo el superadmin puede reactivar a este usuario.'}
                                         </p>
                                     )}
                                 </div>
-                                {!isLocked(user) && (
                                 <div className="flex gap-1.5 flex-shrink-0">
                                     <button onClick={() => startEdit(user)} className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center active:bg-blue-100" title="Editar">
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                     </button>
-                                    {user.id !== authUser?.id && (
+                                    {user.id !== authUser?.id && (user.isActive || !outranks(user)) && (
                                     <button onClick={() => setToggleTarget(user)} className={`w-9 h-9 rounded-lg flex items-center justify-center ${user.isActive ? 'bg-amber-50 text-amber-600 active:bg-amber-100' : 'bg-emerald-50 text-emerald-600 active:bg-emerald-100'}`} title={user.isActive ? 'Desactivar' : 'Activar'} aria-label={`${user.isActive ? 'Desactivar' : 'Activar'} a ${user.name}`}>
                                         {user.isActive ? (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
@@ -532,11 +572,12 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                         )}
                                     </button>
                                     )}
+                                    {!outranks(user) && (
                                     <button onClick={() => handleDelete(user)} className="w-9 h-9 rounded-lg bg-red-50 text-red-500 flex items-center justify-center active:bg-red-100" title="Eliminar">
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
+                                    )}
                                 </div>
-                                )}
                             </div>
                         )}
                     </div>
@@ -639,7 +680,9 @@ export default function Users({ users, roles, municipios, provincias, availableP
                 <ConfirmDialog
                     title={toggleTarget.isActive ? `¿Desactivar a ${toggleTarget.name}?` : `¿Activar a ${toggleTarget.name}?`}
                     message={toggleTarget.isActive
-                        ? 'No podrá entrar hasta que lo actives de nuevo. No se borra ningún dato.'
+                        ? (outranks(toggleTarget)
+                            ? 'No podrá entrar y no se borra ningún dato. Solo el superadmin podrá reactivarlo.'
+                            : 'No podrá entrar hasta que lo actives de nuevo. No se borra ningún dato.')
                         : 'Podrá volver a entrar con su correo y su contraseña.'}
                     confirmLabel={toggleTarget.isActive ? 'Sí, desactivar' : 'Sí, activar'}
                     danger={toggleTarget.isActive}

@@ -100,6 +100,7 @@ class HandleInertiaRequests extends Middleware
         $linked = $user->whatsapp_phone !== null && $user->whatsapp_verified_at !== null;
 
         return [
+            'allowed' => $user->canUseWhatsappAssistant() && $user->campaignHasWhatsapp(),
             'linked' => $linked,
             'phoneLast4' => $linked ? substr($user->whatsapp_phone, -4) : null,
             'verifiedAt' => $linked ? $user->whatsapp_verified_at->toIso8601String() : null,

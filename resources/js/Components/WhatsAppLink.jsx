@@ -75,7 +75,7 @@ function WhatsAppGlyph({ className = 'w-5 h-5' }) {
     );
 }
 
-function LinkedState({ whatsapp }) {
+function LinkedState({ whatsapp, allowed }) {
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
@@ -120,9 +120,15 @@ function LinkedState({ whatsapp }) {
                 </div>
             </div>
 
-            <p className="text-[14px] text-[var(--color-ink-soft)]">
-                Puedes escribirle al asistente desde ese número y responderá con tus permisos y tu territorio.
-            </p>
+            {allowed ? (
+                <p className="text-[14px] text-[var(--color-ink-soft)]">
+                    Puedes escribirle al asistente desde ese número y responderá con tus permisos y tu territorio.
+                </p>
+            ) : (
+                <p role="status" className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[14px] font-semibold text-amber-900">
+                    El administrador desactivó tu Asistente de WhatsApp. El número queda guardado; si te lo vuelven a activar, no tendrás que vincularlo otra vez.
+                </p>
+            )}
 
             {!confirming ? (
                 <button ref={triggerRef} type="button" onClick={() => setConfirming(true)} className={`${btnOutline} text-[var(--color-danger)] w-full sm:w-auto`}>
@@ -247,7 +253,7 @@ function CodeState({ pending, agentNumber, onRegenerate, onReset, regenerating }
     );
 }
 
-export default function WhatsAppLink({ whatsapp, agentNumber }) {
+export default function WhatsAppLink({ whatsapp, agentNumber, allowed = true }) {
     const [prefix, setPrefix] = useState(DEFAULT_PREFIX);
     const [number, setNumber] = useState('');
     const [fieldError, setFieldError] = useState(null);
@@ -309,7 +315,8 @@ export default function WhatsAppLink({ whatsapp, agentNumber }) {
         requestAnimationFrame(() => numberRef.current?.focus());
     }
 
-    if (linked) return <LinkedState whatsapp={whatsapp} />;
+    if (linked) return <LinkedState whatsapp={whatsapp} allowed={allowed} />;
+    if (!allowed) return null;
 
     if (pending) {
         return (

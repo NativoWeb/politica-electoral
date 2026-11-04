@@ -72,7 +72,7 @@ class WhatsAppLinkAuditTest extends TestCase
         $role = Role::create(['code' => 'R09_CAMPO', 'name' => 'Operador', 'level' => 1]);
         $this->user = User::create([
             'name' => 'Campo A', 'email' => 'campo@test.local', 'password' => 'secret123',
-            'role_id' => $role->id, 'permissions' => ['view.mapa'],
+            'role_id' => $role->id, 'permissions' => ['view.mapa', 'use.whatsapp'],
         ]);
     }
 

@@ -5,6 +5,8 @@ import WhatsAppLink from '@/Components/WhatsAppLink';
 export default function Perfil() {
     const { auth, agent } = usePage().props;
     const user = auth?.user;
+    // Without the assistant a linked user still sees the number and can unlink it, but gets no new code.
+    const showWhatsapp = Boolean(user?.whatsapp?.allowed || user?.whatsapp?.linked);
     const initials = user?.name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
     return (
@@ -23,7 +25,7 @@ export default function Perfil() {
                     </div>
                 </header>
 
-                <section aria-labelledby="whatsapp-heading" className="bg-white rounded-2xl border border-[var(--color-line)] overflow-hidden">
+                {showWhatsapp && <section aria-labelledby="whatsapp-heading" className="bg-white rounded-2xl border border-[var(--color-line)] overflow-hidden">
                     <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--color-line)]">
                         <span className="w-9 h-9 rounded-lg bg-[#128C4A]/10 text-[#128C4A] flex items-center justify-center flex-shrink-0" aria-hidden="true">
                             <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -36,9 +38,9 @@ export default function Perfil() {
                         </div>
                     </div>
                     <div className="p-5">
-                        <WhatsAppLink whatsapp={user?.whatsapp} agentNumber={agent?.whatsappNumber} />
+                        <WhatsAppLink whatsapp={user?.whatsapp} agentNumber={agent?.whatsappNumber} allowed={Boolean(user?.whatsapp?.allowed)} />
                     </div>
-                </section>
+                </section>}
             </div>
         </AppLayout>
     );

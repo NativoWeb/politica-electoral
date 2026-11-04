@@ -241,7 +241,7 @@ class AgentWriteApiTest extends TestCase
         $role = Role::firstOrCreate(['code' => $roleCode], ['name' => $roleCode, 'level' => 1]);
         $user = User::create([
             'name' => $roleCode.' user', 'email' => Str::random(8).'@test.local', 'password' => 'secret123',
-            'role_id' => $role->id, 'territory_scope' => $scope, 'permissions' => $permissions,
+            'role_id' => $role->id, 'territory_scope' => $scope, 'permissions' => [...$permissions, 'use.whatsapp'],
         ]);
         $user->forceFill(['whatsapp_phone' => $phone, 'whatsapp_verified_at' => now()])->save();
 
@@ -308,7 +308,7 @@ class AgentWriteApiTest extends TestCase
 
     public function test_write_role_also_needs_write_data_permission(): void
     {
-        $this->campo->forceFill(['permissions' => ['view.votantes']])->save();
+        $this->campo->forceFill(['permissions' => ['view.votantes', 'use.whatsapp']])->save();
         $token = $this->tokenFor($this->campo);
 
         $this->agent('GET', '/api/agent/v1/me', null, $token)->assertOk()->assertJson(['can_write' => false]);
@@ -316,7 +316,7 @@ class AgentWriteApiTest extends TestCase
             ->assertForbidden();
         $this->assertDatabaseMissing('lideres', ['nombre' => 'Sin permiso']);
 
-        $this->campo->forceFill(['permissions' => ['view.votantes', 'write.data']])->save();
+        $this->campo->forceFill(['permissions' => ['view.votantes', 'write.data', 'use.whatsapp']])->save();
         $this->agent('POST', '/api/agent/v1/votantes', ['nombre' => 'Con permiso', 'municipio_id' => $this->munA], $token)
             ->assertCreated();
         $this->assertDatabaseHas('lideres', ['nombre' => 'Con permiso', 'geographic_unit_id' => $this->munA]);
@@ -651,6 +651,40 @@ class AgentWriteApiTest extends TestCase
         foreach ($values as $value) {
             $this->assertStringNotContainsString($value, $json);
         }
+    }
+
+    public function test_cutting_the_token_of_an_ineligible_user_is_audited_without_personal_data(): void
+    {
+        $token = $this->tokenFor($this->campo);
+        $this->agent('GET', '/api/agent/v1/me', null, $token)->assertOk();
+
+        $this->campo->forceFill(['permissions' => ['view.votantes', 'write.data']])->save();
+        $this->agent('GET', '/api/agent/v1/me', null, $token)->assertUnauthorized();
+        $this->agent('GET', '/api/agent/v1/me', null, $token)->assertUnauthorized();
+
+        $logs = DB::table('audit_logs')->where('action', 'AGENT_TOKEN_REVOKED')->get();
+        $this->assertCount(1, $logs, 'one entry per token cut, not per refused call');
+        $this->assertSame($this->campo->id, $logs[0]->user_id);
+        $this->assertSame($this->campo->id, $logs[0]->entity_id);
+        $this->assertSame(['motivo' => 'permiso_retirado', 'ruta' => 'api.agent.me'], json_decode($logs[0]->metadata, true));
+        $this->assertStringNotContainsString('+573001110000', (string) $logs[0]->metadata);
+        $this->assertSame(0, $this->campo->tokens()->count());
+    }
+
+    public function test_agent_audit_names_why_the_token_was_cut(): void
+    {
+        $service = app(AgentIdentityService::class);
+        $this->assertNull($service->ineligibilityReason($this->campo->fresh()));
+
+        $this->campo->forceFill(['must_change_password' => true])->save();
+        $this->assertSame('debe_cambiar_contrasena', $service->ineligibilityReason($this->campo->fresh()));
+        $this->campo->forceFill(['must_change_password' => false, 'is_active' => false])->save();
+        $this->assertSame('cuenta_bloqueada', $service->ineligibilityReason($this->campo->fresh()));
+        $this->campo->forceFill(['is_active' => true, 'whatsapp_verified_at' => null])->save();
+        $this->assertSame('numero_desvinculado', $service->ineligibilityReason($this->campo->fresh()));
+        $this->campo->forceFill(['whatsapp_verified_at' => now()])->save();
+        DB::table('campaigns')->update(['whatsapp_enabled' => false]);
+        $this->assertSame('campana_sin_whatsapp', $service->ineligibilityReason($this->campo->fresh()));
     }
 
     public function test_agent_writes_leave_audit_metadata_without_personal_data(): void

@@ -30,6 +30,7 @@ class LoginController extends Controller
             'email' => 'required|email',
             'password' => 'required',
         ]);
+        $credentials['email'] = User::storedEmail($credentials['email']);
 
         $key = 'login:'.$request->ip();
         $maxAttempts = 5;
@@ -123,7 +124,7 @@ class LoginController extends Controller
             'email' => 'required|email',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', User::storedEmail($request->email))->first();
 
         if ($user) {
             $token = Password::createToken($user);
@@ -158,7 +159,7 @@ class LoginController extends Controller
         ]);
 
         $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
+            ['email' => User::storedEmail($request->email)] + $request->only('password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
                 $user->update([
                     'password' => Hash::make($password),
