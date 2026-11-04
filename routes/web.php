@@ -64,29 +64,29 @@ Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'
 Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
 
 // Offline API: it packs a municipio's Mapa Politico data and only the map downloads it
-Route::middleware(['auth', 'password.changed', 'audit', 'permission:view.mapa'])->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download');
+Route::middleware(['auth', 'password.changed', 'audit', 'permission:view.mapa'])->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download')->whereUuid('municipioId');
 
 // Protected routes
 Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/municipio/{id}', [MunicipioController::class, 'show'])->name('municipio.show');
-    Route::get('/persona/{id}', [PersonaController::class, 'show'])->name('persona.show');
-    Route::get('/partido/{id}', [PartidoController::class, 'show'])->name('partido.show');
+    Route::get('/municipio/{id}', [MunicipioController::class, 'show'])->name('municipio.show')->whereUuid('id');
+    Route::get('/persona/{id}', [PersonaController::class, 'show'])->name('persona.show')->whereUuid('id');
+    Route::get('/partido/{id}', [PartidoController::class, 'show'])->name('partido.show')->whereUuid('id');
     Route::get('/senado', [LegislativoController::class, 'senado'])->name('senado');
-    Route::get('/senado/{id}', [LegislativoController::class, 'senadoMunicipio'])->name('senado.municipio');
+    Route::get('/senado/{id}', [LegislativoController::class, 'senadoMunicipio'])->name('senado.municipio')->whereUuid('id');
     Route::get('/camara', [LegislativoController::class, 'camara'])->name('camara');
-    Route::get('/camara/{id}', [LegislativoController::class, 'camaraMunicipio'])->name('camara.municipio');
+    Route::get('/camara/{id}', [LegislativoController::class, 'camaraMunicipio'])->name('camara.municipio')->whereUuid('id');
     Route::get('/concejo', [LegislativoController::class, 'concejo'])->name('concejo');
-    Route::get('/concejo/{id}', [LegislativoController::class, 'concejoMunicipio'])->name('concejo.municipio');
+    Route::get('/concejo/{id}', [LegislativoController::class, 'concejoMunicipio'])->name('concejo.municipio')->whereUuid('id');
     Route::get('/gobernador', [LegislativoController::class, 'gobernador'])->name('gobernador')->middleware('permission:view.gobernador');
-    Route::get('/gobernador/{id}', [LegislativoController::class, 'gobernadorMunicipio'])->name('gobernador.municipio')->middleware('permission:view.gobernador');
+    Route::get('/gobernador/{id}', [LegislativoController::class, 'gobernadorMunicipio'])->name('gobernador.municipio')->whereUuid('id')->middleware('permission:view.gobernador');
     Route::get('/asamblea', [LegislativoController::class, 'asamblea'])->name('asamblea');
-    Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio');
+    Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio')->whereUuid('id');
     Route::get('/consultas', [LegislativoController::class, 'consultas'])->name('consultas');
     // Lideres are shown by the map and by Votantes: either view lets them in, nothing else does.
     Route::middleware('permission:view.mapa|view.votantes')->group(function () {
         Route::get('/lideres', [LiderController::class, 'index'])->name('lideres');
-        Route::get('/lideres/{id}', [LiderController::class, 'show'])->name('lideres.show');
+        Route::get('/lideres/{id}', [LiderController::class, 'show'])->name('lideres.show')->whereUuid('id');
 
         // Búsqueda de líderes para referidos (persona panel of the map and VotanteDetail)
         Route::get('/mapa-politico/search-lideres', [MapaPoliticoController::class, 'searchLideres'])->name('mapa-politico.search-lideres');
@@ -241,8 +241,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/exportar/pdf', [ExportController::class, 'pdf'])->name('export.pdf');
 
     // PDF Reports
-    Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona');
-    Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio');
+    Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona')->whereUuid('id');
+    Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio')->whereUuid('id');
 
     // Campaigns: superadmin only, outside view.admin so any other role gets a 403 and not a redirect
     Route::prefix('admin/campanas')->name('admin.campaigns.')->middleware('superadmin')->group(function () {

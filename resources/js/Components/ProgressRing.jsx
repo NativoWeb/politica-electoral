@@ -1,6 +1,7 @@
 /**
  * Anillo de progreso SVG.
  * dark=true para usar sobre fondos oscuros (textos blancos).
+ * text reemplaza el valor del centro (por defecto el porcentaje con un decimal).
  */
 export default function ProgressRing({
     value = 0,
@@ -11,6 +12,7 @@ export default function ProgressRing({
     color = 'var(--color-primary)',
     trackColor = '#E8E8EE',
     dark = false,
+    text,
 }) {
     const radius = (size - stroke) / 2;
     const circumference = 2 * Math.PI * radius;
@@ -34,7 +36,7 @@ export default function ProgressRing({
                         className="text-[22px] font-extrabold leading-none font-[var(--font-mono)]"
                         style={{ color: dark ? '#ffffff' : 'var(--color-ink)' }}
                     >
-                        {clamped.toFixed(1).replace('.', ',')}%
+                        {text ?? `${clamped.toFixed(1).replace('.', ',')}%`}
                     </span>
                 </div>
             </div>

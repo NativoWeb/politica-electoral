@@ -20,6 +20,10 @@
         .truncated-notice { background: #fff3cd; border: 1px solid #ffc107; padding: 8px 15px; margin: 10px 20px; font-size: 10px; color: #856404; }
         .page-break { page-break-after: always; }
         .obs { width: 30%; white-space: normal; word-wrap: break-word; font-size: 8px; }
+        .resumen { margin: 10px 0; width: 60%; }
+        .resumen td { border-bottom: 1px solid #eee; padding: 3px 8px; font-size: 9px; }
+        .resumen td.l { width: 120px; white-space: nowrap; color: #555; }
+        .resumen td.v { text-align: right; font-weight: bold; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -35,6 +39,18 @@
     </div>
     @endif
 
+    @if(!empty($aviso))
+    <div class="truncated-notice">{{ $aviso }}</div>
+    @endif
+
+    @if(!empty($resumen))
+    <table class="resumen">
+        @foreach($resumen as [$label, $value, $isFigure])
+            <tr><td class="l">{{ $label }}</td><td @if($isFigure) class="v" @endif>{{ $value ?? '—' }}</td></tr>
+        @endforeach
+    </table>
+    @endif
+
     @php $chunks = array_chunk($data, 40); @endphp
 
     @foreach($chunks as $chunkIndex => $chunk)
@@ -43,7 +59,7 @@
             <tr>
                 <th>#</th>
                 @foreach($columns as $col)
-                    <th @if($col === 'observacion') class="obs" @endif>{{ $col === 'observacion' ? 'OBSERVACIONES' : strtoupper(str_replace('_', ' ', $col)) }}</th>
+                    <th @if($col === 'observacion') class="obs" @endif>{{ $col === 'observacion' ? 'OBSERVACIONES' : ($col === 'porcentaje' ? '% VÁLIDOS' : strtoupper(str_replace('_', ' ', $col))) }}</th>
                 @endforeach
             </tr>
         </thead>
@@ -61,6 +77,8 @@
                             <td class="b">{{ $row[$col] ?? '—' }}@if($isElecto) (electo)@endif</td>
                         @elseif($col === 'observacion')
                             <td class="obs">{{ $row[$col] ?? '—' }}</td>
+                        @elseif($col === 'porcentaje')
+                            <td class="r">{{ $row[$col] ?? '—' }}</td>
                         @elseif($col === 'votos')
                             <td class="r">{{ ($row[$col] ?? 0) > 0 ? number_format($row[$col], 0, ',', '.') : '—' }}</td>
                         @else

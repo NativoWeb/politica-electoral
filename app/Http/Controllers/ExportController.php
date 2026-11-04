@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\GenericExport;
+use App\Exports\SheetsExport;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Services\GobernacionResultados;
 
 class ExportController extends Controller
 {
@@ -26,6 +28,16 @@ class ExportController extends Controller
 
     public function excel(Request $request)
     {
+        if ($request->input('source') === 'gobernador') {
+            $report = $this->gobernadorReport($request);
+            $resumen = array_map(fn ($r) => ['concepto' => $r[0], 'valor' => $r[1]], $report['resumen']);
+
+            return Excel::download(new SheetsExport([
+                new GenericExport($resumen, ['concepto', 'valor'], 'Resumen', ['concepto' => 'CONCEPTO', 'valor' => 'VALOR']),
+                new GenericExport($report['data'], $report['columns'], 'Candidatos', ['porcentaje' => '% VÁLIDOS']),
+            ]), $report['filename'].'.xlsx');
+        }
+
         $data = $this->getData($request);
         $title = $request->input('title', 'Exportacion');
         $columns = $request->input('columns', $this->defaultColumns($request));
@@ -40,6 +52,26 @@ class ExportController extends Controller
     {
         ini_set('memory_limit', '256M');
         set_time_limit(120);
+
+        if ($request->input('source') === 'gobernador') {
+            $report = $this->gobernadorReport($request);
+
+            return Pdf::loadView('exports.table', [
+                'data' => $report['data'],
+                'columns' => $report['columns'],
+                'title' => $report['title'],
+                'date' => now()->format('d/m/Y H:i'),
+                // The notice already heads the PDF; figures are aligned apart from text.
+                'resumen' => array_values(array_map(
+                    fn ($r) => [$r[0], is_int($r[1]) ? number_format($r[1], 0, ',', '.') : $r[1], is_int($r[1]) || str_ends_with((string) $r[1], '%')],
+                    array_filter($report['resumen'], fn ($r) => $r[0] !== 'Aviso'),
+                )),
+                'aviso' => $report['aviso'],
+            ])->setPaper('a4', 'landscape')
+                ->setOption('isRemoteEnabled', false)
+                ->setOption('isPhpEnabled', false)
+                ->download($report['filename'].'.pdf');
+        }
 
         // Votantes reads one row past the PDF cap instead of the whole listing, and counts the total apart.
         $data = $this->getData($request, self::PDF_MAX_ROWS + 1);
@@ -98,12 +130,6 @@ class ExportController extends Controller
         if ($source === 'senado' || $source === 'camara') {
             $corpName = $source === 'senado' ? 'Senado' : 'Cámara de Representantes';
             return $this->getCorporacionData($corpName, $munId);
-        }
-
-        if ($source === 'gobernador') {
-            abort_unless($request->user()->hasPermission('view.gobernador'), 403);
-
-            return $this->getGobernadorData();
         }
 
         if ($source === 'asamblea') {
@@ -186,19 +212,67 @@ class ExportController extends Controller
         return $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
     }
 
-    private function getGobernadorData(): array
+    // The same figures /gobernador shows: candidates and blank vote with their % over valid votes, the turnout summary
+    // and its source. A municipio has no Gobernación results: the file says so, as the screen does.
+    private function gobernadorReport(Request $request): array
     {
-        $officeId = DB::table('offices')->where('name', 'Gobernación')->value('id');
-        if (!$officeId) return [];
+        abort_unless($request->user()->hasPermission('view.gobernador'), 403);
 
-        return DB::table('candidacies as c')
-            ->join('contests as con', 'c.contest_id', '=', 'con.id')
-            ->join('persons as p', 'c.person_id', '=', 'p.id')
-            ->where('con.office_id', $officeId)
-            ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
-            ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
-            ->leftJoinSub(DB::table('electoral_results')->whereIn('metric_type', ['votes', 'nominal_votes'])->select('candidacy_id', DB::raw('SUM(value) as votos'))->groupBy('candidacy_id'), 'res', 'res.candidacy_id', '=', 'c.id')
-            ->select('p.full_name as nombre', DB::raw("'Santander' as municipio"), DB::raw("'Gobernación' as tipo"), DB::raw("CASE WHEN c.outcome = 'elected' THEN 'Gobernador Electo' ELSE 'Candidato' END as cargo"), 'po.canonical_name as partido', DB::raw('NULL as telefono'), DB::raw('COALESCE(res.votos, 0) as votos'))
-            ->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray();
+        $munId = $request->input('municipio');
+        abort_if($munId !== null && ! is_string($munId), 422);
+        $resultados = app(GobernacionResultados::class);
+        $municipio = null;
+        if ($munId) {
+            $this->authorizeGeo($munId);
+            $municipio = $resultados->municipio($munId);
+            abort_if(! $municipio, 404);
+        }
+
+        $officeId = $resultados->officeId();
+        $candidatos = $officeId ? $resultados->candidatos($officeId, conVotos: ! $municipio) : [];
+        $resumen = $officeId && ! $municipio ? $resultados->resumen($officeId) : null;
+        $base = GobernacionResultados::base($candidatos, $resumen);
+        $pct = fn (?int $votos) => ($p = GobernacionResultados::porcentaje($votos, $base)) === null ? null : $p.'%';
+
+        $data = array_map(fn ($c) => [
+            'nombre' => $c['name'],
+            'partido' => $c['partido'],
+            'cargo' => $c['electo'] ? 'Gobernador Electo' : 'Candidato',
+            'votos' => $c['votos'],
+            'porcentaje' => $pct($c['votos']),
+        ], $candidatos);
+        if ($resumen && $resumen['blanco'] !== null) {
+            $data[] = ['nombre' => 'Voto en blanco', 'partido' => null, 'cargo' => null, 'votos' => $resumen['blanco'], 'porcentaje' => $pct($resumen['blanco'])];
+        }
+
+        $ambito = $municipio ? $municipio->name.($municipio->provincia ? " ({$municipio->provincia})" : '') : 'Santander (total departamental)';
+        $filas = [['Ámbito', $ambito]];
+        if ($municipio) {
+            $filas[] = ['Aviso', GobernacionResultados::SIN_RESULTADOS_MUNICIPIO];
+        } elseif ($resumen) {
+            $filas = array_merge($filas, [
+                ['Potencial electoral', $resumen['potencial']],
+                ['Votantes', $resumen['votantes']],
+                ['Votos válidos', $resumen['validos']],
+                ['Voto en blanco', $resumen['blanco']],
+                ['Votos nulos', $resumen['nulos']],
+                ['No marcados', $resumen['noMarcados']],
+                ['Participación', $resumen['participacion'] === null ? null : number_format($resumen['participacion'], 2, ',', '').'%'],
+            ]);
+            if ($resumen['fuente']) {
+                $filas[] = ['Fuente', $resumen['fuente'].($resumen['fuenteUrl'] ? ' — '.$resumen['fuenteUrl'] : '')];
+            }
+        }
+
+        $title = 'Gobernador '.($municipio->name ?? 'Santander');
+
+        return [
+            'title' => $title,
+            'filename' => str_replace(' ', '_', Str::ascii($title)),
+            'columns' => ['nombre', 'partido', 'cargo', 'votos', 'porcentaje'],
+            'data' => $data,
+            'resumen' => $filas,
+            'aviso' => $municipio ? GobernacionResultados::SIN_RESULTADOS_MUNICIPIO : null,
+        ];
     }
 }

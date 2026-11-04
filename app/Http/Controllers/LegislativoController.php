@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\CachedQueries;
+use App\Services\GobernacionResultados;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -195,76 +196,21 @@ class LegislativoController extends Controller
 
     public function gobernadorMunicipio(?string $munId = null)
     {
+        $resultados = app(GobernacionResultados::class);
         $municipio = null;
         if ($munId) {
-            $municipio = DB::table('geographic_units as g')
-                ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
-                ->where('g.id', $munId)->select('g.id', 'g.canonical_name as name', 'prov.canonical_name as provincia')->first();
-            abort_if(!$municipio, 404);
+            $municipio = $resultados->municipio($munId);
+            abort_if(! $municipio, 404);
         }
 
-        $officeId = DB::table('offices')->where('name', 'Gobernación')->value('id');
-
-        // Only department totals are loaded for Gobernación: a municipio shows the candidates without votes, never the
-        // Santander totals as if they were its own.
-        $candidatos = DB::table('candidacies as c')
-            ->join('contests as con', 'c.contest_id', '=', 'con.id')
-            ->join('persons as p', 'c.person_id', '=', 'p.id')
-            ->where('con.office_id', $officeId)
-            ->leftJoin('candidacy_endorsements as ce', fn ($j) => $j->on('ce.candidacy_id', '=', 'c.id')->where('ce.is_primary', true))
-            ->leftJoin('political_organizations as po', 'ce.organization_id', '=', 'po.id')
-            ->leftJoinSub(
-                DB::table('electoral_results')->whereIn('metric_type', ['votes', 'nominal_votes'])
-                    ->select('candidacy_id', DB::raw('SUM(value) as votos'))->groupBy('candidacy_id'),
-                'res', 'res.candidacy_id', '=', 'c.id'
-            )
-            ->select('p.id', 'p.full_name as name', 'po.canonical_name as partido', 'po.acronym', 'po.color_hex',
-                'c.outcome', DB::raw('COALESCE(res.votos, 0) as votos'))
-            ->orderByDesc('res.votos')
-            ->get()
-            ->map(fn ($r) => [
-                'id' => $r->id, 'name' => $r->name, 'partido' => $r->partido,
-                'acronym' => $r->acronym, 'color' => $r->color_hex,
-                'votos' => $munId ? null : (int) $r->votos, 'electo' => $r->outcome === 'elected',
-            ])->toArray();
-
-        $allMunicipios = CachedQueries::allMunicipios();
+        $officeId = $resultados->officeId();
 
         return Inertia::render('Gobernador', [
             'municipio' => $municipio,
-            'candidatos' => $candidatos,
-            'resumen' => $munId ? null : $this->gobernadorResumen($officeId),
-            'allMunicipios' => $allMunicipios,
+            'candidatos' => $resultados->candidatos($officeId, conVotos: ! $munId),
+            'resumen' => $munId ? null : $resultados->resumen($officeId),
+            'allMunicipios' => CachedQueries::allMunicipios(),
         ]);
-    }
-
-    private function gobernadorResumen(?string $officeId): ?array
-    {
-        $t = DB::table('turnout_metrics as t')
-            ->join('contests as con', 't.contest_id', '=', 'con.id')
-            ->leftJoin('source_files as sf', 't.source_id', '=', 'sf.id')
-            ->where('con.office_id', $officeId)
-            ->where('t.grain', 'department')
-            ->select('t.electoral_potential', 't.total_voters', 't.valid_votes', 't.blank_votes', 't.null_votes',
-                't.unmarked_votes', 't.participation_pct', 'sf.original_name as fuente', 'sf.storage_path as fuente_url')
-            ->first();
-        if (! $t) {
-            return null;
-        }
-
-        $int = fn ($v) => $v === null ? null : (int) $v;
-
-        return [
-            'potencial' => $int($t->electoral_potential),
-            'votantes' => $int($t->total_voters),
-            'validos' => $int($t->valid_votes),
-            'blanco' => $int($t->blank_votes),
-            'nulos' => $int($t->null_votes),
-            'noMarcados' => $int($t->unmarked_votes),
-            'participacion' => $t->participation_pct === null ? null : (float) $t->participation_pct,
-            'fuente' => $t->fuente,
-            'fuenteUrl' => $t->fuente_url && str_starts_with($t->fuente_url, 'https://') ? $t->fuente_url : null,
-        ];
     }
 
     public function asamblea()

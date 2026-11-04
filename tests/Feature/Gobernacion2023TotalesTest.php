@@ -3,11 +3,17 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\Gobernacion2023Totales;
+use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LegislativoController;
+use App\Services\GobernacionResultados;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\View;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\Concerns\BuildsElectoralSchema;
 use Tests\TestCase;
 
@@ -67,7 +73,8 @@ class Gobernacion2023TotalesTest extends TestCase
 
         $santander = $this->row('geographic_units', ['type' => 'department', 'canonical_name' => 'Santander']);
         $this->ids['santander'] = $santander;
-        $this->ids['bucaramanga'] = $this->row('geographic_units', ['type' => 'municipality', 'canonical_name' => 'Bucaramanga', 'parent_id' => $santander]);
+        $this->ids['metropolitana'] = $this->row('geographic_units', ['type' => 'province', 'canonical_name' => 'Metropolitana', 'parent_id' => $santander]);
+        $this->ids['bucaramanga'] = $this->row('geographic_units', ['type' => 'municipality', 'canonical_name' => 'Bucaramanga', 'parent_id' => $this->ids['metropolitana']]);
         $gobernacion = $this->row('offices', ['name' => 'Gobernación']);
         $alcaldia = $this->row('offices', ['name' => 'Alcaldía']);
         $event = $this->row('electoral_events', ['name' => 'Elecciones territoriales 2023', 'election_date' => '2023-10-29']);
@@ -286,5 +293,175 @@ class Gobernacion2023TotalesTest extends TestCase
 
         $this->assertNull($props['resumen']);
         $this->assertSame(5948, $props['candidatos'][0]['votos']);
+    }
+
+    public function test_gobernador_only_opens_a_municipio(): void
+    {
+        foreach (['santander', 'metropolitana'] as $key) {
+            try {
+                $this->gobernadorProps($this->ids[$key]);
+                $this->fail("/gobernador/{id} abrió el id de {$key}");
+            } catch (NotFoundHttpException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $props = $this->gobernadorProps($this->ids['bucaramanga']);
+        $this->assertSame('Bucaramanga', $props['municipio']['name']);
+        $this->assertSame('Metropolitana', $props['municipio']['provincia']);
+    }
+
+    public function test_percentages_truncate_like_the_screen(): void
+    {
+        $this->assertSame('38,97', GobernacionResultados::porcentaje(423130, 1085625));
+        $this->assertSame('7,05', GobernacionResultados::porcentaje(76612, 1085625));
+        $this->assertSame('0,32', GobernacionResultados::porcentaje(3502, 1085625));
+        $this->assertSame('66,66', GobernacionResultados::porcentaje(2, 3));
+        $this->assertNull(GobernacionResultados::porcentaje(null, 1085625));
+        $this->assertNull(GobernacionResultados::porcentaje(10, 0));
+        $this->assertSame(110, GobernacionResultados::base([['votos' => 60], ['votos' => 40]], ['validos' => null, 'blanco' => 10]));
+        $this->assertSame(500, GobernacionResultados::base([['votos' => 60]], ['validos' => 500, 'blanco' => 10]));
+    }
+
+    private function exportRequest(string $format, array $query, bool $allowed = true)
+    {
+        $user = new class($allowed)
+        {
+            public function __construct(private bool $allowed) {}
+
+            public function hasPermission(string $p): bool
+            {
+                return $this->allowed && $p === 'view.gobernador';
+            }
+
+            public function allowedGeoIds(): ?array
+            {
+                return null;
+            }
+        };
+        $request = Request::create("/exportar/{$format}", 'GET', $query + ['source' => 'gobernador', 'title' => 'Gobernador']);
+        $this->app->instance('request', $request);
+        $request->setUserResolver(fn () => $user);
+
+        return app(ExportController::class)->{$format}($request);
+    }
+
+    private function excelSheets(array $query): array
+    {
+        $response = $this->exportRequest('excel', $query);
+        $book = IOFactory::load($response->getFile()->getPathname());
+
+        return [
+            $response->headers->get('content-disposition'),
+            collect($book->getAllSheets())->mapWithKeys(fn ($sheet) => [$sheet->getTitle() => $sheet->toArray(null, true, false)])->all(),
+        ];
+    }
+
+    private function captureExportView(?object &$view): void
+    {
+        View::composer('exports.table', function ($v) use (&$view) {
+            $view = $v;
+        });
+    }
+
+    public function test_excel_matches_the_screen_with_blank_vote_percentages_summary_and_source(): void
+    {
+        $this->artisan('data:gobernacion-2023-totales')->assertSuccessful();
+
+        [$disposition, $sheets] = $this->excelSheets([]);
+
+        $this->assertStringContainsString('Gobernador_Santander.xlsx', $disposition);
+        $this->assertSame(['Resumen', 'Candidatos'], array_keys($sheets));
+        $candidatos = $sheets['Candidatos'];
+        $this->assertSame(['NOMBRE', 'PARTIDO', 'CARGO', 'VOTOS', '% VÁLIDOS'], $candidatos[0]);
+        $this->assertSame(['Juvenal Diaz Mateus', 'General Juvenal Gobernador', 'Gobernador Electo', 423130, '38,97%'], $candidatos[1]);
+        $this->assertSame(['Voto en blanco', '—', '—', 76612, '7,05%'], $candidatos[10]);
+        $this->assertCount(11, $candidatos);
+
+        // The same rows and percentages the page computes from its props.
+        $props = $this->gobernadorProps(null);
+        $base = GobernacionResultados::base($props['candidatos'], $props['resumen']);
+        foreach ($props['candidatos'] as $i => $c) {
+            $row = $candidatos[$i + 1];
+            $this->assertSame([$c['name'], $c['votos'], GobernacionResultados::porcentaje($c['votos'], $base).'%'], [$row[0], $row[3], $row[4]]);
+        }
+
+        $resumen = collect($sheets['Resumen'])->slice(1)->mapWithKeys(fn ($r) => [$r[0] => $r[1]])->all();
+        $this->assertSame('Santander (total departamental)', $resumen['Ámbito']);
+        $this->assertSame(1828912, $resumen['Potencial electoral']);
+        $this->assertSame(1168968, $resumen['Votantes']);
+        $this->assertSame(1085625, $resumen['Votos válidos']);
+        $this->assertSame(76612, $resumen['Voto en blanco']);
+        $this->assertSame(19718, $resumen['Votos nulos']);
+        $this->assertSame(63625, $resumen['No marcados']);
+        $this->assertSame('63,91%', $resumen['Participación']);
+        $this->assertStringContainsString(Gobernacion2023Totales::SOURCE_URL, $resumen['Fuente']);
+    }
+
+    public function test_pdf_has_the_same_rows_summary_and_source(): void
+    {
+        $this->artisan('data:gobernacion-2023-totales')->assertSuccessful();
+        $view = null;
+        $this->captureExportView($view);
+
+        $response = $this->exportRequest('pdf', []);
+
+        $this->assertSame('application/pdf', $response->headers->get('content-type'));
+        $this->assertStringContainsString('Gobernador_Santander.pdf', $response->headers->get('content-disposition'));
+        $data = $view->getData();
+        $this->assertSame('Gobernador Santander', $data['title']);
+        $this->assertSame(['Juvenal Diaz Mateus', 423130, '38,97%'], [$data['data'][0]['nombre'], $data['data'][0]['votos'], $data['data'][0]['porcentaje']]);
+        $this->assertSame(['Voto en blanco', 76612, '7,05%'], [$data['data'][9]['nombre'], $data['data'][9]['votos'], $data['data'][9]['porcentaje']]);
+        $resumen = collect($data['resumen'])->mapWithKeys(fn ($r) => [$r[0] => $r[1]])->all();
+        $this->assertSame('1.828.912', $resumen['Potencial electoral']);
+        $this->assertSame('63,91%', $resumen['Participación']);
+        $this->assertNull($data['aviso']);
+        $rendered = $view->render();
+        $this->assertStringContainsString('% VÁLIDOS', $rendered);
+        $this->assertStringContainsString('38,97%', $rendered);
+        $this->assertStringContainsString('Votos nulos', $rendered);
+        $this->assertStringContainsString(Gobernacion2023Totales::SOURCE_URL, $rendered);
+    }
+
+    public function test_export_from_a_municipio_says_there_are_no_municipal_results(): void
+    {
+        $this->artisan('data:gobernacion-2023-totales')->assertSuccessful();
+
+        [$disposition, $sheets] = $this->excelSheets(['municipio' => $this->ids['bucaramanga']]);
+
+        $this->assertStringContainsString('Gobernador_Bucaramanga.xlsx', $disposition);
+        $resumen = collect($sheets['Resumen'])->slice(1)->mapWithKeys(fn ($r) => [$r[0] => $r[1]])->all();
+        $this->assertSame(['Ámbito' => 'Bucaramanga (Metropolitana)', 'Aviso' => GobernacionResultados::SIN_RESULTADOS_MUNICIPIO], $resumen);
+        $candidatos = array_slice($sheets['Candidatos'], 1);
+        $this->assertCount(9, $candidatos);
+        $this->assertSame(['—'], array_values(array_unique(array_column($candidatos, 3))));
+        $this->assertSame(['—'], array_values(array_unique(array_column($candidatos, 4))));
+        $this->assertNotContains('Voto en blanco', array_column($candidatos, 0));
+
+        $view = null;
+        $this->captureExportView($view);
+        $this->exportRequest('pdf', ['municipio' => $this->ids['bucaramanga']]);
+        $this->assertSame(GobernacionResultados::SIN_RESULTADOS_MUNICIPIO, $view->getData()['aviso']);
+        $this->assertSame(1, substr_count($view->render(), 'No hay resultados de Gobernación por municipio'));
+        $this->assertStringNotContainsString('423.130', $view->render());
+    }
+
+    public function test_export_rejects_a_non_municipio_or_a_user_without_permission(): void
+    {
+        foreach ([$this->ids['santander'], $this->ids['metropolitana'], 'abc'] as $id) {
+            try {
+                $this->exportRequest('excel', ['municipio' => $id]);
+                $this->fail("exportó municipio={$id}");
+            } catch (NotFoundHttpException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        try {
+            $this->exportRequest('pdf', [], allowed: false);
+            $this->fail('exportó sin view.gobernador');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
     }
 }

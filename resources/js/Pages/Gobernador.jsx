@@ -90,7 +90,7 @@ export default function Gobernador({ municipio, candidatos = [], resumen = null,
 
     const donutData = sinVotos ? [] : [
         ...candidatos.filter(c => c.votos > 0).map((c, i) => ({
-            name: c.acronym ?? c.partido ?? c.name,
+            name: c.partido ?? c.name,
             value: c.votos,
             fill: c.color || partyColor(c.partido, i),
         })),
@@ -125,7 +125,7 @@ export default function Gobernador({ municipio, candidatos = [], resumen = null,
             {resumen && (
                 <div className="bg-[var(--color-primary)] text-white">
                     <div className="px-6 py-5 flex flex-wrap items-center justify-center gap-10 lg:gap-20">
-                        <ProgressRing value={resumen.participacion ?? 0} size={110} stroke={8} label="Participación" sub={resumen.participacion != null ? `${resumen.participacion.toFixed(2).replace('.', ',')}%` : '—'} color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
+                        <ProgressRing value={resumen.participacion ?? 0} text={resumen.participacion != null ? `${resumen.participacion.toFixed(2).replace('.', ',')}%` : '—'} size={110} stroke={8} label="Participación" color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
                     </div>
                     <div className="px-6 pb-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                         <ResumenItem label="Potencial" value={resumen.potencial} />

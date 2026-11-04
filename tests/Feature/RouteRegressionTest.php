@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Tests\TestCase;
 use App\Http\Controllers\ExportController;
+use Illuminate\Support\Str;
 
 class RouteRegressionTest extends TestCase
 {
@@ -47,7 +48,7 @@ class RouteRegressionTest extends TestCase
 
     public function test_offline_download_requires_authentication(): void
     {
-        $response = $this->getJson('/api/offline/download/test-uuid');
+        $response = $this->getJson('/api/offline/download/'.Str::uuid());
 
         $response->assertStatus(401);
     }
@@ -88,5 +89,21 @@ class RouteRegressionTest extends TestCase
         $constant = $reflection->getReflectionConstant('PDF_MAX_ROWS');
         $this->assertNotFalse($constant);
         $this->assertEquals(500, $constant->getValue());
+    }
+
+    // QA /gobernador BUG-01: a non-UUID id reached PostgreSQL and failed with 22P02 (HTTP 500). It is a 404 now,
+    // before auth, and a UUID still reaches the route.
+    public function test_id_routes_only_match_uuids(): void
+    {
+        $paths = ['/municipio', '/persona', '/partido', '/senado', '/camara', '/concejo', '/gobernador', '/asamblea',
+            '/lideres', '/reporte/persona', '/reporte/municipio', '/api/offline/download'];
+        $uuid = (string) Str::uuid();
+
+        foreach ($paths as $path) {
+            foreach (['abc', '123', "{$uuid}x", "1' OR '1'='1"] as $bad) {
+                $this->get($path.'/'.rawurlencode($bad))->assertNotFound();
+            }
+            $this->get("{$path}/{$uuid}")->assertRedirect('/login');
+        }
     }
 }
