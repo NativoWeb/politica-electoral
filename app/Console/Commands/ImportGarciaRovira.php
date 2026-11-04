@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Console\Concerns\TargetsCampaign;
+use App\Services\Import\TextNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -233,11 +234,17 @@ class ImportGarciaRovira extends Command
             if ($rowNum <= 2) continue;
             $municipio = trim($row['A'] ?? '');
             $nombre = trim($row['B'] ?? '');
-            $votos = (int) ($row['D'] ?? 0);
+            $votos = TextNormalizer::parseVotes($row['D'] ?? null);
             $cargo = trim($row['E'] ?? '');
             $aval = trim($row['G'] ?? '');
 
             if (!$municipio || !$nombre) continue;
+
+            // Rows without votes are campaign notes about possible aspirants, not 2023 candidates.
+            if ($votos === null) {
+                $this->warn("ALCALDIA fila {$rowNum}: sin votos ({$municipio}), no es una candidatura; se omite");
+                continue;
+            }
 
             $munId = $this->findMunicipio($municipio);
             if (!$munId) continue;

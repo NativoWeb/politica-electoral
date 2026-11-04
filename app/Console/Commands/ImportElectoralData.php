@@ -135,9 +135,9 @@ class ImportElectoralData extends Command
         $this->info("  Completado en {$elapsed}s");
 
         foreach ($stats as $key => $value) {
-            if ($key === 'errors') {
+            if ($key === 'errors' || $key === 'warnings') {
                 if (!empty($value)) {
-                    $this->warn("  Errores: " . count($value));
+                    $this->warn(($key === 'errors' ? '  Errores: ' : '  Avisos: ') . count($value));
                     foreach (array_slice($value, 0, 10) as $err) {
                         $this->warn("    - {$err}");
                     }

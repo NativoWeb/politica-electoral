@@ -33,6 +33,7 @@ class AlcaldiaImporter
         'contacts_created' => 0,
         'skipped_rows' => 0,
         'errors' => [],
+        'warnings' => [],
     ];
 
     private ?ElectoralEvent $event = null;
@@ -124,6 +125,14 @@ class AlcaldiaImporter
             return;
         }
 
+        // Rows without votes are campaign notes about possible aspirants, not 2023 candidates. A missing provincia
+        // alone is not enough: real candidates like row 65 (Cimitarra) have votes but no provincia.
+        if (! self::isCandidateRow($votosRaw)) {
+            $this->stats['skipped_rows']++;
+            $this->stats['warnings'][] = "Fila {$rowNumber}: sin votos ({$municipioRaw}), no es una candidatura; se omite";
+            return;
+        }
+
         // Resolve municipality
         $municipio = $this->resolveMunicipio($municipioRaw);
         if (!$municipio) {
@@ -204,6 +213,11 @@ class AlcaldiaImporter
                 ['start_date' => '2024-01-01', 'end_date' => '2027-12-31', 'status' => 'active', 'source_id' => $sourceFile?->id]
             );
         }
+    }
+
+    public static function isCandidateRow(mixed $votosRaw): bool
+    {
+        return TextNormalizer::parseVotes($votosRaw) !== null;
     }
 
     private function createEndorsements(Candidacy $candidacy, string $avalRaw, string $tipoAval, ?SourceFile $sourceFile): void
