@@ -205,7 +205,8 @@ class LegislativoController extends Controller
 
         $officeId = DB::table('offices')->where('name', 'Gobernación')->value('id');
 
-        // Gobernador has one contest for whole department — get results filtered by municipio geographic_unit
+        // Only department totals are loaded for Gobernación: a municipio shows the candidates without votes, never the
+        // Santander totals as if they were its own.
         $candidatos = DB::table('candidacies as c')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')
             ->join('persons as p', 'c.person_id', '=', 'p.id')
@@ -224,7 +225,7 @@ class LegislativoController extends Controller
             ->map(fn ($r) => [
                 'id' => $r->id, 'name' => $r->name, 'partido' => $r->partido,
                 'acronym' => $r->acronym, 'color' => $r->color_hex,
-                'votos' => (int) $r->votos, 'electo' => $r->outcome === 'elected',
+                'votos' => $munId ? null : (int) $r->votos, 'electo' => $r->outcome === 'elected',
             ])->toArray();
 
         $allMunicipios = CachedQueries::allMunicipios();
@@ -232,8 +233,38 @@ class LegislativoController extends Controller
         return Inertia::render('Gobernador', [
             'municipio' => $municipio,
             'candidatos' => $candidatos,
+            'resumen' => $munId ? null : $this->gobernadorResumen($officeId),
             'allMunicipios' => $allMunicipios,
         ]);
+    }
+
+    private function gobernadorResumen(?string $officeId): ?array
+    {
+        $t = DB::table('turnout_metrics as t')
+            ->join('contests as con', 't.contest_id', '=', 'con.id')
+            ->leftJoin('source_files as sf', 't.source_id', '=', 'sf.id')
+            ->where('con.office_id', $officeId)
+            ->where('t.grain', 'department')
+            ->select('t.electoral_potential', 't.total_voters', 't.valid_votes', 't.blank_votes', 't.null_votes',
+                't.unmarked_votes', 't.participation_pct', 'sf.original_name as fuente', 'sf.storage_path as fuente_url')
+            ->first();
+        if (! $t) {
+            return null;
+        }
+
+        $int = fn ($v) => $v === null ? null : (int) $v;
+
+        return [
+            'potencial' => $int($t->electoral_potential),
+            'votantes' => $int($t->total_voters),
+            'validos' => $int($t->valid_votes),
+            'blanco' => $int($t->blank_votes),
+            'nulos' => $int($t->null_votes),
+            'noMarcados' => $int($t->unmarked_votes),
+            'participacion' => $t->participation_pct === null ? null : (float) $t->participation_pct,
+            'fuente' => $t->fuente,
+            'fuenteUrl' => $t->fuente_url && str_starts_with($t->fuente_url, 'https://') ? $t->fuente_url : null,
+        ];
     }
 
     public function asamblea()

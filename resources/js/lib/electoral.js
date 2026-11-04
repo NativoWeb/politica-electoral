@@ -84,6 +84,12 @@ export function pct(value, total, decimals = 1) {
     return ((value / total) * 100).toFixed(decimals).replace('.', ',');
 }
 
+/** Porcentaje con 2 decimales truncados, como lo publica la Registraduría (423.130 / 1.085.625 → "38,97") */
+export function pctTrunc(value, total) {
+    if (value == null || !total) return null;
+    return (Math.floor((value * 10000) / total) / 100).toFixed(2).replace('.', ',');
+}
+
 /** Porcentaje numérico */
 export function pctNum(value, total) {
     if (!total) return 0;

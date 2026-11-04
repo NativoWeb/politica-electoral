@@ -3,7 +3,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link } from '@inertiajs/react';
 import ProgressRing from '@/Components/ProgressRing';
 import GeoNavigator from '@/Components/GeoNavigator';
-import { partyLogo, partyColor, fmt } from '@/lib/electoral';
+import { partyLogo, partyColor, fmt, pctTrunc } from '@/lib/electoral';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
 function DonutTooltip({ active, payload }) {
@@ -16,11 +16,13 @@ function DonutTooltip({ active, payload }) {
     );
 }
 
-function CandidatoCard({ c, index, totalVotos, maxVotos }) {
+const BLANCO_COLOR = '#9CA3AF';
+
+function CandidatoCard({ c, index, baseVotos, maxVotos }) {
     const color = c.color || partyColor(c.partido, index);
     const logo = partyLogo(c.partido, c.acronym);
-    const pctVal = totalVotos > 0 ? (c.votos / totalVotos * 100) : 0;
-    const barFilled = maxVotos > 0 ? (c.votos / maxVotos * 100) : 0;
+    const hasVotos = c.votos != null;
+    const barFilled = hasVotos && maxVotos > 0 ? (c.votos / maxVotos * 100) : 0;
 
     return (
         <Link href={`/persona/${c.id}`} className="block px-5 py-5 border-b border-[var(--color-line)] hover:bg-blue-50/20 transition-colors group">
@@ -38,27 +40,62 @@ function CandidatoCard({ c, index, totalVotos, maxVotos }) {
                 {c.partido ?? '—'}
             </p>
             {c.electo && <span className="inline-block mt-2 px-2.5 py-1 bg-[var(--color-good-light)] text-[var(--color-good)] text-[10px] font-bold uppercase tracking-wider rounded">Gobernador electo</span>}
-            <div className="mt-4 h-[10px] bg-[var(--color-line)] rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-700" style={{ width: `${barFilled}%`, background: color }} />
-            </div>
-            <div className="flex items-baseline justify-between mt-2">
-                <span className="text-[24px] font-extrabold text-[var(--color-primary)] font-[var(--font-mono)]">{pctVal.toFixed(2).replace('.', ',')}%</span>
-                <span className="text-[18px] font-bold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(c.votos)}</span>
-            </div>
+            {hasVotos && (
+                <>
+                    <div className="mt-4 h-[10px] bg-[var(--color-line)] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${barFilled}%`, background: color }} />
+                    </div>
+                    <div className="flex items-baseline justify-between mt-2">
+                        <span className="text-[24px] font-extrabold text-[var(--color-primary)] font-[var(--font-mono)]">{pctTrunc(c.votos, baseVotos) ?? '—'}%</span>
+                        <span className="text-[18px] font-bold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(c.votos)}</span>
+                    </div>
+                </>
+            )}
         </Link>
     );
 }
 
-export default function Gobernador({ municipio, candidatos = [], allMunicipios = [] }) {
-    const totalVotos = candidatos.reduce((s, c) => s + (c.votos || 0), 0);
-    const maxVotos = candidatos[0]?.votos || 1;
+function BlancoCard({ votos, baseVotos, maxVotos }) {
+    const barFilled = maxVotos > 0 ? (votos / maxVotos * 100) : 0;
+    return (
+        <div className="px-5 py-5 border-b border-[var(--color-line)]">
+            <h3 className="text-[17px] font-extrabold text-[var(--color-ink-soft)] uppercase leading-tight">Voto en blanco</h3>
+            <div className="mt-4 h-[10px] bg-[var(--color-line)] rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${barFilled}%`, background: BLANCO_COLOR }} />
+            </div>
+            <div className="flex items-baseline justify-between mt-2">
+                <span className="text-[24px] font-extrabold text-[var(--color-ink-soft)] font-[var(--font-mono)]">{pctTrunc(votos, baseVotos) ?? '—'}%</span>
+                <span className="text-[18px] font-bold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(votos)}</span>
+            </div>
+        </div>
+    );
+}
+
+function ResumenItem({ label, value }) {
+    return (
+        <div className="text-center">
+            <p className="text-[10px] uppercase tracking-wider text-white/60">{label}</p>
+            <p className="text-[16px] font-bold font-[var(--font-mono)]">{fmt(value)}</p>
+        </div>
+    );
+}
+
+export default function Gobernador({ municipio, candidatos = [], resumen = null, allMunicipios = [] }) {
+    const sinVotos = municipio != null;
+    const blanco = resumen?.blanco ?? null;
+    // Percentages over valid votes (candidates + blank), as the Registraduría publishes them.
+    const baseVotos = resumen?.validos ?? candidatos.reduce((s, c) => s + (c.votos || 0), 0) + (blanco || 0);
+    const maxVotos = Math.max(candidatos[0]?.votos || 0, blanco || 0, 1);
     const electo = candidatos.find(c => c.electo);
 
-    const donutData = candidatos.filter(c => c.votos > 0).map((c, i) => ({
-        name: c.acronym ?? c.partido ?? c.name,
-        value: c.votos,
-        fill: c.color || partyColor(c.partido, i),
-    }));
+    const donutData = sinVotos ? [] : [
+        ...candidatos.filter(c => c.votos > 0).map((c, i) => ({
+            name: c.acronym ?? c.partido ?? c.name,
+            value: c.votos,
+            fill: c.color || partyColor(c.partido, i),
+        })),
+        ...(blanco > 0 ? [{ name: 'Voto en blanco', value: blanco, fill: BLANCO_COLOR }] : []),
+    ];
 
     const munLabel = municipio?.name?.toUpperCase() ?? null;
 
@@ -75,23 +112,45 @@ export default function Gobernador({ municipio, candidatos = [], allMunicipios =
                     </>}
                     <GeoNavigator municipios={allMunicipios} currentMunicipio={municipio?.name} basePath="/gobernador" />
                 </div>
-                <p className="text-[11px] text-white/40 mt-1">Elecciones Territoriales 2023 · Preconteo{munLabel ? '' : ' · Todos los municipios'}</p>
+                <p className="text-[11px] text-white/40 mt-1">Elecciones Territoriales 2023 · Preconteo{munLabel ? '' : ' · Total Santander'}</p>
             </div>
 
-            <div className="bg-[var(--color-primary)] text-white">
-                <div className="px-6 py-5 flex flex-wrap items-center justify-center gap-10 lg:gap-20">
-                    <ProgressRing value={100} size={110} stroke={8} label="Mesas informadas" sub="100%" color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
-                    <ProgressRing value={totalVotos > 0 ? 60 : 0} size={110} stroke={8} label="Votantes" sub={fmt(totalVotos)} color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
+            {sinVotos && (
+                <div className="px-6 py-4 bg-amber-50 border-b border-amber-200 text-[13px] text-amber-900">
+                    No hay resultados de Gobernación por municipio cargados. Los votos solo están disponibles para el total de Santander:{' '}
+                    <Link href="/gobernador" className="font-semibold underline">ver total Santander</Link>.
                 </div>
-            </div>
+            )}
+
+            {resumen && (
+                <div className="bg-[var(--color-primary)] text-white">
+                    <div className="px-6 py-5 flex flex-wrap items-center justify-center gap-10 lg:gap-20">
+                        <ProgressRing value={resumen.participacion ?? 0} size={110} stroke={8} label="Participación" sub={resumen.participacion != null ? `${resumen.participacion.toFixed(2).replace('.', ',')}%` : '—'} color="#FFD100" trackColor="rgba(255,255,255,0.12)" dark />
+                    </div>
+                    <div className="px-6 pb-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                        <ResumenItem label="Potencial" value={resumen.potencial} />
+                        <ResumenItem label="Votantes" value={resumen.votantes} />
+                        <ResumenItem label="Votos válidos" value={resumen.validos} />
+                        <ResumenItem label="Voto en blanco" value={resumen.blanco} />
+                        <ResumenItem label="Votos nulos" value={resumen.nulos} />
+                        <ResumenItem label="No marcados" value={resumen.noMarcados} />
+                    </div>
+                    {resumen.fuente && (
+                        <p className="px-6 pb-3 text-[10px] text-white/50">
+                            Fuente: {resumen.fuenteUrl ? <a href={resumen.fuenteUrl} target="_blank" rel="noopener noreferrer" className="underline">{resumen.fuente}</a> : resumen.fuente}
+                        </p>
+                    )}
+                </div>
+            )}
 
             <div className="flex flex-col xl:flex-row min-h-[60vh]">
                 <div className="flex-1 min-w-0 overflow-y-auto">
                     {candidatos.length === 0 ? (
                         <p className="px-5 py-12 text-center text-[14px] text-[var(--color-ink-faint)]">Sin candidatos registrados.</p>
                     ) : candidatos.map((c, i) => (
-                        <CandidatoCard key={c.id} c={c} index={i} totalVotos={totalVotos} maxVotos={maxVotos} />
+                        <CandidatoCard key={c.id} c={c} index={i} baseVotos={baseVotos} maxVotos={maxVotos} />
                     ))}
+                    {!sinVotos && blanco != null && <BlancoCard votos={blanco} baseVotos={baseVotos} maxVotos={maxVotos} />}
                 </div>
 
                 <div className="w-full xl:w-[440px] xl:border-l border-[var(--color-line)] flex-shrink-0 p-5">
@@ -103,10 +162,12 @@ export default function Gobernador({ municipio, candidatos = [], allMunicipios =
                             <div className="p-5">
                                 <p className="text-[16px] font-extrabold text-[var(--color-ink)] uppercase">{electo.name}</p>
                                 <p className="text-[11px] text-[var(--color-ink-faint)] mt-1">{electo.partido ?? '—'}</p>
-                                <div className="flex items-baseline justify-between mt-3">
-                                    <span className="text-[28px] font-extrabold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(electo.votos)}</span>
-                                    <span className="text-[14px] font-bold text-[var(--color-ink-faint)] font-[var(--font-mono)]">{totalVotos > 0 ? (electo.votos / totalVotos * 100).toFixed(2).replace('.', ',') : '0'}%</span>
-                                </div>
+                                {electo.votos != null && (
+                                    <div className="flex items-baseline justify-between mt-3">
+                                        <span className="text-[28px] font-extrabold text-[var(--color-ink)] font-[var(--font-mono)]">{fmt(electo.votos)}</span>
+                                        <span className="text-[14px] font-bold text-[var(--color-ink-faint)] font-[var(--font-mono)]">{pctTrunc(electo.votos, baseVotos) ?? '—'}%</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
