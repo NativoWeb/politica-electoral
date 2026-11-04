@@ -344,7 +344,7 @@ class SenadoCamaraImporter
             return $this->personCache[$normalized];
         }
 
-        $person = Person::where('normalized_name', $normalized)->first();
+        $person = Person::findLiveByNormalizedName($normalized);
         if ($person) {
             $this->personCache[$normalized] = $person;
             return $person;

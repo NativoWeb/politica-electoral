@@ -168,6 +168,7 @@ class CampaignIsolationTest extends TestCase
             $t->uuid('id')->primary();
             $t->string('full_name');
             $t->string('cedula')->nullable();
+            $t->uuid('merged_into_id')->nullable();
             $t->timestamps();
         });
 

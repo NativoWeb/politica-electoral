@@ -94,8 +94,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
     Route::middleware('permission:view.mapa')->group(function () {
         Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
-        Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona');
-        Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados');
+        Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona')->middleware('person.resolve');
+        Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados')->middleware('person.resolve');
     });
 
     // Votantes
@@ -109,22 +109,22 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::middleware('can.write')->group(function () {
         Route::middleware('permission:view.mapa')->group(function () {
             Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store')->middleware('offline.owner');
-            Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update')->middleware('offline.owner');
-            Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store')->middleware('offline.owner');
+            Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update')->middleware(['offline.owner', 'person.resolve']);
+            Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store')->middleware(['offline.owner', 'person.resolve']);
             Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
             Route::delete('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'destroyNexo'])->name('mapa-politico.nexo.destroy')->middleware('offline.owner');
-            Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy');
-            Route::post('/mapa-politico/persona/{id}/unificar', [MapaPoliticoController::class, 'mergeLider'])->name('mapa-politico.persona.merge');
-            Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store');
-            Route::delete('/mapa-politico/persona/{id}/municipios-influencia/{influenciaId}', [MapaPoliticoController::class, 'destroyMunicipioInfluencia'])->name('mapa-politico.influencia.destroy');
+            Route::delete('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'destroyLider'])->name('mapa-politico.persona.destroy')->middleware('person.resolve');
+            Route::post('/mapa-politico/persona/{id}/unificar', [MapaPoliticoController::class, 'mergeLider'])->name('mapa-politico.persona.merge')->middleware('person.resolve');
+            Route::post('/mapa-politico/persona/{id}/municipios-influencia', [MapaPoliticoController::class, 'storeMunicipioInfluencia'])->name('mapa-politico.influencia.store')->middleware('person.resolve');
+            Route::delete('/mapa-politico/persona/{id}/municipios-influencia/{influenciaId}', [MapaPoliticoController::class, 'destroyMunicipioInfluencia'])->name('mapa-politico.influencia.destroy')->middleware('person.resolve');
         });
 
         // Shared by both screens: VotanteDetail toggles and links referidos through the map's endpoints,
         // and the map's persona panel edits contactos and info politica through the Votantes ones.
         Route::middleware('permission:view.mapa|view.votantes')->group(function () {
-            Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle');
-            Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add');
-            Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove');
+            Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle')->middleware('person.resolve');
+            Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add')->middleware('person.resolve');
+            Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove')->middleware('person.resolve');
 
             Route::post('/votantes/{id}/contactos', [VotanteController::class, 'storeContacto'])->name('votantes.contactos.store');
             Route::put('/votantes/contactos/{id}', [VotanteController::class, 'updateContacto'])->name('votantes.contactos.update');

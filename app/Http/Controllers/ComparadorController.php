@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Person;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,9 @@ class ComparadorController extends Controller
 
         if (!$idA || !$idB) {
             return response()->json(['error' => 'Se requieren dos entidades para comparar'], 422);
+        }
+        if ($type === 'persona' && is_string($idA) && is_string($idB)) {
+            [$idA, $idB] = [Person::resolveId($idA), Person::resolveId($idB)];
         }
 
         $data = match ($type) {

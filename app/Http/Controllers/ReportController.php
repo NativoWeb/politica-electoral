@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Models\Person;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 
@@ -12,6 +13,7 @@ class ReportController extends Controller
 
     public function persona(string $id)
     {
+        $id = Person::resolveId($id);
         $persona = DB::table('persons')->where('id', $id)->first();
         abort_if(!$persona, 404);
         $this->authorizePersonOrLider($id);

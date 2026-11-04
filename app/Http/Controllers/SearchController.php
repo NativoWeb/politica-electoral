@@ -24,6 +24,8 @@ class SearchController extends Controller
 
         try {
             $persons = DB::table('persons')
+                ->whereNull('deleted_at')
+                ->whereNull('merged_into_id')
                 ->where(function ($query) use ($normalized) {
                     $query->whereRaw("normalized_name % ?", [$normalized])
                         ->orWhereRaw("normalized_name ILIKE ?", ["%{$normalized}%"]);

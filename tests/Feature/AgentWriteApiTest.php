@@ -140,6 +140,7 @@ class AgentWriteApiTest extends TestCase
             $t->string('last_name')->nullable();
             $t->string('normalized_name')->nullable();
             $t->date('birth_date')->nullable();
+            $t->uuid('merged_into_id')->nullable();
             $t->string('gender')->nullable();
             $t->timestamps();
         });

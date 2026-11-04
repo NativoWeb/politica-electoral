@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Models\Person;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -14,7 +15,11 @@ class PersonaController extends Controller
     {
         $persona = DB::table('persons')->where('id', $id)->first();
         abort_if(!$persona, 404);
-        $this->authorizePersonOrLider($id);
+        $survivorId = Person::resolveId($id);
+        $this->authorizePersonOrLider($survivorId);
+        if ($survivorId !== $id) {
+            return redirect()->route('persona.show', $survivorId);
+        }
 
         return Inertia::render('Persona', [
             'persona' => [

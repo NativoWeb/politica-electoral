@@ -77,6 +77,11 @@ class ViewPermissionsTest extends TestCase
 
     private function createSchema(): void
     {
+        // The person.resolve middleware of the map's persona routes looks the id up here.
+        Schema::create('persons', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('merged_into_id')->nullable();
+        });
         Schema::create('campaigns', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->string('name');

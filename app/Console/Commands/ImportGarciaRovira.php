@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Console\Concerns\TargetsCampaign;
+use App\Models\Person;
 use App\Services\Import\TextNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +82,7 @@ class ImportGarciaRovira extends Command
     private function findOrCreatePerson(string $fullName): string
     {
         $normalized = Str::upper(Str::ascii(trim($fullName)));
-        $existing = DB::table('persons')->where('normalized_name', $normalized)->value('id');
+        $existing = Person::resolveIdByNormalizedName($normalized);
         if ($existing) return $existing;
 
         $id = Str::uuid()->toString();

@@ -150,7 +150,9 @@ class TerritoryScopeTest extends TestCase
             $t->uuid('id')->primary();
             $t->string('full_name');
             $t->string('cedula')->nullable();
+            $t->uuid('merged_into_id')->nullable();
             $t->timestamps();
+            $t->softDeletes();
         });
 
         Schema::create('contests', function (Blueprint $t) {
@@ -609,5 +611,60 @@ class TerritoryScopeTest extends TestCase
         $this->assertSame(0, (int) $lider->votos);
         $this->assertSame('3001112233', $lider->telefono);
     }
-}
 
+    // A merged person's id (old link, offline queue) acts as its survivor: resolved before the territory check, so a
+    // user who may see the survivor gets it instead of a 403 on the now empty absorbed row.
+    private function mergedInto(string $survivorId): string
+    {
+        $id = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $id, 'full_name' => 'Absorbida', 'merged_into_id' => $survivorId, 'deleted_at' => now()]);
+
+        return $id;
+    }
+
+    public function test_merged_person_id_acts_as_its_survivor_inside_the_territory(): void
+    {
+        $survivor = $this->candidateLinkedToLiderA();
+        $absorbed = $this->mergedInto($survivor);
+
+        $this->actingAs($this->campo)->getJson("/mapa-politico/persona/{$absorbed}")->assertOk()->assertJsonPath('id', $this->liderA);
+        $this->actingAs($this->campo)->get("/persona/{$absorbed}")->assertRedirect("/persona/{$survivor}");
+
+        $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$absorbed}/nexos", ['nombre' => 'Hijo de Ana', 'parentesco' => 'Hijo'])
+            ->assertSuccessful();
+        $this->assertSame($survivor, DB::table('nexos_familiares')->where('nombre', 'Hijo de Ana')->value('person_id'));
+        $this->assertSame(0, DB::table('nexos_familiares')->where('person_id', $absorbed)->count());
+    }
+
+    public function test_merged_person_id_outside_the_territory_is_forbidden_before_redirecting(): void
+    {
+        $absorbed = $this->mergedInto($this->electoralPersonIn($this->munB));
+
+        $this->actingAs($this->campo)->get("/persona/{$absorbed}")->assertForbidden();
+        $this->actingAs($this->campo)->getJson("/mapa-politico/persona/{$absorbed}")->assertForbidden();
+        $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$absorbed}/nexos", ['nombre' => 'X'])->assertForbidden();
+        $this->actingAs($this->campo)->get("/reporte/persona/{$absorbed}")->assertForbidden();
+    }
+
+    public function test_every_mapa_persona_route_resolves_merged_person_ids(): void
+    {
+        $routes = collect(\Illuminate\Support\Facades\Route::getRoutes()->getRoutes())
+            ->filter(fn ($r) => str_starts_with($r->uri(), 'mapa-politico/persona/{id}'));
+
+        $this->assertCount(11, $routes);
+        foreach ($routes as $route) {
+            $this->assertContains('person.resolve', $route->gatherMiddleware(), $route->uri());
+        }
+    }
+
+    public function test_person_resolve_middleware_hands_the_survivor_to_the_controller(): void
+    {
+        $survivor = $this->electoralPersonIn($this->munA);
+        $absorbed = $this->mergedInto($this->mergedInto($survivor));
+        \Illuminate\Support\Facades\Route::middleware('person.resolve')->put('/_test/persona/{id}', fn (string $id) => response()->json(['id' => $id]));
+
+        $this->putJson("/_test/persona/{$absorbed}")->assertJsonPath('id', $survivor);
+        $this->putJson("/_test/persona/{$this->liderA}")->assertJsonPath('id', $this->liderA);
+        $this->putJson('/_test/persona/no-uuid')->assertJsonPath('id', 'no-uuid');
+    }
+}

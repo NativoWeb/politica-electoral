@@ -5,6 +5,7 @@ namespace App\Actions\Votantes;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Campaign;
+use App\Models\Person;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -16,6 +17,7 @@ class AddNexo
     // The owner can be a lider (of the user's own campaign) or a shared electoral person.
     public function authorizeFor(string $personId): void
     {
+        $personId = Person::resolveId($personId);
         $exists = DB::table('persons')->where('id', $personId)->exists()
             || DB::table('lideres')->where('id', $personId)->exists();
         abort_if(! $exists, 404);
@@ -25,6 +27,7 @@ class AddNexo
     // An offline create carries the id generated on the device ($data['client_id']): sending it twice stores it once.
     public function handle(string $personId, array $data): string
     {
+        $personId = Person::resolveId($personId);
         $id = $data['client_id'] ?? (string) Str::uuid();
         unset($data['client_id']);
 

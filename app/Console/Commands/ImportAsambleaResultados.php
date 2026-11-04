@@ -558,7 +558,7 @@ class ImportAsambleaResultados extends Command
             return $this->personCache[$normalized];
         }
 
-        $person = Person::where('normalized_name', $normalized)->first();
+        $person = Person::findLiveByNormalizedName($normalized);
         if ($person) {
             $this->personCache[$normalized] = $person;
             $this->stats['persons_existing']++;
@@ -571,6 +571,7 @@ class ImportAsambleaResultados extends Command
             'similarity(normalized_name, ?) > 0.6',
             [$normalized]
         )
+            ->whereNull('merged_into_id')
             ->orderByRaw('similarity(normalized_name, ?) DESC', [$normalized])
             ->first();
 

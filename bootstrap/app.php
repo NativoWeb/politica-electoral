@@ -14,6 +14,7 @@ use App\Http\Middleware\EnsureOfflineOwner;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsureSuperadmin;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\ResolveMergedPerson;
 use App\Http\Middleware\VerifyAgentHmac;
 use App\Support\DatabaseErrorLog;
 use Illuminate\Auth\AuthenticationException;
@@ -61,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'agent.can_write' => EnsureAgentCanWrite::class,
             'abilities' => CheckAbilities::class,
             'offline.owner' => EnsureOfflineOwner::class,
+            'person.resolve' => ResolveMergedPerson::class,
             'eventos.ocr' => EnsureEventosOcrEnabled::class,
         ]);
     })
