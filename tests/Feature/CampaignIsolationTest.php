@@ -948,4 +948,15 @@ class CampaignIsolationTest extends TestCase
         $this->assertDatabaseHas('nexos_familiares', ['id' => $nexoCd, 'nombre' => 'Nexo del CD']);
         $this->assertDatabaseHas('nexos_familiares', ['id' => $nexoX]);
     }
+
+    public function test_another_campaign_cannot_link_a_shared_candidate_to_its_lider(): void
+    {
+        $this->candidateNamedLike('Ceci C');
+        $person = DB::table('persons')->where('full_name', 'Ceci C')->value('id');
+
+        // Campaign Y has a lider with that person's cédula in the municipio, but persons are shared electoral data.
+        $this->actingAs($this->userY)->postJson("/mapa-politico/persona/{$person}/unificar", ['duplicado_id' => $this->liderC])
+            ->assertForbidden();
+        $this->assertSame('Ceci C', DB::table('persons')->where('id', $person)->value('full_name'));
+    }
 }

@@ -1237,7 +1237,7 @@ class MapaPoliticoController extends Controller
                 $person = DB::table('persons')->where('id', $id)->first();
                 if ($person) {
                     $linkedLider = $this->scopeToTerritory($this->ownLideres())
-                        ->where('nombre', 'ilike', $person->full_name)
+                        ->whereRaw('LOWER(nombre) = LOWER(?)', [$person->full_name])
                         ->first();
                     $currentCedula = $linkedLider?->cedula;
                     $currentLider = $linkedLider;
@@ -1260,13 +1260,18 @@ class MapaPoliticoController extends Controller
                     $response = ['success' => false, 'message' => $this->duplicateCedulaMessage($cedula, $existente)];
                     // Same person entered twice: the panel offers to merge it into the record being edited.
                     $allowed = $this->allowedGeoIds();
-                    if ($currentLider && $currentLider->id === $id && ($allowed === null || in_array($existente->geographic_unit_id, $allowed, true))) {
+                    $inTerritory = $allowed === null || in_array($existente->geographic_unit_id, $allowed, true);
+                    // A candidate with no lider record yet: the lider holding the cédula may be that same person.
+                    $vincular = ! $currentLider && $inTerritory && $this->campaign()->canEditElectoral()
+                        && $this->candidateRanIn($id, $existente->geographic_unit_id);
+                    if (($currentLider && $currentLider->id === $id && $inTerritory) || $vincular) {
                         $response['duplicado'] = [
                             'id' => $existente->id,
                             'nombre' => $existente->nombre,
                             'municipio' => $existente->municipio,
                             'cargo' => $existente->cargo,
                             'telefono' => $existente->telefono,
+                            'vincular' => $vincular,
                         ];
                     }
 
@@ -1644,9 +1649,56 @@ class MapaPoliticoController extends Controller
             abort(404);
         }
 
+        if (! DB::table('lideres')->where('id', $id)->exists()) {
+            return $this->linkCandidateToLider($id, $data['duplicado_id']);
+        }
+
         $lider = $merge->handle($id, $data['duplicado_id'], Cedula::normalize($data['cedula'] ?? null));
 
         return response()->json(['success' => true, 'message' => 'Registros unificados.', 'lider' => $lider]);
+    }
+
+    // A candidate (person) and a lider of the same campaign are one individual: the candidate takes the lider's
+    // name, which is how the panel links them, and keeps the old name as an alias. Nothing else changes.
+    private function linkCandidateToLider(string $personId, string $liderId)
+    {
+        // Renaming a person changes shared electoral data: only who may edit it.
+        abort_unless($this->campaign()->canEditElectoral(), 403, 'Solo la campaña principal puede modificar datos electorales.');
+        $person = DB::table('persons')->where('id', $personId)->whereNull('deleted_at')->first();
+        $lider = $this->ownLideres()->where('id', $liderId)->first();
+        if (! $person || ! $lider) {
+            abort(404);
+        }
+        $this->authorizePersonOrLider($personId, true);
+        $this->authorizeLiderRow($lider, true);
+        if (! $this->candidateRanIn($personId, $lider->geographic_unit_id)) {
+            return response()->json(['success' => false, 'message' => 'Este líder es de otro municipio: no se puede unificar con este candidato.'], 422);
+        }
+
+        DB::transaction(function () use ($person, $lider) {
+            $now = now();
+            $oldKey = \App\Services\Import\TextNormalizer::normalizeName($person->full_name);
+            $exists = DB::table('person_aliases')->where('person_id', $person->id)->where('normalized_alias', $oldKey)->exists();
+            if (! $exists && $oldKey !== \App\Services\Import\TextNormalizer::normalizeName($lider->nombre)) {
+                DB::table('person_aliases')->insert([
+                    'id' => (string) Str::uuid(), 'person_id' => $person->id, 'alias_name' => $person->full_name,
+                    'normalized_alias' => $oldKey, 'alias_type' => 'name', 'created_at' => $now, 'updated_at' => $now,
+                ]);
+            }
+            $this->renamePerson($person->id, $lider->nombre);
+        });
+
+        return response()->json(['success' => true, 'message' => 'Registros unificados.', 'lider' => ['id' => $lider->id]]);
+    }
+
+    // Whether the person ran for something in that municipio (what lets a lider be linked to them).
+    private function candidateRanIn(string $personId, ?string $geoId): bool
+    {
+        return $geoId !== null && DB::table('candidacies as c')
+            ->join('contests as con', 'con.id', '=', 'c.contest_id')
+            ->where('c.person_id', $personId)
+            ->where('con.geographic_unit_id', $geoId)
+            ->exists();
     }
 
     public function addReferido(Request $request, string $id, AddReferido $addReferido)

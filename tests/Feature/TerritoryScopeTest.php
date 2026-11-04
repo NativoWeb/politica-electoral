@@ -667,4 +667,79 @@ class TerritoryScopeTest extends TestCase
         $this->putJson("/_test/persona/{$this->liderA}")->assertJsonPath('id', $this->liderA);
         $this->putJson('/_test/persona/no-uuid')->assertJsonPath('id', 'no-uuid');
     }
+
+    // Candidate with a short name and no lider record; the lider holding the cédula is the same person.
+    private function candidateWithoutLider(string $geoId, string $name): string
+    {
+        if (! Schema::hasTable('person_aliases')) {
+            Schema::create('person_aliases', function (Blueprint $t) {
+                $t->uuid('id')->primary();
+                $t->uuid('person_id');
+                $t->string('alias_name');
+                $t->string('normalized_alias');
+                $t->string('alias_type')->nullable();
+                $t->timestamps();
+            });
+        }
+        if (! Schema::hasTable('candidacy_endorsements')) {
+            Schema::create('candidacy_endorsements', function (Blueprint $t) {
+                $t->uuid('id')->primary();
+                $t->uuid('candidacy_id');
+                $t->uuid('organization_id');
+                $t->boolean('is_primary')->default(true);
+                $t->string('endorsement_type')->nullable();
+                $t->timestamps();
+            });
+        }
+        if (! Schema::hasColumn('persons', 'normalized_name')) {
+            Schema::table('persons', function (Blueprint $t) {
+                $t->string('first_name')->nullable();
+                $t->string('last_name')->nullable();
+                $t->string('normalized_name')->nullable();
+            });
+        }
+        $personId = (string) Str::uuid();
+        $contestId = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $personId, 'full_name' => $name, 'normalized_name' => mb_strtoupper($name)]);
+        DB::table('contests')->insert(['id' => $contestId, 'geographic_unit_id' => $geoId]);
+        DB::table('candidacies')->insert(['id' => (string) Str::uuid(), 'person_id' => $personId, 'contest_id' => $contestId]);
+
+        return $personId;
+    }
+
+    public function test_a_candidate_typing_a_lider_cedula_is_offered_to_link_and_then_opens_as_that_lider(): void
+    {
+        $personId = $this->candidateWithoutLider($this->munA, 'Ana T');
+
+        $this->actingAs($this->campo)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '111'])
+            ->assertStatus(422)
+            ->assertJsonPath('duplicado.id', $this->liderA)
+            ->assertJsonPath('duplicado.vincular', true);
+
+        $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderA])
+            ->assertOk()
+            ->assertJsonPath('lider.id', $this->liderA);
+
+        $this->assertSame('Ana Territorio A', DB::table('persons')->where('id', $personId)->value('full_name'));
+        $this->assertTrue(DB::table('person_aliases')->where('person_id', $personId)->where('alias_name', 'Ana T')->exists());
+        $this->assertSame('Ana Territorio A', DB::table('lideres')->where('id', $this->liderA)->value('nombre'));
+        $this->actingAs($this->campo)->getJson("/mapa-politico/persona/{$personId}")->assertOk()->assertJsonPath('id', $this->liderA);
+    }
+
+    public function test_a_candidate_cannot_be_linked_to_a_lider_of_another_municipio_or_territory(): void
+    {
+        $personId = $this->candidateWithoutLider($this->munA, 'Ana T');
+        $other = $this->candidateWithoutLider($this->munB, 'Beto T');
+
+        // Lider B is outside the user's territory: no merge offer, and linking is refused.
+        $this->actingAs($this->campo)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '222'])
+            ->assertStatus(422)
+            ->assertJsonMissingPath('duplicado');
+        $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderB])
+            ->assertForbidden();
+        // The candidate never ran where lider A is.
+        $this->actingAs($this->admin)->postJson("/mapa-politico/persona/{$other}/unificar", ['duplicado_id' => $this->liderA])
+            ->assertStatus(422);
+        $this->assertSame('Beto T', DB::table('persons')->where('id', $other)->value('full_name'));
+    }
 }

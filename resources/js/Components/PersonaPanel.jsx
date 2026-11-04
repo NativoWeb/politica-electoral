@@ -293,6 +293,29 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                             : (res.message || 'No se pudo unificar. Intenta de nuevo.'));
                 };
                 try {
+                    if (dup.vincular) {
+                        // A candidate with no lider record: link it to the lider that holds the cédula, then save
+                        // the pending edits on that lider (the cédula is already its own, so nothing clashes).
+                        const linked = await apiFetch(`/mapa-politico/persona/${targetId}/unificar`, {
+                            method: 'POST',
+                            body: JSON.stringify({ duplicado_id: dup.id }),
+                        });
+                        if (!linked.ok) return failFrom(linked);
+                        if (editMode) {
+                            const payload = { ...form, nombre: dup.nombre, votos: form.votos ? parseInt(form.votos, 10) : 0 };
+                            const saved = await apiFetch(`/mapa-politico/persona/${dup.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                            if (!saved.ok) return failFrom(saved);
+                        }
+                        setDuplicado(null);
+                        setMessage('Registros unificados');
+                        setErrorMessage('');
+                        showGlobalToast('Registros unificados.');
+                        setEditMode(false);
+                        loadData(targetId);
+                        setTimeout(() => router.reload({ only: ['data'] }), 500);
+                        setTimeout(() => setMessage(''), 4000);
+                        return;
+                    }
                     if (editMode) {
                         // 1) Keep the pending edits. After a cédula clash the typed cédula still belongs to the
                         // duplicate, so the old one is sent and the merge moves it over.

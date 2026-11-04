@@ -59,8 +59,8 @@ const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'S
 const FLAT_SECTIONS = ['Líderes', 'Nuevos Líderes', ASISTENTES_EVENTO_LABEL];
 
 /* ── Acordeón por Partido (estilo Registraduría) ── */
-function PartyAccordion({ partyName, rows, index, onSelectPerson, partyTotal }) {
-    const [open, setOpen] = useState(false);
+function PartyAccordion({ partyName, rows, index, onSelectPerson, partyTotal, defaultOpen = false }) {
+    const [open, setOpen] = useState(defaultOpen);
     const logo = partyLogo(partyName);
     const color = partyColor(partyName, index);
     const totalVotos = partyTotal ? partyTotal.votos : rows.reduce((sum, r) => sum + (r.votos || 0), 0);
@@ -223,8 +223,8 @@ function PersonRow({ row, onSelectPerson, color }) {
     );
 }
 
-function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
-    const [open, setOpen] = useState(false);
+function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals, defaultOpen = false }) {
+    const [open, setOpen] = useState(defaultOpen);
     const colorCls = TIPO_COLORS[tipo] ?? 'bg-gray-100 text-gray-600';
     const icon = TIPO_ICONS[tipo];
     const totalsByParty = useMemo(() => Object.fromEntries((partyTotals || []).map(pt => [pt.partido, pt])), [partyTotals]);
@@ -309,6 +309,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals }) {
                                     index={idx}
                                     onSelectPerson={onSelectPerson}
                                     partyTotal={totalsByParty[party]}
+                                    defaultOpen={defaultOpen}
                                 />
                             ))
                         )}
@@ -489,6 +490,9 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         }
         setProvProgress(null);
     }, [selectedProv, filteredMunicipios]);
+
+    // Phones and tablets: with a municipality chosen, Alcaldía (and only it) opens on its own.
+    const openAlcaldia = Boolean(filters.municipio) && typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
 
     // Determine if we should show collapsible sections or flat table
     const tipoFilter = filters.tipo ?? 'todos';
@@ -840,8 +844,9 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         if (rows.length === 0 && tipo !== 'Nuevos Líderes') return null;
                         return (
                             <CollapsibleSection
-                                key={tipo}
+                                key={tipo === 'Alcaldía' && openAlcaldia ? `${tipo}-${filters.municipio}` : tipo}
                                 tipo={tipo}
+                                defaultOpen={tipo === 'Alcaldía' && openAlcaldia}
                                 rows={rows}
                                 onSelectPerson={setSelectedPerson}
                                 partyTotals={
