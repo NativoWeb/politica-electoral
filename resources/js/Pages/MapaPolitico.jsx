@@ -2,7 +2,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import { Head, router, usePage } from '@inertiajs/react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { downloadMunicipio, downloadProvincia, isDownloaded, getAllOfflineData } from '@/lib/offlineDb';
-import { fmt, partyLogo, partyColor } from '@/lib/electoral';
+import { fmt, partyLogo, partyColor, partyKey } from '@/lib/electoral';
 import { apiFetch } from '@/lib/api';
 import { CARGOS_DISPONIBLES, AREA_METROPOLITANA, ASISTENTES_EVENTO_LABEL, coversAllTipos, tipoOptionsFor } from '@/lib/mapaPoliticoConstants';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
@@ -399,7 +399,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             });
         }
         if (f.partido) {
-            result = result.filter(r => r.partido === f.partido);
+            result = result.filter(r => partyKey(r.partido) === partyKey(f.partido));
         }
         if (f.profesion) {
             result = result.filter(r => r.profesion === f.profesion);

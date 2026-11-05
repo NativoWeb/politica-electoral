@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Support\CurrentCampaign;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -80,6 +81,12 @@ class Lider extends Model
                 }
             }
         });
+    }
+
+    // Party names are stored in capitals, like political_organizations.canonical_name.
+    protected function partido(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => PoliticalOrganization::upperName($value));
     }
 
     public function contactos(): HasMany

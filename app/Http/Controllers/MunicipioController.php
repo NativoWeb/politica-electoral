@@ -25,7 +25,7 @@ class MunicipioController extends Controller
         $alcaldeElecto = collect($alcaldia)->firstWhere('electo', true);
 
         // Alcaldes electos del Centro Democrático en TODO Santander
-        $cdId = DB::table('political_organizations')->where('canonical_name', 'Centro Democrático')->value('id');
+        $cdId = DB::table('political_organizations')->whereIn('canonical_name', ['CENTRO DEMOCRÁTICO', 'Centro Democrático'])->value('id');
         $alcaldiaOffice = DB::table('offices')->where('name', 'Alcaldía')->value('id');
         $candidatosCD = $cdId ? DB::table('candidacies as c')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')

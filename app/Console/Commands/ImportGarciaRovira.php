@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Console\Concerns\TargetsCampaign;
 use App\Models\Person;
+use App\Models\PoliticalOrganization;
 use App\Services\Import\TextNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -68,7 +69,7 @@ class ImportGarciaRovira extends Command
         $id = Str::uuid()->toString();
         DB::table('political_organizations')->insert([
             'id' => $id,
-            'canonical_name' => Str::title(Str::lower($name)),
+            'canonical_name' => PoliticalOrganization::upperName($name),
             'type' => 'party',
             'status' => 'active',
             'created_at' => now(),

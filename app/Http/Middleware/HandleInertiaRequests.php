@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use App\Support\CurrentCampaign;
+use App\Support\PartyLogos;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -83,6 +84,7 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
             'visibleCampaigns' => fn () => $user ? $campaign->visibleCampaigns() : [],
+            'partyLogos' => fn () => $user ? PartyLogos::map() : [],
             'agent' => $user ? [
                 'whatsappNumber' => (string) config('agent.whatsapp_number', ''),
             ] : null,

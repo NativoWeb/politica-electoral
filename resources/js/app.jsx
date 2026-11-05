@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { isLogoutPendingFor, readPendingLogout, syncServiceWorkerSession } from './lib/swSession';
 import { finishPendingLogout, handleLogoutNetworkError, PENDING_LOGOUT_TIMEOUT_MS, resetPendingLogoutAttempts, withTimeout } from './lib/logout';
 import { FullScreenSpinner } from './Components/Spinner';
+import { setUploadedPartyLogos } from './lib/electoral';
 
 let currentUser = null;
 
@@ -38,6 +39,7 @@ function showOfflineToast() {
 
 router.on('navigate', (event) => {
     currentUser = event.detail.page.props.auth?.user ?? null;
+    setUploadedPartyLogos(event.detail.page.props.partyLogos);
     syncServiceWorkerSession(currentUser);
 });
 
@@ -74,6 +76,7 @@ createInertiaApp({
     },
     setup({ el, App, props }) {
         currentUser = props.initialPage.props.auth?.user ?? null;
+        setUploadedPartyLogos(props.initialPage.props.partyLogos);
         const root = createRoot(el);
         const mount = () => {
             syncServiceWorkerSession(currentUser);

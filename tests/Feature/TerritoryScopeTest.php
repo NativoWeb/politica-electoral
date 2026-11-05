@@ -591,7 +591,7 @@ class TerritoryScopeTest extends TestCase
 
         $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$this->liderA}", ['partido' => 'Partido Actual'])->assertOk();
 
-        $this->assertSame('Partido Actual', DB::table('lideres')->where('id', $this->liderA)->value('partido'));
+        $this->assertSame('PARTIDO ACTUAL', DB::table('lideres')->where('id', $this->liderA)->value('partido'));
         $endorsed = DB::table('candidacy_endorsements as ce')->join('political_organizations as po', 'po.id', '=', 'ce.organization_id')->value('po.canonical_name');
         $this->assertSame('Partido 2023', $endorsed);
     }

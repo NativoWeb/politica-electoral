@@ -38,9 +38,29 @@ const PARTY_LOGOS = {
     'Polo': 'polo.png',
 };
 
+/** Clave de comparación de un partido: sin tildes, mayúsculas y espacios simples ("Centro Democrático" = "CENTRO DEMOCRATICO"). */
+export function partyKey(value) {
+    if (!value) return '';
+    return String(value).normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+const byKey = (map) => Object.fromEntries(Object.entries(map).map(([k, v]) => [partyKey(k), v]));
+const STATIC_LOGOS = byKey(PARTY_LOGOS);
+
+/** Logos subidos desde Admin → Partidos (prop compartida partyLogos: nombre o sigla → URL). */
+let uploadedLogos = {};
+
+export function setUploadedPartyLogos(map) {
+    uploadedLogos = byKey(map && typeof map === 'object' ? map : {});
+}
+
 export function partyLogo(name, acronym) {
-    if (acronym && PARTY_LOGOS[acronym]) return `/img/partidos/${PARTY_LOGOS[acronym]}`;
-    if (name && PARTY_LOGOS[name]) return `/img/partidos/${PARTY_LOGOS[name]}`;
+    const n = partyKey(name);
+    const a = partyKey(acronym);
+    if (n && uploadedLogos[n]) return uploadedLogos[n];
+    if (a && uploadedLogos[a]) return uploadedLogos[a];
+    if (a && STATIC_LOGOS[a]) return `/img/partidos/${STATIC_LOGOS[a]}`;
+    if (n && STATIC_LOGOS[n]) return `/img/partidos/${STATIC_LOGOS[n]}`;
     return null;
 }
 
@@ -69,8 +89,11 @@ const FALLBACK = [
     '#6366F1', '#14B8A6', '#F59E0B', '#EF4444', '#8B5CF6',
 ];
 
+const COLORS_BY_KEY = byKey(PARTY_COLORS);
+
 export function partyColor(name, index = 0) {
-    if (name && PARTY_COLORS[name]) return PARTY_COLORS[name];
+    const key = partyKey(name);
+    if (key && COLORS_BY_KEY[key]) return COLORS_BY_KEY[key];
     return FALLBACK[index % FALLBACK.length];
 }
 

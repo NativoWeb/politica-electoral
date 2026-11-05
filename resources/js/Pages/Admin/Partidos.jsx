@@ -1,11 +1,14 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import { partyLogo } from '@/lib/electoral';
 
 export default function Partidos({ partidos }) {
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
     const [search, setSearch] = useState('');
+    const [logoBusy, setLogoBusy] = useState(null);
+    const [logoErrors, setLogoErrors] = useState({});
 
     const createForm = useForm({ name: '', acronym: '', color: '#003B71' });
     const editForm = useForm({ name: '', acronym: '', color: '' });
@@ -27,6 +30,24 @@ export default function Partidos({ partidos }) {
         editForm.put(`/admin/partidos/${editId}`, {
             onSuccess: () => setEditId(null),
         });
+    }
+
+    function uploadLogo(p, file) {
+        if (!file) return;
+        setLogoBusy(p.id);
+        setLogoErrors(prev => ({ ...prev, [p.id]: null }));
+        router.post(`/admin/partidos/${p.id}/logo`, { logo: file }, {
+            forceFormData: true,
+            preserveScroll: true,
+            onError: errors => setLogoErrors(prev => ({ ...prev, [p.id]: errors.logo || 'No se pudo subir el logo.' })),
+            onFinish: () => setLogoBusy(null),
+        });
+    }
+
+    function removeLogo(p) {
+        if (!confirm(`¿Quitar el logo de "${p.name}"?`)) return;
+        setLogoBusy(p.id);
+        router.delete(`/admin/partidos/${p.id}/logo`, { preserveScroll: true, onFinish: () => setLogoBusy(null) });
     }
 
     function toggleStatus(p) {
@@ -73,7 +94,7 @@ export default function Partidos({ partidos }) {
                         <h3 className="text-[16px] font-bold text-[var(--color-primary)]">Nuevo Partido</h3>
                         <div>
                             <label className="block text-[13px] font-bold text-[var(--color-ink-faint)] mb-1">Nombre *</label>
-                            <input className={inputCls} value={createForm.data.name} onChange={e => createForm.setData('name', e.target.value)} required placeholder="Ej: Centro Democrático" />
+                            <input className={inputCls} value={createForm.data.name} onChange={e => createForm.setData('name', e.target.value.toUpperCase())} required placeholder="Ej: CENTRO DEMOCRÁTICO" />
                             {createForm.errors.name && <p className="text-[12px] text-red-500 mt-1">{createForm.errors.name}</p>}
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -120,7 +141,35 @@ export default function Partidos({ partidos }) {
                             <form onSubmit={submitEdit} className="p-4 space-y-3">
                                 <div>
                                     <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Nombre</label>
-                                    <input className={inputCls} value={editForm.data.name} onChange={e => editForm.setData('name', e.target.value)} required />
+                                    <input className={inputCls} value={editForm.data.name} onChange={e => editForm.setData('name', e.target.value.toUpperCase())} required />
+                                    {editForm.errors.name && <p className="text-[12px] text-red-500 mt-1">{editForm.errors.name}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[var(--color-ink-faint)] mb-1">Logo</label>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-14 h-14 rounded-xl border border-[var(--color-line)] bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                                            {p.logo || partyLogo(p.name, p.acronym)
+                                                ? <img src={p.logo || partyLogo(p.name, p.acronym)} alt={`Logo ${p.name}`} className="max-w-full max-h-full object-contain" />
+                                                : <span className="text-[10px] text-[var(--color-ink-faint)]">Sin logo</span>}
+                                        </div>
+                                        <label className={`px-3 py-2.5 rounded-lg border border-[var(--color-line)] text-[13px] font-bold text-[var(--color-primary)] cursor-pointer ${logoBusy === p.id ? 'opacity-50 pointer-events-none' : ''}`}>
+                                            {logoBusy === p.id ? 'Subiendo...' : (p.logo ? 'Cambiar logo' : 'Subir logo')}
+                                            <input
+                                                type="file"
+                                                accept="image/png,image/jpeg,image/webp"
+                                                className="sr-only"
+                                                aria-label={`Subir logo de ${p.name}`}
+                                                onChange={e => { uploadLogo(p, e.target.files?.[0]); e.target.value = ''; }}
+                                            />
+                                        </label>
+                                        {p.logo && (
+                                            <button type="button" onClick={() => removeLogo(p)} disabled={logoBusy === p.id} className="px-3 py-2.5 rounded-lg border border-red-200 text-[13px] font-bold text-red-500 disabled:opacity-50">
+                                                Quitar logo
+                                            </button>
+                                        )}
+                                    </div>
+                                    <p className="text-[11px] text-[var(--color-ink-faint)] mt-1">PNG, JPG o WEBP, máximo 1 MB.</p>
+                                    {logoErrors[p.id] && <p className="text-[12px] text-red-500 mt-1">{logoErrors[p.id]}</p>}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
@@ -143,12 +192,18 @@ export default function Partidos({ partidos }) {
                         ) : (
                             /* View row */
                             <div className="flex items-center gap-3 px-4 py-3.5">
-                                <div
-                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
-                                    style={{ backgroundColor: p.color || '#6B7280' }}
-                                >
-                                    {(p.acronym || p.name.slice(0, 2)).toUpperCase().slice(0, 3)}
-                                </div>
+                                {p.logo || partyLogo(p.name, p.acronym) ? (
+                                    <div className="w-10 h-10 rounded-xl border border-[var(--color-line)] bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                                        <img src={p.logo || partyLogo(p.name, p.acronym)} alt={`Logo ${p.name}`} className="max-w-full max-h-full object-contain" />
+                                    </div>
+                                ) : (
+                                    <div
+                                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+                                        style={{ backgroundColor: p.color || '#6B7280' }}
+                                    >
+                                        {(p.acronym || p.name.slice(0, 2)).toUpperCase().slice(0, 3)}
+                                    </div>
+                                )}
                                 <div className="flex-1 min-w-0">
                                     <p className="text-[14px] font-bold text-[var(--color-ink)] truncate">{p.name}</p>
                                     <p className="text-[11px] text-[var(--color-ink-faint)]">

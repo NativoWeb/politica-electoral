@@ -279,6 +279,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::delete('/partidos/{id}', [PartidoCrudController::class, 'destroy'])->name('partidos.destroy')->middleware('electoral.platform');
         Route::post('/partidos/{id}/restore', [PartidoCrudController::class, 'restore'])->name('partidos.restore')->middleware('electoral.platform');
         Route::delete('/partidos/{id}/force', [PartidoCrudController::class, 'forceDelete'])->name('partidos.forceDelete')->middleware('electoral.platform');
+        Route::post('/partidos/{id}/logo', [PartidoCrudController::class, 'uploadLogo'])->name('partidos.logo.store')->middleware('electoral.platform');
+        Route::delete('/partidos/{id}/logo', [PartidoCrudController::class, 'destroyLogo'])->name('partidos.logo.destroy')->middleware('electoral.platform');
 
         Route::get('/importaciones', [AdminController::class, 'imports'])->name('imports')->middleware('electoral.platform');
         Route::get('/catalogos', [AdminController::class, 'catalogs'])->name('catalogs')->middleware('electoral.platform');

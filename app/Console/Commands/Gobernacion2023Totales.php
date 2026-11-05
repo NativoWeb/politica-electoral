@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\AuditLog;
+use App\Models\PoliticalOrganization;
 use App\Services\Import\TextNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -293,7 +294,7 @@ class Gobernacion2023Totales extends Command
             if ($org['action'] === 'crear') {
                 $id = (string) Str::uuid();
                 DB::table('political_organizations')->insert([
-                    'id' => $id, 'type' => 'party', 'canonical_name' => $org['nombre'], 'status' => 'active', 'created_at' => $now, 'updated_at' => $now,
+                    'id' => $id, 'type' => 'party', 'canonical_name' => PoliticalOrganization::upperName($org['nombre']), 'status' => 'active', 'created_at' => $now, 'updated_at' => $now,
                 ]);
                 $this->audit('DATA_GOBERNACION_2023_ORGANIZACION_CREADA', 'political_organization', $id, ['aval_fuente' => $org['aval']]);
             }

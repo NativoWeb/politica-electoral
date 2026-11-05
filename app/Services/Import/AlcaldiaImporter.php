@@ -375,7 +375,7 @@ class AlcaldiaImporter
 
         if (isset($knownAbbrevs[$normalized])) {
             $canonicalName = $knownAbbrevs[$normalized];
-            $org = PoliticalOrganization::where('canonical_name', $canonicalName)->first();
+            $org = PoliticalOrganization::whereRaw('UPPER(canonical_name) = UPPER(?)', [$canonicalName])->first();
             if ($org) {
                 $this->orgCache[$normalized] = $org;
                 return $org;

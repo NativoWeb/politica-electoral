@@ -48,6 +48,7 @@ sed -i 's|SESSION_DRIVER=.*|SESSION_DRIVER=redis|' .env
 # --- Migrations ---
 echo "[4/6] Ejecutando migraciones..."
 php artisan migrate --force
+php artisan storage:link 2>/dev/null || true
 
 # --- Optimize ---
 echo "[5/6] Optimizando para producción..."

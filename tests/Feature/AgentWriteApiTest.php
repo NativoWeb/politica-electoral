@@ -878,13 +878,13 @@ class AgentWriteApiTest extends TestCase
         $id = $this->agent('POST', '/api/agent/v1/votantes', [
             'nombre' => 'Militante Agente', 'municipio_id' => $this->munA, 'partido' => 'Partido Sensible Uno', 'militante' => true,
         ], $this->tokenFor($this->campo))->assertCreated()->json('data.id');
-        $this->assertDatabaseHas('lideres', ['id' => $id, 'partido' => 'Partido Sensible Uno', 'militante' => true]);
+        $this->assertDatabaseHas('lideres', ['id' => $id, 'partido' => 'PARTIDO SENSIBLE UNO', 'militante' => true]);
 
         $this->app['auth']->forgetGuards();
         $this->actingAs($this->campo)->putJson("/votantes/{$this->liderA}", [
             'nombre' => 'Ana Territorio A', 'partido' => 'Partido Sensible Dos', 'militante' => false,
         ])->assertOk();
-        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'partido' => 'Partido Sensible Dos', 'militante' => false]);
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'partido' => 'PARTIDO SENSIBLE DOS', 'militante' => false]);
 
         $this->assertAuditHasNoneOf(['Partido Sensible']);
         $metas = DB::table('audit_logs')->orderBy('created_at')->pluck('metadata')->map(fn ($m) => json_decode($m, true))->all();

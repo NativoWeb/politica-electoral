@@ -13,6 +13,7 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Campaign;
 use App\Models\CargoCategory;
 use App\Models\Lider;
+use App\Models\PoliticalOrganization;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
 use App\Support\Cedula;
@@ -51,8 +52,8 @@ class MapaPoliticoController extends Controller
 
     // Cámara candidates endorsed by a party that ran inside a coalition list; votes are reported under the list name.
     private const CAMARA_LIST_BY_PARTY = [
-        'Alianza Verde' => 'Verde / En Marcha',
-        'Nuevo Liberalismo' => 'Mira / Nuevo Liberal',
+        'ALIANZA VERDE' => 'VERDE / EN MARCHA',
+        'NUEVO LIBERALISMO' => 'MIRA / NUEVO LIBERAL',
     ];
 
     private function renamePerson(string $personId, string $fullName): void
@@ -180,7 +181,7 @@ class MapaPoliticoController extends Controller
 
         $partyTotals = $this->partyTotalsWithLista($munId, $provinciaIds);
         if ($partido) {
-            $partyTotals = array_map(fn ($list) => array_values(array_filter($list, fn ($p) => $p['partido'] === $partido)), $partyTotals);
+            $partyTotals = array_map(fn ($list) => array_values(array_filter($list, fn ($p) => mb_strtoupper($p['partido'] ?? '') === mb_strtoupper($partido))), $partyTotals);
         }
 
         return Inertia::render('MapaPolitico', [
@@ -655,7 +656,7 @@ class MapaPoliticoController extends Controller
                 $rows = $query->orderByDesc('res.votos')->limit(30)->get()->map(fn ($r) => (array) $r)->toArray();
                 if ($tipoKey === 'camara') {
                     foreach ($rows as &$row) {
-                        $row['partido'] = self::CAMARA_LIST_BY_PARTY[$row['partido'] ?? ''] ?? $row['partido'];
+                        $row['partido'] = self::CAMARA_LIST_BY_PARTY[mb_strtoupper($row['partido'] ?? '')] ?? $row['partido'];
                     }
                     unset($row);
                 }
@@ -665,7 +666,7 @@ class MapaPoliticoController extends Controller
 
         // === FILTRO POR PARTIDO ===
         if ($partido) {
-            $data = array_values(array_filter($data, fn ($row) => ($row['partido'] ?? '') === $partido));
+            $data = array_values(array_filter($data, fn ($row) => mb_strtoupper($row['partido'] ?? '') === mb_strtoupper($partido)));
         }
 
         // #6: Enrich non-líder rows — only load líderes for relevant municipios. Only the own campaign's lideres:
@@ -1344,7 +1345,7 @@ class MapaPoliticoController extends Controller
                             'provincia' => $provName ?? '',
                             'geographic_unit_id' => $geoId,
                             'cargo' => $data['cargo'] ?? '',
-                            'partido' => $data['partido'] ?? null,
+                            'partido' => PoliticalOrganization::upperName($data['partido'] ?? null),
                             'tipo' => in_array('Nuevos Líderes', $data['tipos'] ?? []) ? 'nuevo_lider' : 'directorio',
                             'telefono' => $data['telefono'] ?? null,
                             'email' => $data['email'] ?? null,
@@ -1367,7 +1368,7 @@ class MapaPoliticoController extends Controller
 
             // partido: use array_key_exists to distinguish "not sent" from "sent as empty/null"
             $partidoSent = array_key_exists('partido', $data);
-            $partidoValue = $data['partido'] ?? null;
+            $partidoValue = PoliticalOrganization::upperName($data['partido'] ?? null);
 
             if ($lider) {
                 $updateData = [
@@ -1445,7 +1446,7 @@ class MapaPoliticoController extends Controller
             if ($candidacyId && $partidoSent) {
                 if ($partidoValue) {
                     // Assign party
-                    $orgId = DB::table('political_organizations')->where('canonical_name', $partidoValue)->value('id');
+                    $orgId = DB::table('political_organizations')->whereRaw('UPPER(canonical_name) = UPPER(?)', [$partidoValue])->value('id');
                     if ($orgId) {
                         $existing = DB::table('candidacy_endorsements')
                             ->where('candidacy_id', $candidacyId)
@@ -1854,7 +1855,7 @@ class MapaPoliticoController extends Controller
             $acc[$r->corp][$r->partido]['party'] = (int) $r->votos;
         }
         foreach ($candidateRows as $r) {
-            $partido = $r->corp === 'Cámara de Representantes' ? (self::CAMARA_LIST_BY_PARTY[$r->partido] ?? $r->partido) : $r->partido;
+            $partido = $r->corp === 'Cámara de Representantes' ? (self::CAMARA_LIST_BY_PARTY[mb_strtoupper((string) $r->partido)] ?? $r->partido) : $r->partido;
             $acc[$r->corp][$partido]['cand'] = ($acc[$r->corp][$partido]['cand'] ?? 0) + (int) $r->votos;
         }
 

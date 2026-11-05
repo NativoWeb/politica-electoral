@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,6 +25,11 @@ class LiderInfoPolitica extends Model
     protected $casts = [
         'votos' => 'integer',
     ];
+
+    protected function partido(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => PoliticalOrganization::upperName($value));
+    }
 
     public function lider(): BelongsTo
     {

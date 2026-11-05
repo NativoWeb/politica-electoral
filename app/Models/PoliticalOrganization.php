@@ -1,5 +1,6 @@
 <?php
 namespace App\Models;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,17 @@ class PoliticalOrganization extends Model
         'valid_from' => 'date',
         'valid_to' => 'date',
     ];
+
+    // Party names are always shown in capitals, accents and Ñ kept.
+    public static function upperName(?string $name): ?string
+    {
+        return $name === null ? null : mb_strtoupper(trim($name), 'UTF-8');
+    }
+
+    protected function canonicalName(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => self::upperName($value));
+    }
 
     public function mergedInto(): BelongsTo
     {

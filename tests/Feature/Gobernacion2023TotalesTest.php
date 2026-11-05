@@ -153,9 +153,9 @@ class Gobernacion2023TotalesTest extends TestCase
         $this->assertTrue(DB::table('person_aliases')->where('person_id', $ferley->id)->where('normalized_alias', 'FERLEY PARRA')->exists());
         $this->assertSame('LUIS MAURICIO QUINONES AMAYA', DB::table('persons')->where('id', $this->ids['persons']['Luis Quiñones'])->value('normalized_name'));
 
-        $this->assertSame('General Juvenal Gobernador', $this->orgOf('Juvenal Diaz'));
-        $this->assertSame('Coalicion Por El Desarrollo De Santander', $this->orgOf('Hector Mantilla'));
-        $this->assertSame('Dignidad Santandereana', $this->orgOf('Ferley Parra'));
+        $this->assertSame('GENERAL JUVENAL GOBERNADOR', $this->orgOf('Juvenal Diaz'));
+        $this->assertSame('COALICION POR EL DESARROLLO DE SANTANDER', $this->orgOf('Hector Mantilla'));
+        $this->assertSame('DIGNIDAD SANTANDEREANA', $this->orgOf('Ferley Parra'));
         $this->assertSame('Liga', $this->orgOf('Rodolfo Hernandez'));
         $this->assertSame('Colombia Humana', $this->orgOf('Luis Rangel'));
         $this->assertSame('Independiente', $this->orgOf('Luis Quiñones'));
@@ -266,7 +266,7 @@ class Gobernacion2023TotalesTest extends TestCase
 
         $this->assertSame('Juvenal Diaz Mateus', $props['candidatos'][0]['name']);
         $this->assertSame(423130, $props['candidatos'][0]['votos']);
-        $this->assertSame('General Juvenal Gobernador', $props['candidatos'][0]['partido']);
+        $this->assertSame('GENERAL JUVENAL GOBERNADOR', $props['candidatos'][0]['partido']);
         $this->assertTrue($props['candidatos'][0]['electo']);
         $this->assertSame([423130, 208781, 181399, 135183, 26532, 11125, 10868, 8493, 3502], array_column($props['candidatos'], 'votos'));
         $this->assertSame(1085625, $props['resumen']['validos']);
@@ -374,7 +374,7 @@ class Gobernacion2023TotalesTest extends TestCase
         $this->assertSame(['Resumen', 'Candidatos'], array_keys($sheets));
         $candidatos = $sheets['Candidatos'];
         $this->assertSame(['NOMBRE', 'PARTIDO', 'CARGO', 'VOTOS', '% VÁLIDOS'], $candidatos[0]);
-        $this->assertSame(['Juvenal Diaz Mateus', 'General Juvenal Gobernador', 'Gobernador Electo', 423130, '38,97%'], $candidatos[1]);
+        $this->assertSame(['Juvenal Diaz Mateus', 'GENERAL JUVENAL GOBERNADOR', 'Gobernador Electo', 423130, '38,97%'], $candidatos[1]);
         $this->assertSame(['Voto en blanco', '—', '—', 76612, '7,05%'], $candidatos[10]);
         $this->assertCount(11, $candidatos);
 
