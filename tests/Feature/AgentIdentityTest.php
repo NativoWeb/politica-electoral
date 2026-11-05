@@ -393,7 +393,7 @@ class AgentIdentityTest extends TestCase
             'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
             'territory' => ['restricted' => true, 'municipios' => [['id' => $this->munA, 'name' => 'Girón']]],
             'can_write' => true,
-            'campaign' => ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático'],
+            'campaign' => ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'all' => false, 'visible_ids' => [Campaign::DEFAULT_ID]],
         ]);
     }
 
@@ -446,7 +446,33 @@ class AgentIdentityTest extends TestCase
 
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])
             ->assertOk()
-            ->assertJsonPath('campaign', ['id' => $campX, 'name' => 'Alejandro']);
+            ->assertJsonPath('campaign', ['id' => $campX, 'name' => 'Alejandro', 'all' => false, 'visible_ids' => [$campX]]);
+    }
+
+    // visible_ids comes from CurrentCampaign (the web's rule): the own campaign plus its subcampaigns, all for R01.
+    public function test_whoami_and_me_list_the_visible_campaigns(): void
+    {
+        $sub = (string) Str::uuid();
+        $otra = (string) Str::uuid();
+        DB::table('campaigns')->insert([
+            ['id' => $sub, 'name' => 'Sub A', 'slug' => 'sub-a', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => true],
+            ['id' => $otra, 'name' => 'Campaña B', 'slug' => 'campana-b', 'parent_id' => null, 'whatsapp_enabled' => true],
+        ]);
+        $this->linkedCampo();
+
+        $this->whoami()->assertOk()->assertJsonPath('campaign.all', false)
+            ->assertJsonPath('campaign.visible_ids', [Campaign::DEFAULT_ID, $sub]);
+        $token = $this->agent('POST', '/api/agent/v1/token', ['phone' => self::PHONE])->assertOk()->json('token');
+        $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])->assertOk()
+            ->assertJsonPath('campaign.visible_ids', [Campaign::DEFAULT_ID, $sub]);
+
+        $this->campo->forceFill(['campaign_id' => $otra])->save();
+        $this->whoami()->assertOk()->assertJsonPath('campaign.id', $otra)->assertJsonPath('campaign.visible_ids', [$otra]);
+
+        $this->campo->forceFill(['campaign_id' => Campaign::DEFAULT_ID, 'role_id' => Role::create(['code' => 'R01_SUPERADMIN', 'name' => 'Superadmin', 'level' => 1])->id])->save();
+        $response = $this->whoami()->assertOk()->assertJsonPath('campaign.all', true);
+        $this->assertEqualsCanonicalizing([Campaign::DEFAULT_ID, $sub, $otra], $response->json('campaign.visible_ids'));
+        $this->assertSame(Campaign::DEFAULT_ID, $response->json('campaign.visible_ids.0'));
     }
 
     public function test_a_campaign_without_whatsapp_cannot_link_nor_use_the_agent(): void

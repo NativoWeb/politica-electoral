@@ -56,12 +56,20 @@ class CurrentCampaign
     // null = unrestricted (no authenticated user).
     public function visibleIds(): ?array
     {
-        $own = $this->ownId();
+        $user = $this->user();
+
+        return $user ? $this->visibleIdsFor($user) : null;
+    }
+
+    // The same rule for a given user, also one who is not the authenticated one (the agent's whoami by phone).
+    public function visibleIdsFor(User $user): ?array
+    {
+        $own = $user->campaignId();
         if ($own === null) {
             return null;
         }
         // The superadmin sees every campaign, not only its own branch (read only outside its own, like any other).
-        if ($this->isSuperadmin()) {
+        if ($user->role?->code === 'R01_SUPERADMIN') {
             return $this->allIds ??= array_values(array_unique([$own, ...DB::table('campaigns')->pluck('id')->all()]));
         }
 

@@ -4,6 +4,7 @@ namespace App\Services\Agent;
 
 use App\Http\Middleware\EnsureCanWrite;
 use App\Models\User;
+use App\Support\CurrentCampaign;
 use Illuminate\Support\Facades\DB;
 
 class AgentIdentityService
@@ -85,9 +86,13 @@ class AgentIdentityService
                 'municipios' => $municipios,
             ],
             'can_write' => $this->canWrite($user),
+            // visible_ids: the campaigns whose data the user reads (own first, then its subcampaigns), as the web scopes them.
+            // all: true for the superadmin, who sees every campaign (visible_ids lists those existing right now).
             'campaign' => [
                 'id' => $user->campaignId(),
                 'name' => DB::table('campaigns')->where('id', $user->campaignId())->value('name'),
+                'all' => $user->role?->code === 'R01_SUPERADMIN',
+                'visible_ids' => app(CurrentCampaign::class)->visibleIdsFor($user),
             ],
         ];
     }
