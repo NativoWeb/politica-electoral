@@ -445,6 +445,48 @@ class AgentVotanteQueryApiTest extends TestCase
         $this->list([], $otro)->assertOk();
     }
 
+    public function test_search_by_cedula_only_finds_who_authorized_their_data(): void
+    {
+        $this->list(['q' => 'bruno'])->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.id', $this->sinAutorizarA);
+        $this->list(['q' => '1098765432'])->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.id', $this->autorizadoA);
+        $this->list(['q' => '98765'])->assertOk()->assertJsonPath('meta.total', 1);
+
+        $this->list(['q' => '1011223344'])->assertOk()->assertJsonPath('meta.total', 0)->assertJsonPath('data', []);
+        $this->list(['q' => '11223'])->assertOk()->assertJsonPath('meta.total', 0);
+        $this->agentGet('/api/agent/v1/votantes/export', ['q' => '1011223344'], $this->tokenFor($this->campo))
+            ->assertOk()->assertHeader('X-Total-Count', '0');
+    }
+
+    public function test_export_is_cut_to_the_quota_left_and_429_once_it_is_spent(): void
+    {
+        config(['agent.contact_rows_daily_max' => 1]);
+        $this->lider($this->munA, 'Ana Dos Autoriza', '1077777777', true);
+        $token = $this->tokenFor($this->campo);
+
+        // By nombre: Ana Autoriza (fits), Ana Dos Autoriza (over the quota: the file stops there), Bruno.
+        $response = $this->agentGet('/api/agent/v1/votantes/export', [], $token)
+            ->assertOk()
+            ->assertHeader('X-Quota-Truncated', 'true')
+            ->assertHeader('X-Total-Count', '3');
+        $rows = $this->sheetRows($response);
+        $this->assertCount(2, $rows);
+        $this->assertSame('Ana Autoriza', $rows[1][0]);
+        $this->assertStringNotContainsString('1077777777', json_encode($rows));
+
+        $meta = json_decode(DB::table('audit_logs')->sole()->metadata, true);
+        $this->assertSame([3, 1, 1, true], [$meta['total'], $meta['entregadas'], $meta['con_datos'], $meta['recortado_por_cupo']]);
+
+        $this->agentGet('/api/agent/v1/votantes/export', [], $token)
+            ->assertStatus(429)
+            ->assertJson(['success' => false, 'message' => 'Alcanzaste el límite diario de datos de contacto.', 'restantes' => 0]);
+    }
+
+    public function test_export_within_the_quota_is_not_marked_as_cut(): void
+    {
+        $this->agentGet('/api/agent/v1/votantes/export', [], $this->tokenFor($this->campo))
+            ->assertOk()->assertHeader('X-Quota-Truncated', 'false');
+    }
+
     public function test_export_respects_territory_authorization_and_row_cap(): void
     {
         $correlation = (string) Str::uuid();

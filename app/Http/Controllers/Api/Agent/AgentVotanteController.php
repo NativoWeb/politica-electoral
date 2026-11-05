@@ -19,6 +19,7 @@ use App\Http\Requests\Agent\AgentUpdateVotanteRequest;
 use App\Http\Requests\Agent\AgentVotanteRules;
 use App\Models\Lider;
 use App\Models\LiderSeguimiento;
+use App\Support\ContactDataPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -50,9 +51,15 @@ class AgentVotanteController extends Controller
 
     public function storeContacto(AgentStoreContactoRequest $request, string $id, AddContacto $action): JsonResponse
     {
-        $contacto = $action->handle($action->authorizeFor($id), $request->validated());
+        $lider = $action->authorizeFor($id);
+        $contacto = $action->handle($lider, $request->validated());
 
-        return $this->ok('Contacto creado.', $contacto->only(['id', 'lider_id', 'tipo', 'valor', 'principal', 'estado']), 201);
+        $data = $contacto->only(['id', 'lider_id', 'tipo', 'valor', 'principal', 'estado']);
+        if (! ContactDataPolicy::authorized($lider)) {
+            unset($data['valor']);
+        }
+
+        return $this->ok('Contacto creado.', $data, 201);
     }
 
     public function storeReferido(AgentStoreReferidoRequest $request, string $id, AddReferido $action): JsonResponse
@@ -93,10 +100,11 @@ class AgentVotanteController extends Controller
         return response()->json(['success' => true, 'data' => $items]);
     }
 
+    // Contact data and notes only of who authorized them (ContactDataPolicy), like GET /votantes.
     private function summary(Lider $lider): array
     {
-        return $lider->only(['id', 'nombre', 'municipio', 'geographic_unit_id', 'is_active',
-            ...array_keys(AgentVotanteRules::editable())]);
+        return ContactDataPolicy::strip($lider, $lider->only(['id', 'nombre', 'municipio', 'geographic_unit_id', 'is_active',
+            ...array_keys(AgentVotanteRules::editable())]));
     }
 
     private function seguimiento(LiderSeguimiento $s): array

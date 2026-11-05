@@ -103,6 +103,9 @@ class AgentVotanteQueryApiPostgresTest extends TestCase
         // By cédula: only inside the territory.
         $this->agent('/api/agent/v1/votantes', ['q' => '1098700001'])->assertOk()->assertJsonPath('meta.total', 1);
         $this->agent('/api/agent/v1/votantes', ['q' => '1098700003'])->assertOk()->assertJsonPath('meta.total', 0);
+        // ...and only of who authorized their data (Bruno did not), while his name is still found.
+        $this->agent('/api/agent/v1/votantes', ['q' => '1098700002'])->assertOk()->assertJsonPath('meta.total', 0);
+        $this->agent('/api/agent/v1/votantes', ['q' => "{$this->tag} bruno"])->assertOk()->assertJsonPath('meta.total', 1);
         $this->agent('/api/agent/v1/votantes', ['municipio_id' => $this->geoB, 'q' => $this->tag])->assertForbidden();
     }
 

@@ -873,6 +873,38 @@ class AgentWriteApiTest extends TestCase
         $this->assertDatabaseHas('persons', ['id' => $linked, 'full_name' => 'Ana Renombrada Web']);
     }
 
+    // Write responses follow ContactDataPolicy like GET /votantes: no contact data nor notes of who did not authorize it.
+    public function test_write_responses_hide_contact_data_of_who_did_not_authorize_it(): void
+    {
+        $token = $this->tokenFor($this->campo);
+
+        $patched = $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nivel_confianza' => 'contactado', 'observacion' => 'Vive en la 5'], $token)
+            ->assertOk()->assertJsonPath('data.nivel_confianza', 'contactado')->json('data');
+        foreach (['telefono', 'email', 'observacion', 'cedula'] as $field) {
+            $this->assertArrayNotHasKey($field, $patched);
+        }
+        $this->assertFalse($patched['autoriza_datos']);
+
+        $created = $this->agent('POST', '/api/agent/v1/votantes', [
+            'nombre' => 'Sin autorizar', 'municipio_id' => $this->munA, 'cedula' => '444', 'telefono' => '3004440000', 'email' => 'x@y.co',
+        ], $token)->assertCreated()->json('data');
+        $this->assertArrayNotHasKey('telefono', $created);
+        $this->assertArrayNotHasKey('email', $created);
+
+        $contacto = $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/contactos", ['tipo' => 'celular', 'valor' => '3009998877'], $token)
+            ->assertCreated()->json('data');
+        $this->assertArrayNotHasKey('valor', $contacto);
+        $this->assertSame('celular', $contacto['tipo']);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['autoriza_datos' => true], $token)
+            ->assertOk()->assertJsonPath('data.telefono', '300111')->assertJsonPath('data.observacion', 'Vive en la 5');
+        $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/contactos", ['tipo' => 'celular', 'valor' => '3009998878'], $token)
+            ->assertCreated()->assertJsonPath('data.valor', '3009998878');
+        $this->agent('POST', '/api/agent/v1/votantes', [
+            'nombre' => 'Autoriza', 'municipio_id' => $this->munA, 'telefono' => '3005550000', 'autoriza_datos' => true,
+        ], $token)->assertCreated()->assertJsonPath('data.telefono', '3005550000');
+    }
+
     public function test_political_affiliation_is_omitted_from_the_audit_on_web_and_agent(): void
     {
         $id = $this->agent('POST', '/api/agent/v1/votantes', [

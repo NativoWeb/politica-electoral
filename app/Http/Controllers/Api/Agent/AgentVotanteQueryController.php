@@ -11,6 +11,7 @@ use App\Models\AuditLog;
 use App\Models\Lider;
 use App\Models\LiderContacto;
 use App\Services\Agent\AgentContactQuota;
+use App\Support\ContactDataPolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -74,8 +75,16 @@ class AgentVotanteQueryController extends Controller
         $lideres = $query->limit($max)->get();
         $contactos = $this->contactos($lideres);
 
+        // More rows with contact data than the quota left today: the file stops before the first one over it.
+        $remaining = $this->quota->remaining($request->user()->id);
+        $quotaTruncated = $remaining > 0 && $this->withData($lideres) > $remaining;
+        if ($quotaTruncated) {
+            $lideres = $this->cutToQuota($lideres, $remaining);
+        }
+
         $conDatos = $this->withData($lideres);
-        $counts = ['total' => $total, 'entregadas' => $lideres->count(), 'con_datos' => $conDatos, 'max_filas' => $max];
+        $counts = ['total' => $total, 'entregadas' => $lideres->count(), 'con_datos' => $conDatos, 'max_filas' => $max,
+            'recortado_por_cupo' => $quotaTruncated];
         if ($blocked = $this->overQuota($request, 'agent.votantes.export', $filters, $counts)) {
             return $blocked;
         }
@@ -91,8 +100,23 @@ class AgentVotanteQueryController extends Controller
         ]), $filename);
         $response->headers->set('X-Total-Count', (string) $total);
         $response->headers->set('X-Export-Truncated', $total > $max ? 'true' : 'false');
+        $response->headers->set('X-Quota-Truncated', $quotaTruncated ? 'true' : 'false');
 
         return $response;
+    }
+
+    // The rows in order up to the last one that still fits $quota rows with contact data.
+    private function cutToQuota(Collection $lideres, int $quota): Collection
+    {
+        $withData = 0;
+
+        return $lideres->takeWhile(function (Lider $l) use (&$withData, $quota) {
+            if (! $this->authorized($l)) {
+                return true;
+            }
+
+            return ++$withData <= $quota;
+        })->values();
     }
 
     // The web listing (VotanteController::listing) with the agent's filter names, plus municipio_id.
@@ -107,7 +131,6 @@ class AgentVotanteQueryController extends Controller
         $bool = fn (string $key) => array_key_exists($key, $filters) ? ($filters[$key] ? '1' : '0') : null;
         $web = Request::create('/votantes', 'GET', array_filter([
             'estado' => $filters['is_active'] ? 'activos' : 'inactivos',
-            'search' => $filters['q'] ?? null,
             'nivel_confianza' => $filters['nivel_confianza'] ?? null,
             'gran_elector' => $bool('gran_elector'),
             'militante' => $bool('militante'),
@@ -117,13 +140,25 @@ class AgentVotanteQueryController extends Controller
 
         return app(VotanteController::class)->listing($web)
             ->when($municipioId, fn ($q) => $q->where('lideres.geographic_unit_id', $municipioId))
+            ->when($filters['q'] ?? null, fn ($q, $term) => $this->search($q, $term))
             ->orderBy('lideres.nombre')
             ->orderBy('lideres.id');
     }
 
+    // The web search (name or part of the cédula), except that a cédula only finds who authorized their data:
+    // the agent must not confirm that a given cédula is in the database for someone who did not.
+    private function search(Builder $query, string $term): Builder
+    {
+        $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term);
+        $like = $query->getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+
+        return $query->where(fn ($w) => $w->where('lideres.nombre', $like, "%{$escaped}%")
+            ->orWhere(fn ($c) => $c->where('lideres.autoriza_datos', true)->where('lideres.cedula', 'like', "%{$escaped}%")));
+    }
+
     private function authorized(Lider $lider): bool
     {
-        return $lider->autoriza_datos === true;
+        return ContactDataPolicy::authorized($lider);
     }
 
     private function withData(Collection $lideres): int
