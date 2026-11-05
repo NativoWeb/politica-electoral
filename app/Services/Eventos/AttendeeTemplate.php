@@ -36,7 +36,7 @@ class AttendeeTemplate
         ]);
         $sheet->getRowDimension(1)->setRowHeight(24);
         $sheet->freezePane('A2');
-        foreach (['A' => 22, 'B' => 22, 'C' => 16, 'D' => 15, 'E' => 15, 'F' => 22, 'G' => 30, 'H' => 22, 'I' => 16] as $column => $width) {
+        foreach (['A' => 22, 'B' => 22, 'C' => 16, 'D' => 15, 'E' => 15, 'F' => 22, 'G' => 30, 'H' => 22, 'I' => 16, 'J' => 20, 'K' => 26] as $column => $width) {
             $sheet->getColumnDimension($column)->setWidth($width);
         }
         foreach (self::TEXT_COLUMNS as $column) {
@@ -78,14 +78,16 @@ class AttendeeTemplate
             ['2. Nombres, Apellidos, Cédula y Celular son obligatorios. La cédula va solo con números (5 a 10 dígitos), sin puntos.', null],
             ['3. El celular tiene 10 dígitos y empieza por 3. La fecha de nacimiento va como DD/MM/AAAA (por ejemplo 02/04/1980).', null],
             ['4. En «Autorizó» escriba SÍ solo si la persona firmó la autorización de datos en la planilla de papel; si no, escriba NO. Solo se cargan las personas con SÍ.', null],
-            ['5. Máximo '.AttendeeSheetReader::MAX_ROWS.' personas por archivo y '.ImportUploadRequest::maxMb().' MB. Guarde el archivo como .xlsx.', null],
+            ['5. Lista sin autorización: si deja «Autorizó» vacío en TODAS las filas, solo se carga como lista del evento. Quien ya está en la plataforma (por cédula, o por teléfono y nombre que usted confirma) queda con la asistencia en su historial; quien no está, queda solo en la lista del evento y no pasa a Votantes hasta que autorice por QR u operador. En ese caso solo el nombre es obligatorio.', null],
+            ['6. «Municipio» y «Liderazgo o actividad» son opcionales; el liderazgo o la actividad quedan como nota del asistente (no cambian la ficha).', null],
+            ['7. Máximo '.AttendeeSheetReader::MAX_ROWS.' personas por archivo y '.ImportUploadRequest::maxMb().' MB. Guarde el archivo como .xlsx.', null],
             ['', null],
             ['Texto de autorización de datos vigente (Ley 1581 de 2012)', 'heading'],
             ['Versión: '.($consent?->version ?? 'sin texto'), 'bold'],
         ];
         if (! $consent?->approved) {
             $lines[] = ['ATENCIÓN: este texto es PROVISIONAL y todavía no está aprobado por la campaña. Las autorizaciones '
-                .'recogidas con él no sirven: la plataforma no deja cargar este Excel hasta que la campaña apruebe su texto.', 'warning'];
+                .'recogidas con él no sirven: la plataforma no deja importar filas con SÍ hasta que la campaña apruebe su texto.', 'warning'];
         }
         $lines[] = [$consent?->cuerpo ?? 'La campaña no tiene un texto de autorización.', 'wrap'];
 

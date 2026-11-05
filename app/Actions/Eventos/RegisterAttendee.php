@@ -32,6 +32,9 @@ class RegisterAttendee
         $importId = $options['import_id'] ?? null;
 
         $previous = $this->previous($event, $data);
+        if ($previous !== null && $this->unauthorized($previous, $data)) {
+            return $this->authorizeExisting($event, $consent, $previous['attendee'], $data, $channel, $user, $ip, $userAgent, $consentChannel, $audit);
+        }
         if ($previous !== null) {
             return $audit ? $this->repeated($event, $previous, $channel, $user, $ip, $userAgent) : $previous;
         }
@@ -92,6 +95,9 @@ class RegisterAttendee
             $previous = $this->previous($event, $data);
             if ($previous === null) {
                 throw $e;
+            }
+            if ($this->unauthorized($previous, $data)) {
+                return $this->authorizeExisting($event, $consent, $previous['attendee'], $data, $channel, $user, $ip, $userAgent, $consentChannel, $audit);
             }
 
             return $audit ? $this->repeated($event, $previous, $channel, $user, $ip, $userAgent) : $previous;
@@ -206,6 +212,66 @@ class RegisterAttendee
         }
 
         return $results;
+    }
+
+    // The same cédula already in the event from a list without authorization (another submission): this registration
+    // brings the authorization, so that attendee is completed instead of answering "ya estaba".
+    private function unauthorized(array $previous, array $data): bool
+    {
+        $attendee = $previous['attendee'];
+
+        return $attendee !== null && ! $attendee->autoriza_datos && $attendee->client_uuid !== $data['client_uuid'];
+    }
+
+    // Adds the consent proof to an attendee of a list without authorization: data_consents row, consent_id,
+    // autoriza_datos, and link_status vinculado (it had or now finds its ficha) or pendiente (to approve). Only empty
+    // fields are filled with what the person typed; nothing already stored is overwritten.
+    private function authorizeExisting(CampaignEvent $event, ConsentText $consent, EventAttendee $found, array $data, string $channel, ?User $user, ?string $ip, ?string $userAgent, string $consentChannel, bool $audit): array
+    {
+        return DB::transaction(function () use ($event, $consent, $found, $data, $channel, $user, $ip, $userAgent, $consentChannel, $audit) {
+            $attendee = EventAttendee::whereKey($found->id)->lockForUpdate()->first();
+            if ($attendee->autoriza_datos) {
+                return ['attendee' => $attendee, 'created' => false, 'conflict' => false];
+            }
+            $liderId = $attendee->lider_id ?? DB::table('lideres')->where('campaign_id', $event->campaign_id)
+                ->where('cedula', $data['cedula'])->value('id');
+
+            $proof = (new DataConsent)->forceFill([
+                'campaign_id' => $event->campaign_id,
+                'consent_text_id' => $consent->id,
+                'text_sha256' => $consent->sha256,
+                'cedula' => $data['cedula'],
+                'lider_id' => $liderId,
+                'event_id' => $event->id,
+                'attendee_id' => $attendee->id,
+                'channel' => $consentChannel,
+                'ip' => $ip,
+                'user_agent' => $userAgent,
+                'accepted_at' => now(),
+            ]);
+            $proof->save();
+
+            $fill = [
+                'consent_id' => $proof->id,
+                'autoriza_datos' => true,
+                'lider_id' => $liderId,
+                'link_status' => $liderId ? 'vinculado' : 'pendiente',
+            ];
+            foreach (['celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio'] as $field) {
+                if ($attendee->{$field} === null && ($data[$field] ?? null) !== null) {
+                    $fill[$field] = $data[$field];
+                }
+            }
+            if (isset($fill['barrio'])) {
+                $fill['barrio_normalizado'] = AttendeeInput::barrioKey($fill['barrio']);
+            }
+            $attendee->forceFill($fill)->save();
+            if ($audit) {
+                $this->audit($event, $attendee, $channel, 'autorizo', $user, $ip, $userAgent);
+            }
+
+            return ['attendee' => $attendee, 'created' => true, 'conflict' => false];
+        });
     }
 
     private function previous(CampaignEvent $event, array $data): ?array

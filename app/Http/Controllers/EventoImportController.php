@@ -23,6 +23,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -42,7 +43,7 @@ class EventoImportController extends Controller
     // Everything imported keeps a data authorization, so (as the public QR) a load needs the campaign's approved text.
     public const NEEDS_APPROVED_TEXT = 'Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo.';
 
-    public const FILTERS = ['nuevas', 'plataforma', 'error', 'no_autorizo', 'duplicada', 'en_evento', 'omitidas'];
+    public const FILTERS = ['nuevas', 'plataforma', 'error', 'no_autorizo', 'duplicada', 'en_evento', 'omitidas', 'sugerida', 'sin_ficha'];
 
     public function __construct(private EventImportService $imports) {}
 
@@ -83,7 +84,8 @@ class EventoImportController extends Controller
     {
         $event = $this->findEvent($id);
         $this->assertAcceptsImports($event);
-        $this->assertApprovedText($event);
+        // No approved text needed to upload: a list without authorization never registers consents; confirming
+        // rows with SÍ still needs it.
         $this->limits();
 
         try {
@@ -122,6 +124,26 @@ class EventoImportController extends Controller
         return $this->page($event, $import, $filter, $request);
     }
 
+    public function sheet(Request $request, string $id, string $importId): JsonResponse|RedirectResponse
+    {
+        $event = $this->findEvent($id);
+        $import = $this->findImport($event, $importId);
+        abort_if($import->isOcr(), 404);
+        $this->assertEditable($import);
+        $data = $request->validate(['hoja' => ['required', 'string', 'max:100']], ['hoja.required' => 'Elija la hoja del archivo.']);
+        $this->limits();
+        try {
+            $this->imports->changeSheet($import, $event, $data['hoja'], $request->user());
+        } catch (RuntimeException $e) {
+            throw ValidationException::withMessages(['hoja' => $e->getMessage()]);
+        }
+        $import->refresh();
+
+        return $this->done($request, 'Hoja «'.$import->sheet_name.'»: '.self::plural($import->total_rows, 'fila', 'filas').'. Revise las columnas.', [
+            'hoja' => $import->sheet_name, 'filas' => $import->total_rows,
+        ]);
+    }
+
     public function mapping(ImportMappingRequest $request, string $id, string $importId): JsonResponse|RedirectResponse
     {
         $event = $this->findEvent($id);
@@ -154,14 +176,32 @@ class EventoImportController extends Controller
             throw ValidationException::withMessages(['fila' => 'Esta fila no se puede cambiar: en «Autorizó» no dice SÍ, la persona no autorizó el tratamiento de sus datos.']);
         }
 
+        $suggestion = $request->validated('sugerencia');
         try {
-            $row = $this->imports->updateRow($import, $event, $row, $request->values(), $request->validated('decision'));
+            $row = $this->imports->updateRow($import, $event, $row, $request->values(), $request->validated('decision'), $suggestion);
         } catch (RuntimeException $e) {
-            throw ValidationException::withMessages(['decision' => $e->getMessage()]);
+            throw ValidationException::withMessages([$suggestion ? 'sugerencia' : 'decision' => $e->getMessage()]);
         }
+        if ($suggestion) {
+            // Only which row and the answer: never the name, phone or the suggested person.
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'action' => 'EVENTO_IMPORTACION_SUGERENCIA',
+                'entity_type' => 'evento_importacion',
+                'entity_id' => $import->id,
+                'metadata' => ['event_id' => $event->id, 'fila' => $row->row_number, 'resultado' => $suggestion],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+        }
+        $message = match ($suggestion) {
+            'confirmar' => 'Listo: la asistencia quedará en el historial de esa persona.',
+            'rechazar' => 'Listo: queda solo en la lista del evento.',
+            default => $row->errors ? 'Fila guardada: todavía tiene datos por corregir.' : 'Fila guardada.',
+        };
 
-        return $this->done($request, $row->errors ? 'Fila guardada: todavía tiene datos por corregir.' : 'Fila guardada.', [
-            'fila' => self::rowProps($row), 'counts' => $import->fresh()->counts,
+        return $this->done($request, $message, [
+            'fila' => self::rowProps($row, $this->suggestions(collect([$row]))), 'counts' => $import->fresh()->counts,
         ]);
     }
 
@@ -173,7 +213,13 @@ class EventoImportController extends Controller
         if ($import->status === 'subido') {
             throw ValidationException::withMessages(['confirmar' => $import->isOcr() ? 'Primero termine de leer las páginas.' : 'Primero revise las columnas del archivo.']);
         }
-        $this->assertApprovedText($event, $import->isOcr() ? EventoOcrController::NEEDS_APPROVED_TEXT : self::NEEDS_APPROVED_TEXT);
+        $authorized = $import->isOcr() || EventImportService::hasAuthorizedRows($import);
+        if ($authorized) {
+            if (! $request->boolean('declaracion')) {
+                throw ValidationException::withMessages(['declaracion' => ImportConfirmRequest::MESSAGE]);
+            }
+            $this->assertApprovedText($event, $import->isOcr() ? EventoOcrController::NEEDS_APPROVED_TEXT : self::NEEDS_APPROVED_TEXT);
+        }
         $this->limits();
 
         try {
@@ -185,11 +231,18 @@ class EventoImportController extends Controller
             app(OcrImportService::class)->afterConfirm($import);
         }
 
-        $message = $result['nuevos'] === 0 && $result['ya_estaban'] === 0
-            ? 'No había filas nuevas para registrar: este archivo ya estaba importado.'
-            : 'Se registr'.($result['nuevos'] === 1 ? 'ó ' : 'aron ').self::plural($result['nuevos'], 'asistente nuevo', 'asistentes nuevos')
+        $list = $result['historial'] + $result['solo_evento'];
+        $isList = (int) ($import->fresh()->counts['sin_autorizacion'] ?? 0) > 0;
+        $message = match (true) {
+            $result['nuevos'] === 0 && $result['ya_estaban'] === 0 => 'No había filas nuevas para registrar: este archivo ya estaba importado.',
+            $isList => 'Se registr'.($list === 1 ? 'ó ' : 'aron ').self::plural($list, 'asistente', 'asistentes')
+                .' sin autorización de datos: '.self::plural($result['historial'], 'quedó', 'quedaron').' en el historial de su ficha y '
+                .self::plural($result['solo_evento'], 'quedó', 'quedaron').' solo en la lista del evento'
+                .($result['ya_estaban'] ? '; '.self::plural($result['ya_estaban'], 'ya estaba', 'ya estaban').' en el evento' : '').'.',
+            default => 'Se registr'.($result['nuevos'] === 1 ? 'ó ' : 'aron ').self::plural($result['nuevos'], 'asistente nuevo', 'asistentes nuevos')
                 .', con autorización de datos'
-                .($result['ya_estaban'] ? '; '.self::plural($result['ya_estaban'], 'ya estaba', 'ya estaban').' en el evento' : '').'.';
+                .($result['ya_estaban'] ? '; '.self::plural($result['ya_estaban'], 'ya estaba', 'ya estaban').' en el evento' : '').'.',
+        };
 
         return $this->done($request, $message, $result);
     }
@@ -218,8 +271,9 @@ class EventoImportController extends Controller
             $filas = EventImportRow::where('import_id', $import->id)
                 ->when($filter, fn ($q, $f) => self::filterRows($q, $f))
                 ->orderBy('row_number')
-                ->paginate(self::ROWS_PER_PAGE)->withQueryString()
-                ->through(fn (EventImportRow $r) => self::rowProps($r));
+                ->paginate(self::ROWS_PER_PAGE)->withQueryString();
+            $suggestions = $this->suggestions($filas->getCollection());
+            $filas->through(fn (EventImportRow $r) => self::rowProps($r, $suggestions));
         }
 
         return Inertia::render('Eventos/Importar', [
@@ -259,7 +313,7 @@ class EventoImportController extends Controller
             'no_autorizo' => $query->where('status', 'no_autorizo'),
             'nuevas' => $query->where('status', 'valida')->whereNull('match_lider_id'),
             'plataforma' => $query->where('status', 'valida')->whereNotNull('match_lider_id'),
-            'omitidas' => $query->where('status', 'valida')->where('decision', 'omitir'),
+            'omitidas' => $query->whereIn('status', ['valida', 'sin_ficha'])->where('decision', 'omitir'),
             default => $query->where('status', $filter),
         };
     }
@@ -277,6 +331,9 @@ class EventoImportController extends Controller
             'columnas' => $import->column_mapping,
             'counts' => $import->counts,
             'declaro_planillas' => $import->consent_declared,
+            'sin_autorizacion' => (int) ($import->counts['sin_autorizacion'] ?? 0) > 0,
+            'hoja' => $import->sheet_name,
+            'hojas' => $import->sheets ?? [],
             'datos_borrados' => $import->staging_purged_at !== null,
             'created_at' => self::iso($import->created_at),
             'confirmed_at' => self::iso($import->confirmed_at),
@@ -292,7 +349,23 @@ class EventoImportController extends Controller
 
     // An OCR row also carries its row on the printed page, the AI's confidence per field and, when it is not
     // importable for lack of authorization, why.
-    public static function rowProps(EventImportRow $r): array
+    // The ficha suggested by phone + name to each list row ("¿Es esta persona?"): name, municipio and cargo, only
+    // of lideres of the event's campaign inside the user's territory. [lider id => props].
+    private function suggestions($rows): array
+    {
+        $ids = collect($rows)->pluck('suggested_lider_id')->filter()->unique()->values()->all();
+        if ($ids === [] || ! EventImportService::canSeeSuggestions()) {
+            return [];
+        }
+
+        return $this->scopeToTerritory(DB::table('lideres')->whereIn('id', $ids))
+            ->get(['id', 'nombre', 'municipio', 'cargo'])
+            ->mapWithKeys(fn ($l) => [$l->id => ['id' => $l->id, 'nombre' => $l->nombre, 'municipio' => $l->municipio, 'cargo' => $l->cargo]])
+            ->all();
+    }
+
+    // $suggestions: [lider id => props] of the suggested fichas (list rows without authorization).
+    public static function rowProps(EventImportRow $r, array $suggestions = []): array
     {
         $props = [
             'id' => $r->id,
@@ -304,6 +377,10 @@ class EventoImportController extends Controller
             'corregida' => $r->edited,
             'valores' => $r->mapped ?? [],
             'errores' => $r->errors ?? (object) [],
+            'sin_autorizacion' => (bool) $r->sin_autorizacion,
+            'sugerencia' => $r->suggested_lider_id && isset($suggestions[$r->suggested_lider_id])
+                ? $suggestions[$r->suggested_lider_id] + ['estado' => $r->suggestion]
+                : null,
         ];
         if ($r->page_id !== null) {
             $props['fila_pagina'] = $r->page_row;

@@ -2,8 +2,8 @@ import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import {
-    NEEDS_APPROVED_TEXT, STEPS, TOO_LARGE, columnOptions, confirmBlocker, confirmDialogMessage, confirmDialogTitle, confirmSummary,
-    consentReady, leftOutSummary, mappingProblem, plural, setMapping, uploadProblem,
+    LIST_NOTE, NEEDS_APPROVED_TEXT, STEPS, TOO_LARGE, authorizedToImport, columnOptions, confirmBlocker, confirmDialogMessage, confirmDialogTitle,
+    confirmSummary, consentReady, leftOutSummary, mappingProblem, plural, setMapping, uploadProblem,
 } from '@/lib/eventosImport';
 
 const CARD = 'bg-white border border-[var(--color-line)] rounded-2xl p-4 lg:p-5';
@@ -31,6 +31,50 @@ export function ImportStepper({ step, steps = STEPS, label = 'Pasos para cargar 
 }
 
 // Excel loads need the campaign's APPROVED authorization text (everything imported is authorized), like the public QR.
+// Before uploading: without the approved text only a list without authorization can be loaded.
+export function UploadConsentNote({ consent }) {
+    if (consentReady(consent)) return <ConsentNote consent={consent} />;
+
+    return (
+        <p role="note" className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-300 text-[17px] font-semibold text-amber-900">
+            La campaña todavía no tiene el texto de autorización aprobado: puede cargar listas sin la columna «Autorizó» (quien ya está en la plataforma queda con la asistencia en su historial; el resto, solo en la lista del evento), pero no importar personas con SÍ.
+        </p>
+    );
+}
+
+// Rows of a workbook with one sheet per jornada: which sheet is this event's.
+export function ImportSheet({ eventId, importacion }) {
+    const [busy, setBusy] = useState(false);
+    const hojas = importacion.hojas || [];
+    if (hojas.length < 2) return null;
+    const current = hojas.find(h => h.nombre === importacion.hoja);
+
+    function change(value) {
+        setBusy(true);
+        router.put(`/eventos/${eventId}/importar/${importacion.id}/hoja`, { hoja: value }, { preserveScroll: true, onFinish: () => setBusy(false) });
+    }
+
+    return (
+        <section className={CARD} aria-labelledby="hoja-title">
+            <h2 id="hoja-title" className="text-[20px] font-extrabold text-[var(--color-ink)]">Hoja de este evento</h2>
+            <p className="text-[17px] text-[var(--color-ink-soft)] mt-1.5">El archivo tiene {hojas.length} hojas. Cada evento toma una sola: elija la de esta jornada.</p>
+            <label className="block mt-3">
+                <span className="sr-only">Hoja del archivo</span>
+                <select
+                    value={importacion.hoja ?? ''}
+                    disabled={busy || importacion.status === 'confirmado'}
+                    onChange={e => change(e.target.value)}
+                    className="w-full min-h-[48px] px-3 py-2 border border-[var(--color-line-strong)] rounded-lg bg-white text-[17px]"
+                >
+                    {hojas.map(h => <option key={h.nombre} value={h.nombre}>{h.nombre}</option>)}
+                </select>
+            </label>
+            {current?.titulo && <p className="mt-2 text-[17px] text-[var(--color-ink)]">{current.titulo}</p>}
+            {importacion.status === 'revisado' && <p className="mt-1 text-[16px] text-[var(--color-ink-soft)]">Si cambia de hoja, vuelve a revisar las columnas.</p>}
+        </section>
+    );
+}
+
 export function ConsentNote({ consent, missingText = NEEDS_APPROVED_TEXT }) {
     if (!consentReady(consent)) {
         return (
@@ -165,6 +209,8 @@ export function ImportConfirm({ eventId, importacion, consent, summary, declarat
     const counts = importacion.counts || {};
     const ready = consentReady(consent);
     const blocker = confirmBlocker({ consent, declared, counts });
+    // A list without authorization registers no consent: no declaration and no approved text.
+    const needsAuthorization = authorizedToImport(counts) > 0 || importacion.tipo === 'ocr';
     const leftOut = leftOutText !== undefined ? leftOutText : leftOutSummary(counts);
 
     function submit(e) {
@@ -175,7 +221,7 @@ export function ImportConfirm({ eventId, importacion, consent, summary, declarat
     function importNow() {
         setAsking(false);
         setBusy(true);
-        router.post(`/eventos/${eventId}/importar/${importacion.id}/confirmar`, { declaracion: true }, {
+        router.post(`/eventos/${eventId}/importar/${importacion.id}/confirmar`, needsAuthorization ? { declaracion: true } : {}, {
             preserveScroll: true,
             onFinish: () => setBusy(false),
         });
@@ -186,14 +232,20 @@ export function ImportConfirm({ eventId, importacion, consent, summary, declarat
             <h2 id="confirmar-title" className="text-[20px] font-extrabold text-[var(--color-ink)]">Confirmar la carga</h2>
             <p className="text-[18px] text-[var(--color-ink)] mt-1.5">{summary ?? confirmSummary(counts)}</p>
             {leftOut && <p className="text-[17px] text-[var(--color-ink-soft)] mt-1">{leftOut}</p>}
-            <label className="mt-3 flex items-start gap-3 min-h-[48px] cursor-pointer px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)]">
-                <input type="checkbox" checked={declared} disabled={!ready} onChange={e => setDeclared(e.target.checked)} className="mt-0.5 w-7 h-7 flex-shrink-0 accent-[var(--color-primary)]" />
-                <span className="text-[18px] font-semibold text-[var(--color-ink)]">
-                    {declarationLabel}
-                </span>
-            </label>
-            {blocker && ready && <p className="mt-2 text-[17px] font-semibold text-amber-800" aria-live="polite">{blocker}</p>}
-            <div className="mt-3"><ConsentNote consent={consent} missingText={missingText} /></div>
+            {needsAuthorization ? (
+                <>
+                    <label className="mt-3 flex items-start gap-3 min-h-[48px] cursor-pointer px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)]">
+                        <input type="checkbox" checked={declared} disabled={!ready} onChange={e => setDeclared(e.target.checked)} className="mt-0.5 w-7 h-7 flex-shrink-0 accent-[var(--color-primary)]" />
+                        <span className="text-[18px] font-semibold text-[var(--color-ink)]">
+                            {declarationLabel}
+                        </span>
+                    </label>
+                    {blocker && ready && <p className="mt-2 text-[17px] font-semibold text-amber-800" aria-live="polite">{blocker}</p>}
+                    <div className="mt-3"><ConsentNote consent={consent} missingText={missingText} /></div>
+                </>
+            ) : (
+                <p className="mt-3 px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)] text-[17px] text-[var(--color-ink)]">{LIST_NOTE}</p>
+            )}
             <button type="submit" disabled={busy || !!blocker} className={`${PRIMARY_BTN} mt-4 w-full sm:w-auto`}>
                 {busy ? 'Registrando…' : `Importar ${plural(counts.a_importar ?? 0, 'persona', 'personas')}`}
             </button>

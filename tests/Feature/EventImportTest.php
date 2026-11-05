@@ -197,7 +197,7 @@ class EventImportTest extends TestCase
 
         $id = $this->upload($file)->assertCreated()->assertJsonPath('data.filas', 50)->json('data.id');
         $this->assertSame(['nombres' => 0, 'apellidos' => 1, 'nombre_completo' => null, 'cedula' => 2, 'celular' => 3, 'fijo' => 4,
-            'fecha_nacimiento' => 5, 'direccion' => 6, 'barrio' => 7, 'autoriza' => 8], $this->detected($id));
+            'fecha_nacimiento' => 5, 'direccion' => 6, 'barrio' => 7, 'autoriza' => 8, 'municipio' => null, 'liderazgo' => null], $this->detected($id));
 
         $counts = $this->review($id)->assertOk()->json('data.counts');
         $this->assertSame(50, $counts['total']);
@@ -316,8 +316,11 @@ class EventImportTest extends TestCase
         $id2 = $this->upload($this->xlsx($odd, [['1098000001', 'Pedro Pablo Díaz Ruiz', '3201112233', 'Centro', 'SI']], 'otro.xlsx'))->json('data.id');
         $this->assertNull($this->detected($id2)['cedula']);
         $this->review($id2, ['cedula' => 0])->assertUnprocessable()->assertJsonValidationErrors('columnas');
-        $this->review($id2, ['cedula' => 0, 'nombre_completo' => 1, 'celular' => 2])->assertUnprocessable()
-            ->assertJsonPath('errors.columnas.0', 'Elija la columna «Autorizó»: solo se importan las personas que tienen SÍ.');
+        // Without «Autorizó» the file is a list without authorization (only the name and the cédula or the phone needed).
+        $this->review($id2, ['nombre_completo' => 1])->assertUnprocessable()
+            ->assertJsonPath('errors.columnas.0', 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.');
+        $this->review($id2, ['nombre_completo' => 1, 'celular' => 2, 'autoriza' => 4])->assertUnprocessable()
+            ->assertJsonPath('errors.columnas.0', 'Elija la columna que tiene la cédula.');
         $this->review($id2, ['cedula' => 0, 'nombre_completo' => 0, 'celular' => 2, 'autoriza' => 4])->assertUnprocessable()
             ->assertJsonPath('errors.columnas.0', 'Una misma columna está elegida para dos datos distintos. Revise las columnas.');
         $this->review($id2, ['cedula' => 9, 'nombre_completo' => 1, 'celular' => 2, 'autoriza' => 4])->assertUnprocessable();
@@ -445,17 +448,16 @@ class EventImportTest extends TestCase
         $this->assertSame(2, DB::table('lideres')->where('tipo', 'asistente_evento')->where('autoriza_datos', true)->count());
     }
 
-    public function test_with_only_the_provisional_text_nothing_can_be_loaded_nor_imported(): void
+    public function test_with_only_the_provisional_text_rows_with_si_cannot_be_imported(): void
     {
         $message = 'Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo.';
         $id = $this->upload($this->xlsx(self::HEADERS, [$this->person(1)]))->assertCreated()->json('data.id');
         $this->review($id);
         $this->approved->forceFill(['is_active' => false])->save();
 
-        // BUG-02: the upload is refused before anything is stored.
-        $this->upload($this->xlsx(self::HEADERS, [$this->person(2)], 'otro.xlsx'))->assertUnprocessable()->assertJsonPath('errors.consent.0', $message);
-        $this->assertSame(1, DB::table('event_imports')->count());
-        $this->assertCount(1, Storage::disk('local')->allFiles());
+        // Uploading is allowed (a list without authorization needs no text); importing rows with SÍ is not.
+        $this->upload($this->xlsx(self::HEADERS, [$this->person(2)], 'otro.xlsx'))->assertCreated();
+        $this->assertSame(2, DB::table('event_imports')->count());
 
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/{$id}")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('consent.approved', false)->where('consent.version', 'provisional-1'));

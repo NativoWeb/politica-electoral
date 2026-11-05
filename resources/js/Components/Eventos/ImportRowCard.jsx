@@ -7,6 +7,7 @@ const STATUS_REASON = {
     no_autorizo: 'En «Autorizó» no dice SÍ: la persona no autorizó el tratamiento de sus datos y no se importa.',
     duplicada: 'La cédula ya aparece en una fila anterior del archivo: esta no se importa.',
     en_evento: 'Esta persona ya está registrada en el evento: no se importa otra vez.',
+    sin_ficha: 'No está en la plataforma. Sin autorización: queda solo en la lista del evento (no pasa a Votantes).',
 };
 
 // One row of the preview: its cells (the wrong ones in red with the message), whether it is imported, and an
@@ -19,7 +20,9 @@ export default function ImportRowCard({ row, eventId, importId, editable, fields
     const [error, setError] = useState('');
     const errors = row.errores || {};
     const status = ROW_STATUS[rowStatusKey(row)];
-    const importing = row.status === 'valida' && row.decision !== 'omitir';
+    const importable = ['valida', 'sin_ficha'].includes(row.status);
+    const importing = importable && row.decision !== 'omitir';
+    const suggestion = row.sugerencia;
     const url = `/eventos/${eventId}/importar/${importId}/filas/${row.id}`;
     const ocr = !!row.confianza;
     const doubtful = f => !row.importada && isLowConfidence(row.confianza, f.confidence ?? f.key, umbral);
@@ -55,7 +58,7 @@ export default function ImportRowCard({ row, eventId, importId, editable, fields
                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[16px] font-bold ${status.cls}`}>{status.label}</span>
                 {row.corregida && <span className="text-[16px] font-semibold text-[var(--color-ink-soft)]">Corregida</span>}
                 {row.importada && <span className="inline-flex items-center px-2.5 py-1 rounded-full border bg-emerald-600 border-emerald-600 text-white text-[16px] font-bold">Importada</span>}
-                {editable && row.status === 'valida' && !row.importada && (
+                {editable && importable && !row.importada && (
                     <label className="ml-auto flex items-center gap-2 min-h-[44px] cursor-pointer">
                         <input
                             type="checkbox"
@@ -69,6 +72,28 @@ export default function ImportRowCard({ row, eventId, importId, editable, fields
                 )}
             </div>
             {reason && <p className="text-[17px] text-[var(--color-ink-soft)] mt-1">{reason}</p>}
+            {row.sin_autorizacion && row.status === 'valida' && !row.importada && (
+                <p className="text-[17px] text-[var(--color-ink-soft)] mt-1">Ya está en la plataforma: la asistencia queda en el historial de su ficha, sin cambiarla.</p>
+            )}
+            {suggestion && row.status === 'sugerida' && (
+                <div className="mt-2 px-3 py-3 rounded-xl border-2 border-amber-400 bg-amber-50">
+                    <p className="text-[18px] font-extrabold text-amber-900">¿Es esta persona?</p>
+                    <p className="text-[18px] text-[var(--color-ink)]">
+                        <strong>{suggestion.nombre}</strong>{suggestion.municipio ? ` · ${suggestion.municipio}` : ''}{suggestion.cargo ? ` · ${suggestion.cargo}` : ''}
+                    </p>
+                    <p className="text-[16px] text-[var(--color-ink-soft)]">Mismo teléfono y parte del nombre. Solo se vincula si usted lo confirma.</p>
+                    {editable && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            <button type="button" disabled={busy} onClick={() => send({ sugerencia: 'confirmar' })} className="min-h-[48px] px-5 py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-[16px] font-extrabold disabled:opacity-50">
+                                Sí, es esta persona
+                            </button>
+                            <button type="button" disabled={busy} onClick={() => send({ sugerencia: 'rechazar' })} className="min-h-[48px] px-5 py-2.5 rounded-xl border-2 border-[var(--color-line-strong)] text-[16px] font-bold text-[var(--color-ink)] disabled:opacity-50">
+                                No, es otra persona
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {editing ? (
                 <form onSubmit={save} className="mt-2">
@@ -96,7 +121,9 @@ export default function ImportRowCard({ row, eventId, importId, editable, fields
                     <p className="text-[16px] text-[var(--color-ink-soft)] mt-2">
                         {ocr
                             ? '«Autorizo» y la firma no se pueden cambiar aquí: valen lo que leyó la IA en la planilla. Si la persona sí autorizó, regístrela en el modo operador.'
-                            : `«Autorizó» no se puede cambiar aquí: vale lo que dice la planilla firmada (${row.valores?.autoriza || 'vacío'}).`}
+                            : row.sin_autorizacion
+                                ? 'Lista sin autorización: la autorización solo se da por QR o con un operador.'
+                                : `«Autorizó» no se puede cambiar aquí: vale lo que dice la planilla firmada (${row.valores?.autoriza || 'vacío'}).`}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-3">
                         <button type="submit" disabled={busy} className="min-h-[48px] px-5 py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-[16px] font-extrabold disabled:opacity-50">

@@ -15,6 +15,7 @@ export const LINK_STATUS = {
     aprobado: { label: 'Aprobado', cls: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
     descartado: { label: 'Descartado', cls: 'bg-gray-100 border-gray-300 text-gray-600' },
     sin_cedula: { label: 'Sin cédula', cls: 'bg-gray-100 border-gray-300 text-gray-600' },
+    sin_autorizacion: { label: 'Sin autorización: solo en la lista', cls: 'bg-gray-100 border-gray-400 text-gray-700' },
 };
 
 export const MONTHS = [

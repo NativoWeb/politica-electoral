@@ -426,7 +426,7 @@ municipio/departamento de la contienda (null en circunscripción nacional).
 unificar líderes no se reasigna, mientras que `event_attendees.lider_id` y `event_organizers.lider_id` sí pasan al
 líder que sobrevive). Todas con PK UUID. Únicos: `events.public_token`,
 `event_attendees.client_uuid`, `event_attendees (event_id, cedula)` parcial (cédula no nula).
-`link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado` (`sin_cedula` queda reservado; en Fases
+`link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado | sin_autorizacion` (`sin_cedula` queda reservado; en Fases
 1–3 la cédula es obligatoria). `event_attendees.source`: `qr | operador | excel | ocr` (CHECK en PostgreSQL; `excel` lo agrega
 la migración `2026_11_01_000001` y `ocr` la `2026_11_03_000001` (§13); ninguna toca `data_consents`). Fase 3 agrega `event_imports`, `event_import_rows` y
 `event_attendees.import_id` (FK nullable a `event_imports`) (§11).
@@ -536,22 +536,25 @@ Solo `manage.eventos`, en eventos de la **campaña propia** y del territorio (ig
 (`"El evento está cancelado: no se pueden cargar asistentes."`); se puede cargar en `borrador`, `abierto` y `cerrado`
 (las planillas suelen llegar después del evento). Sin cola: todo corre en la petición (límites abajo).
 
-**Regla de autorización (igual que QR y operador; decisión del orquestador en ausencia de Marly):** solo se registra a
-quien autorizó el tratamiento de sus datos. Una fila es importable **solo si `Autorizó` = SÍ**, y confirmar **exige** la
-declaración "Tengo las planillas firmadas que respaldan las autorizaciones de este archivo". Por tanto **todo asistente
-importado queda con autorización** (`autoriza_datos = true` y su fila en `data_consents`). No existe importar "sin
-autorización".
+**Regla de autorización (igual que QR y operador):** en un archivo **con** la columna `Autorizó` (con algo escrito en al
+menos una fila), una fila es importable **solo si `Autorizó` = SÍ**, y confirmar **exige** la declaración "Tengo las
+planillas firmadas que respaldan las autorizaciones de este archivo"; esos asistentes quedan con autorización
+(`autoriza_datos = true` y su fila en `data_consents`). Un archivo **sin** esa columna (o con ella vacía en todas las
+filas) es una **lista sin autorización** (decisión de Marly 2026-11-05): ver "Listas sin autorización" más abajo.
 
-**Texto aprobado obligatorio (como el QR público):** subir un archivo y confirmar exigen que el texto de autorización
-vigente de la campaña esté **aprobado**. Con solo el texto provisional (o sin texto) → **422** `errors.consent`
-`"Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo."`, sin guardar nada
-(ni archivo ni staging). La pantalla muestra ese aviso en rojo una sola vez y deshabilita subir y confirmar. Plantilla,
-listado y revisión de columnas/filas sí funcionan (para preparar el archivo mientras se aprueba el texto).
+**Texto aprobado obligatorio para las filas con SÍ (como el QR público):** confirmar una carga con filas con SÍ por
+importar exige que el texto de autorización vigente de la campaña esté **aprobado**. Con solo el texto provisional (o sin
+texto) → **422** `errors.consent` `"Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta
+tenerlo."`. **Subir** el archivo ya no lo exige (cambio 2026-11-05: una lista sin autorización no registra
+autorizaciones); la pantalla de subida muestra un aviso en amarillo explicando que sin texto aprobado solo se pueden
+importar listas sin «Autorizó».
 
 ### Plantilla — `GET /eventos/{id}/plantilla.xlsx`
 
 Hoja **Asistentes** con encabezados fijos: `Nombres`, `Apellidos`, `Cédula`, `Celular`, `Teléfono fijo`,
-`Fecha de nacimiento (DD/MM/AAAA)`, `Dirección`, `Barrio`, `Autorizó (SÍ/NO)`. Columnas C–F (cédula, celular, fijo y
+`Fecha de nacimiento (DD/MM/AAAA)`, `Dirección`, `Barrio`, `Autorizó (SÍ/NO)`, `Municipio`, `Liderazgo o actividad`
+(estas dos opcionales). Las instrucciones explican que dejar `Autorizó` vacío en todas las filas carga una lista sin
+autorización. Columnas C–F (cédula, celular, fijo y
 fecha) con formato **texto** en las filas 2–2001 (Excel no muestra `1,09877E+09` ni quita ceros) y lista `SÍ,NO` en
 `Autorizó`. Hoja **Instrucciones** con cómo llenarla ("solo se cargan las personas con SÍ") y el texto de autorización
 vigente de la campaña con su **versión**; si es provisional, una advertencia en amarillo.
@@ -564,7 +567,16 @@ Nombre: `plantilla-asistentes-<evento>.xlsx`.
    **privado** (`storage/app/private/eventos/importaciones/{event}/{import}.{ext}`, sin URL pública) con su `sha256`,
    se leen las filas a staging y se adivinan las columnas → `subido`.
    - CSV: separador `;`, `,` o tabulador (el más frecuente en la primera línea); UTF-8 o Windows-1252.
-   - Fila de encabezados: la que más encabezados conocidos tenga entre las 10 primeras (admite un título arriba).
+   - Fila de encabezados: la que más encabezados conocidos tenga entre las 10 primeras filas con datos (admite títulos
+     arriba y columnas vacías a la izquierda; los encabezados se comparan sin tildes, mayúsculas, signos ni saltos de línea).
+   - **Libro con varias hojas** (una por jornada/municipio): se guarda la lista de hojas (`event_imports.sheets`:
+     `[{ nombre, titulo }]`, `titulo` = el primer texto largo de las primeras filas, p. ej. `JORNADA "DEL CONGRESO AL
+     BARRIO" VIERNES 23.10.2026…`) y se carga la hoja cuyo nombre coincide con el municipio del evento (si ninguna,
+     `Asistentes` o la primera). `PUT /eventos/{id}/importar/{import}/hoja` `{ "hoja": "LEBRIJA" }` (no confirmada,
+     throttle `eventos-importar`) vuelve a leer **esa** hoja del archivo guardado, reemplaza las filas y vuelve a
+     `subido` (hay que revisar columnas otra vez); hoja inexistente → 422 `errors.hoja`. **Un evento = una hoja**: el
+     mismo archivo puede subirse a otro evento y tomar otra hoja. Auditoría `EVENTO_IMPORTACION_HOJA` (solo conteo).
+     CSV y libros de una sola hoja: `hoja` y `hojas` vacíos.
    - Más de 2000 filas → 422. Se detecta aunque haya filas vacías en medio: en `.xlsx/.xls` cualquier celda (incluso
      solo con formato) por debajo de la fila 2011 cuenta como exceso; en CSV, cualquier línea **no vacía** por debajo.
      Mensaje: `"El archivo tiene más de 2000 filas. Divídalo en varios archivos y cárguelos uno por uno. Si no son tantas
@@ -584,24 +596,30 @@ Nombre: `plantilla-asistentes-<evento>.xlsx`.
    - Éxito: **201** `{ success: true, message: "Archivo recibido: N filas. Revise las columnas.", data: { id, status: "subido", repetido: false, filas } }`
      ("1 fila" en singular).
    - Columnas adivinadas: primero el **último mapeo revisado de la campaña** (por nombre de encabezado), después
-     sinónimos (`CC`, `C.C.`, `Documento`, `No. cédula`, `Cédula de ciudadanía` → cédula; `Nombre completo`, `Nombres y
-     apellidos` → nombre completo; `Tel`, `Teléfono`, `Móvil`, `Celular`, `WhatsApp` → celular; un segundo teléfono →
-     fijo; `Autorizó`, `Autoriza`, `Firmó`, `Acepta` → autorizó). Una sola columna `Nombre` sin columna de apellidos se
+     sinónimos (`CC`, `C.C.`, `Documento`, `No. cédula`, `Cédula de ciudadanía`, `No. documento identidad (cédula)` →
+     cédula; `Nombre completo`, `Nombres y apellidos` → nombre completo; `Tel`, `Teléfono`, `Móvil`, `Celular`,
+     `Celular /fijo`, `WhatsApp` → celular; un segundo teléfono → fijo; `Fecha de cumpleaños` → fecha de nacimiento;
+     `Autorizó`, `Autoriza`, `Firmó`, `Acepta` → autorizó; `Municipio`, `Ciudad` → municipio; `Liderazgo`, `Actividad`,
+     `Rol`, `Observación` → liderazgo). Una sola columna `Nombre` sin columna de apellidos se
      toma como nombre completo.
 2. `PUT .../columnas` `{ "columnas": { campo: índice de columna | null } }` con campos `nombres`, `apellidos`,
-   `nombre_completo`, `cedula`, `celular`, `fijo`, `fecha_nacimiento`, `direccion`, `barrio`, `autoriza`. Obligatorios:
-   `cedula`, `celular`, **`autoriza`** y (`nombres` + `apellidos`) o `nombre_completo`; una columna no puede usarse dos
+   `nombre_completo`, `cedula`, `celular`, `fijo`, `fecha_nacimiento`, `direccion`, `barrio`, `autoriza`, `municipio`,
+   `liderazgo`. Obligatorios: (`nombres` + `apellidos`) o `nombre_completo`; **con** `autoriza`, además `cedula` y
+   `celular`; **sin** `autoriza` (lista sin autorización), `cedula` o `celular` (`"Elija la columna de la cédula o la del
+   teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma."`); una columna no puede usarse dos
    veces (422 `errors.columnas`). Aplica el mapeo a **todas** las filas (borra correcciones previas), valida y clasifica
    → `revisado`; este mapeo queda guardado para la próxima carga de la campaña. **200** `{ success, message, data: { counts } }`.
 3. `PATCH .../filas/{fila}` (solo en `revisado`): cualquiera de `nombres`, `apellidos`, `cedula`, `celular`, `fijo`,
-   `fecha_nacimiento`, `direccion`, `barrio` y/o `decision: "importar" | "omitir"`. **`autoriza` no es editable** (se
+   `fecha_nacimiento`, `direccion`, `barrio`, `municipio`, `liderazgo` y/o `decision: "importar" | "omitir"`, o
+   `sugerencia: "confirmar" | "rechazar"` (lista sin autorización, ver abajo). **`autoriza` no es editable** (se
    ignora si llega): vale lo que dice la planilla. Una fila `no_autorizo` **no se puede cambiar** (ni celdas ni
    decisión): 422 `errors.fila` `"Esta fila no se puede cambiar: en «Autorizó» no dice SÍ, la persona no autorizó el
    tratamiento de sus datos."`. Un valor malo **no** es 422: se guarda y la fila queda con su error.
    `importar` en una fila que no es `valida` → 422 `errors.decision` (p. ej. `"Esta fila no se puede importar: en
    «Autorizó» no dice SÍ: la persona no autorizó el tratamiento de sus datos."`). Revalida la fila y reclasifica el
    archivo. **200** `{ success, message, data: { fila: Fila, counts } }`.
-4. `POST .../confirmar` `{ "declaracion": true }` (desde `revisado`/`confirmado`). Sin la declaración → 422
+4. `POST .../confirmar` `{ "declaracion": true }` (desde `revisado`/`confirmado`; una lista sin autorización se confirma
+   con `{}`: no pide declaración ni texto aprobado). Con filas con SÍ por importar y sin la declaración → 422
    `errors.declaracion` (`"Para importar, marque «Tengo las planillas firmadas que respaldan las autorizaciones de este
    archivo»."`). Sin texto de autorización **aprobado** → 422 `errors.consent` (ver arriba). Registra **solo** las filas `valida`
    (que ya exigen SÍ) con decisión distinta de `omitir` y sin asistente, por lotes de **200** en transacción, a través
@@ -701,6 +719,65 @@ estado incluidos "No autorizaron" y "No importar", resumen de lo que queda fuera
 error, 1 repetida en el archivo, 1 marcada «No importar», 3 que no autorizaron (no dice SÍ)…"), el botón **Importar N
 personas** queda deshabilitado hasta marcar la declaración y pide confirmación ("Se importarán N personas. Esta acción no
 se puede deshacer."). Textos de 16 px o más (18 px en lo que lee el operador) y enlaces/botones de 44 px de alto o más.
+
+### Listas sin autorización (sin cédula y/o sin «Autorizó») — decisiones A y B de Marly, 2026-11-05
+
+Listas reales (Word/Excel con `MUNICIPIO | NOMBRE | LIDERAZGO | TELÉFONO`, o las de jornadas con `NOMBRES Y APELLIDOS |
+NO. DOCUMENTO IDENTIDAD (CEDULA) | CELULAR /FIJO | FECHA DE CUMPLEAÑOS | DIRECCIÓN | BARRIO | ACTIVIDAD`) no traen
+autorización. Se aceptan **solo como asistencia**: nunca crean ni modifican fichas y nunca registran autorizaciones.
+
+- **Cuándo:** al revisar columnas, si no hay columna `autoriza` o está vacía en todas las filas, todas las filas quedan
+  `event_import_rows.sin_autorizacion = true`. Si al menos una fila dice algo en `Autorizó`, el archivo sigue el flujo
+  de siempre (vacío = `no_autorizo`).
+- **Validación:** solo el nombre es obligatorio (`"Escriba el nombre de la persona."`); cédula opcional (si viene, 5 a 10
+  dígitos; notación científica redondeada = error); teléfono en texto libre (se leen todos los números: espacios,
+  puntos, guiones, `+57` y dos números en la celda); una fecha de nacimiento inválida o de menor de 18 **no** es error:
+  se descarta. `liderazgo`/actividad se guarda como `event_attendees.nota` (máx. 255), **no** cambia el cargo de la ficha.
+- **Estados** (además de `error`, `duplicada` —misma cédula, misma ficha o mismo nombre+teléfono en el archivo— y
+  `en_evento` —cédula, ficha o nombre+teléfono ya en el evento—):
+  - `valida` + `vincular`: la cédula existe en la campaña del evento, o el operador confirmó la sugerencia → al
+    confirmar, asistente `link_status = vinculado` con `lider_id` (aparece en la sección Eventos de la ficha).
+  - `sugerida` (decisión `omitir`, **no importable**): sin cédula que coincida, mismo teléfono (solo dígitos, últimos 10,
+    en `lideres.telefono` o `lider_contactos.valor`) **y** al menos una palabra del nombre en común (sin tildes; se ignoran
+    palabras de 1–2 letras y `del/las/los/san…`), entre los líderes activos de la campaña del evento en el municipio del
+    evento o en el de la fila (columna `Municipio`, solo si está en el territorio del usuario). Un líder con **otra**
+    cédula nunca se sugiere. `suggested_lider_id` guarda el candidato; la fila trae
+    `sugerencia: { id, nombre, municipio, cargo, estado: null|"confirmada"|"rechazada" }` (solo si el líder está en el
+    territorio de quien mira). **Nunca se vincula sin el clic del operador.** Solo para usuarios con `view.votantes` o
+    `view.mapa` (muestra datos de la ficha): sin esos permisos no se sugiere a nadie y la fila queda `sin_ficha`. Si dos
+    fichas empatan (mismo número de palabras en común) no se sugiere ninguna. Confirmar exige que el líder siga en la
+    campaña del evento y en el territorio del usuario (si no, 422 `errors.sugerencia`).
+  - `PATCH .../filas/{fila}` `{ "sugerencia": "confirmar" }` → `valida` (vincular); `{ "sugerencia": "rechazar" }` →
+    `sin_ficha`. Fila sin sugerencia → 422 `errors.sugerencia`. Corregir nombre o teléfono borra la respuesta (se
+    vuelve a sugerir). Auditoría `EVENTO_IMPORTACION_SUGERENCIA` `{ event_id, fila, resultado }` (sin datos personales).
+  - `sin_ficha` + `crear`: no está en la plataforma → al confirmar, asistente **sin ficha**: `lider_id = null`,
+    `link_status = sin_autorizacion`, `autoriza_datos = false`, sin `consent_id` ni fila en `data_consents`.
+    **No se puede aprobar** a Votantes (ApproveAttendees solo toma `pendiente`) ni aparece en Votantes/Mapa; queda en la
+    lista del evento ("Sin autorización: queda solo en la lista del evento") hasta que la persona autorice por QR u
+    operador.
+  - **Autorizar después:** si un asistente sin autorización (de una lista) **con cédula** se registra luego en el mismo
+    evento por QR, operador o Excel con SÍ, ese mismo registro se completa (transacción con bloqueo): fila en
+    `data_consents`, `consent_id`, `autoriza_datos = true`, `link_status = vinculado` si tiene (o ahora encuentra por
+    cédula) su ficha, o `pendiente` (aprobable) si no; solo se llenan los campos vacíos. Responde como registro nuevo
+    (auditoría `resultado: "autorizo"`); en el Excel con SÍ esa fila es `valida` (no `en_evento`). Sin cédula no hay
+    forma segura de reconocerlo: el registro con autorización queda aparte.
+- **Confirmar:** respuesta `data: { nuevos, ya_estaban, historial, solo_evento }`; mensaje `"Se registraron N asistentes
+  sin autorización de datos: X quedaron en el historial de su ficha y Y quedaron solo en la lista del evento."`.
+  `event_import_rows.declared = false`; `event_imports.consent_text_id = null`, `consent_declared = false`. Idempotente
+  por `client_uuid`, por cédula en el evento y por ficha en el evento.
+- **`counts` nuevos:** `sin_autorizacion` (filas de lista), `sugeridas`, `sin_ficha`, `a_importar_con_autorizacion`
+  (filas con SÍ por importar: si es 0 la pantalla no pide declaración ni texto aprobado). `a_importar` y `omitidas`
+  incluyen `sin_ficha`; `autorizaron = total − no_autorizaron − sin_autorizacion`. Filtros nuevos `?estado=sugerida|sin_ficha`.
+- **`importacion` (props):** `sin_autorizacion` (bool), `hoja`, `hojas`. **Fila:** `sin_autorizacion`, `sugerencia`.
+- **Pantalla del evento (`Eventos/Show`):** filtro "Sin autorización", KPI `kpis.sin_autorizacion`, cada asistente trae
+  `nota` y `ficha: { cargo, lider }` (cargo de la ficha vinculada y si es líder registrado —no una ficha creada desde un
+  evento—) **solo** para usuarios con `view.votantes` o `view.mapa` y dentro de su territorio; si no, `ficha: null`.
+  `consentimiento_provisional` es `false` para asistentes sin autorización. Exporte: columna texto `"Sin autorización"`.
+- **Migración** `2026_11_05_000001_add_list_import_to_eventos` (aditiva, no toca `data_consents`):
+  `event_attendees.nota`, `event_imports.sheet_name/sheets`, `event_import_rows.sin_autorizacion/suggested_lider_id/
+  suggestion`; en PostgreSQL rehace los CHECK de `event_import_rows.status` (+ `sugerida`, `sin_ficha`),
+  `event_import_rows.suggestion` y `event_attendees.link_status` (+ `sin_autorizacion`). Dueño de esas tablas en prod:
+  `electoral` (verificado 2026-11-05), así que no requiere los scripts de `data_consents`.
 
 ### Límites y rendimiento
 

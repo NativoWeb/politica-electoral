@@ -61,11 +61,14 @@ describe('eventosImport helpers', () => {
     });
 
     it('explains an incomplete or repeated mapping like the server', () => {
-        expect(mappingProblem({})).toBe('Elija la columna que tiene la cédula.');
+        expect(mappingProblem({})).toMatch(/nombres y la de apellidos/);
+        expect(mappingProblem({ autoriza: 4 })).toBe('Elija la columna que tiene la cédula.');
+        expect(mappingProblem({ nombre_completo: 1 })).toMatch('Elija la columna de la cédula o la del teléfono');
         expect(mappingProblem({ cedula: 0, nombres: 1 })).toMatch(/nombres y la de apellidos/);
-        expect(mappingProblem({ cedula: 0, nombre_completo: 1 })).toBe('Elija la columna que tiene el celular.');
+        expect(mappingProblem({ cedula: 0, nombre_completo: 1, autoriza: 4 })).toBe('Elija la columna que tiene el celular.');
         expect(mappingProblem({ cedula: 0, nombre_completo: 1, celular: 1, autoriza: 4 })).toMatch(/Una misma columna/);
-        expect(mappingProblem({ cedula: 0, nombres: 1, apellidos: 2, celular: 3 })).toMatch('Elija la columna «Autorizó»');
+        // Without «Autorizó» it is a list without authorization: valid.
+        expect(mappingProblem({ cedula: 0, nombres: 1, apellidos: 2, celular: 3 })).toBeNull();
         expect(mappingProblem({ cedula: 0, nombres: 1, apellidos: 2, celular: 3, barrio: null, autoriza: 4 })).toBeNull();
         expect(setMapping({ cedula: 0 }, 'cedula', '')).toEqual({ cedula: null });
         expect(setMapping({}, 'celular', '3')).toEqual({ celular: 3 });
@@ -265,16 +268,41 @@ describe('Importar page', () => {
         expect(screen.getByRole('link', { name: 'viejo.xlsx' }).className).toMatch('min-h-[44px]');
     });
 
-    it('blocks the upload without the approved text (provisional or none) and allows it with it', () => {
+    it('allows the upload without the approved text, explaining that only lists without authorization can be imported', () => {
         for (const consent of [null, { id: 'c0', version: 'provisional-1', approved: false }]) {
             render(<Importar {...PAGE} consent={consent} importacion={null} filas={null} />);
-            expect(screen.getByRole('button', { name: 'Subir archivo' }).disabled).toBe(true);
-            expect(screen.getByRole('alert').textContent).toBe(NEEDS_APPROVED_TEXT);
+            expect(screen.getByRole('button', { name: 'Subir archivo' }).disabled).toBe(false);
+            expect(screen.getByRole('note').textContent).toMatch('puede cargar listas sin la columna «Autorizó»');
             cleanup();
         }
         render(<Importar {...PAGE} importacion={null} filas={null} />);
         expect(screen.getByRole('button', { name: 'Subir archivo' }).disabled).toBe(false);
         expect(screen.queryByText(NEEDS_APPROVED_TEXT)).toBeNull();
+    });
+
+    it('a list without authorization confirms without the declaration nor the approved text', () => {
+        const counts = { total: 3, validas: 1, en_plataforma: 1, sugeridas: 1, sin_ficha: 1, sin_autorizacion: 3, a_importar: 2, a_importar_con_autorizacion: 0, errores: 0, duplicadas: 0, en_evento: 0, importadas: 0, omitidas: 0 };
+        const filas = { data: [row({ status: 'sugerida', decision: 'omitir', sin_autorizacion: true, sugerencia: { id: 'l1', nombre: 'Ana María Pérez', municipio: 'Girón', cargo: 'Edil', estado: null } })], current_page: 1, last_page: 1, total: 1, links: [] };
+        render(<Importar {...PAGE} consent={null} importacion={{ id: 'imp1', nombre: 'a.xlsx', status: 'revisado', filas: 3, fila_encabezados: 1, counts, sin_autorizacion: true, hojas: [] }} filas={filas} />);
+        expect(screen.getAllByText(/Sin autorización: queda solo en la lista del evento/).length).toBeGreaterThan(0);
+        expect(screen.queryByRole('checkbox', { name: /Tengo las planillas firmadas/ })).toBeNull();
+        const button = screen.getByRole('button', { name: 'Importar 2 personas' });
+        expect(button.disabled).toBe(false);
+        expect(screen.getByText('¿Es esta persona?', { selector: 'p' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, es esta persona' }));
+        expect(mockRouter.patch).toHaveBeenCalledWith('/eventos/ev1/importar/imp1/filas/r1', { sugerencia: 'confirmar' }, expect.anything());
+        expect(screen.getByRole('button', { name: 'No, es otra persona' }).disabled).toBe(true);
+        fireEvent.click(button);
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, importar' }));
+        expect(mockRouter.post).toHaveBeenCalledWith('/eventos/ev1/importar/imp1/confirmar', {}, expect.anything());
+    });
+
+    it('a workbook with several sheets lets the operator pick the sheet of the event', () => {
+        const hojas = [{ nombre: 'GIRÓN', titulo: 'JORNADA DEL CONGRESO AL BARRIO 23.10.2026' }, { nombre: 'LEBRIJA', titulo: null }];
+        render(<Importar {...PAGE} importacion={{ id: 'imp1', nombre: 'a.xlsx', status: 'subido', filas: 3, fila_encabezados: 5, encabezados: ['A'], columnas: {}, hoja: 'GIRÓN', hojas }} muestra={[]} filas={null} />);
+        expect(screen.getByText('JORNADA DEL CONGRESO AL BARRIO 23.10.2026')).toBeTruthy();
+        fireEvent.change(screen.getByRole('combobox', { name: 'Hoja del archivo' }), { target: { value: 'LEBRIJA' } });
+        expect(mockRouter.put).toHaveBeenCalledWith('/eventos/ev1/importar/imp1/hoja', { hoja: 'LEBRIJA' }, expect.anything());
     });
 
     it('shows the counts, the filters and the confirm box while reviewing', () => {

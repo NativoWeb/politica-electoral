@@ -13,7 +13,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 // "Autorizó" is not editable in the preview: only what the paper sheet says counts.
 class ImportRowValidator
 {
-    public const EDITABLE = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio'];
+    public const EDITABLE = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'municipio', 'liderazgo'];
 
     // A number Excel showed in scientific notation: "1,09877E+09" lost digits, "1.098765432E9" did not.
     private const SCIENTIFIC = '/^(\d+)(?:[.,](\d+))?[eE]\+?(\d+)$/';
@@ -51,7 +51,87 @@ class ImportRowValidator
             'direccion' => self::text($get('direccion')),
             'barrio' => self::text($get('barrio')),
             'autoriza' => self::text($get('autoriza')),
+            'municipio' => self::text($get('municipio')),
+            'liderazgo' => self::text($get('liderazgo')),
+            // The phone cell as written ("300 123 4567 / 310 765 4321"): a list without authorization reads its numbers.
+            'telefonos' => self::text($get('celular')),
         ];
+    }
+
+    // A list without authorization (no «Autorizó» column, or that column empty in every row): only the name is
+    // required; cédula and phones, when present, are only used to find who is already in the platform. The birth
+    // date is not an error here (see listData()).
+    public function validateList(array $mapped): array
+    {
+        $input = self::normalized($mapped);
+        $input['municipio'] = $mapped['municipio'] ?? null;
+        $input['liderazgo'] = $mapped['liderazgo'] ?? null;
+        $rules = [
+            'nombres' => ['required', 'string', 'max:100'],
+            'apellidos' => ['nullable', 'string', 'max:100'],
+            'cedula' => ['nullable', 'string', 'regex:/^\d{5,10}$/'],
+            'direccion' => ['nullable', 'string', 'max:255'],
+            'barrio' => ['nullable', 'string', 'max:120'],
+            'municipio' => ['nullable', 'string', 'max:120'],
+            'liderazgo' => ['nullable', 'string', 'max:255'],
+        ];
+        $validator = Validator::make($input, $rules, array_merge(AttendeeInput::messages(), [
+            'nombres.required' => 'Escriba el nombre de la persona.',
+            'cedula.regex' => 'La cédula debe tener solo números (entre 5 y 10 dígitos).',
+            'fecha_nacimiento.regex' => 'La fecha de nacimiento debe tener el formato DD/MM/AAAA.',
+        ]), AttendeeInput::attributes());
+
+        $errors = [];
+        foreach ($validator->errors()->messages() as $field => $messages) {
+            $errors[$field] = $messages[0];
+        }
+        foreach (['cedula' => self::SCIENTIFIC_MESSAGES['cedula'], 'celular' => self::SCIENTIFIC_MESSAGES['celular']] as $field => $message) {
+            $value = $mapped[$field] ?? null;
+            if (is_string($value) && preg_match(self::SCIENTIFIC, trim($value))) {
+                $errors[$field] = str_replace(':valor', trim($value), $message);
+            }
+        }
+
+        return ['errors' => $errors];
+    }
+
+    // Values of a list row for the attendee: name, cédula, the first two phone numbers, the note and the rest.
+    public static function listData(array $mapped): array
+    {
+        $phones = AttendeeMatcher::phones($mapped['telefonos'] ?? $mapped['celular'] ?? null);
+        $input = AttendeeInput::normalize([
+            'nombres' => $mapped['nombres'] ?? null,
+            'apellidos' => $mapped['apellidos'] ?? null,
+            'cedula' => $mapped['cedula'] ?? null,
+            'direccion' => $mapped['direccion'] ?? null,
+            'barrio' => $mapped['barrio'] ?? null,
+        ]);
+        // A birthday that is not a real date of an adult is left out without stopping the row (lists bring
+        // "FECHA DE CUMPLEAÑOS" with any year).
+        $fecha = self::isoDate($mapped['fecha_nacimiento'] ?? null);
+        if ($fecha !== null) {
+            [$y, $m, $d] = array_map('intval', explode('-', $fecha));
+            $adult = checkdate($m, $d, $y) && $y >= 1900 && $fecha <= now('America/Bogota')->subYears(18)->toDateString();
+            $fecha = $adult ? $fecha : null;
+        }
+
+        return $input + [
+            'celular' => $phones[0] ?? null,
+            'fijo' => $phones[1] ?? null,
+            'fecha_nacimiento' => $fecha,
+            'nota' => isset($mapped['liderazgo']) ? mb_substr($mapped['liderazgo'], 0, 255) : null,
+        ];
+    }
+
+    // 'si', 'no' (NO or anything that is not SÍ) or 'vacio' (nothing written).
+    public static function authorization(array $mapped): string
+    {
+        $value = $mapped['autoriza'] ?? null;
+        if ($value === null || trim($value) === '') {
+            return 'vacio';
+        }
+
+        return self::yesNo($value) === true ? 'si' : 'no';
     }
 
     // ['data' => normalized values ready for RegisterAttendee, 'errors' => [field => message]] (errors empty = valid).

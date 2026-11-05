@@ -48,6 +48,7 @@ const LINK_FILTERS = [
     { value: 'vinculado', label: 'Ya estaban' },
     { value: 'aprobado', label: 'Aprobados' },
     { value: 'descartado', label: 'Descartados' },
+    { value: 'sin_autorizacion', label: 'Sin autorización' },
 ];
 
 function Kpi({ label, value, tone }) {
@@ -97,6 +98,11 @@ function AttendeeRow({ a, selectable, checked, onToggle }) {
                     )}
                 </div>
                 <p className="text-[13px] text-[var(--color-ink-soft)] mt-0.5">{contact}</p>
+                {(a.ficha || a.nota) && (
+                    <p className="text-[13px] text-[var(--color-ink-soft)] mt-0.5">
+                        {[a.ficha && `Cargo: ${a.ficha.cargo || '—'}`, a.ficha && `Líder: ${a.ficha.lider ? 'SÍ' : 'NO'}`, a.nota && `Actividad: ${a.nota}`].filter(Boolean).join(' · ')}
+                    </p>
+                )}
                 <p className="text-[12px] text-[var(--color-ink-faint)] mt-0.5">
                     {sourceLabel(a)} · {formatShortDate(a.created_at)}
                 </p>

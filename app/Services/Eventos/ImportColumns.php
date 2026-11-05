@@ -19,6 +19,8 @@ class ImportColumns
         'direccion' => ['Dirección', 'Dirección'],
         'barrio' => ['Barrio', 'Barrio'],
         'autoriza' => ['Autorizó (SÍ/NO)', 'Autorizó (SÍ/NO)'],
+        'municipio' => ['Municipio', 'Municipio'],
+        'liderazgo' => ['Liderazgo o actividad (queda como nota del asistente)', 'Liderazgo o actividad'],
     ];
 
     // Compared after normalize(); for each field the first synonym found among the headers wins, so a sheet with
@@ -26,23 +28,27 @@ class ImportColumns
     private const SYNONYMS = [
         'cedula' => ['cedula', 'cc', 'c c', 'cedula de ciudadania', 'no cedula', 'n cedula', 'nro cedula', 'num cedula',
             'numero cedula', 'numero de cedula', 'no de cedula', 'documento', 'documento de identidad', 'no documento',
-            'numero documento', 'numero de documento', 'identificacion', 'nit cedula', 'c c no', 'doc'],
+            'numero documento', 'numero de documento', 'identificacion', 'nit cedula', 'c c no', 'doc', 'no documento identidad',
+            'documento identidad', 'no documento de identidad', 'numero documento identidad', 'numero de documento de identidad'],
         'nombre_completo' => ['nombre completo', 'nombres completos', 'nombres y apellidos', 'nombre y apellido',
             'nombre y apellidos', 'apellidos y nombres', 'nombre del asistente', 'asistente'],
         'nombres' => ['nombres', 'nombre', 'primer nombre'],
         'apellidos' => ['apellidos', 'apellido', 'primer apellido'],
         'celular' => ['celular', 'cel', 'movil', 'telefono celular', 'telefono movil', 'numero celular', 'numero de celular',
-            'no celular', 'whatsapp', 'tel', 'telefono', 'telefonos', 'contacto'],
+            'no celular', 'whatsapp', 'tel', 'telefono', 'telefonos', 'contacto', 'celular fijo', 'celular o fijo', 'telefono celular fijo'],
         'fijo' => ['telefono fijo', 'fijo', 'tel fijo', 'telefono', 'tel', 'telefono 2', 'otro telefono'],
-        'fecha_nacimiento' => ['fecha de nacimiento', 'fecha nacimiento', 'fecha nac', 'f nacimiento', 'nacimiento'],
+        'fecha_nacimiento' => ['fecha de nacimiento', 'fecha nacimiento', 'fecha nac', 'f nacimiento', 'nacimiento',
+            'fecha de cumpleanos', 'fecha cumpleanos', 'cumpleanos'],
         'direccion' => ['direccion', 'direccion de residencia', 'dir', 'domicilio', 'residencia'],
         'barrio' => ['barrio', 'barrio vereda', 'barrio o vereda', 'sector', 'vereda', 'comuna'],
         'autoriza' => ['autorizo', 'autoriza', 'autorizacion', 'autoriza datos', 'autorizo datos', 'autorizo tratamiento de datos',
             'acepta', 'acepto', 'firmo', 'firma autorizacion'],
+        'municipio' => ['municipio', 'mpio', 'municipio de residencia', 'ciudad'],
+        'liderazgo' => ['liderazgo', 'tipo de liderazgo', 'lider', 'rol', 'actividad', 'nota', 'observacion', 'observaciones'],
     ];
 
     // Order in which fields pick their column.
-    private const ORDER = ['cedula', 'nombre_completo', 'nombres', 'apellidos', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autoriza'];
+    private const ORDER = ['cedula', 'nombre_completo', 'nombres', 'apellidos', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autoriza', 'municipio', 'liderazgo'];
 
     public static function templateHeaders(): array
     {
@@ -124,22 +130,30 @@ class ImportColumns
         return $score;
     }
 
-    // Returns the error message of an incomplete mapping, or null.
+    // Returns the error message of an incomplete mapping, or null. With an «Autorizó» column the rows follow the
+    // authorized flow (cédula and celular required); without it the file is a list without authorization, which only
+    // needs the name and the cédula or the phone to find who is already in the platform.
     public static function missing(array $mapping): ?string
     {
-        if (($mapping['cedula'] ?? null) === null) {
-            return 'Elija la columna que tiene la cédula.';
-        }
-        $hasName = ($mapping['nombre_completo'] ?? null) !== null
-            || (($mapping['nombres'] ?? null) !== null && ($mapping['apellidos'] ?? null) !== null);
-        if (! $hasName) {
-            return 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
-        }
-        if (($mapping['celular'] ?? null) === null) {
-            return 'Elija la columna que tiene el celular.';
-        }
-        if (($mapping['autoriza'] ?? null) === null) {
-            return 'Elija la columna «Autorizó»: solo se importan las personas que tienen SÍ.';
+        $set = fn (string $field) => ($mapping[$field] ?? null) !== null;
+        $hasName = $set('nombre_completo') || ($set('nombres') && $set('apellidos'));
+        if ($set('autoriza')) {
+            if (! $set('cedula')) {
+                return 'Elija la columna que tiene la cédula.';
+            }
+            if (! $hasName) {
+                return 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
+            }
+            if (! $set('celular')) {
+                return 'Elija la columna que tiene el celular.';
+            }
+        } else {
+            if (! $hasName) {
+                return 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
+            }
+            if (! $set('cedula') && ! $set('celular')) {
+                return 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.';
+            }
         }
         $indexes = array_filter($mapping, fn ($v) => $v !== null);
         if (count($indexes) !== count(array_unique($indexes))) {

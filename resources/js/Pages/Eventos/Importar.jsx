@@ -3,10 +3,10 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import ImportRowCard from '@/Components/Eventos/ImportRowCard';
-import { ConsentNote, ImportConfirm, ImportMapping, ImportStepper, ImportUpload } from '@/Components/Eventos/ImportSteps';
+import { ImportConfirm, ImportMapping, ImportSheet, ImportStepper, ImportUpload, UploadConsentNote } from '@/Components/Eventos/ImportSteps';
 import Pagination from '@/Components/Eventos/Pagination';
 import { formatEventDate, formatShortDate } from '@/lib/eventos';
-import { ROW_FILTERS, consentReady, currentStep, importErrorMessage, plural } from '@/lib/eventosImport';
+import { LIST_NOTE, ROW_FILTERS, currentStep, importErrorMessage, plural } from '@/lib/eventosImport';
 
 const IMPORT_STATUS = { subido: 'Columnas sin revisar', revisado: 'En revisión', confirmado: 'Importado' };
 
@@ -27,6 +27,7 @@ export default function Importar({ evento, consent, importacion, muestra, filas,
     const step = currentStep(importacion);
     const counts = importacion?.counts || {};
     const editable = importacion?.status === 'revisado';
+    const list = !!importacion?.sin_autorizacion;
     const [discarding, setDiscarding] = useState(false);
     const base = `/eventos/${evento.id}/importar`;
 
@@ -60,8 +61,8 @@ export default function Importar({ evento, consent, importacion, muestra, filas,
 
                 {step === 'archivo' && (
                     <>
-                        <ConsentNote consent={consent} />
-                        <ImportUpload eventId={evento.id} limits={limites} disabled={!evento.acepta_cargas || !consentReady(consent)} />
+                        <UploadConsentNote consent={consent} />
+                        <ImportUpload eventId={evento.id} limits={limites} disabled={!evento.acepta_cargas} />
                     </>
                 )}
 
@@ -78,6 +79,8 @@ export default function Importar({ evento, consent, importacion, muestra, filas,
                     </div>
                 )}
 
+                {importacion && importacion.status !== 'confirmado' && <ImportSheet eventId={evento.id} importacion={importacion} />}
+
                 {step === 'columnas' && <ImportMapping eventId={evento.id} importacion={importacion} muestra={muestra} campos={campos} />}
 
                 {(step === 'revisar' || step === 'confirmar') && (
@@ -85,21 +88,39 @@ export default function Importar({ evento, consent, importacion, muestra, filas,
                         {step === 'confirmar' && (
                             <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-300 text-[16px] text-emerald-900">
                                 <p className="font-extrabold">Carga confirmada{importacion.confirmed_at ? ` el ${formatShortDate(importacion.confirmed_at)}` : ''}</p>
-                                <p>{plural(counts.importadas ?? 0, 'persona quedó registrada', 'personas quedaron registradas')} en el evento. Las nuevas están pendientes de aprobar en la página del evento.</p>
-                                <p>Todas quedaron con su autorización de datos (se declaró que las planillas firmadas existen).</p>
+                                <p>{plural(counts.importadas ?? 0, 'persona quedó registrada', 'personas quedaron registradas')} en el evento.{list ? '' : ' Las nuevas están pendientes de aprobar en la página del evento.'}</p>
+                                <p>{list
+                                    ? 'Lista sin autorización: quien ya estaba en la plataforma quedó con la asistencia en el historial de su ficha (sin cambiarla); el resto quedó solo en la lista del evento.'
+                                    : 'Todas quedaron con su autorización de datos (se declaró que las planillas firmadas existen).'}</p>
                                 {importacion.datos_borrados && <p className="mt-1">Por protección de datos, el contenido de las filas de esta carga ya se borró de la vista previa; los asistentes siguen en el evento.</p>}
                             </div>
                         )}
 
-                        <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-                            <Count label="Con SÍ en «Autorizó»" value={counts.autorizaron} tone="text-[var(--color-ink)]" />
-                            <Count label="Válidas" value={counts.validas} tone="text-emerald-700" />
-                            <Count label="Ya en la plataforma (de las válidas)" value={counts.en_plataforma} tone="text-[var(--color-primary)]" />
-                            <Count label="No autorizaron" value={counts.no_autorizaron} tone="text-gray-700" />
-                            <Count label="Con error" value={counts.errores} tone="text-red-700" />
-                            <Count label="Repetidas en el archivo" value={counts.duplicadas} tone="text-amber-700" />
-                            <Count label="Ya en el evento" value={counts.en_evento} tone="text-[var(--color-ink-soft)]" />
-                        </div>
+                        {list ? (
+                            <>
+                                <p role="note" className="px-4 py-3 rounded-xl bg-blue-50 border border-blue-200 text-[17px] text-[var(--color-ink)]">
+                                    <strong>Lista sin autorización.</strong> Quien ya está en la plataforma (por cédula, o por teléfono y nombre que usted confirma) queda con la asistencia en su historial; su ficha no cambia. {LIST_NOTE}
+                                </p>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+                                    <Count label="Ya en la plataforma" value={counts.en_plataforma} tone="text-[var(--color-primary)]" />
+                                    <Count label="¿Es esta persona? (por confirmar)" value={counts.sugeridas} tone="text-amber-700" />
+                                    <Count label="Solo en la lista del evento" value={counts.sin_ficha} tone="text-gray-700" />
+                                    <Count label="Con error" value={counts.errores} tone="text-red-700" />
+                                    <Count label="Repetidas en el archivo" value={counts.duplicadas} tone="text-amber-700" />
+                                    <Count label="Ya en el evento" value={counts.en_evento} tone="text-[var(--color-ink-soft)]" />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+                                <Count label="Con SÍ en «Autorizó»" value={counts.autorizaron} tone="text-[var(--color-ink)]" />
+                                <Count label="Válidas" value={counts.validas} tone="text-emerald-700" />
+                                <Count label="Ya en la plataforma (de las válidas)" value={counts.en_plataforma} tone="text-[var(--color-primary)]" />
+                                <Count label="No autorizaron" value={counts.no_autorizaron} tone="text-gray-700" />
+                                <Count label="Con error" value={counts.errores} tone="text-red-700" />
+                                <Count label="Repetidas en el archivo" value={counts.duplicadas} tone="text-amber-700" />
+                                <Count label="Ya en el evento" value={counts.en_evento} tone="text-[var(--color-ink-soft)]" />
+                            </div>
+                        )}
 
                         {editable && (counts.no_autorizaron ?? 0) > 0 && (
                             <p className="text-[16px] text-[var(--color-ink)]">
@@ -116,7 +137,7 @@ export default function Importar({ evento, consent, importacion, muestra, filas,
                             <div className="px-4 pt-4 pb-3 space-y-3 border-b border-[var(--color-line)]">
                                 <h2 id="filas-title" className="text-[17px] font-extrabold text-[var(--color-ink)]">Filas del archivo</h2>
                                 <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-0.5 [scrollbar-width:none]" role="group" aria-label="Filtrar filas">
-                                    {ROW_FILTERS.map(f => {
+                                    {ROW_FILTERS.filter(f => (list ? !['no_autorizo', 'nuevas'].includes(f.value) : !['sugerida', 'sin_ficha'].includes(f.value))).map(f => {
                                         const active = (filters?.estado ?? null) === f.value;
                                         return (
                                             <button key={f.label} type="button" aria-pressed={active} onClick={() => filter(f.value)} className={`flex-shrink-0 min-h-[44px] px-3.5 py-1.5 rounded-full border text-[16px] font-semibold ${active ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'bg-white border-[var(--color-line-strong)] text-[var(--color-ink-soft)]'}`}>

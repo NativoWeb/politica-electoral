@@ -6,14 +6,14 @@ use App\Services\Eventos\ImportRowValidator;
 use Illuminate\Foundation\Http\FormRequest;
 
 // Correction of one preview row: any of the editable fields (the value is stored as typed and the row is validated
-// again) and/or the decision. A wrong value is not a 422: it stays on the row with its error.
+// again) and/or the decision, or the answer to the suggested person of a list row (sugerencia). A wrong value is not a 422: it stays on the row with its error.
 class ImportRowRequest extends FormRequest
 {
     use AuthorizesEventImport;
 
     public function rules(): array
     {
-        $rules = ['decision' => ['nullable', 'in:importar,omitir']];
+        $rules = ['decision' => ['nullable', 'in:importar,omitir'], 'sugerencia' => ['nullable', 'in:confirmar,rechazar']];
         foreach (ImportRowValidator::EDITABLE as $field) {
             $rules[$field] = ['sometimes', 'nullable', 'string', 'max:255'];
         }
@@ -37,6 +37,7 @@ class ImportRowRequest extends FormRequest
     {
         return [
             'decision.in' => 'Elija si la fila se importa o no.',
+            'sugerencia.in' => 'Responda si es o no es la persona sugerida.',
             '*.string' => 'Escriba un texto.',
             '*.max' => 'El texto es demasiado largo (máximo 255 caracteres).',
         ];

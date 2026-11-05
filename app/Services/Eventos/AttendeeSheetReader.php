@@ -38,10 +38,11 @@ class AttendeeSheetReader
     private const HEADER_SEARCH = 10;
 
     // ['header_row' => n, 'headers' => [string], 'rows' => [['row_number' => n, 'cells' => [index => value]]]]
+    // $sheet: the sheet to read in a workbook with several (one per jornada); null = the default one.
     // Throws RuntimeException with a message for the user.
-    public function read(string $path, string $extension): array
+    public function read(string $path, string $extension, ?string $sheet = null): array
     {
-        [$grid, $overflow] = $extension === 'csv' ? $this->readCsv($path) : $this->readSpreadsheet($path, $extension);
+        [$grid, $overflow] = $extension === 'csv' ? $this->readCsv($path) : $this->readSpreadsheet($path, $extension, $sheet);
         if ($overflow) {
             throw new RuntimeException(self::TOO_MANY_ROWS);
         }
@@ -65,7 +66,56 @@ class AttendeeSheetReader
     }
 
     // [[row number => [column index => value]] (only non-empty rows), overflow].
-    private function readSpreadsheet(string $path, string $extension): array
+    // The sheets an attendee list can be in (all but "Instrucciones"), each with the first text of its first rows
+    // (the title of the jornada: 'JORNADA "DEL CONGRESO AL BARRIO" VIERNES 23.10.2026…'). [] for a CSV.
+    public function sheets(string $path, string $extension): array
+    {
+        if ($extension === 'csv') {
+            return [];
+        }
+        if ($extension === 'xlsx') {
+            $this->assertSafeZip($path);
+        }
+        $reader = $extension === 'xls' ? new Xls : new Xlsx;
+        $reader->setReadDataOnly(true);
+        $reader->setReadEmptyCells(false);
+        $reader->setReadFilter(new class(self::HEADER_SEARCH, self::MAX_COLUMNS) implements IReadFilter
+        {
+            public function __construct(private int $rows, private int $columns) {}
+
+            public function readCell($columnAddress, $row, $worksheetName = ''): bool
+            {
+                return $row <= $this->rows && Coordinate::columnIndexFromString($columnAddress) <= $this->columns;
+            }
+        });
+
+        try {
+            $spreadsheet = $reader->load($path);
+        } catch (\Throwable) {
+            throw new RuntimeException('No se pudo leer el archivo. Ábralo en Excel, guárdelo como .xlsx e intente de nuevo.');
+        }
+        $sheets = [];
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            if (ImportColumns::normalize($sheet->getTitle()) === 'instrucciones') {
+                continue;
+            }
+            $title = null;
+            foreach ($this->grid($sheet) as $cells) {
+                foreach ($cells as $value) {
+                    if (is_string($value) && mb_strlen($value) > 12 && ImportColumns::score([$value]) === 0) {
+                        $title = trim(preg_replace('/\s+/u', ' ', $value));
+                        break 2;
+                    }
+                }
+            }
+            $sheets[] = ['nombre' => $sheet->getTitle(), 'titulo' => $title !== null ? mb_substr($title, 0, 300) : null];
+        }
+        $spreadsheet->disconnectWorksheets();
+
+        return $sheets;
+    }
+
+    private function readSpreadsheet(string $path, string $extension, ?string $sheet = null): array
     {
         if ($extension === 'xlsx') {
             $this->assertSafeZip($path);
@@ -93,7 +143,7 @@ class AttendeeSheetReader
         $reader->setReadFilter($filter);
 
         try {
-            $sheetName = $this->sheetName($reader, $path);
+            $sheetName = $sheet !== null && in_array($sheet, $reader->listWorksheetNames($path), true) ? $sheet : $this->sheetName($reader, $path);
             if ($sheetName !== null) {
                 $reader->setLoadSheetsOnly([$sheetName]);
             }

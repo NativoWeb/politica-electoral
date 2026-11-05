@@ -103,8 +103,11 @@ class EventoController extends Controller
 
         $asistentes = $this->attendeesQuery($event, $filters)->paginate(50)->withQueryString();
         $approvedConsents = $this->approvedConsents($asistentes->getCollection());
+        $fichas = $this->linkedFichas($asistentes->getCollection());
         $asistentes->through(fn (EventAttendee $a) => $this->attendee($a) + [
-            'consentimiento_provisional' => $a->consent_id === null || ! ($approvedConsents[$a->consent_id] ?? false),
+            // An attendee of a list without authorization has no consent at all: not a "provisional" one.
+            'consentimiento_provisional' => $a->autoriza_datos && ($a->consent_id === null || ! ($approvedConsents[$a->consent_id] ?? false)),
+            'ficha' => $a->lider_id ? ($fichas[$a->lider_id] ?? null) : null,
         ]);
 
         return Inertia::render('Eventos/Show', [
@@ -144,7 +147,11 @@ class EventoController extends Controller
             'direccion' => $a->direccion,
             'barrio' => $a->barrio,
             'autoriza' => $a->autoriza_datos ? 'Sí' : 'No',
-            'texto' => $a->consent_id !== null && ($approvedConsents[$a->consent_id] ?? false) ? 'Aprobado' : 'Provisional',
+            'texto' => match (true) {
+                ! $a->autoriza_datos => 'Sin autorización',
+                $a->consent_id !== null && ($approvedConsents[$a->consent_id] ?? false) => 'Aprobado',
+                default => 'Provisional',
+            },
             'origen' => EventoIntegracionController::SOURCES[$a->source] ?? $a->source,
             'registrado_por' => $a->registeredBy?->name,
             'estado' => EventoIntegracionController::LINK_STATUSES[$a->link_status] ?? $a->link_status,
@@ -662,6 +669,7 @@ class EventoController extends Controller
             'fecha_nacimiento' => $a->fecha_nacimiento?->toDateString(),
             'direccion' => $a->direccion,
             'barrio' => $a->barrio,
+            'nota' => $a->nota,
             'autoriza_datos' => $a->autoriza_datos,
             'source' => $a->source,
             'link_status' => $a->link_status,
@@ -692,6 +700,20 @@ class EventoController extends Controller
             ->orderByDesc('created_at')->orderBy('id');
     }
 
+    // Cargo of the linked ficha and whether it is a registered lider (not a ficha created from an event), only for
+    // users who may see Votantes or the Mapa and only inside their territory. [lider id => ['cargo', 'lider']].
+    private function linkedFichas($attendees): array
+    {
+        $user = request()->user();
+        $ids = $attendees->pluck('lider_id')->filter()->unique()->values()->all();
+        if ($ids === [] || ! ($user?->hasPermission('view.votantes') || $user?->hasPermission('view.mapa'))) {
+            return [];
+        }
+
+        return $this->scopeToTerritory(DB::table('lideres')->whereIn('id', $ids))->get(['id', 'cargo', 'tipo'])
+            ->mapWithKeys(fn ($l) => [$l->id => ['cargo' => $l->cargo, 'lider' => $l->tipo !== ApproveAttendees::TIPO]])->all();
+    }
+
     // consent id => whether its text was approved.
     private function approvedConsents($attendees)
     {
@@ -713,6 +735,7 @@ class EventoController extends Controller
             'pendientes' => (int) ($byStatus['pendiente'] ?? 0),
             'aprobados' => (int) ($byStatus['aprobado'] ?? 0),
             'descartados' => (int) ($byStatus['descartado'] ?? 0),
+            'sin_autorizacion' => (int) ($byStatus['sin_autorizacion'] ?? 0),
             'qr' => (int) ($bySource['qr'] ?? 0),
             'operador' => (int) ($bySource['operador'] ?? 0),
             'excel' => (int) ($bySource['excel'] ?? 0),

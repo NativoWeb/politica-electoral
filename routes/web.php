@@ -188,6 +188,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/{id}/importar', [EventoImportController::class, 'store'])->name('importar.subir')->whereUuid('id')
                 ->middleware('throttle:eventos-importar');
             Route::get('/{id}/importar/{import}', [EventoImportController::class, 'show'])->name('importar.ver')->whereUuid(['id', 'import']);
+            Route::put('/{id}/importar/{import}/hoja', [EventoImportController::class, 'sheet'])->name('importar.hoja')->whereUuid(['id', 'import'])
+                ->middleware('throttle:eventos-importar');
             Route::put('/{id}/importar/{import}/columnas', [EventoImportController::class, 'mapping'])->name('importar.columnas')->whereUuid(['id', 'import'])
                 ->middleware('throttle:eventos-importar');
             Route::patch('/{id}/importar/{import}/filas/{fila}', [EventoImportController::class, 'updateRow'])->name('importar.fila')->whereUuid(['id', 'import', 'fila'])

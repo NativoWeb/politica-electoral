@@ -23,6 +23,7 @@ class EventImport extends Model
     protected $casts = [
         'headers' => 'array',
         'column_mapping' => 'array',
+        'sheets' => 'array',
         'counts' => 'array',
         'consent_declared' => 'boolean',
         'confirmed_at' => 'datetime',
