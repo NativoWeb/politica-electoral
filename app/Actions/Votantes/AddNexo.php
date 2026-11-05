@@ -44,8 +44,13 @@ class AddNexo
             return $id;
         }
 
+        // Also here, not only in authorizeFor(): a lider of a campaign the user cannot see never gets a nexo. Same 404 as
+        // a missing id, so the answer does not tell that the lider exists.
+        $liderCampaign = DB::table('lideres')->where('id', $personId)->value('campaign_id');
+        abort_if($liderCampaign !== null && ! $this->campaign()->isVisible($liderCampaign), 404);
+
         // A lider's nexos live in the lider's campaign; an electoral person's, in the writer's campaign.
-        $campaignId = DB::table('lideres')->where('id', $personId)->value('campaign_id')
+        $campaignId = $liderCampaign
             ?? $this->campaign()->ownId()
             ?? Campaign::DEFAULT_ID;
 

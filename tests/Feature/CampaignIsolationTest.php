@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Actions\Votantes\AddNexo;
 use App\Exports\GenericExport;
 use App\Models\Campaign;
 use App\Models\Role;
@@ -14,6 +15,7 @@ use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 use Maatwebsite\Excel\Facades\Excel;
 use Mockery;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 // Multi-campaign step 2: campaign CD (root) with subcampaign X, and an independent root campaign Y.
@@ -380,6 +382,32 @@ class CampaignIsolationTest extends TestCase
         $this->actingAs($this->userX)->getJson("/votantes/{$missing}/referidos")->assertNotFound();
         $this->actingAs($this->userX)->getJson("/mapa-politico/persona/{$missing}/posibles-duplicados")->assertNotFound();
         $this->actingAs($this->userX)->getJson("/votantes/{$missing}")->assertNotFound();
+    }
+
+    // AddNexo refuses an invisible lider by itself too (any caller that skips authorizeFor), like a missing id.
+    public function test_a_nexo_never_points_to_a_lider_of_an_invisible_campaign(): void
+    {
+        $nexos = DB::table('nexos_familiares')->count();
+        $missing = (string) Str::uuid();
+
+        $invisible = $this->actingAs($this->userX)->postJson("/mapa-politico/persona/{$this->liderA}/nexos", ['nombre' => 'Intruso']);
+        $absent = $this->actingAs($this->userX)->postJson("/mapa-politico/persona/{$missing}/nexos", ['nombre' => 'Intruso']);
+        $invisible->assertNotFound();
+        $this->assertSame($absent->status(), $invisible->status());
+        $this->assertSame($absent->json(), $invisible->json());
+
+        $this->actingAs($this->userX);
+        try {
+            app(AddNexo::class)->handle($this->liderA, ['nombre' => 'Por la acción']);
+            $this->fail('AddNexo::handle() accepted a lider of an invisible campaign.');
+        } catch (HttpException $e) {
+            $this->assertSame(404, $e->getStatusCode());
+        }
+        $this->assertSame($nexos, DB::table('nexos_familiares')->count());
+
+        // The visible ones keep working: own campaign and, for the parent campaign's user, the subcampaign's lider.
+        app(AddNexo::class)->handle($this->liderB, ['nombre' => 'Hermana por la acción']);
+        $this->assertDatabaseHas('nexos_familiares', ['person_id' => $this->liderB, 'nombre' => 'Hermana por la acción', 'campaign_id' => $this->campX]);
     }
 
     public function test_removing_a_referido_across_campaigns_is_404(): void

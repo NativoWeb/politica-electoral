@@ -971,7 +971,10 @@ class AgentWriteApiTest extends TestCase
         $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['telefono' => '999'], $token)->assertNotFound();
         $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/desactivar", null, $token)->assertNotFound();
         $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/contactos", ['tipo' => 'celular', 'valor' => '1'], $token)->assertNotFound();
-        $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/nexos", ['nombre' => 'Primo'], $token)->assertNotFound();
+        $invisible = $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/nexos", ['nombre' => 'Primo'], $token)->assertNotFound();
+        // Same answer as a lider that does not exist: the agent cannot tell that the other campaign's lider is there.
+        $missing = $this->agent('POST', '/api/agent/v1/votantes/'.Str::uuid().'/nexos', ['nombre' => 'Primo'], $token)->assertNotFound();
+        $this->assertSame($missing->json(), $invisible->json());
         $this->agent('GET', "/api/agent/v1/votantes/{$this->liderA}/seguimientos", null, $token)->assertNotFound();
 
         $created = $this->agent('POST', '/api/agent/v1/votantes', ['nombre' => 'Ana en X', 'municipio_id' => $this->munA, 'cedula' => '111'], $token)
