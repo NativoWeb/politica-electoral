@@ -896,13 +896,44 @@ class AgentWriteApiTest extends TestCase
         $this->assertArrayNotHasKey('valor', $contacto);
         $this->assertSame('celular', $contacto['tipo']);
 
-        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['autoriza_datos' => true], $token)
-            ->assertOk()->assertJsonPath('data.telefono', '300111')->assertJsonPath('data.observacion', 'Vive en la 5');
+        // Not even of who authorized them: contact data reaches the agent only through GET /votantes (quota + audit).
+        $authorized = $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['autoriza_datos' => true], $token)
+            ->assertOk()->assertJsonPath('data.autoriza_datos', true)->json('data');
+        $created = $this->agent('POST', '/api/agent/v1/votantes', [
+            'nombre' => 'Autoriza', 'municipio_id' => $this->munA, 'cedula' => '555', 'telefono' => '3005550000', 'autoriza_datos' => true,
+        ], $token)->assertCreated()->json('data');
+        foreach ([$authorized, $created] as $data) {
+            foreach (['telefono', 'email', 'observacion', 'cedula'] as $field) {
+                $this->assertArrayNotHasKey($field, $data);
+            }
+        }
         $this->agent('POST', "/api/agent/v1/votantes/{$this->liderA}/contactos", ['tipo' => 'celular', 'valor' => '3009998878'], $token)
-            ->assertCreated()->assertJsonPath('data.valor', '3009998878');
-        $this->agent('POST', '/api/agent/v1/votantes', [
-            'nombre' => 'Autoriza', 'municipio_id' => $this->munA, 'telefono' => '3005550000', 'autoriza_datos' => true,
-        ], $token)->assertCreated()->assertJsonPath('data.telefono', '3005550000');
+            ->assertCreated()->assertJsonMissingPath('data.valor');
+    }
+
+    public function test_agent_update_audits_before_and_after_of_the_consent_and_masks_contact_data(): void
+    {
+        $token = $this->tokenFor($this->campo);
+
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['autoriza_datos' => true, 'telefono' => '3001234567', 'nivel_confianza' => 'sin_llamar'], $token)
+            ->assertOk();
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['autoriza_datos' => false], $token)->assertOk();
+
+        $logs = DB::table('audit_logs')->where('action', 'PATCH api.agent.votantes.update')->orderBy('created_at')->get();
+        $this->assertCount(2, $logs);
+
+        $before = json_decode($logs[0]->before_state, true);
+        $after = json_decode($logs[0]->after_state, true);
+        // Only the changed fields: nivel_confianza was already sin_llamar.
+        $this->assertSame(['autoriza_datos' => false, 'telefono_last4' => '0111'], $before);
+        $this->assertSame(['autoriza_datos' => true, 'telefono_last4' => '4567'], $after);
+
+        $this->assertSame(['autoriza_datos' => true], json_decode($logs[1]->before_state, true));
+        $this->assertSame(['autoriza_datos' => false], json_decode($logs[1]->after_state, true));
+
+        $all = DB::table('audit_logs')->get(['metadata', 'before_state', 'after_state'])->toJson();
+        $this->assertStringNotContainsString('3001234567', $all);
+        $this->assertStringNotContainsString('300111', $all);
     }
 
     public function test_political_affiliation_is_omitted_from_the_audit_on_web_and_agent(): void

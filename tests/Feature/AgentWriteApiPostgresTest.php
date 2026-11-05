@@ -91,6 +91,9 @@ class AgentWriteApiPostgresTest extends TestCase
 
         $this->assertDatabaseHas('lideres', ['id' => $id, 'geographic_unit_id' => $this->geo, 'verificado' => true, 'mesa_votacion' => '7']);
         $this->assertSame(2, DB::table('audit_logs')->where('correlation_id', $correlation)->where('user_id', $this->campo->id)->count());
+        $patch = DB::selectOne("SELECT before_state->>'verificado' AS antes, after_state->>'verificado' AS despues, after_state->>'mesa_votacion' AS mesa
+            FROM audit_logs WHERE correlation_id = ? AND action = 'PATCH api.agent.votantes.update'", [$correlation]);
+        $this->assertSame(['false', 'true', '7'], [$patch->antes, $patch->despues, $patch->mesa]);
     }
 
     public function test_seguimiento_shows_up_in_agent_ro_view(): void

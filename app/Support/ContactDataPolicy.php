@@ -14,9 +14,9 @@ final class ContactDataPolicy
         return in_array($lider?->autoriza_datos ?? null, [true, 1, '1', 't'], true);
     }
 
-    // $data without FIELDS unless the lider authorized them.
-    public static function strip(?object $lider, array $data): array
+    // Write responses of the agent never carry them, authorized or not.
+    public static function withoutContactData(array $data): array
     {
-        return self::authorized($lider) ? $data : array_diff_key($data, array_flip(self::FIELDS));
+        return array_diff_key($data, array_flip(self::FIELDS));
     }
 }

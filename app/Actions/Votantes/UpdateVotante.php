@@ -20,6 +20,11 @@ class UpdateVotante
     // Set by handle() when a rename could not be propagated to the linked electoral person.
     public ?string $warning = null;
 
+    // Set by handle(): the changed fields with their previous and new values (for the audit's before/after state).
+    public array $before = [];
+
+    public array $after = [];
+
     // NOT NULL columns of lideres: an emptied form field arrives as null and must not reach the database.
     private const NOT_NULL_DEFAULTS = [
         'cargo' => '', 'votos' => 0, 'nivel_confianza' => 'sin_llamar', 'tipo' => 'directorio',
@@ -50,6 +55,7 @@ class UpdateVotante
     public function handle(string $id, array $data): Lider
     {
         $this->warning = null;
+        $this->before = $this->after = [];
         $data = Cedula::normalizeFields(self::withoutNulls($data));
 
         $lider = Lider::find($id);
@@ -91,7 +97,11 @@ class UpdateVotante
                     }
                 }
 
+                $original = $lider->getOriginal();
                 $lider->update($data);
+                $changed = array_keys(array_diff_key($lider->getChanges(), ['updated_at' => true]));
+                $this->before = array_intersect_key($original, array_flip($changed));
+                $this->after = $lider->only($changed);
 
                 if ($personaARenombrar) {
                     self::renamePerson($personaARenombrar, $nuevoNombre);

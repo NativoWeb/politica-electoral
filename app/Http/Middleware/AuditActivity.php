@@ -33,6 +33,11 @@ class AuditActivity
         'importar' => 'evento_importacion',
     ];
 
+    // Request attributes a controller may set with the changed fields (previous / new values); masked by AuditLog.
+    public const BEFORE_STATE = 'audit.before_state';
+
+    public const AFTER_STATE = 'audit.after_state';
+
     // Excel imports of attendees: the corrected cells (names included) never reach the log, only which fields changed.
     private const IMPORT_KEYS = ['columnas', 'decision', 'declaracion'];
 
@@ -66,6 +71,8 @@ class AuditActivity
                 'entity_type' => Str::limit($entityType, 80, ''),
                 'entity_id' => $entityId,
                 'metadata' => $this->metadata($request),
+                'before_state' => $request->attributes->get(self::BEFORE_STATE) ?: null,
+                'after_state' => $request->attributes->get(self::AFTER_STATE) ?: null,
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'correlation_id' => $this->correlationId($request),

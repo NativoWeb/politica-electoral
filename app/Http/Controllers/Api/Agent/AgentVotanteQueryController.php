@@ -101,6 +101,7 @@ class AgentVotanteQueryController extends Controller
         $response->headers->set('X-Total-Count', (string) $total);
         $response->headers->set('X-Export-Truncated', $total > $max ? 'true' : 'false');
         $response->headers->set('X-Quota-Truncated', $quotaTruncated ? 'true' : 'false');
+        $response->headers->set('X-Rows-Delivered', (string) count($data));
 
         return $response;
     }

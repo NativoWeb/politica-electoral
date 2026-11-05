@@ -466,7 +466,7 @@ class AgentVotanteQueryApiTest extends TestCase
         // By nombre: Ana Autoriza (fits), Ana Dos Autoriza (over the quota: the file stops there), Bruno.
         $response = $this->agentGet('/api/agent/v1/votantes/export', [], $token)
             ->assertOk()
-            ->assertHeader('X-Quota-Truncated', 'true')
+            ->assertHeader('X-Quota-Truncated', 'true')->assertHeader('X-Rows-Delivered', '1')
             ->assertHeader('X-Total-Count', '3');
         $rows = $this->sheetRows($response);
         $this->assertCount(2, $rows);
@@ -493,7 +493,7 @@ class AgentVotanteQueryApiTest extends TestCase
         $response = $this->agentGet('/api/agent/v1/votantes/export', [], $this->tokenFor($this->campo), ['X-Correlation-Id' => $correlation])
             ->assertOk()
             ->assertHeader('X-Total-Count', '2')
-            ->assertHeader('X-Export-Truncated', 'false');
+            ->assertHeader('X-Export-Truncated', 'false')->assertHeader('X-Rows-Delivered', '2');
         $this->assertStringContainsString('spreadsheetml', $response->headers->get('Content-Type'));
         $this->assertMatchesRegularExpression('/attachment; filename=votantes_\d{8}_\d{6}\.xlsx/', $response->headers->get('Content-Disposition'));
 

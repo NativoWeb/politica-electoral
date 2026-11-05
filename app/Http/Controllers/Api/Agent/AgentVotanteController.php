@@ -10,6 +10,7 @@ use App\Actions\Votantes\CreateVotante;
 use App\Actions\Votantes\DeactivateVotante;
 use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AuditActivity;
 use App\Http\Requests\Agent\AgentStoreContactoRequest;
 use App\Http\Requests\Agent\AgentStoreNexoRequest;
 use App\Http\Requests\Agent\AgentStoreReferidoRequest;
@@ -36,6 +37,10 @@ class AgentVotanteController extends Controller
     public function update(AgentUpdateVotanteRequest $request, string $id, UpdateVotante $action): JsonResponse
     {
         $lider = $action->handle($id, $request->validated());
+        // AuditActivity stores them (masked) so the consent (autoriza_datos) is traceable value by value. On request():
+        // the FormRequest is a copy with its own attribute bag, the middleware sees the original request.
+        request()->attributes->set(AuditActivity::BEFORE_STATE, $action->before);
+        request()->attributes->set(AuditActivity::AFTER_STATE, $action->after);
 
         return response()->json(array_filter([
             'success' => true, 'message' => 'Votante actualizado.', 'data' => $this->summary($lider), 'warning' => $action->warning,
@@ -51,15 +56,10 @@ class AgentVotanteController extends Controller
 
     public function storeContacto(AgentStoreContactoRequest $request, string $id, AddContacto $action): JsonResponse
     {
-        $lider = $action->authorizeFor($id);
-        $contacto = $action->handle($lider, $request->validated());
+        $contacto = $action->handle($action->authorizeFor($id), $request->validated());
 
-        $data = $contacto->only(['id', 'lider_id', 'tipo', 'valor', 'principal', 'estado']);
-        if (! ContactDataPolicy::authorized($lider)) {
-            unset($data['valor']);
-        }
-
-        return $this->ok('Contacto creado.', $data, 201);
+        // Never the value: contact data reaches the agent only through GET /votantes (quota and delivery audit).
+        return $this->ok('Contacto creado.', $contacto->only(['id', 'lider_id', 'tipo', 'principal', 'estado']), 201);
     }
 
     public function storeReferido(AgentStoreReferidoRequest $request, string $id, AddReferido $action): JsonResponse
@@ -100,10 +100,10 @@ class AgentVotanteController extends Controller
         return response()->json(['success' => true, 'data' => $items]);
     }
 
-    // Contact data and notes only of who authorized them (ContactDataPolicy), like GET /votantes.
+    // Never contact data nor notes, even of who authorized them: those reach the agent only through GET /votantes.
     private function summary(Lider $lider): array
     {
-        return ContactDataPolicy::strip($lider, $lider->only(['id', 'nombre', 'municipio', 'geographic_unit_id', 'is_active',
+        return ContactDataPolicy::withoutContactData($lider->only(['id', 'nombre', 'municipio', 'geographic_unit_id', 'is_active',
             ...array_keys(AgentVotanteRules::editable())]));
     }
 
