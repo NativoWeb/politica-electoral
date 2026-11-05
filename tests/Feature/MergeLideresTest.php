@@ -227,6 +227,33 @@ class MergeLideresTest extends TestCase
         $this->assertContains('Cesar Silva Diaz', $names);
     }
 
+    public function test_a_cedula_with_one_mistyped_digit_is_offered_with_both_cedulas(): void
+    {
+        $victor = $this->lider(['nombre' => 'Victor Manuel Celis Estupiñan', 'cedula' => '1096512334', 'telefono' => '3213323452']);
+        $typo = $this->lider(['nombre' => 'Victor Manuel Celis Estupiñan', 'cedula' => '1095512334', 'telefono' => '3213323452']);
+        $swap = $this->lider(['nombre' => 'Victor Celis', 'cedula' => '1069512334', 'telefono' => '3213323452']);
+        $this->lider(['nombre' => 'Victor Manuel Celis Estupiñan', 'cedula' => '1095512399', 'telefono' => '3213323452']);
+        $this->lider(['nombre' => 'Otra Persona Distinta', 'cedula' => '1096512335', 'telefono' => '3001112233']);
+
+        $found = collect(app(FindPossibleDuplicates::class)->handle($victor))->keyBy('id');
+
+        $this->assertEqualsCanonicalizing([$typo, $swap], $found->keys()->all(), 'one digit changed or two swapped; same phone or name');
+        $this->assertSame(['1096512334', '1095512334'], $found[$typo]['cedulas']);
+        $this->assertSame('Cédula casi igual', $found[$typo]['motivo']);
+    }
+
+    public function test_merging_with_the_edited_records_cedula_keeps_it_and_notes_the_mistyped_one(): void
+    {
+        $edited = $this->lider(['nombre' => 'Victor Manuel Celis Estupiñan', 'cedula' => '1096512334', 'telefono' => '3213323452']);
+        $other = $this->lider(['nombre' => 'Victor Manuel Celis Estupiñan', 'cedula' => '1095512334', 'telefono' => '3213323452', 'email' => 'v@a.com']);
+
+        $merged = app(MergeLideres::class)->handle($edited, $other, '1096512334');
+
+        $this->assertSame('1096512334', $merged->cedula);
+        $this->assertStringContainsString('Cédula anterior: 1095512334.', $merged->observacion);
+        $this->assertSame(1, DB::table('lideres')->count());
+    }
+
     public function test_records_with_different_cedulas_are_not_merged(): void
     {
         $keep = $this->lider(['nombre' => 'Juan Pedraza', 'cedula' => '1072365898']);

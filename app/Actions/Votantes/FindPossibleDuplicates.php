@@ -10,7 +10,8 @@ use Illuminate\Support\Str;
 
 // Other lideres of the same municipio that look like the same person (same phone, same cédula or
 // a name contained in the other), so the panel can offer to merge them. Records with different
-// cédulas are never offered: they cannot be merged. Only the lider's own campaign is searched.
+// cédulas are never offered, except two that differ in one mistyped digit (same phone or similar name):
+// those come with both cédulas so the user picks the right one. Only the lider's own campaign is searched.
 class FindPossibleDuplicates
 {
     use ScopesTerritory;
@@ -41,10 +42,16 @@ class FindPossibleDuplicates
             ->get(['id', 'nombre', 'cargo', 'telefono', 'cedula']);
         foreach ($others as $o) {
             $otherCedula = Cedula::normalize($o->cedula) ?: null;
+            $otherTokens = self::nameTokens($o->nombre);
             if ($cedula && $otherCedula && $cedula !== $otherCedula) {
+                $samePhone = $phone !== null && $phone === self::phone($o->telefono);
+                if (self::oneTypo($cedula, $otherCedula) && (($samePhone && self::namesOverlap($tokens, $otherTokens, 1)) || self::namesOverlap($tokens, $otherTokens, 2))) {
+                    $found[] = ['id' => $o->id, 'nombre' => $o->nombre, 'cargo' => $o->cargo, 'telefono' => $o->telefono,
+                        'motivo' => 'Cédula casi igual', 'cedulas' => [$cedula, $otherCedula]];
+                }
+
                 continue;
             }
-            $otherTokens = self::nameTokens($o->nombre);
             $motivo = match (true) {
                 $cedula && $cedula === $otherCedula => 'Misma cédula',
                 $phone !== null && $phone === self::phone($o->telefono) && self::namesOverlap($tokens, $otherTokens, 1) => 'Mismo teléfono',
@@ -58,6 +65,18 @@ class FindPossibleDuplicates
         }
 
         return $found;
+    }
+
+    // Same length and one digit changed, or two neighbouring digits swapped.
+    private static function oneTypo(string $a, string $b): bool
+    {
+        if (strlen($a) !== strlen($b)) {
+            return false;
+        }
+        $diff = array_keys(array_diff_assoc(str_split($a), str_split($b)));
+
+        return count($diff) === 1
+            || (count($diff) === 2 && $diff[1] === $diff[0] + 1 && $a[$diff[0]] === $b[$diff[1]] && $a[$diff[1]] === $b[$diff[0]]);
     }
 
     private static function phone(?string $telefono): ?string

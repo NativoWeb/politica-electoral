@@ -276,11 +276,12 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     }
 
     // Merges `dup` with this record. In edit mode the pending changes are saved first so nothing typed is lost.
-    function mergeDuplicado(dup = duplicado) {
+    // cedulaElegida: when the two records have almost the same cédula, the one the user says is right.
+    function mergeDuplicado(dup = duplicado, cedulaElegida = null) {
         const actual = form.nombre || data?.nombre;
         confirm(
             'Unificar registros',
-            `${dup.motivo ? `(${dup.motivo}) ` : ''}«${actual}» y «${dup.nombre}» quedarán como un solo registro, con la información de los dos (cédula, teléfonos, notas, cargos, contactos y nexos). Se conserva el registro más completo. Esto no se puede deshacer.`,
+            `${dup.motivo ? `(${dup.motivo}) ` : ''}«${actual}» y «${dup.nombre}» quedarán como un solo registro, con la información de los dos (cédula, teléfonos, notas, cargos, contactos y nexos). Se conserva el registro más completo.${cedulaElegida ? ` Quedará la cédula ${cedulaElegida}; la otra se anota como anterior.` : ''} Esto no se puede deshacer.`,
             async () => {
                 setMerging(true);
                 const fail = (msg) => { setMessage(msg); setErrorMessage(msg); showGlobalToast(msg, 'error'); };
@@ -327,7 +328,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     // 2) One record stays with both records' data and related rows.
                     const merged = await apiFetch(`/mapa-politico/persona/${targetId}/unificar`, {
                         method: 'POST',
-                        body: JSON.stringify({ duplicado_id: dup.id, cedula: editMode ? (form.cedula ?? '') : '' }),
+                        body: JSON.stringify({ duplicado_id: dup.id, cedula: cedulaElegida ?? (editMode ? (form.cedula ?? '') : '') }),
                     });
                     if (!merged.ok) return failFrom(merged);
                     const res = (await merged.json().catch(() => null)) || {};
@@ -694,14 +695,31 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <strong>{p.nombre}</strong>
                                             <span className="text-[var(--color-ink-faint)]"> · {[p.cargo, p.telefono, p.motivo].filter(Boolean).join(' · ')}</span>
                                         </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => mergeDuplicado(p)}
-                                            disabled={merging || saving}
-                                            className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
-                                        >
-                                            {merging ? 'Unificando...' : 'Unificar'}
-                                        </button>
+                                        {p.cedulas ? (
+                                            <span className="flex flex-wrap items-center gap-2">
+                                                <span className="w-full text-[12px] text-amber-800">¿Cuál es la cédula correcta?</span>
+                                                {p.cedulas.map(c => (
+                                                    <button
+                                                        key={c}
+                                                        type="button"
+                                                        onClick={() => mergeDuplicado(p, c)}
+                                                        disabled={merging || saving}
+                                                        className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
+                                                    >
+                                                        {merging ? 'Unificando...' : `Unificar con ${c}`}
+                                                    </button>
+                                                ))}
+                                            </span>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => mergeDuplicado(p)}
+                                                disabled={merging || saving}
+                                                className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
+                                            >
+                                                {merging ? 'Unificando...' : 'Unificar'}
+                                            </button>
+                                        )}
                                     </li>
                                 ))}
                             </ul>

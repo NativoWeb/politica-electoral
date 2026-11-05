@@ -61,7 +61,9 @@ class MergeLideres
             $editedCedula = Cedula::normalize($edited->cedula) ?: null;
             $otherCedula = Cedula::normalize($other->cedula) ?: null;
             $correctsCedula = $otherCedula && $cedula === $otherCedula && $editedCedula !== $otherCedula;
-            if ($editedCedula && $otherCedula && $editedCedula !== $otherCedula && ! $correctsCedula) {
+            // The user chose the edited record's cédula as the right one: the other one was mistyped.
+            $keepsOwnCedula = $editedCedula && $otherCedula && $cedula === $editedCedula && $editedCedula !== $otherCedula;
+            if ($editedCedula && $otherCedula && $editedCedula !== $otherCedula && ! $correctsCedula && ! $keepsOwnCedula) {
                 throw new BusinessRuleException('No se pueden unificar: los dos registros tienen cédulas distintas.');
             }
 
@@ -79,6 +81,10 @@ class MergeLideres
                 if ($editedCedula) {
                     $final['observacion'] = trim($final['observacion']."\nCédula anterior: {$edited->cedula}.");
                 }
+            }
+            if ($keepsOwnCedula) {
+                $final['cedula'] = $editedCedula;
+                $final['observacion'] = trim($final['observacion']."\nCédula anterior: {$other->cedula}.");
             }
             $upd = array_filter($final, fn ($value, $col) => $value !== $keep->$col, ARRAY_FILTER_USE_BOTH);
 
