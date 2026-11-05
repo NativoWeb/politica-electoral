@@ -15,6 +15,8 @@ class CurrentCampaign
 {
     private array $descendants = [];
 
+    private ?array $allIds = null;
+
     public function user(): ?User
     {
         $user = request()->user();
@@ -55,8 +57,15 @@ class CurrentCampaign
     public function visibleIds(): ?array
     {
         $own = $this->ownId();
+        if ($own === null) {
+            return null;
+        }
+        // The superadmin sees every campaign, not only its own branch (read only outside its own, like any other).
+        if ($this->isSuperadmin()) {
+            return $this->allIds ??= array_values(array_unique([$own, ...DB::table('campaigns')->pluck('id')->all()]));
+        }
 
-        return $own === null ? null : $this->withDescendants($own);
+        return $this->withDescendants($own);
     }
 
     // [{id, name}] of every visible campaign, the own one first; empty unless there is more than one,

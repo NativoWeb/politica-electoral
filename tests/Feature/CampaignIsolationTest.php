@@ -959,4 +959,21 @@ class CampaignIsolationTest extends TestCase
             ->assertForbidden();
         $this->assertSame('Ceci C', DB::table('persons')->where('id', $person)->value('full_name'));
     }
+
+    public function test_the_superadmin_sees_every_campaign_and_others_only_their_branch(): void
+    {
+        $superRole = Role::firstOrCreate(['code' => 'R01_SUPERADMIN'], ['name' => 'Superadmin', 'level' => 10]);
+        $super = $this->user('super', Campaign::DEFAULT_ID, $superRole->id);
+
+        // Campaign Y is independent (no parent): only the superadmin reaches it, and can filter by it.
+        $this->actingAs($super)->getJson("/votantes/{$this->liderC}")->assertOk();
+        $this->actingAs($this->userCd)->getJson("/votantes/{$this->liderC}")->assertNotFound();
+
+        $names = collect($this->actingAs($super)->get("/mapa-politico?tipo=lideres&campana={$this->campY}")->assertOk()
+            ->viewData('page')['props']['data'])->pluck('nombre')->all();
+        $this->assertSame(['Ceci Campaña Y'], $names);
+
+        // Seeing is not editing: another campaign's records stay read only for the superadmin too.
+        $this->actingAs($super)->putJson("/votantes/{$this->liderC}", ['nombre' => 'Otro'])->assertForbidden();
+    }
 }
