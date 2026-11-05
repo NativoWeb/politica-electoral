@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Api\Agent\AgentIdentityController;
 use App\Http\Controllers\Api\Agent\AgentVotanteController;
+use App\Http\Controllers\Api\Agent\AgentVotanteQueryController;
 use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,6 +28,11 @@ Route::prefix('agent/v1')->name('api.agent.')->middleware(['throttle:agent', 'ag
         Route::get('/me', [AgentIdentityController::class, 'me'])->name('me');
 
         Route::middleware(['throttle:agent-user', 'audit'])->whereUuid('id')->group(function () {
+            // Audited by the controller itself (GET): the filters and counts, never the data delivered.
+            Route::middleware(['permission:view.votantes', 'throttle:agent-votantes-read'])->group(function () {
+                Route::get('/votantes', [AgentVotanteQueryController::class, 'index'])->name('votantes.index');
+                Route::get('/votantes/export', [AgentVotanteQueryController::class, 'export'])->name('votantes.export');
+            });
             Route::get('/votantes/{id}/seguimientos', [AgentVotanteController::class, 'seguimientos'])->name('votantes.seguimientos.index');
             Route::middleware('throttle:agent-reports')->group(function () {
                 Route::get('/reportes/municipio/{id}', [ReportController::class, 'municipio'])->name('reportes.municipio');

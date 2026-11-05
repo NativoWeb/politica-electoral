@@ -32,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
         // PDF rendering is expensive: a tighter quota on top of agent-user.
         RateLimiter::for('agent-reports', fn (Request $request) => Limit::perMinute(10)
             ->by('agent-reports|'.($request->user()?->id ?? $request->ip())));
+        // Listing and export of votantes with contact data: a tighter quota on top of agent-user.
+        RateLimiter::for('agent-votantes-read', fn (Request $request) => Limit::perMinute(max(1, (int) config('agent.votantes_read_per_minute', 20)))
+            ->by('agent-votantes-read|'.($request->user()?->id ?? $request->ip())));
 
         // Public event registration (QR), per IP. Generous because attendees often share the venue Wi-Fi or a carrier
         // NAT. The per-event quota is counted in EventoPublicoController on real registrations only, so bots cannot spend it.

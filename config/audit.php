@@ -36,6 +36,8 @@ return [
             'whatsapp',
             'whatsapp_phone',
             'whatsapp_number',
+            // The agent's votantes search (a name or a cédula): a cédula keeps its last 4 digits, a name leaves null.
+            'q',
         ],
 
         'email' => [
