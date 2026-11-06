@@ -596,6 +596,28 @@ class TerritoryScopeTest extends TestCase
         $this->assertSame('Partido 2023', $endorsed);
     }
 
+    public function test_saving_the_party_from_the_lider_fills_a_candidacy_that_had_none(): void
+    {
+        $this->candidateLinkedToLiderA();
+        DB::table('candidacy_endorsements')->delete();
+
+        $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$this->liderA}", ['partido' => 'Partido Actual'])->assertOk();
+
+        $endorsed = DB::table('candidacy_endorsements as ce')->join('political_organizations as po', 'po.id', '=', 'ce.organization_id')->pluck('po.canonical_name')->all();
+        $this->assertSame(['Partido Actual'], $endorsed);
+    }
+
+    public function test_the_party_is_not_filled_when_two_namesakes_ran_there(): void
+    {
+        $this->candidateLinkedToLiderA();
+        $this->candidateLinkedToLiderA();
+        DB::table('candidacy_endorsements')->delete();
+
+        $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$this->liderA}", ['partido' => 'Partido Actual'])->assertOk();
+
+        $this->assertSame(0, DB::table('candidacy_endorsements')->count());
+    }
+
     public function test_saving_the_panel_form_does_not_copy_the_candidacy_party_or_votes_into_the_lider(): void
     {
         $personId = $this->candidateLinkedToLiderA();

@@ -1477,6 +1477,27 @@ class MapaPoliticoController extends Controller
                         ->delete();
                 }
             }
+
+            // From a lider that is also a candidate in its municipio: a candidacy that never had a party
+            // takes this one, so it stops showing under "Sin partido". A party already recorded is never changed.
+            if (! $candidacyId && $lider && $canEditElectoral && $partidoSent && $partidoValue) {
+                $orgId = DB::table('political_organizations')->whereRaw('UPPER(canonical_name) = UPPER(?)', [$partidoValue])->value('id');
+                $personIds = $orgId ? app(UpdateVotante::class)->linkedPersonIds($lider) : collect();
+                // Two namesakes ran there: which one this lider is cannot be told, so neither is touched.
+                $personIds = $personIds->count() === 1 ? $personIds : collect();
+                $sinPartido = $personIds->isEmpty() ? collect() : DB::table('candidacies as c')
+                    ->join('contests as con', 'con.id', '=', 'c.contest_id')
+                    ->whereIn('c.person_id', $personIds)
+                    ->where('con.geographic_unit_id', $lider->geographic_unit_id)
+                    ->whereNotExists(fn ($q) => $q->from('candidacy_endorsements as ce')->whereColumn('ce.candidacy_id', 'c.id'))
+                    ->pluck('c.id');
+                foreach ($sinPartido as $cid) {
+                    DB::table('candidacy_endorsements')->insert([
+                        'id' => Str::uuid(), 'candidacy_id' => $cid, 'organization_id' => $orgId, 'is_primary' => true,
+                        'endorsement_type' => 'endorsement', 'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                }
+            }
         });
 
         if ($request->wantsJson() || $request->header('Accept') === 'application/json') {
