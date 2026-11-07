@@ -6,8 +6,9 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-// Person registered at an event. It only becomes a lider (Votantes) when someone approves it. sin_autorizacion: came in
-// a list without authorization and matched nobody; it stays only in the event's list and is never approvable.
+// Person registered at an event. It only becomes a lider (Votantes) when someone approves it. sin_autorizacion: legacy
+// status (lists loaded before 2026-11-07, when authorization was still asked); never written again, and the deploy SQL
+// of docs/eventos-api.md §11 turns those attendees into pendiente.
 class EventAttendee extends Model
 {
     use HasUuids;

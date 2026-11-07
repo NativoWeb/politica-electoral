@@ -29,7 +29,7 @@ class EventoIntegracionController extends Controller
 
     public const LINK_STATUSES = [
         'vinculado' => 'Ya estaba en Votantes', 'pendiente' => 'Pendiente de aprobar', 'aprobado' => 'Aprobado (en Votantes)',
-        'descartado' => 'Descartado', 'sin_cedula' => 'Sin cédula', 'sin_autorizacion' => 'Sin autorización: solo en la lista del evento',
+        'descartado' => 'Descartado', 'sin_cedula' => 'Sin cédula', 'sin_autorizacion' => 'Pendiente de aprobar',
     ];
 
     private ?array $campaignNames = null;

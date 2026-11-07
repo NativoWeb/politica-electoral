@@ -41,7 +41,6 @@ class EventOcrTest extends TestCase
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos']);
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID, ['status' => 'cerrado']);
-        $this->approvedText(Campaign::DEFAULT_ID);
         $this->fake = new FakeOcrClient;
         $this->app->instance(OcrClient::class, $this->fake);
         $this->switches(true, true);
@@ -180,17 +179,18 @@ class EventOcrTest extends TestCase
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/ocr/{$id}")->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page->component('Eventos/Planillas')
                 ->where('importacion.counts.total', 5)
-                ->where('importacion.counts.validas', 3)
+                ->missing('consent')
+                ->where('importacion.counts.validas', 4)
                 ->where('importacion.counts.en_plataforma', 1)
-                ->where('importacion.counts.no_autorizaron', 1)
+                ->where('importacion.counts.no_autorizaron', 0)
                 ->where('importacion.counts.errores', 1)
                 ->where('pagina_actual', 1)
                 ->where('paginas.0.dudosas', 1)
                 ->where('paginas.1.dudosas', 1)
                 ->where('filas.total', 4)
                 ->where('filas.data.1.en_plataforma', true)
-                ->where('filas.data.2.status', 'no_autorizo')
-                ->where('filas.data.2.motivo', 'La IA no vio la firma de esta fila: la persona no se importa.')
+                ->where('filas.data.2.status', 'valida')
+                ->missing('filas.data.2.motivo')
                 ->where('filas.data.3.fila_pagina', 5)
                 ->where('filas.data.3.confianza.cedula', 0.4)
                 ->where('filas.data.3.errores.cedula', 'La cédula debe tener solo números (entre 5 y 10 dígitos).'));
@@ -202,29 +202,21 @@ class EventOcrTest extends TestCase
         $bad = DB::table('event_import_rows')->where('import_id', $id)->where('status', 'error')->value('id');
         $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$bad}", ['cedula' => '1098000005'])
             ->assertOk()->assertJsonPath('data.fila.status', 'valida')->assertJsonPath('data.fila.confianza.cedula', 1);
-        // A row without signature cannot be changed (only the sheet counts).
-        $unsigned = DB::table('event_import_rows')->where('import_id', $id)->where('status', 'no_autorizo')->value('id');
-        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$unsigned}", ['decision' => 'importar'])
-            ->assertUnprocessable();
-
+        // No declaration and no approved text: the row without signature is imported like the rest (2026-11-07).
         $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", [])
-            ->assertUnprocessable()->assertJsonValidationErrors('declaracion');
-        $this->assertSame(0, DB::table('event_attendees')->count());
-
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertOk()->assertJsonPath('data.nuevos', 4)->assertJsonPath('data.ya_estaban', 0);
+            ->assertOk()->assertJsonPath('data.nuevos', 5)->assertJsonPath('data.ya_estaban', 0);
 
         $attendees = DB::table('event_attendees')->where('event_id', $this->event->id)->get();
-        $this->assertCount(4, $attendees);
-        $this->assertTrue($attendees->every(fn ($a) => $a->source === 'ocr' && $a->import_id === $id && (int) $a->autoriza_datos === 1 && $a->consent_id));
+        $this->assertCount(5, $attendees);
+        $this->assertTrue($attendees->every(fn ($a) => $a->source === 'ocr' && $a->import_id === $id && (int) $a->autoriza_datos === 0 && $a->consent_id === null));
         $this->assertSame($known, $attendees->firstWhere('cedula', '1098000002')->lider_id);
-        $this->assertNull($attendees->firstWhere('cedula', '63000003'), 'without signature nobody is registered');
-        $this->assertSame(['operador'], DB::table('data_consents')->distinct()->pluck('channel')->all());
+        $this->assertSame('pendiente', $attendees->firstWhere('cedula', '63000003')->link_status);
+        $this->assertSame(0, DB::table('data_consents')->count());
         $this->assertSame('confirmado', DB::table('event_imports')->where('id', $id)->value('status'));
         $this->assertCount(2, Storage::disk('local')->files("eventos/ocr/{$this->event->id}/{$id}"), 'the photos stay as evidence');
 
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}?source=ocr")
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('kpis.ocr', 4)->where('asistentes.total', 4));
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('kpis.ocr', 5)->where('asistentes.total', 5));
     }
 
     public function test_a_page_of_another_event_is_refused(): void
@@ -254,7 +246,7 @@ class EventOcrTest extends TestCase
         $this->assertSame('ia', DB::table('event_import_pages')->where('import_id', $id3)->value('qr_origin'));
     }
 
-    public function test_an_authorization_below_the_threshold_is_not_importable(): void
+    public function test_what_the_ai_read_in_autorizo_and_firma_no_longer_decides_anything(): void
     {
         config(['eventos.ocr.threshold' => 0.85]);
         $this->fake->push(FakeOcrClient::sheet([
@@ -266,17 +258,16 @@ class EventOcrTest extends TestCase
         $id = $this->loadAndRead([$this->photo()]);
 
         $rows = DB::table('event_import_rows')->where('import_id', $id)->orderBy('row_number')->get();
-        $this->assertSame(['no_autorizo', 'no_autorizo', 'no_autorizo', 'valida'], $rows->pluck('status')->all());
+        $this->assertSame(['valida', 'valida', 'valida', 'valida'], $rows->pluck('status')->all());
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/ocr/{$id}")
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('filas.data.0.motivo', 'La IA no está segura de la casilla «Autorizo» o de la firma: la persona no se importa.')
-                ->where('filas.data.2.motivo', 'La IA no vio marcada la casilla «Autorizo»: la persona no se importa.')
+                ->missing('filas.data.0.motivo')
                 ->where('paginas.0.dudosas', 1)
                 ->where('ocr.umbral', 0.85));
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertOk()->assertJsonPath('data.nuevos', 1);
-        $this->assertSame(['1098000004'], DB::table('event_attendees')->pluck('cedula')->all());
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertOk()->assertJsonPath('data.nuevos', 4);
+        $this->assertSame(['1098000001', '1098000002', '1098000003', '1098000004'], DB::table('event_attendees')->orderBy('cedula')->pluck('cedula')->all());
     }
 
     public function test_a_failed_page_can_be_retried_or_skipped(): void
@@ -449,7 +440,7 @@ class EventOcrTest extends TestCase
             ['numero' => 3, 'cedula' => '1098000003', 'confianza' => ['cedula' => 1.7, 'celular' => -2]],
             ['numero' => 3, 'cedula' => '1098000004'],
             ['numero' => 7, 'nombres' => null, 'apellidos' => null, 'cedula' => null, 'celular' => null, 'fecha_nacimiento' => null,
-                'direccion' => null, 'barrio' => null, 'autorizo' => false, 'firma_presente' => false],
+                'direccion' => null, 'barrio' => null, 'firma_presente' => false],
         ]);
         $rows = PlanillaPrompt::rows($data);
         $this->assertSame([1, 3], array_column($rows, 'numero'), 'a repeated number takes a free one; an empty row is dropped');
@@ -490,7 +481,7 @@ class EventOcrTest extends TestCase
                 $rows[] = ['numero' => $n, 'nombres' => $p['nombres'], 'apellidos' => $p['apellidos'],
                     'cedula' => $sheet === 1 && $n === 1 ? '1098000071' : $p['cedula'], 'celular' => $p['celular'], 'fijo' => $p['fijo'] ?: null,
                     'fecha_nacimiento' => $p['fecha_nacimiento'], 'direccion' => $p['direccion'], 'barrio' => $p['barrio'],
-                    'autorizo' => $p['autorizo'], 'firma_presente' => $p['firma']];
+                    'firma_presente' => $p['firma']];
             }
 
             return FakeOcrClient::sheet($rows, ['pagina' => $sheet]);
@@ -510,7 +501,7 @@ class EventOcrTest extends TestCase
         $this->assertSame(11, $report['campos']['cedula']['aciertos']);
         $this->assertSame(1, $report['campos']['cedula']['errores_sin_marcar']);
         $this->assertSame(1.0, (float) $report['campos']['celular']['precision']);
-        $this->assertSame(1.0, (float) $report['campos']['autorizo']['precision']);
+        $this->assertArrayNotHasKey('autorizo', $report['campos']);
         $this->assertSame(1.0, (float) $report['campos']['firma']['precision']);
         $this->assertSame(OcrSettings::cost('claude-sonnet-5-5', 6000, 3000), $report['totales']['costo_usd']);
         $this->assertSame(0, DB::table('event_imports')->count());

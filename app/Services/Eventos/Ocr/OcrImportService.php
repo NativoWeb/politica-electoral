@@ -22,9 +22,8 @@ use Illuminate\Support\Str;
 // its own request (processNext) and its rows go to event_import_rows exactly as an Excel row after its column mapping
 // (mapped, errors) plus the page and the confidence per field. When no page is left, the rows are classified and the
 // load waits in 'revisado' for the human review; confirming is the Excel confirmation (EventImportService::confirm)
-// with source 'ocr'. A row is importable only if the AI saw "Autorizo" ticked AND a signature, both with confidence
-// at or above the threshold; the operator declares having the signed sheets. Nothing reaches event_attendees before
-// that confirmation. The audit never stores what was read: pages, model, tokens and estimated cost.
+// with source 'ocr'. Since 2026-11-07 neither an "Autorizo" box nor the signature decides whether a row is imported
+// (the signature is only read as information). Nothing reaches event_attendees before that confirmation. The audit never stores what was read: pages, model, tokens and estimated cost.
 class OcrImportService
 {
     public const DIR = 'eventos/ocr';
@@ -192,14 +191,9 @@ class OcrImportService
     }
 
     // [field => value] of a staging row from what the AI read: the same text fields as an Excel row (cleaned the
-    // same way), "autoriza" = SÍ only with "Autorizo" ticked AND a signature, both at or above the threshold, and what
-    // was read for each of them ("autorizo", "firma") so the review shows why a row is not importable.
+    // same way) and whether the row was signed ("firma", information only).
     public static function mapped(array $values, array $confidence): array
     {
-        $threshold = OcrSettings::threshold();
-        $authorized = $values['autorizo'] && $values['firma_presente']
-            && ($confidence['autorizo'] ?? 0) >= $threshold && ($confidence['firma_presente'] ?? 0) >= $threshold;
-
         return [
             'nombres' => ImportRowValidator::text($values['nombres']),
             'apellidos' => ImportRowValidator::text($values['apellidos']),
@@ -209,30 +203,8 @@ class OcrImportService
             'fecha_nacimiento' => ImportRowValidator::date($values['fecha_nacimiento']),
             'direccion' => ImportRowValidator::text($values['direccion']),
             'barrio' => ImportRowValidator::text($values['barrio']),
-            'autoriza' => $authorized ? 'SÍ' : 'NO',
-            'autorizo' => $values['autorizo'] ? 'SÍ' : 'NO',
-            'firma' => $values['firma_presente'] ? 'SÍ' : 'NO',
+            'firma' => ($values['firma_presente'] ?? false) ? 'SÍ' : 'NO',
         ];
-    }
-
-    // Why an OCR row is not importable for lack of authorization, or null when it is authorized.
-    public static function authorizationReason(array $mapped, array $confidence): ?string
-    {
-        if (($mapped['autoriza'] ?? 'NO') === 'SÍ') {
-            return null;
-        }
-        $threshold = OcrSettings::threshold();
-        if (($mapped['autorizo'] ?? 'NO') !== 'SÍ') {
-            return 'La IA no vio marcada la casilla «Autorizo»: la persona no se importa.';
-        }
-        if (($mapped['firma'] ?? 'NO') !== 'SÍ') {
-            return 'La IA no vio la firma de esta fila: la persona no se importa.';
-        }
-        if (($confidence['autorizo'] ?? 0) < $threshold || ($confidence['firma_presente'] ?? 0) < $threshold) {
-            return 'La IA no está segura de la casilla «Autorizo» o de la firma: la persona no se importa.';
-        }
-
-        return 'La persona no se importa.';
     }
 
     private function newPage(EventImport $import, CampaignEvent $event, int $sequence, string $name, string $path, string $sha, string $mime, int $pageInFile, ?int $filePages): void

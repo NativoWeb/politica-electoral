@@ -62,11 +62,11 @@ class FakeOcrClient implements OcrClient
         $values = array_merge([
             'numero' => 1, 'nombres' => 'ANA MARÍA', 'apellidos' => 'PÉREZ GÓMEZ', 'cedula' => '1098765432', 'celular' => '3001234567',
             'fijo' => null, 'fecha_nacimiento' => '02/04/1980', 'direccion' => 'CALLE 1 # 2-3', 'barrio' => 'EL POBLADO',
-            'autorizo' => true, 'firma_presente' => true,
+            'firma_presente' => true,
         ], array_diff_key($values, ['confianza' => true]));
 
         $row = ['numero' => $values['numero']];
-        foreach (['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autorizo', 'firma_presente'] as $field) {
+        foreach (['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'firma_presente'] as $field) {
             $row[$field] = ['valor' => $values[$field], 'confianza' => $confidence[$field] ?? 0.98];
         }
 

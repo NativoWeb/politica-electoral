@@ -400,12 +400,12 @@ class EventIntegrationTest extends TestCase
 
         $excel = $this->attendeesExcel($this->cd, $this->evCd);
         $this->assertSame(['NOMBRES', 'APELLIDOS', 'CÉDULA', 'CELULAR', 'TELÉFONO FIJO', 'FECHA DE NACIMIENTO', 'DIRECCIÓN', 'BARRIO',
-            'AUTORIZÓ DATOS', 'TEXTO DE AUTORIZACIÓN', 'ORIGEN', 'REGISTRADO POR', 'ESTADO DE VÍNCULO', 'EN VOTANTES', 'FECHA DE REGISTRO'], $excel['headings']);
+            'ORIGEN', 'REGISTRADO POR', 'ESTADO DE VÍNCULO', 'EN VOTANTES', 'FECHA DE REGISTRO'], $excel['headings']);
         $this->assertSame($screen['total'], count($excel['data']));
         $this->assertEqualsCanonicalizing(array_column($screen['data'], 'cedula'), array_map('strval', array_column($excel['data'], 2)));
         $this->assertContains("'=1+1", array_column($excel['data'], 0));
         $ana = collect($excel['data'])->first(fn ($r) => (string) $r[2] === '111');
-        $this->assertSame(['QR', 'Ya estaba en Votantes', 'Sí'], [$ana[10], $ana[12], $ana[13]]);
+        $this->assertSame(['QR', 'Ya estaba en Votantes', 'Sí'], [$ana[8], $ana[10], $ana[11]]);
 
         $pendientes = $this->attendeesExcel($this->cd, $this->evCd, '?link_status=pendiente');
         $this->assertEqualsCanonicalizing(['666', '888'], array_map('strval', array_column($pendientes['data'], 2)));

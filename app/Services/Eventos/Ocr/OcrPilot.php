@@ -10,12 +10,12 @@ use RuntimeException;
 // what it read with a CSV of the truth typed by a person, to choose the model with real (handwritten) sheets.
 // Touches no table: it only calls the OcrClient. Truth columns: archivo, pagina (page of the file, 1 for a photo),
 // fila (N.º printed, 1-12), nombres, apellidos, cedula, celular, fijo, fecha_nacimiento, direccion, barrio,
-// autorizo (SI/NO), firma (SI/NO).
+// firma (SI/NO). An "autorizo" column of an older CSV is ignored.
 class OcrPilot
 {
-    public const FIELDS = ['cedula', 'celular', 'nombres', 'apellidos', 'fecha_nacimiento', 'autorizo', 'firma', 'fijo', 'direccion', 'barrio'];
+    public const FIELDS = ['cedula', 'celular', 'nombres', 'apellidos', 'fecha_nacimiento', 'firma', 'fijo', 'direccion', 'barrio'];
 
-    private const TRUTH_COLUMNS = ['archivo', 'pagina', 'fila', 'nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autorizo', 'firma'];
+    private const TRUTH_COLUMNS = ['archivo', 'pagina', 'fila', 'nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'firma'];
 
     public function __construct(private OcrClient $client) {}
 
@@ -91,7 +91,7 @@ class OcrPilot
             $matched++;
             foreach (self::FIELDS as $field) {
                 $source = match ($field) {
-                    'autorizo' => 'autorizo', 'firma' => 'firma_presente', default => $field,
+                    'firma' => 'firma_presente', default => $field,
                 };
                 $ok = self::normalize($field, $expected[$field] ?? null) === self::normalize($field, $got['valores'][$source] ?? null);
                 $fields[$field]['total']++;
@@ -184,7 +184,7 @@ class OcrPilot
         return match ($field) {
             'cedula', 'celular', 'fijo' => preg_replace('/\D/', '', $text),
             'fecha_nacimiento' => ImportRowValidator::isoDate($text) ?? $text,
-            'autorizo', 'firma' => ImportRowValidator::yesNo($text) === true ? '1' : '0',
+            'firma' => ImportRowValidator::yesNo($text) === true ? '1' : '0',
             default => Str::upper(Str::ascii(preg_replace('/\s+/u', ' ', $text))),
         };
     }

@@ -40,19 +40,13 @@
         .grid td.num { text-align: center; font-weight: bold; font-size: 9pt; background: #003B71 !important; color: #fff; }
         .grid td.d { background: #fff; text-align: center; vertical-align: middle; line-height: 0; }
         .grid td.d img { height: 7mm; }
-        .grid td.ok { text-align: center; background: #fff; }
-        .grid td.ok span { display: inline-block; width: 5mm; height: 5mm; border: 0.4mm solid #111; }
         .grid tr.end td { border-bottom: 0.5mm solid #111; }
         .grid td.t { font-size: 8pt; padding: 0 0.8mm; vertical-align: middle; }
         .grid td.t.n { font-family: 'DejaVu Sans Mono', monospace; letter-spacing: 1.1mm; text-align: center; }
         .grid td.t.s { font-family: 'DejaVu Serif', serif; font-style: italic; font-size: 9pt; }
-        .grid td.ok span b { display: block; font-size: 10pt; line-height: 4.6mm; }
         .grid td.g, .grid th.g { border-left: 0.6mm solid #111; }
 
-        .foot { margin-top: 1.5mm; border: 0.3mm solid #003B71; padding: 1.4mm 2mm; font-size: 6.3pt; line-height: 1.3; }
-        .foot .h { font-weight: bold; color: #003B71; font-size: 6.8pt; }
-        .prov { margin-top: 1mm; background: #b00020; color: #fff; font-weight: bold; font-size: 9pt; text-align: center; padding: 1mm; }
-        .trace { margin-top: 0.8mm; font-size: 5.8pt; color: #555; }
+        .trace { margin-top: 1.5mm; font-size: 5.8pt; color: #555; }
     </style>
 </head>
 <body>
@@ -62,7 +56,6 @@
         $codigo = strtoupper(substr($evento->id, 0, 8));
         $barrios = $evento->barrios->pluck('nombre')->implode(', ');
         $municipio = trim(($evento->municipio?->canonical_name ?? '').($evento->provincia ? ' ('.\App\Support\Provincias::display($evento->provincia->canonical_name).')' : ''));
-        $provisional = ! $consent || ! $consent->approved;
         // One vector strip per group of digit boxes (3.6 mm each; '/' is a 1.8 mm separator), drawn once per cell
         // instead of one table cell per digit: keeps dompdf's memory flat up to 20 pages.
         $strip = function (array $pattern): array {
@@ -111,13 +104,13 @@
 
             <div class="instr">
                 Escriba con letra clara y en <b>MAYÚSCULAS</b>. <b>Un número por casilla.</b>
-                Marque <b>«Autorizo»</b> con una X y firme. Sin autorización y firma la persona no se registra.
+                Al final de la fila, la persona firma como constancia de asistencia.
             </div>
 
             <table class="grid">
                 <thead>
                     <tr class="size">
-                        @foreach ([6, 26, 26, $grupos['cedula']['mm'], $grupos['celular']['mm'], $grupos['fijo']['mm'], $grupos['fecha']['mm'], 23, 18, 9, 26] as $w)<td style="width: {{ $w }}mm;"></td>@endforeach
+                        @foreach ([6, 26, 26, $grupos['cedula']['mm'], $grupos['celular']['mm'], $grupos['fijo']['mm'], $grupos['fecha']['mm'], 23, 18, 35] as $w)<td style="width: {{ $w }}mm;"></td>@endforeach
                     </tr>
                     <tr>
                         <th>N.º</th>
@@ -129,7 +122,6 @@
                         <th class="g">FECHA DE NACIMIENTO<br>DD / MM / AAAA</th>
                         <th class="g">DIRECCIÓN</th>
                         <th>BARRIO</th>
-                        <th>AUTO-<br>RIZO</th>
                         <th>FIRMA</th>
                     </tr>
                 </thead>
@@ -146,7 +138,6 @@
                                 @endforeach
                                 <td class="f g t">{{ $dato['direccion'] }}</td>
                                 <td class="f t">{{ $dato['barrio'] }}</td>
-                                <td class="ok"><span>@if ($dato['autorizo'])<b>X</b>@endif</span></td>
                                 <td class="f t s">{{ $dato['firma'] ? $dato['nombres'].' '.mb_substr($dato['apellidos'], 0, 1).'.' : '' }}</td>
                             @else
                                 <td class="f"></td>
@@ -156,7 +147,6 @@
                                 @endforeach
                                 <td class="f g"></td>
                                 <td class="f"></td>
-                                <td class="ok"><span></span></td>
                                 <td class="f"></td>
                             @endif
                         </tr>
@@ -164,21 +154,7 @@
                 </tbody>
             </table>
 
-            <div class="foot">
-                <div class="h">AUTORIZACIÓN DE TRATAMIENTO DE DATOS PERSONALES (Ley 1581 de 2012) — RESUMEN · Versión {{ $consent?->version ?? 'sin texto' }}</div>
-                @if ($consentResumen)
-                    <div>{{ $consentResumen }}</div>
-                @endif
-                <div>
-                    Al marcar «Autorizo» y firmar, la persona acepta el texto completo de la versión {{ $consent?->version ?? '—' }}, que el organizador
-                    le lee o le muestra antes de firmar. Texto completo y política de tratamiento de datos: solicítelos al organizador del evento
-                    o en el formulario de registro del evento.
-                </div>
-                @if ($provisional)
-                    <div class="prov">TEXTO PROVISIONAL — no válido como autorización</div>
-                @endif
-                <div class="trace">Evento {{ $evento->id }} · Página {{ $page['numero'] }} de {{ $total }} · Generada {{ now(\App\Http\Controllers\EventoController::TZ)->format('d/m/Y H:i') }}</div>
-            </div>
+            <div class="trace">Evento {{ $evento->id }} · Página {{ $page['numero'] }} de {{ $total }} · Generada {{ now(\App\Http\Controllers\EventoController::TZ)->format('d/m/Y H:i') }}</div>
         </div>
     @endforeach
 </body>

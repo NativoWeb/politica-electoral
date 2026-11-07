@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { MONTHS, barrioSuggestions, birthYears } from '@/lib/eventos';
 
 export const fieldCls = 'w-full px-4 py-3.5 border-2 border-[var(--color-line-strong)] rounded-xl text-[18px] text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-primary)] aria-[invalid=true]:border-red-500';
@@ -108,52 +108,6 @@ function BarrioField({ value, onChange, error, barrios }) {
                     </div>
                 </div>
             )}
-        </div>
-    );
-}
-
-export function ConsentBox({ consent, checked, onChange, error, provisional, expandable }) {
-    const [open, setOpen] = useState(!expandable);
-    const errorId = 'att-consent-error';
-    return (
-        <div className={`rounded-2xl border-2 p-4 ${error ? 'border-red-500 bg-red-50' : 'border-[var(--color-line-strong)] bg-[var(--color-bg)]'}`}>
-            {provisional && (
-                <p role="note" className="mb-3 px-3 py-2.5 rounded-xl bg-amber-100 border-2 border-amber-400 text-[18px] font-extrabold text-amber-900">
-                    TEXTO PROVISIONAL: la campaña aún no ha aprobado su texto de autorización de datos.
-                </p>
-            )}
-            {expandable && (
-                <button
-                    type="button"
-                    onClick={() => setOpen(!open)}
-                    aria-expanded={open}
-                    aria-controls="consent-text"
-                    className="min-h-[44px] w-full flex items-center justify-between gap-2 text-left text-[18px] font-bold text-[var(--color-primary)] underline underline-offset-4"
-                >
-                    {open ? 'Ocultar el texto de autorización' : 'Leer el texto de autorización completo'}
-                    <svg className={`w-5 h-5 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-            )}
-            {open && (
-                <div id="consent-text" className="mt-2 mb-3 max-h-64 overflow-y-auto bg-white border border-[var(--color-line)] rounded-xl p-3 text-[18px] leading-relaxed text-[var(--color-ink-soft)] whitespace-pre-line" tabIndex={0}>
-                    {consent?.cuerpo || 'No hay texto de autorización disponible.'}
-                </div>
-            )}
-            <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                    type="checkbox"
-                    name="autoriza_datos"
-                    checked={checked}
-                    onChange={e => onChange(e.target.checked)}
-                    aria-invalid={error ? 'true' : undefined}
-                    aria-describedby={error ? errorId : undefined}
-                    className="mt-0.5 w-7 h-7 flex-shrink-0 accent-[var(--color-primary)]"
-                />
-                <span className="text-[18px] font-bold text-[var(--color-ink)] leading-snug">
-                    Autorizo el tratamiento de mis datos personales según el texto de autorización<Required />
-                </span>
-            </label>
-            <FieldError id={errorId} message={error} />
         </div>
     );
 }

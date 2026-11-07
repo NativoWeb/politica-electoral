@@ -10,7 +10,7 @@ import Pagination from '@/Components/Eventos/Pagination';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import { attendeesExcelUrl } from '@/lib/eventosIntegracion';
 import { useCampaign } from '@/lib/campaign';
-import { allSelected, approveMessage, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, provisionalCount, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
+import { APPROVE_MESSAGE, allSelected, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
 
 const STATUS_ACTIONS = {
     open: {
@@ -48,7 +48,6 @@ const LINK_FILTERS = [
     { value: 'vinculado', label: 'Ya estaban' },
     { value: 'aprobado', label: 'Aprobados' },
     { value: 'descartado', label: 'Descartados' },
-    { value: 'sin_autorizacion', label: 'Sin autorización' },
 ];
 
 function Kpi({ label, value, tone }) {
@@ -91,11 +90,6 @@ function AttendeeRow({ a, selectable, checked, onToggle }) {
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="text-[15px] font-bold text-[var(--color-ink)]">{a.nombres} {a.apellidos}</p>
                     <LinkStatusBadge status={a.link_status} />
-                    {a.consentimiento_provisional && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-amber-400 bg-amber-100 text-[12px] font-bold leading-tight whitespace-nowrap text-amber-900" title="Aceptó el texto de autorización provisional: en Votantes queda sin autorización de datos.">
-                            Autorización provisional
-                        </span>
-                    )}
                 </div>
                 <p className="text-[13px] text-[var(--color-ink-soft)] mt-0.5">{contact}</p>
                 {(a.ficha || a.nota) && (
@@ -111,7 +105,7 @@ function AttendeeRow({ a, selectable, checked, onToggle }) {
     );
 }
 
-export default function Show({ evento, asistentes, kpis, filters, consent, tipos, provincias, can }) {
+export default function Show({ evento, asistentes, kpis, filters, tipos, provincias, can }) {
     const { props } = usePage();
     const errors = props.errors || {};
     const success = props.flash?.success;
@@ -160,14 +154,13 @@ export default function Show({ evento, asistentes, kpis, filters, consent, tipos
     }
 
     const errorMessages = [
-        errors.consent && 'Falta el texto de autorización aprobado por la campaña. El QR no se puede abrir hasta que la campaña lo apruebe; mientras tanto puede registrar asistentes en modo operador.',
         errors.status, errors.ids, errors.evento, actionError,
     ].filter(Boolean);
 
     const confirmMeta = confirm && (confirm.kind === 'approve'
         ? {
             title: `¿Pasar ${confirm.ids.length === 1 ? '1 asistente' : `${confirm.ids.length} asistentes`} a Votantes?`,
-            message: approveMessage(provisionalCount(confirm.ids, rows)),
+            message: APPROVE_MESSAGE,
             confirm: 'Sí, pasar a Votantes',
         }
         : confirm.kind === 'discard'
@@ -248,11 +241,6 @@ export default function Show({ evento, asistentes, kpis, filters, consent, tipos
                             </button>
                         ))}
                     </div>
-                )}
-                {editable && consent && !consent.approved && evento.status !== 'cancelado' && (
-                    <p role="note" className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-300 text-[14px] font-semibold text-amber-900">
-                        La campaña usa el texto de autorización provisional: el QR público no se puede abrir hasta que la campaña apruebe su texto. El modo operador sí funciona.
-                    </p>
                 )}
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

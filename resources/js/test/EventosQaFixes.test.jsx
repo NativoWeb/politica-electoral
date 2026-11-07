@@ -58,7 +58,7 @@ const PAGINATOR = { data: [], current_page: 1, last_page: 1, per_page: 50, total
 
 function renderShow(can) {
     return render(
-        <Show evento={EVENTO} asistentes={PAGINATOR} kpis={{}} filters={{}} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} tipos={[]} provincias={[]} can={can} />,
+        <Show evento={EVENTO} asistentes={PAGINATOR} kpis={{}} filters={{}} tipos={[]} provincias={[]} can={can} />,
     );
 }
 
@@ -112,10 +112,8 @@ describe('BUG-03: public and operator form text is at least 18px', () => {
         window.history.replaceState({}, '', '/e/abcdefghijklmnopqrstuvwxyz');
         const { container } = render(
             <Publico estado="abierto" evento={{ nombre: 'Evento', tipo: 'Gira', starts_at: EVENTO.starts_at, ends_at: null, sitio_encuentro: 'Parque', municipio: 'Girón', provincia: 'Soto' }}
-                barrios={['El Poblado']} consent={{ id: 'c1', version: 'v1', cuerpo: 'Texto' }} form_token="t" client_uuid="22222222-2222-4222-8222-222222222222" submitted={false} message={null} />,
+                barrios={['El Poblado']} form_token="t" client_uuid="22222222-2222-4222-8222-222222222222" submitted={false} message={null} />,
         );
-        fireEvent.click(screen.getByRole('button', { name: 'Leer el texto de autorización completo' }));
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Registrarme' }));
         expect(screen.getByText('Escriba los nombres.')).toBeInTheDocument();
         const form = container.querySelector('form');
@@ -142,17 +140,17 @@ describe('BUG-05: the end time is shown when there is one', () => {
         unmount();
 
         mockPage.props.auth.user = OPERATOR;
-        const op = render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        const op = render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
         expect(screen.getAllByText(/a 9:00\sp\.\sm\./).length).toBeGreaterThan(0);
         op.unmount();
 
-        render(<Publico estado="cerrado" evento={{ nombre: 'Evento', tipo: 'Gira', starts_at: EVENTO.starts_at, ends_at: EVENTO.ends_at, sitio_encuentro: 'Parque', municipio: 'Girón', provincia: 'Soto' }} barrios={[]} consent={null} submitted={false} />);
+        render(<Publico estado="cerrado" evento={{ nombre: 'Evento', tipo: 'Gira', starts_at: EVENTO.starts_at, ends_at: EVENTO.ends_at, sitio_encuentro: 'Parque', municipio: 'Girón', provincia: 'Soto' }} barrios={[]} submitted={false} />);
         expect(screen.getByText(/a 9:00\sp\.\sm\./)).toBeInTheDocument();
     });
 });
 
 describe('BUG-06: an impossible birth date says so', () => {
-    const base = { nombres: 'A', apellidos: 'B', cedula: '12345', celular: '3001234567', barrio: 'C', autoriza_datos: true };
+    const base = { nombres: 'A', apellidos: 'B', cedula: '12345', celular: '3001234567', barrio: 'C' };
 
     it('tells an impossible date apart from an incomplete one', () => {
         expect(attendeeClientErrors({ ...base, birth: { day: '31', month: '2', year: '1980' } }).fecha_nacimiento).toBe('Esa fecha no existe.');
@@ -163,7 +161,7 @@ describe('BUG-06: an impossible birth date says so', () => {
     it('shows "Esa fecha no existe." on the operator form for 31 February', () => {
         mockPage.props.auth.user = OPERATOR;
         globalThis.fetch = vi.fn();
-        render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
         fireEvent.change(screen.getByLabelText('Día'), { target: { value: '31' } });
         fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2' } });
         fireEvent.change(screen.getByLabelText('Año'), { target: { value: '1980' } });
@@ -196,7 +194,7 @@ describe('Error messages use "usted"', () => {
 
 describe('OBS-01: header text read by the person registering is at least 18px', () => {
     it('public page header and event type', () => {
-        render(<Publico estado="cerrado" evento={{ nombre: 'Evento', tipo: 'Gira', starts_at: EVENTO.starts_at, ends_at: null, sitio_encuentro: 'Parque', municipio: 'Girón', provincia: 'Soto' }} barrios={[]} consent={null} submitted={false} />);
+        render(<Publico estado="cerrado" evento={{ nombre: 'Evento', tipo: 'Gira', starts_at: EVENTO.starts_at, ends_at: null, sitio_encuentro: 'Parque', municipio: 'Girón', provincia: 'Soto' }} barrios={[]} submitted={false} />);
         expect(screen.getByText('Registro de asistencia').className).toContain('text-[18px]');
         expect(screen.getByText('Gira').className).toContain('text-[18px]');
     });
@@ -204,12 +202,12 @@ describe('OBS-01: header text read by the person registering is at least 18px', 
     it('operator header at 18px and counters at 16px or more', () => {
         mockPage.props.auth.user = OPERATOR;
         globalThis.fetch = vi.fn();
-        render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
         expect(screen.getByText(/a 9:00\sp\.\sm\./).className).toContain('text-[18px]');
         expect(screen.getByText('Parque principal — Girón, Área Metropolitana').className).toContain('text-[18px]');
         expect(screen.getByText('Registrados por usted en esta sesión').className).toContain('text-[16px]');
         expect(screen.getByText('Total del evento').className).toContain('text-[16px]');
-        expect(screen.getByText(/Lea el texto de autorización a la persona/).className).toContain('text-[18px]');
+        expect(screen.getByText(/son obligatorios\./).className).toContain('text-[18px]');
     });
 });
 
@@ -243,7 +241,7 @@ describe('Operator mode is kept on the phone for events the user can run', () =>
     it('the operator page keeps itself when opened with signal', () => {
         mockPage.props.auth.user = OPERATOR;
         globalThis.fetch = vi.fn();
-        render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        render(<Operador evento={{ ...EVENTO, accepts_registrations: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
         expect(mockPrecache).toHaveBeenCalledWith(['/eventos/ev1/operador']);
     });
 });
@@ -284,7 +282,7 @@ describe('Planilla link in the event detail', () => {
         expect(screen.queryByRole('link', { name: 'Planilla para imprimir' })).toBeNull();
         noRegister.unmount();
 
-        render(<Show evento={{ ...EVENTO, status: 'cancelado' }} asistentes={PAGINATOR} kpis={{}} filters={{}} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} tipos={[]} provincias={[]} can={{ manage: true, register: true, edit: true }} />);
+        render(<Show evento={{ ...EVENTO, status: 'cancelado' }} asistentes={PAGINATOR} kpis={{}} filters={{}} tipos={[]} provincias={[]} can={{ manage: true, register: true, edit: true }} />);
         expect(screen.queryByRole('link', { name: 'Planilla para imprimir' })).toBeNull();
     });
 });

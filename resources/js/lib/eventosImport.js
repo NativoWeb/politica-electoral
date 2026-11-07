@@ -1,22 +1,8 @@
 // Excel/CSV attendee import of an event (contract in docs/eventos-api.md §11).
 
-// Same text as EventoImportController::NEEDS_APPROVED_TEXT.
-export const NEEDS_APPROVED_TEXT = 'Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo.';
-
 export const TOO_LARGE = 'El archivo es demasiado grande para subirlo. Divídalo en varios archivos más pequeños e intente de nuevo.';
 
-// Rows with SÍ need the campaign's approved text (not the provisional one); a list without authorization does not.
-export function consentReady(consent) {
-    return !!consent?.approved;
-}
-
-export const LIST_NOTE = 'Sin autorización: queda solo en la lista del evento. No pasa a Votantes ni al Mapa hasta que la persona autorice por QR o con un operador.';
-
-// Rows still to import that carry an authorization (and so need the approved text and the declaration). Without the
-// count (older payloads) every row to import counts.
-export function authorizedToImport(counts) {
-    return counts?.a_importar_con_autorizacion ?? counts?.a_importar ?? 0;
-}
+export const LIST_NOTE = 'Quien no está en la plataforma queda en el evento pendiente de aprobar para pasar a Votantes.';
 
 export const STEPS = [
     { key: 'archivo', label: 'Archivo' },
@@ -25,7 +11,7 @@ export const STEPS = [
     { key: 'confirmar', label: 'Confirmar' },
 ];
 
-// Fields of a row in the order the preview shows them. "Autorizó" is read-only: only the paper sheet counts.
+// Fields of a row in the order the preview shows them.
 export const ROW_FIELDS = [
     { key: 'nombres', label: 'Nombres' },
     { key: 'apellidos', label: 'Apellidos' },
@@ -35,7 +21,6 @@ export const ROW_FIELDS = [
     { key: 'fecha_nacimiento', label: 'Fecha de nacimiento', placeholder: 'DD/MM/AAAA' },
     { key: 'direccion', label: 'Dirección' },
     { key: 'barrio', label: 'Barrio' },
-    { key: 'autoriza', label: 'Autorizó', readOnly: true },
     { key: 'municipio', label: 'Municipio' },
     { key: 'liderazgo', label: 'Liderazgo o actividad' },
 ];
@@ -44,12 +29,11 @@ export const ROW_STATUS = {
     valida: { label: 'Lista para importar', cls: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
     plataforma: { label: 'Ya estaba en la plataforma', cls: 'bg-blue-50 border-blue-200 text-[var(--color-primary)]' },
     error: { label: 'Con error', cls: 'bg-red-50 border-red-300 text-red-700' },
-    no_autorizo: { label: 'No autorizó', cls: 'bg-gray-100 border-gray-400 text-gray-800' },
     duplicada: { label: 'Repetida en el archivo', cls: 'bg-amber-50 border-amber-300 text-amber-800' },
     en_evento: { label: 'Ya está en el evento', cls: 'bg-gray-100 border-gray-300 text-gray-700' },
     pendiente: { label: 'Sin revisar', cls: 'bg-gray-100 border-gray-300 text-gray-700' },
     sugerida: { label: '¿Es esta persona?', cls: 'bg-amber-50 border-amber-400 text-amber-900' },
-    sin_ficha: { label: 'Solo en la lista del evento', cls: 'bg-gray-100 border-gray-300 text-gray-700' },
+    sin_ficha: { label: 'Nueva: pendiente de aprobar', cls: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
 };
 
 export const ROW_FILTERS = [
@@ -57,11 +41,10 @@ export const ROW_FILTERS = [
     { value: 'nuevas', label: 'Nuevas', count: 'nuevas' },
     { value: 'plataforma', label: 'Ya en la plataforma', count: 'en_plataforma' },
     { value: 'error', label: 'Con error', count: 'errores' },
-    { value: 'no_autorizo', label: 'No autorizaron', count: 'no_autorizaron' },
     { value: 'duplicada', label: 'Repetidas', count: 'duplicadas' },
     { value: 'en_evento', label: 'Ya en el evento', count: 'en_evento' },
     { value: 'sugerida', label: 'Por confirmar', count: 'sugeridas' },
-    { value: 'sin_ficha', label: 'Solo en el evento', count: 'sin_ficha' },
+    { value: 'sin_ficha', label: 'Nuevas por aprobar', count: 'sin_ficha' },
     { value: 'omitidas', label: 'No importar', count: 'omitidas' },
 ];
 
@@ -85,14 +68,8 @@ export function mappingProblem(mapping) {
     const set = key => m[key] !== null && m[key] !== undefined && m[key] !== '';
     const hasName = set('nombre_completo') || (set('nombres') && set('apellidos'));
     const NAME = 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
-    if (set('autoriza')) {
-        if (!set('cedula')) return 'Elija la columna que tiene la cédula.';
-        if (!hasName) return NAME;
-        if (!set('celular')) return 'Elija la columna que tiene el celular.';
-    } else {
-        if (!hasName) return NAME;
-        if (!set('cedula') && !set('celular')) return 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.';
-    }
+    if (!hasName) return NAME;
+    if (!set('cedula') && !set('celular')) return 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.';
     const used = Object.values(m).filter(v => v !== null && v !== undefined && v !== '').map(Number);
     if (new Set(used).size !== used.length) return 'Una misma columna está elegida para dos datos distintos. Revise las columnas.';
 
@@ -132,23 +109,20 @@ export function plural(n, one, many) {
     return `${n} ${n === 1 ? one : many}`;
 }
 
-// Only rows with SÍ in "Autorizó" are importable, so everything imported keeps its data authorization.
 export function confirmSummary(counts) {
     const total = counts?.a_importar ?? 0;
     if (total === 0) return 'No hay filas para importar. Revise las filas con error o cargue otro archivo.';
     if ((counts?.sin_autorizacion ?? 0) > 0) {
         const linked = total - Math.min(total, counts?.sin_ficha ?? 0);
-        return `Se registrará${total === 1 ? '' : 'n'} ${plural(total, 'persona', 'personas')} en el evento, sin autorización de datos: `
-            + `${plural(linked, 'queda', 'quedan')} en el historial de su ficha y el resto solo en la lista del evento. No se crea ni se cambia ninguna ficha.`;
+        return `Se registrará${total === 1 ? '' : 'n'} ${plural(total, 'persona', 'personas')} en el evento: `
+            + `${plural(linked, 'queda', 'quedan')} en el historial de su ficha (sin cambiarla) y el resto pendiente de aprobar para pasar a Votantes.`;
     }
 
     if (total === 1) {
-        return 'Se registrará 1 persona en el evento, con su autorización de datos. '
-            + 'Si es nueva, queda pendiente de aprobar antes de pasar a Votantes.';
+        return 'Se registrará 1 persona en el evento. Si es nueva, queda pendiente de aprobar antes de pasar a Votantes.';
     }
 
-    return `Se registrarán ${total} personas en el evento, con su autorización de datos. `
-        + 'Las nuevas quedan pendientes de aprobar antes de pasar a Votantes.';
+    return `Se registrarán ${total} personas en el evento. Las nuevas quedan pendientes de aprobar antes de pasar a Votantes.`;
 }
 
 // "Quedan fuera: 2 con error, 1 repetida en el archivo…", only the non-zero groups; null when nothing is left out.
@@ -157,7 +131,6 @@ export function leftOutSummary(counts) {
         [counts?.errores, 'con error', 'con error'],
         [counts?.duplicadas, 'repetida en el archivo', 'repetidas en el archivo'],
         [counts?.omitidas, 'marcada «No importar»', 'marcadas «No importar»'],
-        [counts?.no_autorizaron, 'que no autorizó (no dice SÍ)', 'que no autorizaron (no dice SÍ)'],
         [counts?.en_evento, 'que ya está en el evento', 'que ya están en el evento'],
         [counts?.sugeridas, 'por confirmar si es la persona sugerida', 'por confirmar si son las personas sugeridas'],
     ].filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
@@ -177,18 +150,15 @@ export function confirmDialogMessage(counts) {
 }
 
 // Why the import cannot be confirmed yet, or null.
-export function confirmBlocker({ consent, declared, counts }) {
-    const authorized = authorizedToImport(counts) > 0;
-    if (authorized && !consentReady(consent)) return NEEDS_APPROVED_TEXT;
+export function confirmBlocker({ counts }) {
     if ((counts?.a_importar ?? 0) === 0) return 'No hay filas para importar.';
-    if (authorized && !declared) return 'Marque la declaración de las planillas firmadas para poder importar.';
 
     return null;
 }
 
 export function importErrorMessage(errors) {
     if (!errors) return '';
-    const keys = ['consent', 'archivo', 'hoja', 'columnas', 'decision', 'sugerencia', 'fila', 'confirmar', 'importacion', 'evento', 'declaracion'];
+    const keys = ['archivo', 'hoja', 'columnas', 'decision', 'sugerencia', 'fila', 'confirmar', 'importacion', 'evento'];
 
     return keys.map(k => errors[k]).filter(Boolean).join(' ');
 }

@@ -6,7 +6,6 @@ use App\Actions\Eventos\RegisterAttendee;
 use App\Http\Requests\Eventos\AttendeeInput;
 use App\Models\AuditLog;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
 use App\Models\EventAttendee;
 use App\Models\EventImport;
 use App\Models\EventImportRow;
@@ -21,11 +20,11 @@ use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
 // Excel/CSV attendee imports of an event: upload to staging, map the columns, validate every row, correct cells in
-// the preview and confirm. Same rule as the QR and the operator: only a person who authorized the data processing is
-// registered, so a row is importable only with SÍ in "Autorizó", and confirming requires the operator's declaration
-// that the signed sheets exist. Confirming registers only the valid rows the operator kept, through RegisterAttendee
-// (source 'excel', import_id), in transactions of BATCH rows and with a client_uuid derived from (import, row):
-// confirming again creates nothing new. Everything runs synchronously (no queue worker in production) within MAX_ROWS.
+// the preview and confirm. Since 2026-11-07 (decision of the campaign) no data authorization is asked: every Excel
+// file is a list (registerList()) and every valid row the operator kept is registered, linked to the ficha it
+// matches or pendiente de aprobar. OCR loads and the imports staged before that day keep the full-row flow
+// (RegisterAttendee, source 'excel'/'ocr', import_id). Everything runs in transactions of BATCH rows and with a
+// client_uuid derived from (import, row): confirming again creates nothing new. Everything runs synchronously (no queue worker in production) within MAX_ROWS.
 class EventImportService
 {
     public const BATCH = 200;
@@ -183,7 +182,7 @@ class EventImportService
     {
         $mapping = array_merge(array_fill_keys(array_keys(ImportColumns::FIELDS), null), $mapping);
 
-        $list = $this->isList($import, $mapping);
+        $list = $this->isList($import);
 
         DB::transaction(function () use ($import, $event, $mapping, $list) {
             $import->forceFill([
@@ -217,30 +216,11 @@ class EventImportService
         $this->audit($user, 'EVENTO_IMPORTACION_COLUMNAS', $import, ['campos' => array_keys(array_filter($mapping, fn ($v) => $v !== null)), 'sin_autorizacion' => $list]);
     }
 
-    // A list without authorization: no «Autorizó» column, or that column empty in every row of the file. Its rows are
-    // never registered with consent: they link to who is already in the platform or stay only in the event's list.
-    public function isList(EventImport $import, array $mapping): bool
+    // Every Excel file is a list (its rows flagged sin_autorizacion, a name kept from before 2026-11-07): only the name
+    // is required and people are found by cédula or by phone + name. An OCR load keeps the full-row validation.
+    public function isList(EventImport $import): bool
     {
-        $column = $mapping['autoriza'] ?? null;
-        if ($import->isOcr()) {
-            return false;
-        }
-        if ($column === null) {
-            return true;
-        }
-        $written = false;
-        DB::table('event_import_rows')->where('import_id', $import->id)->select(['id', 'raw'])
-            ->chunkById(1000, function ($rows) use ($column, &$written) {
-                foreach ($rows as $row) {
-                    if (ImportRowValidator::text((json_decode($row->raw, true) ?? [])[$column] ?? null) !== null) {
-                        $written = true;
-
-                        return false;
-                    }
-                }
-            });
-
-        return ! $written;
+        return ! $import->isOcr();
     }
 
     // Corrects cells of one row and/or changes its decision ('importar' or 'omitir'). Returns the fresh row.
@@ -298,25 +278,16 @@ class EventImportService
         });
     }
 
-    // Registers the importable rows, all of them with consent over the campaign's APPROVED text (the caller already
-    // required the declaration).
-    // The import keeps the first confirmation (who, when, text); every imported row keeps its own. The consent proof
-    // (data_consents.accepted_at, ip, user agent) is the moment and the browser of this confirmation, not the day the
-    // person signed the paper sheet. Returns ['nuevos', 'ya_estaban']. Throws RuntimeException without a consent text.
-    // Rows of a list without authorization need neither the approved text nor the declaration: they are registered
-    // without consent, linked to the ficha they match (history only) or only in the event's list (registerList()).
+    // Registers the importable rows: list rows through registerList(), full rows (OCR, imports staged before
+    // 2026-11-07) through RegisterAttendee. The import keeps the first confirmation (who, when); every imported row
+    // keeps its own. Returns ['nuevos', 'ya_estaban', 'historial', 'solo_evento'] (solo_evento = new list rows,
+    // pendientes de aprobar).
     public function confirm(EventImport $import, CampaignEvent $event, User $user, ?string $ip, ?string $userAgent): array
     {
-        $authorized = self::hasAuthorizedRows($import);
-        $consent = ConsentText::currentFor($event->campaign_id);
-        if ($authorized && ! $consent?->approved) {
-            throw new RuntimeException('Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo.');
-        }
         if ($import->status !== 'confirmado') {
             $import->forceFill([
                 'status' => 'confirmado',
-                'consent_text_id' => $authorized ? $consent->id : null,
-                'consent_declared' => $authorized,
+                'consent_declared' => false,
                 'confirmed_by' => $user->id,
                 'confirmed_at' => now(),
             ])->save();
@@ -325,30 +296,21 @@ class EventImportService
         $now = now();
         $result = ['nuevos' => 0, 'ya_estaban' => 0, 'historial' => 0, 'solo_evento' => 0];
         $this->registerList($import, $event, $user, $ip, $userAgent, $now, $result);
-        if (! $authorized) {
-            $this->recount($import);
-            $this->audit($user, 'EVENTO_IMPORTACION_CONFIRMADA', $import, $result + ['declaro_planillas' => false, 'sin_autorizacion' => (int) ($import->counts['sin_autorizacion'] ?? 0) > 0, 'tipo' => $import->kind ?? 'excel']);
-
-            return $result;
-        }
 
         EventImportRow::where('import_id', $import->id)->where('status', 'valida')->where('decision', '!=', 'omitir')
             ->where('sin_autorizacion', false)->whereNull('attendee_id')
-            ->chunkById(self::BATCH, function ($rows) use ($import, $event, $consent, $user, $ip, $userAgent, $now, &$result) {
-                DB::transaction(function () use ($rows, $import, $event, $consent, $user, $ip, $userAgent, $now, &$result) {
+            ->chunkById(self::BATCH, function ($rows) use ($import, $event, $user, $ip, $userAgent, $now, &$result) {
+                DB::transaction(function () use ($rows, $import, $event, $user, $ip, $userAgent, $now, &$result) {
                     $items = [];
                     foreach ($rows as $row) {
                         $data = ImportRowValidator::data($row->mapped ?? []);
-                        if (! $data['autoriza']) {
-                            continue;
-                        }
                         $data['client_uuid'] = self::clientUuid($import->id, $row->row_number);
                         $items[$row->id] = $data;
                     }
 
                     $linked = [];
                     $source = $import->isOcr() ? 'ocr' : 'excel';
-                    $outcomes = $this->register->handleMany($event, $consent, $items, $source, $user, $ip, $userAgent, 'operador', $import->id);
+                    $outcomes = $this->register->handleMany($event, $items, $source, $user, $ip, $userAgent, $import->id);
                     foreach ($outcomes as $rowId => $outcome) {
                         if ($outcome['conflict'] || $outcome['attendee_id'] === null) {
                             continue;
@@ -361,22 +323,15 @@ class EventImportService
             });
 
         $this->recount($import);
-        $this->audit($user, 'EVENTO_IMPORTACION_CONFIRMADA', $import, $result + ['declaro_planillas' => true, 'consent_text_id' => $consent->id, 'tipo' => $import->kind ?? 'excel']);
+        $this->audit($user, 'EVENTO_IMPORTACION_CONFIRMADA', $import, $result + ['tipo' => $import->kind ?? 'excel']);
 
         return $result;
     }
 
-    // Authorized rows of the import still to register (they need the approved text and the declaration).
-    public static function hasAuthorizedRows(EventImport $import): bool
-    {
-        return EventImportRow::where('import_id', $import->id)->where('status', 'valida')->where('decision', '!=', 'omitir')
-            ->where('sin_autorizacion', false)->whereNull('attendee_id')->exists();
-    }
-
-    // Rows of a list without authorization: attendees without consent (autoriza_datos false, no data_consents row).
-    // A row that matched a ficha (by cédula or confirmed by phone + name) is linked to it (link_status vinculado):
-    // only the event's history, the ficha is never created nor changed. The rest stay as sin_autorizacion, which
-    // can never be approved to Votantes. Idempotent by client_uuid, by cédula and by lider in the event.
+    // Rows of a list: attendees without consent (autoriza_datos false, no data_consents row). A row that matched a
+    // ficha (by cédula or confirmed by phone + name) is linked to it (link_status vinculado): only the event's history,
+    // the ficha is never created nor changed. The rest stay pendiente de aprobar (ApproveAttendees). Idempotent by
+    // client_uuid, by cédula and by lider in the event.
     private function registerList(EventImport $import, CampaignEvent $event, User $user, ?string $ip, ?string $userAgent, $now, array &$result): void
     {
         EventImportRow::where('import_id', $import->id)->where('sin_autorizacion', true)->whereIn('status', ['valida', 'sin_ficha'])
@@ -419,7 +374,7 @@ class EventImportService
                             'autoriza_datos' => false,
                             'source' => 'excel',
                             'import_id' => $import->id,
-                            'link_status' => $liderId ? 'vinculado' : 'sin_autorizacion',
+                            'link_status' => $liderId ? 'vinculado' : 'pendiente',
                             'registered_by' => $user->id,
                             'client_uuid' => $clientUuid,
                             'ip' => $ip,
@@ -515,14 +470,13 @@ class EventImportService
         return Uuid::uuid5($importId, 'fila-'.$rowNumber)->toString();
     }
 
-    // Statuses of every row after the cells changed: no_autorizo ("Autorizó" is not SÍ: never importable, it cannot be
-    // fixed in the preview), error, duplicada (same cédula on an earlier importable row), en_evento (already
+    // Statuses of every row after the cells changed: error, duplicada (same cédula on an earlier importable row), en_evento (already
     // registered in the event) or valida, with the lider of the campaign it matches. The decision
     // goes back to its default (valid → import, the rest → skip) only for rows whose status or match changed, so a
     // "No importar" chosen on a valid row survives corrections of other rows.
-    // Rows of a list without authorization (sin_autorizacion): valida = matches a ficha by cédula or by a confirmed
+    // Rows of a list (sin_autorizacion): valida = matches a ficha by cédula or by a confirmed
     // suggestion (linked as history), sugerida = same phone and a word of the name as a lider of the event's or the
-    // row's municipio (waits for the operator, never linked on its own), sin_ficha = nobody (only in the event's list).
+    // row's municipio (waits for the operator, never linked on its own), sin_ficha = nobody (a new attendee to approve).
     public function classify(EventImport $import, CampaignEvent $event): void
     {
         $rows = EventImportRow::where('import_id', $import->id)->orderBy('row_number')
@@ -531,23 +485,16 @@ class EventImportService
         $threshold = OcrSettings::threshold();
 
         $cedulas = [];
-        $authorized = [];
         foreach ($rows as $row) {
-            $authorized[$row->id] = ImportRowValidator::yesNo($row->mapped['autoriza'] ?? null) === true;
-            $usable = ! $row->errors && ($authorized[$row->id] || $row->sin_autorizacion);
-            $cedulas[$row->id] = $usable ? ImportRowValidator::cedulaOf($row->mapped ?? []) : null;
+            $cedulas[$row->id] = ! $row->errors ? ImportRowValidator::cedulaOf($row->mapped ?? []) : null;
         }
         $known = array_values(array_unique(array_filter($cedulas)));
 
         $inEvent = [];
-        $authorizedInEvent = [];
         $lideres = [];
         foreach (array_chunk($known, 1000) as $chunk) {
-            foreach (EventAttendee::where('event_id', $event->id)->whereIn('cedula', $chunk)->get(['cedula', 'autoriza_datos']) as $a) {
-                $inEvent[$a->cedula] = true;
-                if ($a->autoriza_datos) {
-                    $authorizedInEvent[$a->cedula] = true;
-                }
+            foreach (EventAttendee::where('event_id', $event->id)->whereIn('cedula', $chunk)->pluck('cedula') as $cedula) {
+                $inEvent[$cedula] = true;
             }
             $lideres += DB::table('lideres')->where('campaign_id', $event->campaign_id)->whereIn('cedula', $chunk)
                 ->pluck('id', 'cedula')->all();
@@ -573,13 +520,11 @@ class EventImportService
                 if ($key) {
                     $seenKey[$key] = true;
                 }
-            } elseif (! $authorized[$row->id] && ! $row->attendee_id) {
-                $status = 'no_autorizo';
             } elseif ($row->errors) {
                 $status = 'error';
             } elseif (isset($seen[$value])) {
                 $status = 'duplicada';
-            } elseif (isset($authorizedInEvent[$value]) && ! $row->attendee_id) {
+            } elseif (isset($inEvent[$value]) && ! $row->attendee_id) {
                 $status = 'en_evento';
             } else {
                 $status = 'valida';

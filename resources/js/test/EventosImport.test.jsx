@@ -20,7 +20,7 @@ vi.mock('@inertiajs/react', () => ({
 
 import { sourceLabel } from '@/lib/eventos';
 import {
-    NEEDS_APPROVED_TEXT, changedValues, columnOptions, confirmBlocker, leftOutSummary, confirmDialogMessage, confirmDialogTitle, confirmSummary, currentStep, importErrorMessage, mappingProblem, rowStatusKey,
+    changedValues, columnOptions, confirmBlocker, leftOutSummary, confirmDialogMessage, confirmDialogTitle, confirmSummary, currentStep, importErrorMessage, mappingProblem, rowStatusKey,
     setMapping, uploadProblem, ROW_FILTERS,
 } from '@/lib/eventosImport';
 import ImportRowCard from '@/Components/Eventos/ImportRowCard';
@@ -35,7 +35,7 @@ const CAMPOS = [
     { key: 'nombres', label: 'Nombres' }, { key: 'apellidos', label: 'Apellidos' }, { key: 'nombre_completo', label: 'Nombre completo' },
     { key: 'cedula', label: 'Cédula' }, { key: 'celular', label: 'Celular' },
 ];
-const COUNTS = { total: 50, validas: 42, en_plataforma: 10, nuevas: 32, errores: 5, duplicadas: 3, en_evento: 0, a_importar: 42, importadas: 0, no_autorizaron: 2, autorizaron: 48, omitidas: 1 };
+const COUNTS = { total: 50, validas: 42, en_plataforma: 10, nuevas: 32, errores: 5, duplicadas: 3, en_evento: 0, a_importar: 42, importadas: 0, omitidas: 1 };
 
 function row(overrides = {}) {
     return {
@@ -62,14 +62,12 @@ describe('eventosImport helpers', () => {
 
     it('explains an incomplete or repeated mapping like the server', () => {
         expect(mappingProblem({})).toMatch(/nombres y la de apellidos/);
-        expect(mappingProblem({ autoriza: 4 })).toBe('Elija la columna que tiene la cédula.');
         expect(mappingProblem({ nombre_completo: 1 })).toMatch('Elija la columna de la cédula o la del teléfono');
         expect(mappingProblem({ cedula: 0, nombres: 1 })).toMatch(/nombres y la de apellidos/);
-        expect(mappingProblem({ cedula: 0, nombre_completo: 1, autoriza: 4 })).toBe('Elija la columna que tiene el celular.');
-        expect(mappingProblem({ cedula: 0, nombre_completo: 1, celular: 1, autoriza: 4 })).toMatch(/Una misma columna/);
-        // Without «Autorizó» it is a list without authorization: valid.
-        expect(mappingProblem({ cedula: 0, nombres: 1, apellidos: 2, celular: 3 })).toBeNull();
-        expect(mappingProblem({ cedula: 0, nombres: 1, apellidos: 2, celular: 3, barrio: null, autoriza: 4 })).toBeNull();
+        expect(mappingProblem({ cedula: 0, nombre_completo: 1, celular: 1 })).toMatch(/Una misma columna/);
+        expect(mappingProblem({ cedula: 0, nombre_completo: 1 })).toBeNull();
+        expect(mappingProblem({ celular: 3, nombre_completo: 1 })).toBeNull();
+        expect(mappingProblem({ cedula: 0, nombres: 1, apellidos: 2, celular: 3, barrio: null })).toBeNull();
         expect(setMapping({ cedula: 0 }, 'cedula', '')).toEqual({ cedula: null });
         expect(setMapping({}, 'celular', '3')).toEqual({ celular: 3 });
     });
@@ -86,25 +84,24 @@ describe('eventosImport helpers', () => {
         expect(changedValues({ autoriza: 'NO' }, { autoriza: 'SÍ' })).toEqual({});
     });
 
-    it('only imports authorized people and says why the rest are left out', () => {
-        expect(confirmSummary({ a_importar: 42 })).toMatch('Se registrarán 42 personas en el evento, con su autorización de datos.');
-        expect(confirmSummary({ a_importar: 1 })).toBe('Se registrará 1 persona en el evento, con su autorización de datos. '
-            + 'Si es nueva, queda pendiente de aprobar antes de pasar a Votantes.');
+    it('imports every valid person, without any authorization, and says why the rest are left out', () => {
+        expect(confirmSummary({ a_importar: 42 })).toBe('Se registrarán 42 personas en el evento. Las nuevas quedan pendientes de aprobar antes de pasar a Votantes.');
+        expect(confirmSummary({ a_importar: 1 })).toBe('Se registrará 1 persona en el evento. Si es nueva, queda pendiente de aprobar antes de pasar a Votantes.');
+        expect(confirmSummary({ a_importar: 3, sin_autorizacion: 3, sin_ficha: 1 })).toMatch('2 quedan en el historial de su ficha (sin cambiarla) y el resto pendiente de aprobar');
+        expect(confirmSummary({ a_importar: 3, sin_autorizacion: 3 })).not.toMatch(/autorizaci/);
         expect(confirmDialogMessage({ a_importar: 1 })).toBe('Se importará 1 persona. Esta acción no se puede deshacer.');
         expect(confirmDialogTitle({ a_importar: 1 })).toBe('¿Importar a esta persona?');
         expect(confirmDialogTitle({ a_importar: 42 })).toBe('¿Importar estas personas?');
         expect(leftOutSummary({ errores: 2, duplicadas: 1, omitidas: 0, no_autorizaron: 3, en_evento: 1 }))
-            .toBe('Quedan fuera: 2 con error, 1 repetida en el archivo, 3 que no autorizaron (no dice SÍ), 1 que ya está en el evento.');
+            .toBe('Quedan fuera: 2 con error, 1 repetida en el archivo, 1 que ya está en el evento.');
         expect(leftOutSummary({ omitidas: 1 })).toBe('Quedan fuera: 1 marcada «No importar».');
         expect(leftOutSummary({ errores: 0 })).toBeNull();
         expect(confirmSummary({ a_importar: 0 })).toMatch('No hay filas para importar');
         expect(confirmDialogMessage({ a_importar: 42 })).toBe('Se importarán 42 personas. Esta acción no se puede deshacer.');
-        expect(confirmBlocker({ consent: null, declared: true, counts: { a_importar: 3 } })).toBe(NEEDS_APPROVED_TEXT);
-        expect(confirmBlocker({ consent: { id: 'c', approved: false }, declared: true, counts: { a_importar: 3 } })).toBe(NEEDS_APPROVED_TEXT);
-        expect(confirmBlocker({ consent: { id: 'c', approved: true }, declared: false, counts: { a_importar: 3 } })).toMatch('Marque la declaración');
-        expect(confirmBlocker({ consent: { id: 'c', approved: true }, declared: true, counts: { a_importar: 0 } })).toBe('No hay filas para importar.');
-        expect(confirmBlocker({ consent: { id: 'c', approved: true }, declared: true, counts: { a_importar: 3 } })).toBeNull();
-        expect(ROW_FILTERS.map(f => f.label)).toEqual(expect.arrayContaining(['No autorizaron', 'No importar']));
+        expect(confirmBlocker({ counts: { a_importar: 0 } })).toBe('No hay filas para importar.');
+        expect(confirmBlocker({ counts: { a_importar: 3 } })).toBeNull();
+        expect(ROW_FILTERS.map(f => f.label)).toEqual(expect.arrayContaining(['No importar', 'Nuevas por aprobar']));
+        expect(ROW_FILTERS.map(f => f.label)).not.toContain('No autorizaron');
     });
 
     it('checks the file before uploading', () => {
@@ -158,14 +155,12 @@ describe('Import steps', () => {
         expect(mockRouter.put).toHaveBeenCalledWith('/eventos/ev1/importar/imp1/columnas', { columnas: { cedula: 0, celular: 2, nombres: null, autoriza: 3, nombre_completo: 1 } }, expect.any(Object));
     });
 
-    it('needs the declaration and a confirmation dialog before importing', () => {
-        render(<ImportConfirm eventId="ev1" importacion={{ id: 'imp1', counts: COUNTS }} consent={{ id: 'c1', version: 'v1', approved: true }} />);
-        expect(screen.getByText('Quedan fuera: 5 con error, 3 repetidas en el archivo, 1 marcada «No importar», 2 que no autorizaron (no dice SÍ).')).toBeTruthy();
+    it('asks only for a confirmation dialog before importing: no declaration and no approved text', () => {
+        render(<ImportConfirm eventId="ev1" importacion={{ id: 'imp1', counts: COUNTS }} />);
+        expect(screen.getByText('Quedan fuera: 5 con error, 3 repetidas en el archivo, 1 marcada «No importar».')).toBeTruthy();
+        expect(screen.queryByRole('checkbox')).toBeNull();
+        expect(screen.queryByText(/planillas firmadas|autorizaci/)).toBeNull();
         const button = screen.getByRole('button', { name: 'Importar 42 personas' });
-        expect(button.disabled).toBe(true);
-        expect(screen.getByText('Marque la declaración de las planillas firmadas para poder importar.')).toBeTruthy();
-
-        fireEvent.click(screen.getByRole('checkbox', { name: /Tengo las planillas firmadas/ }));
         expect(button.disabled).toBe(false);
         fireEvent.click(button);
         expect(mockRouter.post).not.toHaveBeenCalled();
@@ -175,20 +170,12 @@ describe('Import steps', () => {
 
         fireEvent.click(button);
         fireEvent.click(screen.getByRole('button', { name: 'Sí, importar' }));
-        expect(mockRouter.post).toHaveBeenCalledWith('/eventos/ev1/importar/imp1/confirmar', { declaracion: true }, expect.any(Object));
+        expect(mockRouter.post).toHaveBeenCalledWith('/eventos/ev1/importar/imp1/confirmar', {}, expect.any(Object));
     });
 
-    it('cannot confirm when nothing is importable or without an approved text, and says it only once', () => {
-        render(<ImportConfirm eventId="ev1" importacion={{ id: 'imp1', counts: { a_importar: 0 } }} consent={{ id: 'c1', version: 'v1', approved: true }} />);
+    it('cannot confirm when nothing is importable', () => {
+        render(<ImportConfirm eventId="ev1" importacion={{ id: 'imp1', counts: { a_importar: 0 } }} />);
         expect(screen.getByRole('button', { name: 'Importar 0 personas' }).disabled).toBe(true);
-        for (const consent of [null, { id: 'c1', version: 'provisional-1', approved: false }]) {
-            cleanup();
-            render(<ImportConfirm eventId="ev1" importacion={{ id: 'imp1', counts: COUNTS }} consent={consent} />);
-            expect(screen.getByRole('checkbox', { name: /Tengo las planillas firmadas/ }).disabled).toBe(true);
-            expect(screen.getByRole('button', { name: 'Importar 42 personas' }).disabled).toBe(true);
-            expect(screen.getAllByText(NEEDS_APPROVED_TEXT)).toHaveLength(1);
-            expect(screen.getByRole('alert').className).toMatch('bg-red-50');
-        }
     });
 
     it('rings the file picker when it has the keyboard focus', () => {
@@ -230,18 +217,18 @@ describe('ImportRowCard', () => {
         expect(mockRouter.patch).toHaveBeenLastCalledWith('/eventos/ev1/importar/imp1/filas/r1', { decision: 'importar' }, expect.any(Object));
     });
 
-    it('a row without SÍ cannot be imported nor corrected, and "Autorizó" is never an input', () => {
-        renderCard(row({ status: 'no_autorizo', decision: 'omitir', valores: { nombres: 'Ana', apellidos: 'Pérez', cedula: '1', celular: '3', autoriza: 'NO' } }));
-        expect(screen.getByText('No autorizó')).toBeTruthy();
-        expect(screen.getByText(/no autorizó el tratamiento de sus datos y no se importa/)).toBeTruthy();
-        expect(screen.queryByRole('checkbox', { name: 'Importar' })).toBeNull();
-        expect(screen.queryByRole('button', { name: 'Corregir esta fila' })).toBeNull();
+    it('a new person of a list is importable and stays pending; "Autorizó" is never shown', () => {
+        renderCard(row({ status: 'sin_ficha', decision: 'crear', sin_autorizacion: true, valores: { nombres: 'Ana', apellidos: 'Pérez', cedula: '1', celular: '3', autoriza: 'NO' } }));
+        expect(screen.getByText('Nueva: pendiente de aprobar')).toBeTruthy();
+        expect(screen.getByText(/pendiente de aprobar para pasar a Votantes/)).toBeTruthy();
+        expect(screen.getByRole('checkbox', { name: 'Importar' }).checked).toBe(true);
+        expect(screen.queryByText('Autorizó')).toBeNull();
         cleanup();
 
         renderCard(row({ status: 'error', errores: { cedula: 'Mal' } }));
         fireEvent.click(screen.getByRole('button', { name: 'Corregir esta fila' }));
         expect(screen.queryByLabelText('Autorizó')).toBeNull();
-        expect(screen.getByText(/«Autorizó» no se puede cambiar aquí: vale lo que dice la planilla firmada \(SÍ\)/)).toBeTruthy();
+        expect(screen.queryByText(/autoriz/i)).toBeNull();
     });
 
     it('explains duplicates and rows already in the platform; read-only after confirming', () => {
@@ -257,7 +244,7 @@ describe('ImportRowCard', () => {
 });
 
 describe('Importar page', () => {
-    const PAGE = { evento: EVENTO, consent: { id: 'c1', version: 'v1', approved: true }, muestra: [], filters: { estado: null }, campos: CAMPOS, limites: { filas: 2000, mb: 5 }, recientes: [] };
+    const PAGE = { evento: EVENTO, muestra: [], filters: { estado: null }, campos: CAMPOS, limites: { filas: 2000, mb: 5 }, recientes: [] };
 
     it('starts with the template and the upload, and lists previous loads', () => {
         render(<Importar {...PAGE} importacion={null} filas={null} recientes={[{ id: 'i0', nombre: 'viejo.xlsx', status: 'confirmado', filas: 20, importadas: 18, created_at: '2026-11-01T10:00:00-05:00', created_by: 'Gestor' }]} />);
@@ -268,24 +255,19 @@ describe('Importar page', () => {
         expect(screen.getByRole('link', { name: 'viejo.xlsx' }).className).toMatch('min-h-[44px]');
     });
 
-    it('allows the upload without the approved text, explaining that only lists without authorization can be imported', () => {
-        for (const consent of [null, { id: 'c0', version: 'provisional-1', approved: false }]) {
-            render(<Importar {...PAGE} consent={consent} importacion={null} filas={null} />);
-            expect(screen.getByRole('button', { name: 'Subir archivo' }).disabled).toBe(false);
-            expect(screen.getByRole('note').textContent).toMatch('puede cargar listas sin la columna «Autorizó»');
-            cleanup();
-        }
+    it('allows the upload with no mention of an authorization text', () => {
         render(<Importar {...PAGE} importacion={null} filas={null} />);
         expect(screen.getByRole('button', { name: 'Subir archivo' }).disabled).toBe(false);
-        expect(screen.queryByText(NEEDS_APPROVED_TEXT)).toBeNull();
+        expect(screen.queryByText(/autorizaci/i)).toBeNull();
     });
 
-    it('a list without authorization confirms without the declaration nor the approved text', () => {
+    it('a list confirms without any declaration: new people stay pending of approval', () => {
         const counts = { total: 3, validas: 1, en_plataforma: 1, sugeridas: 1, sin_ficha: 1, sin_autorizacion: 3, a_importar: 2, a_importar_con_autorizacion: 0, errores: 0, duplicadas: 0, en_evento: 0, importadas: 0, omitidas: 0 };
         const filas = { data: [row({ status: 'sugerida', decision: 'omitir', sin_autorizacion: true, sugerencia: { id: 'l1', nombre: 'Ana María Pérez', municipio: 'Girón', cargo: 'Edil', estado: null } })], current_page: 1, last_page: 1, total: 1, links: [] };
-        render(<Importar {...PAGE} consent={null} importacion={{ id: 'imp1', nombre: 'a.xlsx', status: 'revisado', filas: 3, fila_encabezados: 1, counts, sin_autorizacion: true, hojas: [] }} filas={filas} />);
-        expect(screen.getAllByText(/Sin autorización: queda solo en la lista del evento/).length).toBeGreaterThan(0);
-        expect(screen.queryByRole('checkbox', { name: /Tengo las planillas firmadas/ })).toBeNull();
+        render(<Importar {...PAGE} importacion={{ id: 'imp1', nombre: 'a.xlsx', status: 'revisado', filas: 3, fila_encabezados: 1, counts, sin_autorizacion: true, hojas: [] }} filas={filas} />);
+        expect(screen.getAllByText(/queda en el evento pendiente de aprobar para pasar a Votantes/).length).toBeGreaterThan(0);
+        expect(screen.queryByText(/autorizaci|planillas firmadas/i)).toBeNull();
+        expect(screen.getByText('Nuevas (por aprobar)').nextSibling.textContent).toBe('1');
         const button = screen.getByRole('button', { name: 'Importar 2 personas' });
         expect(button.disabled).toBe(false);
         expect(screen.getByText('¿Es esta persona?', { selector: 'p' })).toBeTruthy();
@@ -312,10 +294,9 @@ describe('Importar page', () => {
         expect(screen.getByText('Este archivo ya estaba subido: puede seguir donde lo dejó.')).toBeTruthy();
         const group = screen.getByRole('group', { name: 'Filtrar filas' });
         expect(within(group).getByRole('button', { name: 'Con error (5)' })).toBeTruthy();
-        expect(within(group).getByRole('button', { name: 'No autorizaron (2)' })).toBeTruthy();
+        expect(within(group).queryByRole('button', { name: /No autorizaron/ })).toBeNull();
         expect(within(group).getByRole('button', { name: 'No importar (1)' })).toBeTruthy();
-        expect(screen.getByText('Con SÍ en «Autorizó»').nextSibling.textContent).toBe('48');
-        expect(screen.getByText(/2 personas no autorizaron/)).toBeTruthy();
+        expect(screen.queryByText(/Autorizó/)).toBeNull();
         fireEvent.click(within(group).getByRole('button', { name: 'Con error (5)' }));
         expect(mockRouter.get).toHaveBeenCalledWith('/eventos/ev1/importar/imp1', { estado: 'error' }, expect.objectContaining({ only: ['filas', 'filters'] }));
         expect(screen.getByRole('button', { name: 'Importar 42 personas' })).toBeTruthy();
@@ -328,7 +309,8 @@ describe('Importar page', () => {
     it('shows the result after confirming, without the confirm box', () => {
         render(<Importar {...PAGE} importacion={{ id: 'imp1', nombre: 'a.xlsx', status: 'confirmado', filas: 50, counts: { ...COUNTS, importadas: 42 }, declaro_planillas: false, confirmed_at: '2026-11-01T10:00:00-05:00' }} filas={{ data: [], last_page: 1, links: [] }} />);
         expect(screen.getByText(/42 personas quedaron registradas/)).toBeTruthy();
-        expect(screen.getByText(/Todas quedaron con su autorización de datos/)).toBeTruthy();
+        expect(screen.getByText(/Las nuevas están pendientes de aprobar/)).toBeTruthy();
+        expect(screen.queryByText(/autorizaci/i)).toBeNull();
         expect(screen.queryByRole('button', { name: /Importar \d+/ })).toBeNull();
         expect(screen.getByRole('link', { name: 'Cargar otro archivo' }).getAttribute('href')).toBe('/eventos/ev1/importar');
     });

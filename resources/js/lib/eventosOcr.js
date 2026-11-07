@@ -6,8 +6,6 @@ export const OCR_ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image
 
 export const HEIC_MESSAGE = 'Las fotos HEIC del iPhone no se pueden leer. Súbalas desde la galería con este botón (el iPhone las convierte a JPG) o cambie en Ajustes > Cámara > Formatos a «Más compatible».';
 
-export const NEEDS_APPROVED_TEXT = 'Falta el texto de autorización aprobado por la campaña; no se pueden leer planillas hasta tenerlo.';
-
 export const OCR_STEPS = [
     { key: 'fotos', label: 'Fotos' },
     { key: 'leer', label: 'Leer con IA' },
@@ -22,7 +20,7 @@ export const PAGE_STATUS = {
     error: { label: 'Falló', cls: 'bg-red-50 border-red-300 text-red-700' },
 };
 
-// Fields of an OCR row: the Excel ones plus what the AI saw in "Autorizo" and "Firma" (read-only: only the sheet counts).
+// Fields of an OCR row: the Excel ones, each with the confidence the AI gave it.
 export const OCR_ROW_FIELDS = [
     { key: 'nombres', label: 'Nombres', confidence: 'nombres' },
     { key: 'apellidos', label: 'Apellidos', confidence: 'apellidos' },
@@ -32,8 +30,6 @@ export const OCR_ROW_FIELDS = [
     { key: 'fecha_nacimiento', label: 'Fecha de nacimiento', placeholder: 'DD/MM/AAAA', confidence: 'fecha_nacimiento' },
     { key: 'direccion', label: 'Dirección', confidence: 'direccion' },
     { key: 'barrio', label: 'Barrio', confidence: 'barrio' },
-    { key: 'autorizo', label: 'Marcó «Autorizo»', readOnly: true, confidence: 'autorizo' },
-    { key: 'firma', label: 'Firma', readOnly: true, confidence: 'firma_presente' },
 ];
 
 export function ocrStep(importacion) {
@@ -140,17 +136,14 @@ export function responseMessage(result, fallback = 'No se pudo completar. Intent
     return body?.message || fallback;
 }
 
-// The Excel summary of what stays out, with the OCR reason for the rows without authorization.
 export function ocrLeftOutSummary(counts) {
-    const text = leftOutSummary(counts);
-
-    return text && text.replace(/que no autoriz(ó|aron) \(no dice SÍ\)/, 'sin «Autorizo» o sin firma');
+    return leftOutSummary(counts);
 }
 
 export function ocrConfirmSummary(counts, doubtful) {
     const base = (counts?.a_importar ?? 0) === 0
         ? 'No hay filas para importar.'
-        : `Se registrará${counts.a_importar === 1 ? '' : 'n'} ${plural(counts.a_importar, 'persona', 'personas')} en el evento, con su autorización de datos.`;
+        : `Se registrará${counts.a_importar === 1 ? '' : 'n'} ${plural(counts.a_importar, 'persona', 'personas')} en el evento.`;
 
     return doubtful > 0 ? `${base} Aún hay ${plural(doubtful, 'fila con datos dudosos', 'filas con datos dudosos')} (en amarillo): revíselas contra la foto.` : base;
 }

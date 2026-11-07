@@ -2,8 +2,8 @@ import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import {
-    LIST_NOTE, NEEDS_APPROVED_TEXT, STEPS, TOO_LARGE, authorizedToImport, columnOptions, confirmBlocker, confirmDialogMessage, confirmDialogTitle,
-    confirmSummary, consentReady, leftOutSummary, mappingProblem, plural, setMapping, uploadProblem,
+    LIST_NOTE, STEPS, TOO_LARGE, columnOptions, confirmBlocker, confirmDialogMessage, confirmDialogTitle,
+    confirmSummary, leftOutSummary, mappingProblem, plural, setMapping, uploadProblem,
 } from '@/lib/eventosImport';
 
 const CARD = 'bg-white border border-[var(--color-line)] rounded-2xl p-4 lg:p-5';
@@ -27,18 +27,6 @@ export function ImportStepper({ step, steps = STEPS, label = 'Pasos para cargar 
                 );
             })}
         </ol>
-    );
-}
-
-// Excel loads need the campaign's APPROVED authorization text (everything imported is authorized), like the public QR.
-// Before uploading: without the approved text only a list without authorization can be loaded.
-export function UploadConsentNote({ consent }) {
-    if (consentReady(consent)) return <ConsentNote consent={consent} />;
-
-    return (
-        <p role="note" className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-300 text-[17px] font-semibold text-amber-900">
-            La campaña todavía no tiene el texto de autorización aprobado: puede cargar listas sin la columna «Autorizó» (quien ya está en la plataforma queda con la asistencia en su historial; el resto, solo en la lista del evento), pero no importar personas con SÍ.
-        </p>
     );
 }
 
@@ -73,18 +61,6 @@ export function ImportSheet({ eventId, importacion }) {
             {importacion.status === 'revisado' && <p className="mt-1 text-[16px] text-[var(--color-ink-soft)]">Si cambia de hoja, vuelve a revisar las columnas.</p>}
         </section>
     );
-}
-
-export function ConsentNote({ consent, missingText = NEEDS_APPROVED_TEXT }) {
-    if (!consentReady(consent)) {
-        return (
-            <p role="alert" className="px-4 py-3 rounded-xl bg-red-50 border border-red-300 text-[17px] font-semibold text-red-800">
-                {missingText}
-            </p>
-        );
-    }
-
-    return <p className="text-[16px] text-[var(--color-ink-soft)]">Texto de autorización aprobado: versión <strong>{consent.version}</strong>.</p>;
 }
 
 export function ImportUpload({ eventId, limits, disabled }) {
@@ -199,18 +175,12 @@ export function ImportMapping({ eventId, importacion, muestra, campos }) {
     );
 }
 
-const DECLARATION = 'Tengo las planillas firmadas que respaldan las autorizaciones de este archivo.';
-
-// summary / declarationLabel / missingText: the texts of an OCR load (§13), which confirms through this same form.
-export function ImportConfirm({ eventId, importacion, consent, summary, declarationLabel = DECLARATION, missingText, leftOutText }) {
-    const [declared, setDeclared] = useState(false);
+// summary / leftOutText: the texts of an OCR load (§13), which confirms through this same form.
+export function ImportConfirm({ eventId, importacion, summary, leftOutText }) {
     const [asking, setAsking] = useState(false);
     const [busy, setBusy] = useState(false);
     const counts = importacion.counts || {};
-    const ready = consentReady(consent);
-    const blocker = confirmBlocker({ consent, declared, counts });
-    // A list without authorization registers no consent: no declaration and no approved text.
-    const needsAuthorization = authorizedToImport(counts) > 0 || importacion.tipo === 'ocr';
+    const blocker = confirmBlocker({ counts });
     const leftOut = leftOutText !== undefined ? leftOutText : leftOutSummary(counts);
 
     function submit(e) {
@@ -221,7 +191,7 @@ export function ImportConfirm({ eventId, importacion, consent, summary, declarat
     function importNow() {
         setAsking(false);
         setBusy(true);
-        router.post(`/eventos/${eventId}/importar/${importacion.id}/confirmar`, needsAuthorization ? { declaracion: true } : {}, {
+        router.post(`/eventos/${eventId}/importar/${importacion.id}/confirmar`, {}, {
             preserveScroll: true,
             onFinish: () => setBusy(false),
         });
@@ -232,20 +202,7 @@ export function ImportConfirm({ eventId, importacion, consent, summary, declarat
             <h2 id="confirmar-title" className="text-[20px] font-extrabold text-[var(--color-ink)]">Confirmar la carga</h2>
             <p className="text-[18px] text-[var(--color-ink)] mt-1.5">{summary ?? confirmSummary(counts)}</p>
             {leftOut && <p className="text-[17px] text-[var(--color-ink-soft)] mt-1">{leftOut}</p>}
-            {needsAuthorization ? (
-                <>
-                    <label className="mt-3 flex items-start gap-3 min-h-[48px] cursor-pointer px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)]">
-                        <input type="checkbox" checked={declared} disabled={!ready} onChange={e => setDeclared(e.target.checked)} className="mt-0.5 w-7 h-7 flex-shrink-0 accent-[var(--color-primary)]" />
-                        <span className="text-[18px] font-semibold text-[var(--color-ink)]">
-                            {declarationLabel}
-                        </span>
-                    </label>
-                    {blocker && ready && <p className="mt-2 text-[17px] font-semibold text-amber-800" aria-live="polite">{blocker}</p>}
-                    <div className="mt-3"><ConsentNote consent={consent} missingText={missingText} /></div>
-                </>
-            ) : (
-                <p className="mt-3 px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)] text-[17px] text-[var(--color-ink)]">{LIST_NOTE}</p>
-            )}
+            <p className="mt-3 px-3 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-line)] text-[17px] text-[var(--color-ink)]">{LIST_NOTE}</p>
             <button type="submit" disabled={busy || !!blocker} className={`${PRIMARY_BTN} mt-4 w-full sm:w-auto`}>
                 {busy ? 'Registrando…' : `Importar ${plural(counts.a_importar ?? 0, 'persona', 'personas')}`}
             </button>

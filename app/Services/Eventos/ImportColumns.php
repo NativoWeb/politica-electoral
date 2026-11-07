@@ -18,7 +18,6 @@ class ImportColumns
         'fecha_nacimiento' => ['Fecha de nacimiento', 'Fecha de nacimiento (DD/MM/AAAA)'],
         'direccion' => ['Dirección', 'Dirección'],
         'barrio' => ['Barrio', 'Barrio'],
-        'autoriza' => ['Autorizó (SÍ/NO)', 'Autorizó (SÍ/NO)'],
         'municipio' => ['Municipio', 'Municipio'],
         'liderazgo' => ['Liderazgo o actividad (queda como nota del asistente)', 'Liderazgo o actividad'],
     ];
@@ -41,14 +40,12 @@ class ImportColumns
             'fecha de cumpleanos', 'fecha cumpleanos', 'cumpleanos'],
         'direccion' => ['direccion', 'direccion de residencia', 'dir', 'domicilio', 'residencia'],
         'barrio' => ['barrio', 'barrio vereda', 'barrio o vereda', 'sector', 'vereda', 'comuna'],
-        'autoriza' => ['autorizo', 'autoriza', 'autorizacion', 'autoriza datos', 'autorizo datos', 'autorizo tratamiento de datos',
-            'acepta', 'acepto', 'firmo', 'firma autorizacion'],
         'municipio' => ['municipio', 'mpio', 'municipio de residencia', 'ciudad'],
         'liderazgo' => ['liderazgo', 'tipo de liderazgo', 'lider', 'rol', 'actividad', 'nota', 'observacion', 'observaciones'],
     ];
 
     // Order in which fields pick their column.
-    private const ORDER = ['cedula', 'nombre_completo', 'nombres', 'apellidos', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autoriza', 'municipio', 'liderazgo'];
+    private const ORDER = ['cedula', 'nombre_completo', 'nombres', 'apellidos', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'municipio', 'liderazgo'];
 
     public static function templateHeaders(): array
     {
@@ -130,30 +127,17 @@ class ImportColumns
         return $score;
     }
 
-    // Returns the error message of an incomplete mapping, or null. With an «Autorizó» column the rows follow the
-    // authorized flow (cédula and celular required); without it the file is a list without authorization, which only
-    // needs the name and the cédula or the phone to find who is already in the platform.
+    // Returns the error message of an incomplete mapping, or null: the name and the cédula or the phone, to find who
+    // is already in the platform.
     public static function missing(array $mapping): ?string
     {
         $set = fn (string $field) => ($mapping[$field] ?? null) !== null;
         $hasName = $set('nombre_completo') || ($set('nombres') && $set('apellidos'));
-        if ($set('autoriza')) {
-            if (! $set('cedula')) {
-                return 'Elija la columna que tiene la cédula.';
-            }
-            if (! $hasName) {
-                return 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
-            }
-            if (! $set('celular')) {
-                return 'Elija la columna que tiene el celular.';
-            }
-        } else {
-            if (! $hasName) {
-                return 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
-            }
-            if (! $set('cedula') && ! $set('celular')) {
-                return 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.';
-            }
+        if (! $hasName) {
+            return 'Elija la columna de nombres y la de apellidos, o una sola columna con el nombre completo.';
+        }
+        if (! $set('cedula') && ! $set('celular')) {
+            return 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.';
         }
         $indexes = array_filter($mapping, fn ($v) => $v !== null);
         if (count($indexes) !== count(array_unique($indexes))) {

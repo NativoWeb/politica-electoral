@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 // column mapping and the corrections made in the preview (both emptied by eventos:limpiar-importaciones 30 days after the
 // confirmation). declared/confirmed_by/confirmed_at: the confirmation that imported this row. OCR rows also keep their
 // page (page_id, page_row) and the AI's confidence per field (1 once a person corrected the cell). A row of a list
-// without authorization (sin_autorizacion) may carry the lider suggested by phone + name and what the operator said.
+// (sin_autorizacion, the name of the flag before 2026-11-07; every Excel row since then) may carry the lider suggested by phone + name and what the operator said.
 class EventImportRow extends Model
 {
     use HasUuids;

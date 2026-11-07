@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
 
 // Turns "pendiente" attendees into Votantes of the EVENT's campaign (never the user's own campaign by default):
 // a cédula that already exists there is only linked, without touching that lider; otherwise a lider of
-// tipo asistente_evento is created, with autoriza_datos only when the attendee accepted an approved text. Anything that is not pendiente is skipped, so approving twice never duplicates.
+// tipo asistente_evento is created, with autoriza_datos only when the attendee accepted an approved text (registrations
+// since 2026-11-07 carry no authorization, so it stays false). Anything that is not pendiente is skipped, so approving
+// twice never duplicates.
 class ApproveAttendees
 {
     public const TIPO = 'asistente_evento';

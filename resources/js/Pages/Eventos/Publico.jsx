@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
-import AttendeeFields, { ConsentBox } from '@/Components/Eventos/AttendeeFields';
+import AttendeeFields from '@/Components/Eventos/AttendeeFields';
 import { formatEventRange, placeLine } from '@/lib/eventos';
 import useAttendeeForm from '@/lib/useAttendeeForm';
 
@@ -42,7 +42,7 @@ function EventHeader({ evento }) {
     );
 }
 
-export default function Publico({ estado, evento, barrios = [], consent, form_token: formToken, client_uuid: clientUuid, submitted, message }) {
+export default function Publico({ estado, evento, barrios = [], form_token: formToken, client_uuid: clientUuid, submitted, message }) {
     const [closed, setClosed] = useState(estado !== 'abierto');
     const [thanks, setThanks] = useState(submitted ? (message || '¡Gracias, quedó registrado!') : '');
     const firstFieldRef = useRef(null);
@@ -52,7 +52,6 @@ export default function Publico({ estado, evento, barrios = [], consent, form_to
 
     const form = useAttendeeForm({
         url: window.location.pathname,
-        consentId: consent?.id,
         initialUuid: clientUuid,
         extraPayload: () => ({ form_token: formToken, website: honeypot.current?.value ?? '' }),
         onSaved: json => setThanks(json.message || '¡Gracias, quedó registrado!'),
@@ -126,14 +125,6 @@ export default function Publico({ estado, evento, barrios = [], consent, form_to
                     <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" ref={honeypot} defaultValue="" />
                 </div>
 
-                <ConsentBox
-                    consent={consent}
-                    checked={form.data.autoriza_datos}
-                    onChange={v => form.set('autoriza_datos', v)}
-                    error={form.errors.autoriza_datos}
-                    expandable
-                />
-
                 {form.notice && (
                     <div ref={noticeRef} tabIndex={-1} role="alert" className="px-4 py-3 rounded-xl bg-red-50 border-2 border-red-300 text-[17px] font-semibold text-red-800">
                         {form.notice}
@@ -142,14 +133,11 @@ export default function Publico({ estado, evento, barrios = [], consent, form_to
 
                 <button
                     type="submit"
-                    disabled={!form.data.autoriza_datos || form.saving}
+                    disabled={form.saving}
                     className="w-full min-h-[60px] px-4 py-4 rounded-2xl bg-[var(--color-primary)] text-white text-[20px] font-extrabold disabled:bg-gray-300 disabled:text-gray-600 active:bg-[var(--color-primary-dark)]"
                 >
                     {form.saving ? 'Enviando...' : 'Registrarme'}
                 </button>
-                {!form.data.autoriza_datos && (
-                    <p className="-mt-3 text-center text-[18px] text-[var(--color-ink-soft)]">Para registrarse, marque la casilla de autorización.</p>
-                )}
             </form>
         </PublicShell>
     );

@@ -46,7 +46,6 @@ class EventOcrHardeningTest extends TestCase
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos']);
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID, ['status' => 'cerrado']);
-        $this->approvedText(Campaign::DEFAULT_ID);
         $this->fake = new FakeOcrClient;
         $this->app->instance(OcrClient::class, $this->fake);
         config(['eventos.ocr.enabled' => true, 'eventos.ocr.api_key' => 'sk-test']);
@@ -284,7 +283,7 @@ class EventOcrHardeningTest extends TestCase
         $this->assertSame(3, json_decode(DB::table('event_imports')->where('id', $id)->value('counts'), true)['a_importar']);
     }
 
-    public function test_confirming_empties_what_was_read_of_people_who_did_not_authorize(): void
+    public function test_confirming_imports_every_row_read_whatever_autorizo_says(): void
     {
         $this->fake->push(FakeOcrClient::sheet([
             ['numero' => 1, 'cedula' => '1098000001'],
@@ -292,12 +291,10 @@ class EventOcrHardeningTest extends TestCase
         ]));
         $id = $this->upload($this->photo())->json('data.id');
         $this->process($id)->assertJsonPath('data.listo', true);
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertOk()->assertJsonPath('data.nuevos', 1);
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertOk()->assertJsonPath('data.nuevos', 2);
 
-        $refused = DB::table('event_import_rows')->where('import_id', $id)->where('status', 'no_autorizo')->first();
-        $this->assertNull($refused->raw);
-        $this->assertNull($refused->mapped);
-        $this->assertNotNull(DB::table('event_import_rows')->where('import_id', $id)->where('status', 'valida')->value('mapped'));
+        $this->assertSame(0, DB::table('event_import_rows')->where('import_id', $id)->where('status', 'no_autorizo')->count());
+        $this->assertSame(2, DB::table('event_import_rows')->where('import_id', $id)->where('status', 'valida')->whereNotNull('mapped')->count());
     }
 }

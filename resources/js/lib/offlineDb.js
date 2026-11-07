@@ -600,7 +600,8 @@ export async function offlineDeleteNexo(nexoId) {
 
 // ─── Eventos: operator mode without signal ───
 
-// The last event data and consent text the operator saw online, to keep registering without signal.
+// The last event data the operator saw online, to keep registering without signal (snapshots saved before 2026-11-07
+// may also carry the consent text then shown; it is no longer used).
 export async function saveEventSnapshot(evento, consent) {
     const owner = await ownerKey;
     if (!owner || !evento?.id) return;

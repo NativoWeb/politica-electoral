@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Http\Controllers\EventoOcrController;
 use App\Models\Campaign;
 use App\Models\CampaignEvent;
 use App\Models\User;
@@ -35,7 +34,6 @@ class EventOcrQaFixesTest extends TestCase
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos']);
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID, ['status' => 'cerrado']);
-        $this->approvedText(Campaign::DEFAULT_ID);
         $this->fake = new FakeOcrClient;
         $this->app->instance(OcrClient::class, $this->fake);
         config(['eventos.ocr.enabled' => true, 'eventos.ocr.api_key' => 'sk-test']);
@@ -138,16 +136,17 @@ class EventOcrQaFixesTest extends TestCase
         $this->assertSame([], $this->fake->calls);
     }
 
-    public function test_confirming_an_ocr_load_without_approved_text_names_the_sheets(): void
+    public function test_confirming_an_ocr_load_needs_no_approved_text(): void
     {
         $this->fake->push(FakeOcrClient::sheet([['numero' => 1]]));
         $id = $this->upload($this->photo())->json('data.id');
         $this->process($id)->assertJsonPath('data.listo', true);
-        DB::table('consent_texts')->where('campaign_id', Campaign::DEFAULT_ID)->update(['approved' => false]);
+        DB::table('consent_texts')->update(['is_active' => false]);
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertUnprocessable()->assertJsonPath('errors.consent.0', EventoOcrController::NEEDS_APPROVED_TEXT);
-        $this->assertSame(0, DB::table('event_attendees')->count());
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertOk()->assertJsonPath('data.nuevos', 1);
+        $this->assertSame(1, DB::table('event_attendees')->count());
+        $this->assertSame(0, DB::table('data_consents')->count());
     }
 
     public function test_the_end_of_an_empty_reading_says_so(): void
@@ -163,7 +162,7 @@ class EventOcrQaFixesTest extends TestCase
             ->assertJsonPath('message', 'No se pudo leer ninguna página: revise el aviso de cada página. Nada se registró.');
     }
 
-    public function test_rows_without_authorization_are_not_counted_as_doubtful(): void
+    public function test_doubts_in_autorizo_or_firma_are_not_counted_as_doubtful(): void
     {
         $this->fake->push(FakeOcrClient::sheet([
             ['numero' => 1, 'cedula' => '1098000001', 'autorizo' => false, 'confianza' => ['apellidos' => 0.3]],
@@ -174,7 +173,7 @@ class EventOcrQaFixesTest extends TestCase
         $this->process($id)->assertJsonPath('data.listo', true);
 
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/ocr/{$id}")
-            ->assertInertia(fn ($page) => $page->where('paginas.0.dudosas', 1));
+            ->assertInertia(fn ($page) => $page->where('paginas.0.dudosas', 2));
     }
 
     private function write(string $bytes): string

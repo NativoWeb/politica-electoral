@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Http\Requests\Eventos\ImportUploadRequest;
 use App\Models\Campaign;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
 use App\Models\User;
 use App\Services\Audit\AuditDataMasker;
 use App\Services\Eventos\EventImportService;
@@ -24,12 +23,16 @@ use Tests\Concerns\BuildsEventosScenario;
 use Tests\TestCase;
 
 // Eventos especiales phase 3: attendees from an Excel/CSV file (template, staging, column mapping, preview with
-// corrections, confirm through RegisterAttendee, consent declaration, isolation). SQLite.
+// corrections, confirm, isolation). Since 2026-11-07 every Excel file is a list: no «Autorizó» column, no declaration
+// and no approved text; new people stay pendientes de aprobar. SQLite.
 class EventImportTest extends TestCase
 {
     use BuildsEventosScenario;
 
-    private const HEADERS = ['Nombres', 'Apellidos', 'Cédula', 'Celular', 'Teléfono fijo', 'Fecha de nacimiento (DD/MM/AAAA)', 'Dirección', 'Barrio', 'Autorizó (SÍ/NO)'];
+    private const HEADERS = ['Nombres', 'Apellidos', 'Cédula', 'Celular', 'Teléfono fijo', 'Fecha de nacimiento (DD/MM/AAAA)', 'Dirección', 'Barrio'];
+
+    // A file made before 2026-11-07 with the old «Autorizó» column: the column is ignored.
+    private const OLD_HEADERS = [...self::HEADERS, 'Autorizó (SÍ/NO)'];
 
     private const TOO_MANY = 'El archivo tiene más de 2000 filas. Divídalo en varios archivos y cárguelos uno por uno. '
         .'Si no son tantas personas, borre las filas que sobren al final de la hoja.';
@@ -38,8 +41,6 @@ class EventImportTest extends TestCase
 
     private CampaignEvent $event;
 
-    private ConsentText $approved;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -47,8 +48,6 @@ class EventImportTest extends TestCase
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos']);
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID, ['status' => 'cerrado']);
-        // Excel loads need the campaign's approved text (BUG-01); the provisional one is tested on its own.
-        $this->approved = $this->approvedText(Campaign::DEFAULT_ID);
     }
 
     private function xlsx(array $headers, array $rows, string $name = 'asistentes.xlsx', ?callable $tweak = null): UploadedFile
@@ -104,7 +103,6 @@ class EventImportTest extends TestCase
             'fecha' => '02/04/1980',
             'direccion' => "Calle {$i}",
             'barrio' => 'El Poblado',
-            'autorizo' => 'SÍ',
         ], $overrides);
     }
 
@@ -156,9 +154,8 @@ class EventImportTest extends TestCase
         }
     }
 
-    public function test_the_template_has_the_fixed_headers_text_cells_and_the_consent_text_with_its_version(): void
+    public function test_the_template_has_the_fixed_headers_text_cells_and_no_authorization(): void
     {
-        $this->approved->forceFill(['is_active' => false])->save();
         $response = $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/plantilla.xlsx")->assertOk();
         $this->assertStringContainsString('spreadsheetml', $response->headers->get('Content-Type'));
         $this->assertStringContainsString('plantilla-asistentes-gira-giron.xlsx', $response->headers->get('Content-Disposition'));
@@ -167,26 +164,20 @@ class EventImportTest extends TestCase
         file_put_contents($path, $response->getContent());
         $book = IOFactory::load($path);
         $sheet = $book->getSheetByName('Asistentes');
-        $this->assertSame(self::HEADERS, $sheet->rangeToArray('A1:I1')[0]);
+        $this->assertSame([...self::HEADERS, 'Municipio', 'Liderazgo o actividad'], $sheet->rangeToArray('A1:J1')[0]);
+        $this->assertNull($sheet->getCell('K1')->getValue());
         foreach (['C', 'D', 'E', 'F'] as $column) {
             $this->assertSame(NumberFormat::FORMAT_TEXT, $sheet->getStyle("{$column}2")->getNumberFormat()->getFormatCode(), $column);
             $this->assertSame(NumberFormat::FORMAT_TEXT, $sheet->getStyle("{$column}2001")->getNumberFormat()->getFormatCode(), $column);
         }
-        $this->assertSame('"SÍ,NO"', $sheet->getCell('I2')->getDataValidation()->getFormula1());
+        $this->assertSame([], $sheet->getDataValidationCollection());
 
         $instructions = implode("\n", array_map(fn ($r) => (string) $r[0], $book->getSheetByName('Instrucciones')->toArray()));
-        $this->assertStringContainsString('Versión: provisional-1', $instructions);
-        $this->assertStringContainsString('PROVISIONAL', $instructions);
-        $this->assertStringContainsString('Ley 1581', $instructions);
+        $this->assertStringContainsString('pendiente de aprobar', $instructions);
+        foreach (['Autoriz', 'autoriz', 'Ley 1581', 'PROVISIONAL', 'firmad'] as $gone) {
+            $this->assertStringNotContainsString($gone, $instructions);
+        }
         $this->assertSame(1, DB::table('audit_logs')->where('action', 'EVENTO_PLANTILLA_EXCEL_DESCARGADA')->count());
-
-        $this->approved->forceFill(['is_active' => true, 'cuerpo' => 'Texto aprobado de la campaña.'])->save();
-        $response = $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/plantilla.xlsx")->assertOk();
-        file_put_contents($path, $response->getContent());
-        $instructions = implode("\n", array_map(fn ($r) => (string) $r[0], IOFactory::load($path)->getSheetByName('Instrucciones')->toArray()));
-        $this->assertStringContainsString('Versión: v1', $instructions);
-        $this->assertStringContainsString('Texto aprobado de la campaña.', $instructions);
-        $this->assertStringNotContainsString('ATENCIÓN', $instructions);
     }
 
     public function test_fifty_rows_preview_confirm_and_repeat(): void
@@ -197,46 +188,49 @@ class EventImportTest extends TestCase
 
         $id = $this->upload($file)->assertCreated()->assertJsonPath('data.filas', 50)->json('data.id');
         $this->assertSame(['nombres' => 0, 'apellidos' => 1, 'nombre_completo' => null, 'cedula' => 2, 'celular' => 3, 'fijo' => 4,
-            'fecha_nacimiento' => 5, 'direccion' => 6, 'barrio' => 7, 'autoriza' => 8, 'municipio' => null, 'liderazgo' => null], $this->detected($id));
+            'fecha_nacimiento' => 5, 'direccion' => 6, 'barrio' => 7, 'municipio' => null, 'liderazgo' => null], $this->detected($id));
 
+        // A list: only the name is required; a wrong phone or birth date does not stop the row (the date is left out).
         $counts = $this->review($id)->assertOk()->json('data.counts');
         $this->assertSame(50, $counts['total']);
-        $this->assertSame(42, $counts['validas']);
+        $this->assertSame(10, $counts['validas']);
         $this->assertSame(10, $counts['en_plataforma']);
-        $this->assertSame(32, $counts['nuevas']);
-        $this->assertSame(5, $counts['errores']);
+        $this->assertSame(35, $counts['sin_ficha']);
+        $this->assertSame(2, $counts['errores']);
         $this->assertSame(3, $counts['duplicadas']);
         $this->assertSame(0, $counts['en_evento']);
-        $this->assertSame(42, $counts['a_importar']);
+        $this->assertSame(45, $counts['a_importar']);
 
         // Each invalid row points at its cell (data starts on row 2: person 43 is row 44).
-        $expected = [44 => 'cedula', 45 => 'celular', 46 => 'nombres', 47 => 'fecha_nacimiento', 48 => 'fecha_nacimiento'];
-        foreach ($expected as $rowNumber => $field) {
+        foreach ([44 => 'cedula', 46 => 'nombres'] as $rowNumber => $field) {
             $row = $this->rowOf($id, $rowNumber);
             $this->assertSame('error', $row->status);
             $this->assertSame('omitir', $row->decision);
             $this->assertSame([$field], array_keys(json_decode($row->errors, true)), "fila {$rowNumber}");
         }
-        $this->assertSame('El registro es solo para mayores de 18 años.', json_decode($this->rowOf($id, 47)->errors, true)['fecha_nacimiento']);
-        $this->assertSame('Esa fecha no existe.', json_decode($this->rowOf($id, 48)->errors, true)['fecha_nacimiento']);
+        foreach ([45, 47, 48] as $rowNumber) {
+            $this->assertSame('sin_ficha', $this->rowOf($id, $rowNumber)->status, "fila {$rowNumber}");
+        }
         $this->assertSame('duplicada', $this->rowOf($id, 50)->status, '1.090.000.002 is the same cédula as row 3');
         $this->assertSame('vincular', $this->rowOf($id, 34)->decision);
         $this->assertSame('crear', $this->rowOf($id, 2)->decision);
 
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/{$id}?estado=error")
             ->assertInertia(fn (AssertableInertia $page) => $page->component('Eventos/Importar')
-                ->where('importacion.counts.validas', 42)
-                ->where('filas.total', 5)
+                ->missing('consent')
+                ->where('importacion.counts.a_importar', 45)
+                ->where('filas.total', 2)
                 ->where('filas.data.0.fila', 44)
                 ->where('filas.data.0.errores.cedula', 'La cédula debe tener solo números (entre 5 y 10 dígitos).'));
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertOk()->assertJsonPath('data.nuevos', 42)->assertJsonPath('data.ya_estaban', 0);
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertOk()->assertJsonPath('data.nuevos', 45)->assertJsonPath('data.ya_estaban', 0)
+            ->assertJsonPath('data.historial', 10)->assertJsonPath('data.solo_evento', 35);
 
-        $this->assertSame(42, DB::table('event_attendees')->where('event_id', $this->event->id)->count());
-        $this->assertSame(42, DB::table('event_attendees')->where('source', 'excel')->count());
+        $this->assertSame(45, DB::table('event_attendees')->where('event_id', $this->event->id)->count());
+        $this->assertSame(45, DB::table('event_attendees')->where('source', 'excel')->count());
         $this->assertSame(10, DB::table('event_attendees')->where('link_status', 'vinculado')->count());
-        $this->assertSame(32, DB::table('event_attendees')->where('link_status', 'pendiente')->count());
+        $this->assertSame(35, DB::table('event_attendees')->where('link_status', 'pendiente')->count());
         $this->assertSame(0, DB::table('lideres')->where('tipo', 'asistente_evento')->count(), 'Nothing goes to Votantes without approval');
         $first = DB::table('event_attendees')->where('cedula', '1090000001')->first();
         $this->assertSame(EventImportService::clientUuid($id, 2), $first->client_uuid);
@@ -249,10 +243,10 @@ class EventImportTest extends TestCase
             ->assertJsonPath('message', 'Este archivo ya fue cargado en este evento. No se volvió a importar.');
         $this->assertSame(1, DB::table('event_imports')->count());
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
             ->assertOk()->assertJsonPath('data.nuevos', 0);
-        $this->assertSame(42, DB::table('event_attendees')->count());
-        $this->assertSame(42, DB::table('data_consents')->count());
+        $this->assertSame(45, DB::table('event_attendees')->count());
+        $this->assertSame(0, DB::table('data_consents')->count());
 
         // A confirmed import cannot be changed or discarded.
         $this->actingAs($this->manager)->putJson("/eventos/{$this->event->id}/importar/{$id}/columnas", ['columnas' => $this->detected($id)])
@@ -262,19 +256,18 @@ class EventImportTest extends TestCase
 
     public function test_rows_already_in_the_event_are_not_imported_again(): void
     {
-        $consent = $this->approved;
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload($consent->id, ['cedula' => '1090000001']))
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload(null, ['cedula' => '1090000001']))
             ->assertStatus(410);
         $this->event->forceFill(['status' => 'abierto'])->save();
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload($consent->id, ['cedula' => '1090000001']))
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload(null, ['cedula' => '1090000001']))
             ->assertCreated();
 
         $id = $this->upload($this->xlsx(self::HEADERS, [$this->person(1), $this->person(2)]))->json('data.id');
         $counts = $this->review($id)->json('data.counts');
         $this->assertSame(1, $counts['en_evento']);
-        $this->assertSame(1, $counts['validas']);
+        $this->assertSame(1, $counts['sin_ficha']);
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
             ->assertJsonPath('data.nuevos', 1);
         $this->assertSame(2, DB::table('event_attendees')->count());
     }
@@ -282,13 +275,13 @@ class EventImportTest extends TestCase
     public function test_someone_registered_between_the_preview_and_the_confirmation_is_not_duplicated(): void
     {
         $id = $this->upload($this->xlsx(self::HEADERS, [$this->person(1), $this->person(2), $this->person(3)]))->json('data.id');
-        $this->review($id)->assertJsonPath('data.counts.validas', 3);
+        $this->review($id)->assertJsonPath('data.counts.a_importar', 3);
 
         $this->event->forceFill(['status' => 'abierto'])->save();
         $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes",
-            $this->attendeePayload($this->approved->id, ['cedula' => '1090000002']))->assertCreated();
+            $this->attendeePayload(null, ['cedula' => '1090000002']))->assertCreated();
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
             ->assertOk()->assertJsonPath('data.nuevos', 2)->assertJsonPath('data.ya_estaban', 1);
         $this->assertSame(3, DB::table('event_attendees')->count());
         $this->assertSame('operador', DB::table('event_attendees')->where('cedula', '1090000002')->value('source'));
@@ -304,9 +297,9 @@ class EventImportTest extends TestCase
         $this->assertSame(1, $mapping['nombre_completo']);
         $this->assertSame(2, $mapping['celular']);
         $this->assertNull($mapping['nombres']);
-        $this->assertSame(3, $mapping['autoriza']);
+        $this->assertArrayNotHasKey('autoriza', $mapping, 'An old «Autorizó» column is left unmapped');
 
-        $this->review($id)->assertOk()->assertJsonPath('data.counts.validas', 2);
+        $this->review($id)->assertOk()->assertJsonPath('data.counts.a_importar', 2);
         $mapped = json_decode($this->rowOf($id, 2)->mapped, true);
         $this->assertSame(['Ana María', 'Pérez Gómez'], [$mapped['nombres'], $mapped['apellidos']]);
         $this->assertSame(['Luis', 'Rojas'], array_values(array_intersect_key(json_decode($this->rowOf($id, 3)->mapped, true), array_flip(['nombres', 'apellidos']))));
@@ -316,16 +309,14 @@ class EventImportTest extends TestCase
         $id2 = $this->upload($this->xlsx($odd, [['1098000001', 'Pedro Pablo Díaz Ruiz', '3201112233', 'Centro', 'SI']], 'otro.xlsx'))->json('data.id');
         $this->assertNull($this->detected($id2)['cedula']);
         $this->review($id2, ['cedula' => 0])->assertUnprocessable()->assertJsonValidationErrors('columnas');
-        // Without «Autorizó» the file is a list without authorization (only the name and the cédula or the phone needed).
+        // Only the name and the cédula or the phone are needed; an «autoriza» sent by an old screen is ignored.
         $this->review($id2, ['nombre_completo' => 1])->assertUnprocessable()
             ->assertJsonPath('errors.columnas.0', 'Elija la columna de la cédula o la del teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma.');
-        $this->review($id2, ['nombre_completo' => 1, 'celular' => 2, 'autoriza' => 4])->assertUnprocessable()
-            ->assertJsonPath('errors.columnas.0', 'Elija la columna que tiene la cédula.');
-        $this->review($id2, ['cedula' => 0, 'nombre_completo' => 0, 'celular' => 2, 'autoriza' => 4])->assertUnprocessable()
+        $this->review($id2, ['cedula' => 0, 'nombre_completo' => 0, 'celular' => 2])->assertUnprocessable()
             ->assertJsonPath('errors.columnas.0', 'Una misma columna está elegida para dos datos distintos. Revise las columnas.');
-        $this->review($id2, ['cedula' => 9, 'nombre_completo' => 1, 'celular' => 2, 'autoriza' => 4])->assertUnprocessable();
+        $this->review($id2, ['cedula' => 9, 'nombre_completo' => 1, 'celular' => 2])->assertUnprocessable();
         $this->review($id2, ['cedula' => 0, 'nombre_completo' => 1, 'celular' => 2, 'barrio' => 3, 'autoriza' => 4])->assertOk()
-            ->assertJsonPath('data.counts.validas', 1);
+            ->assertJsonPath('data.counts.a_importar', 1);
 
         $other = $this->makeEvent(Campaign::DEFAULT_ID, ['nombre' => 'Otra gira']);
         $id3 = $this->actingAs($this->manager)->postJson("/eventos/{$other->id}/importar", [
@@ -336,7 +327,7 @@ class EventImportTest extends TestCase
         $this->assertSame(1, $saved['nombre_completo']);
         $this->assertSame(2, $saved['celular']);
         $this->assertSame(3, $saved['barrio']);
-        $this->assertSame(4, $saved['autoriza']);
+        $this->assertArrayNotHasKey('autoriza', $saved);
     }
 
     public function test_cedulas_typed_as_numbers_or_with_dots_are_normalized(): void
@@ -346,7 +337,7 @@ class EventImportTest extends TestCase
             ['Bea', 'Dos', 1098765433.0, '3001234568', 'SI'],
         ]);
         $id = $this->upload($file)->json('data.id');
-        $this->review($id)->assertJsonPath('data.counts.validas', 2);
+        $this->review($id)->assertJsonPath('data.counts.a_importar', 2);
         $this->assertSame('1098765432', json_decode($this->rowOf($id, 2)->mapped, true)['cedula']);
         $this->assertSame('3001234567', json_decode($this->rowOf($id, 2)->mapped, true)['celular']);
         $this->assertSame('1098765433', json_decode($this->rowOf($id, 3)->mapped, true)['cedula']);
@@ -355,7 +346,7 @@ class EventImportTest extends TestCase
             ."Eva;Cinco;1.098.765.430;300-123-4571;SI\r\nFabio;Seis;63.525.141;+57 300 123 4572;SI\r\n";
         $id = $this->upload($this->csv(mb_convert_encoding($csv, 'Windows-1252', 'UTF-8')))->assertCreated()->json('data.id');
         $this->assertSame(2, $this->detected($id)['cedula'], 'Windows-1252 "Cédula" is read');
-        $this->review($id)->assertJsonPath('data.counts.validas', 4)->assertJsonPath('data.counts.errores', 0);
+        $this->review($id)->assertJsonPath('data.counts.a_importar', 4)->assertJsonPath('data.counts.errores', 0);
         $cedulas = DB::table('event_import_rows')->where('import_id', $id)->orderBy('row_number')->pluck('mapped')
             ->map(fn ($m) => json_decode($m, true)['cedula'])->all();
         $this->assertSame(['1098765432', '1098765431', '1098765430', '63525141'], $cedulas);
@@ -369,114 +360,67 @@ class EventImportTest extends TestCase
             ."Eva;Tres;1098765434;3001234568;6,07654E+09;SI\r\n"
             ."Ivo;Cuatro;1.098765435E9;3.001234569E9;;SI\r\n";
         $id = $this->upload($this->csv($csv))->assertCreated()->json('data.id');
-        $this->review($id)->assertJsonPath('data.counts.errores', 3)->assertJsonPath('data.counts.validas', 1);
+        // A list checks the cédula and the phone it uses to find people; the landline is not checked.
+        $this->review($id)->assertJsonPath('data.counts.errores', 2)->assertJsonPath('data.counts.a_importar', 2);
 
         $this->assertSame(['cedula' => 'La cédula llegó en notación científica (1,09877E+09); escríbala completa.'], json_decode($this->rowOf($id, 2)->errors, true));
         $this->assertSame(['celular' => 'El celular llegó en notación científica (3,00123E+09); escríbalo completo.'], json_decode($this->rowOf($id, 3)->errors, true));
-        $this->assertSame(['fijo' => 'El teléfono fijo llegó en notación científica (6,07654E+09); escríbalo completo.'], json_decode($this->rowOf($id, 4)->errors, true));
+        $this->assertNull($this->rowOf($id, 4)->errors);
         $exact = json_decode($this->rowOf($id, 5)->mapped, true);
         $this->assertSame(['1098765435', '3001234569'], [$exact['cedula'], $exact['celular']]);
     }
 
-    public function test_only_rows_with_si_are_imported_and_the_declaration_is_required(): void
+    // Decision of the campaign (2026-11-07): what «Autorizó» says no longer matters, confirming needs no declaration
+    // and no approved text, and the new people stay pendientes de aprobar (approvable, without data authorization).
+    public function test_every_valid_row_is_imported_whatever_autorizo_says_and_without_a_declaration(): void
     {
+        DB::table('consent_texts')->update(['is_active' => false]);
         $rows = [
-            $this->person(1, ['autorizo' => 'SÍ']), $this->person(2, ['autorizo' => 'NO']), $this->person(3, ['autorizo' => null]),
-            $this->person(4, ['autorizo' => 'quizás']), $this->person(5, ['autorizo' => 'x', 'cedula' => '12AB']),
-            $this->person(6, ['autorizo' => 'no', 'cedula' => '1090000007']), $this->person(7, ['autorizo' => 'si']),
+            [...$this->person(1), 'SÍ'], [...$this->person(2), 'NO'], [...$this->person(3), null],
+            [...$this->person(4), 'quizás'], [...$this->person(5, ['cedula' => '12AB']), 'x'],
+            [...$this->person(6), 'no'], [...$this->person(7, ['cedula' => '1090000006']), 'si'],
         ];
-        $id = $this->upload($this->xlsx(self::HEADERS, $rows))->json('data.id');
+        $id = $this->upload($this->xlsx(self::OLD_HEADERS, $rows))->json('data.id');
         $counts = $this->review($id)->json('data.counts');
-        $this->assertSame(4, $counts['no_autorizaron']);
-        $this->assertSame(3, $counts['autorizaron']);
-        $this->assertSame(1, $counts['errores'], 'SÍ with a wrong cédula is an error that can be corrected');
-        $this->assertSame(2, $counts['validas'], 'A NO row does not take the cédula: the later SÍ row with it stays valid');
-        $this->assertSame(0, $counts['duplicadas']);
-        $this->assertSame('no_autorizo', $this->rowOf($id, 3)->status);
-        $this->assertSame('no_autorizo', $this->rowOf($id, 5)->status);
+        $this->assertSame(0, $counts['no_autorizaron']);
+        $this->assertSame(1, $counts['errores']);
+        $this->assertSame(1, $counts['duplicadas']);
+        $this->assertSame(5, $counts['a_importar']);
+        $this->assertSame(0, DB::table('event_import_rows')->where('status', 'no_autorizo')->count());
+        $this->assertArrayNotHasKey('autoriza', json_decode($this->rowOf($id, 3)->mapped, true));
 
-        $no = $this->rowOf($id, 3);
-        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$no->id}", ['decision' => 'importar'])
-            ->assertUnprocessable()->assertJsonPath('errors.fila.0', 'Esta fila no se puede cambiar: en «Autorizó» no dice SÍ, la persona no autorizó el tratamiento de sus datos.');
-        // A row without SÍ is not editable at all (BUG-03), and "Autorizó" can never be raised to SÍ from the preview.
-        foreach ([['autoriza' => 'SÍ', 'barrio' => 'Otro'], ['barrio' => 'Otro'], ['decision' => 'omitir']] as $body) {
-            $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$no->id}", $body)
-                ->assertUnprocessable()->assertJsonPath('errors.fila.0', 'Esta fila no se puede cambiar: en «Autorizó» no dice SÍ, la persona no autorizó el tratamiento de sus datos.');
-        }
-        $this->assertSame('NO', json_decode($this->rowOf($id, 3)->mapped, true)['autoriza']);
-        $this->assertSame('El Poblado', json_decode($this->rowOf($id, 3)->mapped, true)['barrio']);
-        $this->assertSame('no_autorizo', $this->rowOf($id, 3)->status);
-        $yes = $this->rowOf($id, 2);
-        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$yes->id}", ['autoriza' => 'NO', 'barrio' => 'Otro'])->assertOk();
-        $this->assertSame('SÍ', json_decode($this->rowOf($id, 2)->mapped, true)['autoriza'], 'autoriza is ignored on an editable row');
+        $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/{$id}")
+            ->assertInertia(fn (AssertableInertia $page) => $page->missing('consent')->missing('importacion.declaro_planillas'));
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
-            ->assertUnprocessable()->assertJsonPath('errors.declaracion.0', 'Para importar, marque «Tengo las planillas firmadas que respaldan las autorizaciones de este archivo».');
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => false])->assertUnprocessable();
-        $this->assertSame(0, DB::table('event_attendees')->count());
-        $this->assertSame('revisado', DB::table('event_imports')->where('id', $id)->value('status'));
-
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])->assertOk()
-            ->assertJsonPath('data.nuevos', 2)->assertJsonPath('data.ya_estaban', 0);
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")->assertOk()
+            ->assertJsonPath('data.nuevos', 5)->assertJsonPath('data.ya_estaban', 0)
+            ->assertJsonPath('message', 'Se registraron 5 asistentes: 5 quedaron pendientes de aprobar para pasar a Votantes.');
         $attendees = DB::table('event_attendees')->get();
-        $this->assertSame(['1090000001', '1090000007'], $attendees->pluck('cedula')->sort()->values()->all());
-        $this->assertTrue($attendees->every(fn ($a) => (int) $a->autoriza_datos === 1 && $a->consent_id && $a->import_id === $id && $a->source === 'excel'));
-        $proofs = DB::table('data_consents')->get();
-        $this->assertSame(2, $proofs->count());
-        $this->assertSame(['operador'], $proofs->pluck('channel')->unique()->values()->all(), 'data_consents keeps its channels; the Excel origin is the attendee source and import_id');
-        $this->assertSame($this->approved->id, $proofs->first()->consent_text_id);
+        $this->assertSame(['1090000001', '1090000002', '1090000003', '1090000004', '1090000006'], $attendees->pluck('cedula')->sort()->values()->all());
+        $this->assertTrue($attendees->every(fn ($a) => (int) $a->autoriza_datos === 0 && $a->consent_id === null && $a->import_id === $id
+            && $a->source === 'excel' && $a->link_status === 'pendiente'));
+        $this->assertSame(0, DB::table('data_consents')->count());
 
         $imported = DB::table('event_import_rows')->where('import_id', $id)->whereNotNull('attendee_id')->get();
-        $this->assertCount(2, $imported);
-        $this->assertTrue($imported->every(fn ($r) => (int) $r->declared === 1 && $r->confirmed_by === $this->manager->id && $r->confirmed_at !== null));
+        $this->assertCount(5, $imported);
+        $this->assertTrue($imported->every(fn ($r) => (int) $r->declared === 0 && $r->confirmed_by === $this->manager->id && $r->confirmed_at !== null));
 
         // A second confirmation by someone else does not rewrite who confirmed the import.
-        $first = DB::table('event_imports')->where('id', $id)->first(['confirmed_by', 'confirmed_at', 'consent_declared']);
+        $first = DB::table('event_imports')->where('id', $id)->first(['confirmed_by', 'confirmed_at', 'consent_declared', 'consent_text_id']);
+        $this->assertEquals([0, null], [(int) $first->consent_declared, $first->consent_text_id]);
         $other = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos']);
         $this->travel(5)->minutes();
         $this->actingAs($other)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])->assertOk()->assertJsonPath('data.nuevos', 0)
             ->assertJsonPath('message', 'No había filas nuevas para registrar: este archivo ya estaba importado.');
-        $again = DB::table('event_imports')->where('id', $id)->first(['confirmed_by', 'confirmed_at', 'consent_declared']);
-        $this->assertEquals($first, $again);
+        $this->assertEquals($first, DB::table('event_imports')->where('id', $id)->first(['confirmed_by', 'confirmed_at', 'consent_declared', 'consent_text_id']));
 
-        // In the event page they are Excel attendees authorized over the approved text; approving keeps the authorization.
+        // In the event page they are Excel attendees pending approval; approving creates their fichas without authorization.
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}?source=excel")->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('kpis.excel', 2)->where('asistentes.total', 2)
-            ->where('asistentes.data', fn ($rows) => collect($rows)->every(fn ($a) => $a['autoriza_datos'] === true && $a['consentimiento_provisional'] === false)));
+            ->where('kpis.excel', 5)->where('kpis.pendientes', 5)->where('asistentes.total', 5)->missing('kpis.sin_autorizacion'));
         $ids = DB::table('event_attendees')->pluck('id')->all();
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => $ids])->assertOk();
-        $this->assertSame(2, DB::table('lideres')->where('tipo', 'asistente_evento')->where('autoriza_datos', true)->count());
-    }
-
-    public function test_with_only_the_provisional_text_rows_with_si_cannot_be_imported(): void
-    {
-        $message = 'Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo.';
-        $id = $this->upload($this->xlsx(self::HEADERS, [$this->person(1)]))->assertCreated()->json('data.id');
-        $this->review($id);
-        $this->approved->forceFill(['is_active' => false])->save();
-
-        // Uploading is allowed (a list without authorization needs no text); importing rows with SÍ is not.
-        $this->upload($this->xlsx(self::HEADERS, [$this->person(2)], 'otro.xlsx'))->assertCreated();
-        $this->assertSame(2, DB::table('event_imports')->count());
-
-        $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/importar/{$id}")
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('consent.approved', false)->where('consent.version', 'provisional-1'));
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertUnprocessable()->assertJsonPath('errors.consent.0', $message);
-        $this->assertSame(0, DB::table('event_attendees')->count());
-        $this->assertSame(0, DB::table('data_consents')->count());
-        $this->assertSame('revisado', DB::table('event_imports')->where('id', $id)->value('status'));
-
-        // Without any text at all, the same.
-        DB::table('consent_texts')->update(['is_active' => false]);
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertUnprocessable()->assertJsonPath('errors.consent.0', $message);
-
-        // With the approved text back, it works.
-        $this->approved->forceFill(['is_active' => true])->save();
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertOk()->assertJsonPath('data.nuevos', 1)
-            ->assertJsonPath('message', 'Se registró 1 asistente nuevo, con autorización de datos.');
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => $ids])
+            ->assertOk()->assertJsonPath('data.aprobados', 5);
+        $this->assertSame(5, DB::table('lideres')->where('tipo', 'asistente_evento')->where('autoriza_datos', false)->count());
     }
 
     public function test_messages_use_singular_and_plural(): void
@@ -486,8 +430,14 @@ class EventImportTest extends TestCase
         $id = $this->upload($this->xlsx(self::HEADERS, [$this->person(2), $this->person(3)], 'dos.xlsx'))
             ->assertJsonPath('message', 'Archivo recibido: 2 filas. Revise las columnas.')->json('data.id');
         $this->review($id);
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertJsonPath('message', 'Se registraron 2 asistentes nuevos, con autorización de datos.');
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertJsonPath('message', 'Se registraron 2 asistentes: 2 quedaron pendientes de aprobar para pasar a Votantes.');
+
+        $this->lider(Campaign::DEFAULT_ID, 'Líder Uno', '1090000004');
+        $id = $this->upload($this->xlsx(self::HEADERS, [$this->person(4), $this->person(5)], 'tres.xlsx'))->json('data.id');
+        $this->review($id);
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertJsonPath('message', 'Se registraron 2 asistentes: 1 quedó en el historial de su ficha; 1 quedó pendiente de aprobar para pasar a Votantes.');
     }
 
     public function test_too_large_body_answers_in_spanish(): void
@@ -536,18 +486,18 @@ class EventImportTest extends TestCase
         $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$bad->id}", ['cedula' => '1.090.000.001'])
             ->assertOk()->assertJsonPath('data.fila.status', 'duplicada')->assertJsonPath('data.counts.duplicadas', 1);
 
-        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$bad->id}", ['cedula' => '1098000999', 'celular' => 'abc'])
-            ->assertOk()->assertJsonPath('data.fila.status', 'error')->assertJsonPath('data.fila.errores.celular', 'Escriba el número de celular.');
+        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$bad->id}", ['cedula' => '1098000999', 'nombres' => ''])
+            ->assertOk()->assertJsonPath('data.fila.status', 'error')->assertJsonPath('data.fila.errores.nombres', 'Escriba el nombre de la persona.');
 
-        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$bad->id}", ['celular' => '310 555 1234'])
-            ->assertOk()->assertJsonPath('data.fila.status', 'valida')->assertJsonPath('data.fila.decision', 'crear')
-            ->assertJsonPath('data.fila.corregida', true)->assertJsonPath('data.counts.validas', 3);
+        $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$bad->id}", ['nombres' => 'Persona Dos'])
+            ->assertOk()->assertJsonPath('data.fila.status', 'sin_ficha')->assertJsonPath('data.fila.decision', 'crear')
+            ->assertJsonPath('data.fila.corregida', true)->assertJsonPath('data.counts.a_importar', 3);
 
         $good = $this->rowOf($id, 2);
         $this->actingAs($this->manager)->patchJson("/eventos/{$this->event->id}/importar/{$id}/filas/{$good->id}", ['decision' => 'omitir'])
             ->assertOk()->assertJsonPath('data.counts.a_importar', 2);
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
             ->assertJsonPath('data.nuevos', 2);
         $this->assertSame(['1090000003', '1098000999'], DB::table('event_attendees')->orderBy('cedula')->pluck('cedula')->all());
 
@@ -556,11 +506,11 @@ class EventImportTest extends TestCase
         $this->assertTrue($logs->contains('action', 'PATCH eventos.importar.fila'));
         $this->assertTrue($logs->contains('action', 'EVENTO_IMPORTACION_CONFIRMADA'));
         $all = $logs->pluck('metadata')->implode(' ');
-        foreach (['1098000999', '1090000001', '310 555', 'Persona2', 'Apellido'] as $secret) {
+        foreach (['1098000999', '1090000001', 'Persona Dos', 'Persona2', 'Apellido'] as $secret) {
             $this->assertStringNotContainsString($secret, $all);
         }
         $this->assertTrue($logs->where('action', 'PATCH eventos.importar.fila')
-            ->contains(fn ($log) => str_contains($log->metadata, '"campos":["cedula","celular"]')));
+            ->contains(fn ($log) => str_contains($log->metadata, '"campos":["cedula","nombres"]')));
     }
 
     public function test_bad_files_are_rejected_with_a_clear_message(): void
@@ -631,7 +581,7 @@ class EventImportTest extends TestCase
         $recent = $this->upload($this->xlsx(self::HEADERS, [$this->person(2)], 'reciente.xlsx'))->json('data.id');
         $done = $this->upload($this->xlsx(self::HEADERS, [$this->person(3)], 'confirmado.xlsx'))->json('data.id');
         $this->review($done);
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$done}/confirmar", ['declaracion' => true])->assertOk();
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$done}/confirmar")->assertOk();
         $oldPath = DB::table('event_imports')->where('id', $old)->value('file_path');
         $donePath = DB::table('event_imports')->where('id', $done)->value('file_path');
         DB::table('event_imports')->where('id', $old)->update(['created_at' => now()->subDays(8)]);
@@ -647,9 +597,9 @@ class EventImportTest extends TestCase
         $row = DB::table('event_import_rows')->where('import_id', $done)->first();
         $this->assertNull($row->raw);
         $this->assertNull($row->mapped);
-        $this->assertSame('valida', $row->status);
+        $this->assertSame('sin_ficha', $row->status);
         $this->assertNotNull($row->attendee_id);
-        $this->assertSame(1, (int) $row->declared);
+        $this->assertSame(0, (int) $row->declared);
         $import = DB::table('event_imports')->where('id', $done)->first();
         $this->assertNotNull($import->staging_purged_at);
         $this->assertSame(64, strlen($import->file_sha256));
@@ -743,9 +693,9 @@ class EventImportTest extends TestCase
             ['getJson', "{$base}/importar", []],
             ['getJson', "{$base}/importar/{$id}", []],
             ['postJson', "{$base}/importar", ['archivo' => $this->xlsx(self::HEADERS, [$this->person(2)], 'x.xlsx')]],
-            ['putJson', "{$base}/importar/{$id}/columnas", ['columnas' => ['cedula' => 2, 'nombres' => 0, 'apellidos' => 1, 'celular' => 3, 'autoriza' => 8]]],
+            ['putJson', "{$base}/importar/{$id}/columnas", ['columnas' => ['cedula' => 2, 'nombres' => 0, 'apellidos' => 1, 'celular' => 3]]],
             ['patchJson', "{$base}/importar/{$id}/filas/{$row}", ['decision' => 'omitir']],
-            ['postJson', "{$base}/importar/{$id}/confirmar", ['declaracion' => true]],
+            ['postJson', "{$base}/importar/{$id}/confirmar", []],
             ['deleteJson', "{$base}/importar/{$id}", []],
         ];
 
@@ -800,8 +750,8 @@ class EventImportTest extends TestCase
         $start = microtime(true);
 
         $id = $this->upload($file)->assertCreated()->json('data.id');
-        $this->review($id)->assertOk()->assertJsonPath('data.counts.validas', 2000);
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
+        $this->review($id)->assertOk()->assertJsonPath('data.counts.a_importar', 2000);
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
             ->assertOk()->assertJsonPath('data.nuevos', 2000);
 
         $seconds = microtime(true) - $start;

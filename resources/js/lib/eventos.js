@@ -15,7 +15,7 @@ export const LINK_STATUS = {
     aprobado: { label: 'Aprobado', cls: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
     descartado: { label: 'Descartado', cls: 'bg-gray-100 border-gray-300 text-gray-600' },
     sin_cedula: { label: 'Sin cédula', cls: 'bg-gray-100 border-gray-300 text-gray-600' },
-    sin_autorizacion: { label: 'Sin autorización: solo en la lista', cls: 'bg-gray-100 border-gray-400 text-gray-700' },
+    sin_autorizacion: { label: 'Pendiente de aprobar', cls: 'bg-amber-50 border-amber-300 text-amber-800' },
 };
 
 export const MONTHS = [
@@ -125,22 +125,7 @@ export function pruneSelection(selected, attendees) {
     return kept.length === selected.size ? selected : new Set(kept);
 }
 
-// Selected attendees that accepted a provisional (not approved) consent text: their Votantes record has no data authorization.
-export function provisionalCount(ids, attendees) {
-    const chosen = new Set(ids);
-
-    return (attendees || []).filter(a => chosen.has(a.id) && a.consentimiento_provisional).length;
-}
-
-export function approveMessage(provisional) {
-    const base = 'Se crea su ficha en Votantes. Si la cédula ya existe en la campaña, se vincula a esa ficha sin cambiarla.';
-    if (!provisional) return base;
-    const who = provisional === 1
-        ? '1 de los seleccionados entra SIN autorización de datos'
-        : `${provisional} de los seleccionados entran SIN autorización de datos`;
-
-    return `${base} Atención: ${who}, porque aceptó el texto provisional de la campaña.`;
-}
+export const APPROVE_MESSAGE = 'Se crea su ficha en Votantes. Si la cédula ya existe en la campaña, se vincula a esa ficha sin cambiarla.';
 
 export function sourceLabel(attendee) {
     if (attendee?.source === 'qr') return 'Por QR';
@@ -178,7 +163,6 @@ export function composeBirthDate({ day, month, year }) {
 export const EMPTY_ATTENDEE = {
     nombres: '', apellidos: '', cedula: '', celular: '', barrio: '', fijo: '', direccion: '',
     birth: { day: '', month: '', year: '' },
-    autoriza_datos: false,
 };
 
 export function attendeeClientErrors(data) {
@@ -195,16 +179,13 @@ export function attendeeClientErrors(data) {
             ? 'Esa fecha no existe.'
             : 'Elija día, mes y año, o deje los tres vacíos.';
     }
-    if (!data.autoriza_datos) errors.autoriza_datos = 'Debe marcar la casilla de autorización.';
 
     return errors;
 }
 
-export function attendeePayload(data, { clientUuid, consentId }) {
+export function attendeePayload(data, { clientUuid }) {
     return {
         client_uuid: clientUuid,
-        consent_text_id: consentId,
-        autoriza_datos: !!data.autoriza_datos,
         nombres: data.nombres.trim(),
         apellidos: data.apellidos.trim(),
         cedula: data.cedula.trim(),
@@ -216,9 +197,9 @@ export function attendeePayload(data, { clientUuid, consentId }) {
     };
 }
 
-// A queued payload back into the form (to correct a refused registration). The consent box stays checked
-// only when the person accepted the same text that is shown now.
-export function attendeeFormFromPayload(payload, { consentId } = {}) {
+// A queued payload back into the form (to correct a refused registration). A payload queued before 2026-11-07 may
+// still carry consent_text_id / autoriza_datos: they are left out.
+export function attendeeFormFromPayload(payload) {
     const [year = '', month = '', day = ''] = String(payload?.fecha_nacimiento ?? '').split('-');
     const text = v => (typeof v === 'string' ? v : '');
 
@@ -231,7 +212,6 @@ export function attendeeFormFromPayload(payload, { consentId } = {}) {
         fijo: text(payload?.fijo),
         direccion: text(payload?.direccion),
         birth: year && month && day ? { day: String(Number(day)), month: String(Number(month)), year } : { day: '', month: '', year: '' },
-        autoriza_datos: !!payload?.autoriza_datos && !!consentId && payload?.consent_text_id === consentId,
     };
 }
 
@@ -326,7 +306,7 @@ export function qrClosedReason(evento, { canOpen = false } = {}) {
             ? 'El registro está cerrado. El QR no recibe registros hasta que lo vuelva a abrir.'
             : 'El registro está cerrado. El QR no recibe registros hasta que el equipo del evento lo vuelva a abrir.';
         case 'cancelado': return 'El evento fue cancelado. El QR ya no recibe registros.';
-        default: return 'El QR no recibe registros: el tiempo de registro terminó o el texto de autorización de la campaña no está aprobado.';
+        default: return 'El QR no recibe registros: el tiempo de registro terminó.';
     }
 }
 

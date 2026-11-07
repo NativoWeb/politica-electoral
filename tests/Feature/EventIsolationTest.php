@@ -235,20 +235,13 @@ class EventIsolationTest extends TestCase
         $this->actingAs($this->cdManager)->get("/eventos/{$yEvent->id}")->assertNotFound();
     }
 
-    public function test_opening_without_an_approved_text_is_422_and_with_one_it_opens(): void
+    public function test_opening_needs_no_consent_text_and_follows_the_status_rules(): void
     {
+        DB::table('consent_texts')->update(['is_active' => false]);
         $event = $this->makeEvent(Campaign::DEFAULT_ID, ['status' => 'borrador']);
 
         $this->actingAs($this->cdManager)->postJson("/eventos/{$event->id}/abrir")
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('consent')
-            ->assertJsonPath('message', fn ($m) => str_contains($m, 'texto de autorización de datos aprobado'));
-        $this->assertSame('borrador', DB::table('events')->where('id', $event->id)->value('status'));
-
-        $text = $this->approvedText(Campaign::DEFAULT_ID);
-        $this->actingAs($this->cdManager)->postJson("/eventos/{$event->id}/abrir")
             ->assertOk()->assertJsonPath('data.status', 'abierto')->assertJsonPath('data.public_open', true);
-        $this->assertSame($text->id, DB::table('events')->where('id', $event->id)->value('consent_text_id'));
 
         $this->actingAs($this->cdManager)->postJson("/eventos/{$event->id}/abrir")->assertStatus(422)->assertJsonValidationErrors('status');
         $this->actingAs($this->cdManager)->postJson("/eventos/{$event->id}/cerrar")->assertOk()->assertJsonPath('data.status', 'cerrado');
@@ -408,7 +401,8 @@ class EventIsolationTest extends TestCase
             ->assertJsonPath('data.nombre', 'Del Senado al barrio Girón')->assertJsonPath('data.descripcion', null);
     }
 
-    public function test_the_consent_text_command_publishes_a_version_that_lets_the_event_open(): void
+    // The command stays (the texts are kept), but opening an event no longer depends on it.
+    public function test_the_consent_text_command_still_publishes_versions(): void
     {
         $event = $this->makeEvent($this->campX, ['status' => 'borrador']);
         $file = tempnam(sys_get_temp_dir(), 'consent');
@@ -416,8 +410,6 @@ class EventIsolationTest extends TestCase
 ');
 
         $this->artisan('eventos:consent-text', ['campaign' => 'alejandro', 'file' => $file, '--text-version' => 'v1'])->assertSuccessful();
-        $this->actingAs($this->xManager)->postJson("/eventos/{$event->id}/abrir")->assertStatus(422);
-
         $this->artisan('eventos:consent-text', ['campaign' => 'alejandro', 'file' => $file, '--text-version' => 'v2', '--approve' => true])->assertSuccessful();
         $this->artisan('eventos:consent-text', ['campaign' => 'no-existe', 'file' => $file])->assertFailed();
         unlink($file);

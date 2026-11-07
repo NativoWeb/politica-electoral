@@ -3,11 +3,11 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import ImportRowCard from '@/Components/Eventos/ImportRowCard';
-import { ConsentNote, ImportConfirm, ImportStepper } from '@/Components/Eventos/ImportSteps';
+import { ImportConfirm, ImportStepper } from '@/Components/Eventos/ImportSteps';
 import { OcrReader, OcrUpload, PageTabs, PageViewer } from '@/Components/Eventos/OcrSteps';
 import { formatEventDate, formatShortDate } from '@/lib/eventos';
-import { ROW_FILTERS, consentReady, importErrorMessage, plural } from '@/lib/eventosImport';
-import { NEEDS_APPROVED_TEXT, OCR_ROW_FIELDS, OCR_STEPS, ocrConfirmSummary, ocrLeftOutSummary, ocrStep } from '@/lib/eventosOcr';
+import { ROW_FILTERS, importErrorMessage, plural } from '@/lib/eventosImport';
+import { OCR_ROW_FIELDS, OCR_STEPS, ocrConfirmSummary, ocrLeftOutSummary, ocrStep } from '@/lib/eventosOcr';
 
 const LOAD_STATUS = { subido: 'Sin terminar de leer', revisado: 'En revisión', confirmado: 'Importada' };
 
@@ -22,7 +22,7 @@ function Count({ label, value, tone }) {
 
 // Printed sign-in sheets read with AI (docs/eventos-api.md §13): photos → reading page by page → human review with the
 // photo next to the rows → the same confirmation as the Excel load.
-export default function Planillas({ evento, consent, ocr, importacion, paginas, pagina_actual, filas, filters, recientes }) {
+export default function Planillas({ evento, ocr, importacion, paginas, pagina_actual, filas, filters, recientes }) {
     const { props } = usePage();
     const success = props.flash?.success;
     const warning = props.flash?.error;
@@ -35,7 +35,7 @@ export default function Planillas({ evento, consent, ocr, importacion, paginas, 
     const loadUrl = importacion ? `${base}/${importacion.id}` : base;
     const current = (paginas || []).find(p => p.numero === pagina_actual);
     const doubtful = (paginas || []).reduce((sum, p) => sum + (p.dudosas || 0), 0);
-    const ready = ocr?.listo && consentReady(consent) && evento.acepta_cargas;
+    const ready = ocr?.listo && evento.acepta_cargas;
 
     function visit(params) {
         router.get(loadUrl, params, { preserveState: true, preserveScroll: true, replace: true, only: ['filas', 'filters', 'pagina_actual'] });
@@ -67,10 +67,9 @@ export default function Planillas({ evento, consent, ocr, importacion, paginas, 
 
                 {step === 'fotos' && (
                     <>
-                        <ConsentNote consent={consent} missingText={NEEDS_APPROVED_TEXT} />
                         <p className="text-[16px] text-[var(--color-ink-soft)]">
                             Las fotos se envían a un proveedor de inteligencia artificial en el exterior (Anthropic) para leerlas, y se guardan en la
-                            plataforma como respaldo de las autorizaciones firmadas. Solo se importan las personas que marcaron «Autorizo» y firmaron.
+                            plataforma como respaldo de la planilla.
                         </p>
                         <OcrUpload eventId={evento.id} limits={ocr?.limites} disabled={!ready} />
                     </>
@@ -90,7 +89,6 @@ export default function Planillas({ evento, consent, ocr, importacion, paginas, 
 
                 {step === 'leer' && (
                     <>
-                        <ConsentNote consent={consent} missingText={NEEDS_APPROVED_TEXT} />
                         <OcrReader eventId={evento.id} importacion={importacion} ready={ready} />
                         <PageList paginas={paginas} />
                     </>
@@ -110,7 +108,6 @@ export default function Planillas({ evento, consent, ocr, importacion, paginas, 
                             <Count label="Filas leídas" value={counts.total} tone="text-[var(--color-ink)]" />
                             <Count label="Válidas" value={counts.validas} tone="text-emerald-700" />
                             <Count label="Ya en la plataforma (de las válidas)" value={counts.en_plataforma} tone="text-[var(--color-primary)]" />
-                            <Count label="Sin autorización o firma" value={counts.no_autorizaron} tone="text-gray-700" />
                             <Count label="Con error" value={counts.errores} tone="text-red-700" />
                             <Count label="Repetidas" value={counts.duplicadas} tone="text-amber-700" />
                             <Count label="Ya en el evento" value={counts.en_evento} tone="text-[var(--color-ink-soft)]" />
@@ -133,7 +130,7 @@ export default function Planillas({ evento, consent, ocr, importacion, paginas, 
                                             const active = (filters?.estado ?? null) === f.value;
                                             return (
                                                 <button key={f.label} type="button" aria-pressed={active} onClick={() => visit({ pagina: pagina_actual, ...(f.value ? { estado: f.value } : {}) })} className={`flex-shrink-0 min-h-[44px] px-3.5 py-1.5 rounded-full border text-[16px] font-semibold ${active ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'bg-white border-[var(--color-line-strong)] text-[var(--color-ink-soft)]'}`}>
-                                                    {f.value === 'no_autorizo' ? 'Sin autorización o firma' : f.label}
+                                                    {f.label}
                                                 </button>
                                             );
                                         })}
@@ -157,10 +154,7 @@ export default function Planillas({ evento, consent, ocr, importacion, paginas, 
                             <ImportConfirm
                                 eventId={evento.id}
                                 importacion={importacion}
-                                consent={consent}
                                 summary={ocrConfirmSummary(counts, doubtful)}
-                                declarationLabel="Revisé las filas contra las fotos y tengo las planillas firmadas que respaldan estas autorizaciones."
-                                missingText={NEEDS_APPROVED_TEXT}
                                 leftOutText={ocrLeftOutSummary(counts)}
                             />
                         )}

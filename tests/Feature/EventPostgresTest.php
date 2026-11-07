@@ -123,12 +123,17 @@ class EventPostgresTest extends TestCase
         }
     }
 
+    // The app no longer writes data_consents (2026-11-07), but the rows kept from before stay append-only.
     public function test_data_consents_reject_update_delete_and_truncate(): void
     {
         $event = $this->event(Campaign::DEFAULT_ID);
         $this->publicSubmit($event, $this->text)->assertOk();
-        $id = DB::table('data_consents')->where('event_id', $event->id)->value('id');
-        $this->assertNotNull($id);
+        $this->assertSame(0, DB::table('data_consents')->where('event_id', $event->id)->count());
+        $id = (string) Str::uuid();
+        DB::table('data_consents')->insert([
+            'id' => $id, 'campaign_id' => Campaign::DEFAULT_ID, 'consent_text_id' => $this->text->id, 'text_sha256' => $this->text->sha256,
+            'cedula' => '1', 'event_id' => $event->id, 'channel' => 'qr', 'accepted_at' => now(),
+        ]);
 
         $this->assertStatementFails(fn () => DB::table('data_consents')->where('id', $id)->update(['cedula' => '1']));
         $this->assertStatementFails(fn () => DB::table('data_consents')->where('id', $id)->delete());
@@ -199,9 +204,9 @@ class EventPostgresTest extends TestCase
         $this->assertSame('asistente_evento', $lider->tipo);
         $this->assertNull($lider->cargo);
         $this->assertSame('Provincia Eventos PG', $lider->provincia);
-        $this->assertTrue($lider->autoriza_datos);
+        $this->assertFalse($lider->autoriza_datos, 'No authorization is collected since 2026-11-07');
         $this->assertSame(2, DB::table('lideres')->where('cedula', $cedula)->count());
-        $this->assertSame([$this->campX], DB::table('data_consents')->where('event_id', $event->id)->pluck('campaign_id')->all());
+        $this->assertSame(0, DB::table('data_consents')->where('event_id', $event->id)->count());
 
         $this->actingAs($this->manager)->get('/eventos?q=ÑANDÚ&barrio=san martin')->assertOk();
         $this->actingAs($this->manager)->getJson("/eventos/{$event->id}?q=zzevento")->assertOk();

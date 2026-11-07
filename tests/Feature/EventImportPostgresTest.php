@@ -99,19 +99,19 @@ class EventImportPostgresTest extends TestCase
         return [$id, $result];
     }
 
-    public function test_excel_attendees_pass_the_constraints_and_consents_stay_append_only(): void
+    // Since 2026-11-07 «Autorizó» is ignored and nothing goes to data_consents (§4 of docs/eventos-api.md).
+    public function test_excel_attendees_pass_the_constraints_without_any_consent(): void
     {
-        [$id, $result] = $this->run3($this->file(4), true);
-        $this->assertSame(2, $result['nuevos'], 'Only the rows with SÍ');
-        $this->assertSame(2, DB::table('event_attendees')->where('import_id', $id)->where('autoriza_datos', true)->count());
+        [$id, $result] = $this->run3($this->file(4), false);
+        $this->assertSame(4, $result['nuevos'], 'Every valid row, whatever «Autorizó» says');
+        $this->assertSame(4, DB::table('event_attendees')->where('import_id', $id)->where('autoriza_datos', false)->where('link_status', 'pendiente')->count());
 
-        $this->assertSame(2, DB::table('event_attendees')->where('event_id', $this->event->id)->where('source', 'excel')->count());
-        $channels = DB::table('data_consents')->where('event_id', $this->event->id)->pluck('channel')->unique()->values()->all();
-        $this->assertSame(['operador'], $channels);
+        $this->assertSame(4, DB::table('event_attendees')->where('event_id', $this->event->id)->where('source', 'excel')->count());
+        $this->assertSame(0, DB::table('data_consents')->where('event_id', $this->event->id)->count());
         $this->assertSame('1190000001', DB::table('event_attendees')->where('event_id', $this->event->id)->orderBy('cedula')->value('cedula'));
         $this->assertSame('Prueba Ñandú', json_decode(DB::table('event_import_rows')->where('import_id', $id)->orderBy('row_number')->value('mapped'), true)['apellidos']);
 
-        $again = $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])->json('data');
+        $again = $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")->json('data');
         $this->assertSame(0, $again['nuevos']);
 
         try {
@@ -137,16 +137,17 @@ class EventImportPostgresTest extends TestCase
         $upload = microtime(true) - $start;
         $mapping = json_decode(DB::table('event_imports')->where('id', $id)->value('column_mapping'), true);
         $this->actingAs($this->manager)->putJson("/eventos/{$this->event->id}/importar/{$id}/columnas", ['columnas' => $mapping])
-            ->assertOk()->assertJsonPath('data.counts.validas', 2000);
+            ->assertOk()->assertJsonPath('data.counts.a_importar', 2000);
         $review = microtime(true) - $start - $upload;
-        $result = $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
+        $result = $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
             ->assertOk()->json('data');
         $confirm = microtime(true) - $start - $upload - $review;
         $peakMb = memory_get_peak_usage(true) / 1048576;
 
         fwrite(STDERR, sprintf("\n[2000 filas PostgreSQL] subir %.1f s, revisar %.1f s, confirmar %.1f s; pico de memoria %.0f MB\n", $upload, $review, $confirm, $peakMb));
         $this->assertSame(2000, $result['nuevos']);
-        $this->assertSame(2000, DB::table('data_consents')->where('event_id', $this->event->id)->count());
+        $this->assertSame(2000, DB::table('event_attendees')->where('event_id', $this->event->id)->where('link_status', 'pendiente')->count());
+        $this->assertSame(0, DB::table('data_consents')->where('event_id', $this->event->id)->count());
         $this->assertLessThan(200, $peakMb);
         $this->assertLessThan(30, $upload + $review + $confirm);
     }

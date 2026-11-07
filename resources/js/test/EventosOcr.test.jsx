@@ -32,7 +32,6 @@ const MANAGER = { id: 'u1', name: 'Gestor', permissions: ['manage.eventos'], can
 const EVENTO = { id: 'ev1', nombre: 'Gira Girón', status: 'cerrado', starts_at: '2026-11-05T18:00:00-05:00', municipio: 'Girón', campaign: { id: 'cd', nombre: 'CD' }, acepta_cargas: true };
 const LIMITS = { mb: 10, paginas: 20 };
 const OCR = { listo: true, aviso: null, umbral: 0.85, limites: LIMITS };
-const CONSENT = { id: 'c1', version: 'v1', approved: true };
 
 function file(name, size = 1000, type = 'image/jpeg') {
     const f = new File(['x'], name, { type });
@@ -89,7 +88,7 @@ describe('eventosOcr helpers', () => {
         expect(progressPercent({ total: 4, pendientes: 1 })).toBe(75);
         expect(responseMessage({ status: 422, body: { errors: { foto: ['Esta foto ya se subió'] } } })).toBe('Esta foto ya se subió');
         expect(responseMessage({ status: 413, body: null })).toMatch(/demasiado grande/);
-        expect(ocrConfirmSummary({ a_importar: 1 }, 2)).toBe('Se registrará 1 persona en el evento, con su autorización de datos. Aún hay 2 filas con datos dudosos (en amarillo): revíselas contra la foto.');
+        expect(ocrConfirmSummary({ a_importar: 1 }, 2)).toBe('Se registrará 1 persona en el evento. Aún hay 2 filas con datos dudosos (en amarillo): revíselas contra la foto.');
         expect(sourceLabel({ source: 'ocr', registered_by: { name: 'Gestor' } })).toBe('Planilla leída con IA: Gestor');
     });
 });
@@ -101,11 +100,9 @@ describe('OCR review row', () => {
         expect(container.querySelector('[data-doubtful="apellidos"]')).toBeTruthy();
         expect(container.querySelector('[data-doubtful="cedula"]')).toBeNull();
         expect(screen.getByText('Dudoso: compárelo con la foto')).toBeTruthy();
-        expect(screen.getByText('Marcó «Autorizo»')).toBeTruthy();
+        expect(screen.queryByText(/Autorizo|Firma/)).toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: 'Corregir esta fila' }));
-        expect(screen.queryByLabelText('Marcó «Autorizo»')).toBeNull();
-        expect(screen.getByText(/«Autorizo» y la firma no se pueden cambiar aquí/)).toBeTruthy();
         fireEvent.change(screen.getByLabelText('Apellidos'), { target: { value: 'PÉREZ GÓMEZ' } });
         fireEvent.click(screen.getByRole('button', { name: 'Guardar y revisar' }));
         expect(mockRouter.patch).toHaveBeenCalledWith('/eventos/ev1/importar/i1/filas/r1', { apellidos: 'PÉREZ GÓMEZ' }, expect.any(Object));
@@ -209,19 +206,21 @@ describe('Planillas page and the Show entry point', () => {
     const IMPORT = { id: 'imp1', tipo: 'ocr', nombre: 'a.jpg', status: 'revisado', counts: { total: 1, validas: 1, a_importar: 1, en_plataforma: 0, no_autorizaron: 0, errores: 0, duplicadas: 0, en_evento: 0, importadas: 0 }, progreso: {} };
 
     it('shows the photo next to its rows, the page tabs and the OCR declaration', () => {
-        render(<Planillas evento={EVENTO} consent={CONSENT} ocr={OCR} importacion={IMPORT} paginas={PAGINAS} pagina_actual={1}
+        render(<Planillas evento={EVENTO} ocr={OCR} importacion={IMPORT} paginas={PAGINAS} pagina_actual={1}
             filas={{ data: [ocrRow()], total: 1, last_page: 1 }} filters={{ estado: null }} recientes={[]} />);
         expect(screen.getByAltText('Foto de la página 1')).toBeTruthy();
         expect(screen.getByRole('button', { name: /Página 2/ })).toBeTruthy();
         expect(screen.getByText(/1 dudosa/)).toBeTruthy();
-        expect(screen.getByText('Revisé las filas contra las fotos y tengo las planillas firmadas que respaldan estas autorizaciones.')).toBeTruthy();
+        expect(screen.queryByText(/planillas firmadas/)).toBeNull();
+        expect(screen.queryByRole('checkbox', { name: /planillas/ })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Importar 1 persona' }).disabled).toBe(false);
 
         fireEvent.click(screen.getByRole('button', { name: /Página 2/ }));
         expect(mockRouter.get).toHaveBeenCalledWith('/eventos/ev1/importar/ocr/imp1', { pagina: 2 }, expect.any(Object));
     });
 
     it('says when the key is missing and does not let upload', () => {
-        render(<Planillas evento={EVENTO} consent={CONSENT} ocr={{ ...OCR, listo: false, aviso: 'Falta la clave.' }} importacion={null} paginas={[]} pagina_actual={null} filas={null} filters={{}} recientes={[]} />);
+        render(<Planillas evento={EVENTO} ocr={{ ...OCR, listo: false, aviso: 'Falta la clave.' }} importacion={null} paginas={[]} pagina_actual={null} filas={null} filters={{}} recientes={[]} />);
         expect(screen.getByText('Falta la clave.')).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Subir fotos' }).disabled).toBe(true);
         expect(screen.getByText(/se envían a un proveedor de inteligencia artificial en el exterior/)).toBeTruthy();
@@ -233,7 +232,7 @@ describe('Planillas page and the Show entry point', () => {
             sitio_encuentro: 'Parque', provincia: { id: 'p', nombre: 'Soto' }, municipio: { id: 'm', nombre: 'Girón' }, barrios: [],
             campaign: { id: 'cd', nombre: 'CD' }, editable: true, public_url: 'http://x/e/t', public_open: false, organizadores: [], figuras: [],
         };
-        const renderShow = can => render(<Show evento={SHOW_EVENTO} asistentes={{ data: [], current_page: 1, last_page: 1, total: 0, links: [] }} kpis={{}} filters={{}} consent={null} tipos={[]} provincias={[]} can={can} />);
+        const renderShow = can => render(<Show evento={SHOW_EVENTO} asistentes={{ data: [], current_page: 1, last_page: 1, total: 0, links: [] }} kpis={{}} filters={{}} tipos={[]} provincias={[]} can={can} />);
         renderShow({ manage: true, register: true, edit: true, ocr: true });
         expect(screen.getByRole('link', { name: 'Leer planillas con IA' }).getAttribute('href')).toBe('/eventos/ev1/importar/ocr');
         cleanup();
@@ -243,9 +242,9 @@ describe('Planillas page and the Show entry point', () => {
 });
 
 describe('OCR left-out summary', () => {
-    it('names the rows without authorization or signature', async () => {
+    it('leaves nobody out for lack of authorization', async () => {
         const { ocrLeftOutSummary } = await import('@/lib/eventosOcr');
-        expect(ocrLeftOutSummary({ errores: 2, no_autorizaron: 1 })).toBe('Quedan fuera: 2 con error, 1 sin «Autorizo» o sin firma.');
+        expect(ocrLeftOutSummary({ errores: 2, no_autorizaron: 1 })).toBe('Quedan fuera: 2 con error.');
         expect(ocrLeftOutSummary({})).toBeNull();
     });
 });

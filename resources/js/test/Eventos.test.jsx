@@ -31,7 +31,7 @@ vi.mock('@inertiajs/react', async () => {
 });
 
 import {
-    allSelected, approveMessage, composeBirthDate, eventFormErrors, figureSummary, newClientUuid, provisionalCount, pruneSelection, toggleAll, toggleSelected,
+    APPROVE_MESSAGE, allSelected, composeBirthDate, eventFormErrors, figureSummary, newClientUuid, pruneSelection, toggleAll, toggleSelected,
 } from '@/lib/eventos';
 import EventoFormModal from '@/Components/Eventos/EventoFormModal';
 import Show from '@/Pages/Eventos/Show';
@@ -98,12 +98,9 @@ describe('eventos lib', () => {
         expect(composeBirthDate({ day: '31', month: '2', year: '1980' })).toBeNull();
     });
 
-    it('counts the selected attendees with a provisional consent and words the warning', () => {
-        const rows = [{ id: 'a', consentimiento_provisional: true }, { id: 'b', consentimiento_provisional: false }, { id: 'c', consentimiento_provisional: true }];
-        expect(provisionalCount(['a', 'b'], rows)).toBe(1);
-        expect(provisionalCount(['b'], rows)).toBe(0);
-        expect(approveMessage(0)).not.toMatch(/SIN autorización/);
-        expect(approveMessage(1)).toMatch('1 de los seleccionados entra SIN autorización de datos');
+    it('words the approval without any data authorization warning', () => {
+        expect(APPROVE_MESSAGE).toMatch('Se crea su ficha en Votantes');
+        expect(APPROVE_MESSAGE).not.toMatch(/autorización/i);
     });
 
     it('generates v4 uuids', () => {
@@ -188,7 +185,6 @@ describe('Eventos/Show', () => {
                 asistentes={{ data: ROWS, current_page: 1, last_page: 1, per_page: 50, total: 3, links: [] }}
                 kpis={KPIS}
                 filters={{ link_status: null, source: null, q: null }}
-                consent={{ id: 'c1', version: 'v1', cuerpo: 'Texto', approved: true }}
                 tipos={[]}
                 provincias={[]}
                 can={{ manage: true, register: true, edit: true }}
@@ -225,24 +221,16 @@ describe('Eventos/Show', () => {
         expect(mockRouterPost).toHaveBeenCalledWith('/eventos/ev1/asistentes/aprobar', { ids: ['a1', 'a3'] }, expect.any(Object));
     });
 
-    it('marks attendees with a provisional consent and warns how many enter Votantes without data authorization', () => {
-        const rows = [
-            { ...attendee('a1', 'pendiente', 'Ana'), consentimiento_provisional: true },
-            { ...attendee('a2', 'pendiente', 'Beto'), consentimiento_provisional: false },
-            { ...attendee('a3', 'pendiente', 'Carla'), consentimiento_provisional: true },
-        ];
-        renderShow({ asistentes: { data: rows, current_page: 1, last_page: 1, per_page: 50, total: 3, links: [] } });
-        expect(screen.getAllByText('Autorización provisional')).toHaveLength(2);
+    it('never mentions data authorization: no badge, no filter and no warning when approving', () => {
+        const rows = [attendee('a1', 'pendiente', 'Ana'), attendee('a2', 'pendiente', 'Beto')];
+        renderShow({ asistentes: { data: rows, current_page: 1, last_page: 1, per_page: 50, total: 2, links: [] } });
+        expect(screen.queryByText(/autorizaci/i)).toBeNull();
+        expect(screen.queryByRole('button', { name: /Sin autorización/ })).toBeNull();
 
         fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar todos los pendientes/ }));
         fireEvent.click(screen.getByRole('button', { name: 'Pasar a Votantes' }));
-        expect(screen.getByRole('alertdialog')).toHaveTextContent('2 de los seleccionados entran SIN autorización de datos');
-        fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-
-        fireEvent.click(screen.getByRole('checkbox', { name: /Ana/ }));
-        fireEvent.click(screen.getByRole('checkbox', { name: /Carla/ }));
-        fireEvent.click(screen.getByRole('button', { name: 'Pasar a Votantes' }));
-        expect(screen.getByRole('alertdialog')).not.toHaveTextContent('SIN autorización');
+        expect(screen.getByRole('alertdialog')).toHaveTextContent('Se crea su ficha en Votantes');
+        expect(screen.getByRole('alertdialog')).not.toHaveTextContent(/autorizaci/i);
     });
 
     it('selects every pending attendee at once and discards them; cancelling sends nothing', () => {
@@ -256,11 +244,10 @@ describe('Eventos/Show', () => {
         expect(mockRouterPost).toHaveBeenCalledWith('/eventos/ev1/asistentes/descartar', { ids: ['a1', 'a3'] }, expect.any(Object));
     });
 
-    it('explains a missing approved consent text when opening fails', () => {
-        mockPage.props.errors = { consent: 'La campaña no tiene un texto de autorización de datos aprobado.' };
+    it('explains a draft event without any approved text requirement', () => {
         renderShow({ evento: { ...EVENTO, status: 'borrador', public_open: false } });
-        expect(screen.getByRole('alert')).toHaveTextContent('Falta el texto de autorización aprobado por la campaña');
         expect(screen.getByText(/El evento está en borrador/)).toBeInTheDocument();
+        expect(screen.queryByText(/texto de autorización/)).toBeNull();
     });
 
     it('asks before regenerating the QR', () => {
@@ -283,8 +270,8 @@ describe('Eventos/Show', () => {
 describe('Eventos/Operador', () => {
     const OP_EVENTO = { ...EVENTO, accepts_registrations: true };
 
-    function renderOperador(consent = { id: 'c1', version: 'v1', cuerpo: 'Texto de autorización', approved: true }) {
-        return render(<Operador evento={OP_EVENTO} consent={consent} registrados={5} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+    function renderOperador() {
+        return render(<Operador evento={OP_EVENTO} registrados={5} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
     }
 
     let online = true;
@@ -296,7 +283,6 @@ describe('Eventos/Operador', () => {
 
     async function register(person) {
         fillAttendee(person);
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
         await screen.findByText('Guardado en el teléfono');
     }
@@ -321,21 +307,20 @@ describe('Eventos/Operador', () => {
         globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, message: 'Asistente registrado.', data: { id: 'x1', duplicate: false } }));
         renderOperador();
         fillAttendee();
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
 
         await screen.findByText('¡Registrado!');
         const body = sentBody();
         expect(globalThis.fetch.mock.calls[0][0]).toBe('/eventos/ev1/asistentes');
-        expect(body).toMatchObject({ client_uuid: '11111111-1111-4111-8111-111111111111', consent_text_id: 'c1', autoriza_datos: true, nombres: 'Ana', barrio: 'El Poblado' });
+        expect(body).toMatchObject({ client_uuid: '11111111-1111-4111-8111-111111111111', nombres: 'Ana', barrio: 'El Poblado' });
+        expect(body).not.toHaveProperty('consent_text_id');
+        expect(body).not.toHaveProperty('autoriza_datos');
         expect(screen.getByTestId('session-count')).toHaveTextContent('1');
         expect(screen.getByLabelText(/^Nombres/)).toHaveValue('');
-        expect(screen.getByRole('checkbox')).not.toBeChecked();
         expect(document.activeElement).toBe(screen.getByLabelText(/^Nombres/));
 
         globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, data: { id: 'x2', duplicate: false } }));
         fillAttendee({ nombres: 'Beto', cedula: '1098000000' });
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
         await waitFor(() => expect(screen.getByTestId('session-count')).toHaveTextContent('2'));
         expect(sentBody(1).client_uuid).toMatch(UUID_RE);
@@ -346,7 +331,6 @@ describe('Eventos/Operador', () => {
         globalThis.fetch.mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { celular: ['El celular debe tener 10 dígitos y empezar por 3.'] } }));
         renderOperador();
         fillAttendee({ celular: '12' });
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
 
         expect(await screen.findByText('El celular debe tener 10 dígitos y empezar por 3.')).toBeInTheDocument();
@@ -428,7 +412,6 @@ describe('Eventos/Operador', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Corregir' }));
         await waitFor(() => expect(screen.getByLabelText(/^Nombres/)).toHaveValue('Ana'));
         expect(screen.getByLabelText(/^Celular/)).toHaveValue('3009999999');
-        expect(screen.getByRole('checkbox')).toBeChecked();
         // It stays in the list (and in the phone) until the corrected one is saved.
         expect(screen.getByText('En el formulario: sale de esta lista al guardarlo.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Corregir' })).toBeNull();
@@ -495,7 +478,7 @@ describe('Eventos/Operador', () => {
             rejectedReason: 'El evento ya no recibe registros.', rejectedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
             data: { eventId: 'ev1', payload: { nombres: 'Ana', apellidos: 'Pérez' } },
         });
-        render(<Operador evento={{ ...OP_EVENTO, accepts_registrations: false }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        render(<Operador evento={{ ...OP_EVENTO, accepts_registrations: false }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
 
         expect(await screen.findByRole('heading', { name: 'No se pudieron guardar (1)' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Corregir' })).toBeNull();
@@ -577,14 +560,13 @@ describe('Eventos/Operador', () => {
         globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, data: { id: 'x1', duplicate: false } }));
         renderOperador();
         fillAttendee();
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
         await screen.findByText('¡Registrado!');
         expect(sentBody().client_uuid).toMatch(UUID_RE);
         expect(sentBody().client_uuid).not.toBe('11111111-1111-4111-8111-111111111111');
     });
 
-    it('opened without signal, uses the event and consent text saved in the phone', async () => {
+    it('opened without signal, uses the event saved in the phone (even a snapshot saved with a consent text)', async () => {
         await db.eventos.put({
             id: 'ev1', owner: 'owner-test', savedAt: '2026-11-05T17:00:00.000Z',
             evento: { ...OP_EVENTO, barrios: ['Barrio Guardado'] },
@@ -595,7 +577,8 @@ describe('Eventos/Operador', () => {
         expect(await screen.findByRole('button', { name: 'Barrio Guardado' })).toBeInTheDocument();
         await register({ barrio: 'Barrio Guardado' });
         const [queued] = await db.pendingChanges.toArray();
-        expect(queued.data.payload.consent_text_id).toBe('c2');
+        expect(queued.data.payload.barrio).toBe('Barrio Guardado');
+        expect(queued.data.payload).not.toHaveProperty('consent_text_id');
     });
 
     it('does not count in "Registrados por usted" the ones the server refused (OBS-03)', async () => {
@@ -653,23 +636,24 @@ describe('Eventos/Operador', () => {
         expect(screen.getByRole('link', { name: 'Planilla para imprimir' })).toHaveAttribute('href', '/eventos/ev1/planilla.pdf');
         unmount();
 
-        render(<Operador evento={{ ...OP_EVENTO, status: 'cancelado', accepts_registrations: false }} consent={{ id: 'c1', version: 'v1', cuerpo: 'x', approved: true }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
+        render(<Operador evento={{ ...OP_EVENTO, status: 'cancelado', accepts_registrations: false }} registrados={0} mis_registros={[]} client_uuid="11111111-1111-4111-8111-111111111111" />);
         expect(screen.queryByRole('link', { name: 'Planilla para imprimir' })).toBeNull();
     });
 
-    it('turns a queued payload back into form values', () => {
-        const values = attendeeFormFromPayload({ nombres: 'Ana', apellidos: 'P', cedula: '123456', celular: '3001234567', barrio: 'Centro', fijo: null, direccion: null, fecha_nacimiento: '1980-04-02', autoriza_datos: true, consent_text_id: 'c1' }, { consentId: 'c1' });
-        expect(values).toMatchObject({ fijo: '', direccion: '', birth: { day: '2', month: '4', year: '1980' }, autoriza_datos: true });
-        expect(attendeeFormFromPayload({ autoriza_datos: true, consent_text_id: 'old' }, { consentId: 'c1' }).autoriza_datos).toBe(false);
+    it('turns a queued payload back into form values, leaving out the consent fields of an old queue', () => {
+        const values = attendeeFormFromPayload({ nombres: 'Ana', apellidos: 'P', cedula: '123456', celular: '3001234567', barrio: 'Centro', fijo: null, direccion: null, fecha_nacimiento: '1980-04-02', autoriza_datos: true, consent_text_id: 'c1' });
+        expect(values).toMatchObject({ fijo: '', direccion: '', birth: { day: '2', month: '4', year: '1980' } });
+        expect(values).not.toHaveProperty('autoriza_datos');
     });
 
-    it('does not send without the consent box and marks a provisional text', async () => {
-        renderOperador({ id: 'c1', version: 'provisional-1', cuerpo: 'Provisional', approved: false });
-        expect(screen.getByText(/TEXTO PROVISIONAL/)).toBeInTheDocument();
+    it('saves without any consent box', async () => {
+        globalThis.fetch.mockReturnValueOnce(jsonResponse(201, { success: true, message: 'Asistente registrado.', data: { id: 'x1', duplicate: false } }));
+        renderOperador();
+        expect(screen.queryByRole('checkbox')).toBeNull();
+        expect(screen.queryByText(/autorizaci/i)).toBeNull();
         fillAttendee();
         fireEvent.click(screen.getByRole('button', { name: 'Guardar asistente' }));
-        expect(await screen.findByText('Debe marcar la casilla de autorización.')).toBeInTheDocument();
-        expect(globalThis.fetch).not.toHaveBeenCalled();
+        expect(await screen.findByText('¡Registrado!')).toBeInTheDocument();
     });
 });
 
@@ -678,7 +662,6 @@ describe('Eventos/Publico', () => {
         estado: 'abierto',
         evento: { nombre: 'Del Senado al barrio — Girón', descripcion: null, tipo: 'Del Senado al barrio', starts_at: '2026-11-05T18:00:00-05:00', ends_at: null, sitio_encuentro: 'Parque principal', municipio: 'Girón', provincia: 'Soto' },
         barrios: ['El Poblado', 'Centro'],
-        consent: { id: 'c1', version: 'v1', cuerpo: 'Autorizo el tratamiento de mis datos personales completo.' },
         form_token: 'tok',
         client_uuid: '22222222-2222-4222-8222-222222222222',
         submitted: false,
@@ -692,14 +675,11 @@ describe('Eventos/Publico', () => {
 
     afterEach(cleanup);
 
-    it('keeps "Registrarme" disabled until the consent box is checked and shows the full text on demand', () => {
+    it('has no consent box: "Registrarme" is enabled from the start', () => {
         render(<Publico {...PROPS} />);
-        const button = screen.getByRole('button', { name: 'Registrarme' });
-        expect(button).toBeDisabled();
-        fireEvent.click(screen.getByRole('button', { name: 'Leer el texto de autorización completo' }));
-        expect(screen.getByText(PROPS.consent.cuerpo)).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('checkbox'));
-        expect(button).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Registrarme' })).toBeEnabled();
+        expect(screen.queryByRole('checkbox')).toBeNull();
+        expect(screen.queryByText(/autorizaci/i)).toBeNull();
     });
 
     it('sends the birth date from the three selects, the honeypot and form_token, then always thanks', async () => {
@@ -709,25 +689,23 @@ describe('Eventos/Publico', () => {
         fireEvent.change(screen.getByLabelText('Día'), { target: { value: '2' } });
         fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '4' } });
         fireEvent.change(screen.getByLabelText('Año'), { target: { value: '1980' } });
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Registrarme' }));
 
         expect(await screen.findByText('¡Gracias, quedó registrado!')).toBeInTheDocument();
         expect(globalThis.fetch.mock.calls[0][0]).toBe('/e/abcdefghijklmnopqrstuvwxyz');
         expect(sentBody()).toMatchObject({
-            fecha_nacimiento: '1980-04-02', form_token: 'tok', website: '', client_uuid: PROPS.client_uuid, barrio: 'Centro', consent_text_id: 'c1',
+            fecha_nacimiento: '1980-04-02', form_token: 'tok', website: '', client_uuid: PROPS.client_uuid, barrio: 'Centro',
         });
+        expect(sentBody()).not.toHaveProperty('consent_text_id');
 
         fireEvent.click(screen.getByRole('button', { name: 'Registrar a otra persona' }));
         expect(screen.getByLabelText(/^Nombres/)).toHaveValue('');
-        expect(screen.getByRole('button', { name: 'Registrarme' })).toBeDisabled();
     });
 
     it('asks for the full date when only part of it is chosen', async () => {
         render(<Publico {...PROPS} />);
         fillAttendee();
         fireEvent.change(screen.getByLabelText('Año'), { target: { value: '1980' } });
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Registrarme' }));
         expect(await screen.findByText('Elija día, mes y año, o deje los tres vacíos.')).toBeInTheDocument();
         expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -737,7 +715,6 @@ describe('Eventos/Publico', () => {
         globalThis.fetch.mockReturnValueOnce(jsonResponse(410, { success: false, message: 'Este evento ya no recibe registros.' }));
         render(<Publico {...PROPS} />);
         fillAttendee();
-        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Registrarme' }));
         expect(await screen.findByText('Este evento ya no recibe registros')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Registrarme' })).toBeNull();
@@ -747,7 +724,7 @@ describe('Eventos/Publico', () => {
         const { unmount } = render(<Publico {...PROPS} submitted message="¡Gracias, quedó registrado!" />);
         expect(screen.getByText('¡Gracias, quedó registrado!')).toBeInTheDocument();
         unmount();
-        render(<Publico {...PROPS} estado="cerrado" consent={null} barrios={[]} />);
+        render(<Publico {...PROPS} estado="cerrado" barrios={[]} />);
         expect(screen.getByText('Este evento ya no recibe registros')).toBeInTheDocument();
     });
 });

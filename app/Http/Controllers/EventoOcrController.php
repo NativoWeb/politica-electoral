@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Http\Requests\Eventos\OcrUploadRequest;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
 use App\Models\EventImport;
 use App\Models\EventImportPage;
 use App\Models\EventImportRow;
@@ -30,8 +29,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class EventoOcrController extends Controller
 {
     use ScopesTerritory;
-
-    public const NEEDS_APPROVED_TEXT = 'Falta el texto de autorización aprobado por la campaña; no se pueden leer planillas hasta tenerlo.';
 
     public function __construct(private OcrImportService $ocr) {}
 
@@ -131,7 +128,6 @@ class EventoOcrController extends Controller
 
     private function page(CampaignEvent $event, ?EventImport $import, ?string $filter, ?int $current): Response
     {
-        $consent = ConsentText::currentFor($event->campaign_id);
         $pages = $import ? EventImportPage::where('import_id', $import->id)->orderBy('sequence')->get() : collect();
         $doubtful = $import ? $this->doubtfulByPage($import) : [];
         $current = $pages->firstWhere('sequence', $current) ?? $pages->firstWhere('status', 'procesada') ?? $pages->first();
@@ -147,7 +143,6 @@ class EventoOcrController extends Controller
 
         return Inertia::render('Eventos/Planillas', [
             'evento' => EventoImportController::eventProps($event),
-            'consent' => $consent ? ['id' => $consent->id, 'version' => $consent->version, 'approved' => $consent->approved] : null,
             'ocr' => [
                 'listo' => OcrSettings::hasKey(),
                 'aviso' => OcrSettings::hasKey() ? null : OcrSettings::MISSING_KEY,
@@ -184,7 +179,8 @@ class EventoOcrController extends Controller
     }
 
     // [page id => rows with at least one cell below the threshold] among the rows a person can still act on: not
-    // imported and not "no autorizó" (those cannot be corrected, so they are not "to review").
+    // imported and not "no autorizó" (legacy rows, they cannot be corrected). What the AI read in «Autorizo» and «Firma»
+    // decides nothing since 2026-11-07, so a doubt there is not a cell to review.
     private function doubtfulByPage(EventImport $import): array
     {
         $threshold = OcrSettings::threshold();
@@ -192,7 +188,7 @@ class EventoOcrController extends Controller
         EventImportRow::where('import_id', $import->id)->whereNotNull('confidence')->whereNull('attendee_id')->where('status', '!=', 'no_autorizo')
             ->get(['page_id', 'confidence'])
             ->each(function (EventImportRow $r) use ($threshold, &$counts) {
-                $low = array_filter($r->confidence ?? [], fn ($c) => is_numeric($c) && $c < $threshold);
+                $low = array_filter(array_diff_key($r->confidence ?? [], array_flip(['autorizo', 'firma_presente'])), fn ($c) => is_numeric($c) && $c < $threshold);
                 if ($low !== []) {
                     $counts[$r->page_id] = ($counts[$r->page_id] ?? 0) + 1;
                 }
@@ -221,14 +217,11 @@ class EventoOcrController extends Controller
         return EventImport::where('event_id', $event->id)->where('kind', 'ocr')->findOrFail($importId);
     }
 
-    // Uploading and reading need what the Excel load needs (event not cancelled, approved text) plus the API key.
+    // Uploading and reading need what the Excel load needs (event not cancelled) plus the API key.
     private function assertCanLoad(CampaignEvent $event): void
     {
         if ($event->status === 'cancelado') {
             throw ValidationException::withMessages(['evento' => 'El evento está cancelado: no se pueden cargar asistentes.']);
-        }
-        if (! ConsentText::currentFor($event->campaign_id)?->approved) {
-            throw ValidationException::withMessages(['consent' => self::NEEDS_APPROVED_TEXT]);
         }
         if (! OcrSettings::hasKey()) {
             throw ValidationException::withMessages(['ocr' => OcrSettings::MISSING_KEY]);

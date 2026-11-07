@@ -11,9 +11,10 @@ Convenciones:
 - Todos los ids son UUID.
 - JSON de error: `{ "success": false, "message": "..." }` (409, 410), `{ "message": "..." }` (403, 404) o el
   formato estándar de Laravel `{ "message": "...", "errors": { clave: ["..."] } }` para **todo 422**, también las
-  reglas de negocio de eventos, con estas claves: `consent` (abrir sin texto aprobado), `status` (transición inválida),
+  reglas de negocio de eventos, con estas claves: `status` (transición inválida),
   `evento` (borrar con asistentes), `ids` (asistentes ajenos al evento), `organizadores` (líder no válido),
-  `ends_at`/`registration_closes_at` (fechas), `consent_text_id` (texto cambiado). En Inertia llegan como `errors.<clave>`.
+  `ends_at`/`registration_closes_at` (fechas). En Inertia llegan como `errors.<clave>`. (Las claves `consent`,
+  `consent_text_id`, `autoriza_datos` y `declaracion` ya no se usan desde 2026-11-07, §4.)
 - **404** JSON genérico e idéntico para "no existe", "id no UUID" y "es de otra campaña no visible":
   `{ "message": "No se encontró lo que busca." }` (nunca nombra el modelo); en HTML, la página `errors/404`.
   **429** JSON por límite (`throttle`): `{ "success": false, "message": "Demasiadas solicitudes. Espere un momento e intente de nuevo." }`
@@ -115,34 +116,41 @@ mínimo de 4 s y la caducidad del `form_token` (6 h).
 
 | Acción | Desde | Regla |
 |--------|-------|-------|
-| abrir | `borrador`, `cerrado` | La campaña del evento debe tener un texto de autorización **activo y aprobado**. Si no → **422** (`errors.consent`) `"La campaña no tiene un texto de autorización de datos aprobado. El QR público no se puede abrir hasta que lo esté; mientras tanto el operador puede registrar con el texto provisional."` |
+| abrir | `borrador`, `cerrado` | — (desde 2026-11-07 no exige texto de autorización, §4) |
 | cerrar | `abierto` | — |
 | cancelar | `borrador`, `abierto`, `cerrado` | — |
 | borrar | cualquiera | Solo si el evento **no tiene asistentes**; si tiene → 422 (`errors.evento`) `"El evento ya tiene asistentes: cancélelo en lugar de borrarlo."` (borrado lógico, `deleted_at`). |
 
 Transición inválida → **422** (`errors.status`).
 
-**QR público acepta registros** solo si: `status = abierto` **y** el texto vigente de la campaña está aprobado **y**
-no está vencido. Vencido = pasado `registration_closes_at`; si es null, pasado `ends_at + 6 h`; si también es null,
+**QR público acepta registros** solo si: `status = abierto` **y** no está vencido. Vencido = pasado `registration_closes_at`; si es null, pasado `ends_at + 6 h`; si también es null,
 pasado `starts_at + 24 h`.
 
 **Operador acepta registros** si `status` ∈ {`borrador`, `abierto`} (no cerrado/cancelado/borrado). No le aplica el
-vencimiento (puede pasar registros tarde). Con un texto **provisional** (no aprobado) puede registrar; la página
-lo marca (`consent.approved = false`) y el consentimiento queda guardado con ese texto y su hash.
+vencimiento (puede pasar registros tarde).
 
 ---
 
-## 4. Texto de autorización (Ley 1581)
+## 4. Autorización de datos — RETIRADA el 2026-11-07 por decisión de la campaña
 
-- Lo trae la campaña. Texto vigente de una campaña = su `consent_texts` activo más reciente; si no tiene ninguno,
-  se usa el **texto provisional global** (`campaign_id` null, `approved = false`, sembrado por la migración).
-- Fase 1 no tiene pantalla para administrarlo. Se carga por consola (R01/devops):
-  `php artisan eventos:consent-text {campaña: slug o id} {archivo.txt} --text-version=v1 [--approve]`
-  (crea una versión nueva, la deja activa y desactiva las anteriores de esa campaña).
-- Cada registro guarda una fila append-only en `data_consents` con `consent_text_id`, `text_sha256`, cédula, canal,
-  IP, user agent y fecha. En PostgreSQL UPDATE/DELETE/TRUNCATE sobre `data_consents` fallan (trigger + REVOKE).
+Marly, informada del riesgo frente a la Ley 1581 (la responsabilidad queda en la campaña), decidió el **2026-11-07**
+quitar la autorización de datos de **todo** el módulo Eventos:
 
-Objeto `consent` en props: `{ id, version, cuerpo, approved }`.
+- **QR público**: sin casilla de autorización y sin exigir texto aprobado; el QR abre desde ya. Se mantienen honeypot,
+  `form_token`, límites y la respuesta idéntica exista o no la persona.
+- **Operador** (online y cola offline): sin casilla ni texto. Un registro encolado antes con `consent_text_id` /
+  `autoriza_datos` sigue sincronizando: el servidor **ignora** esos campos (no valida si el texto cambió).
+- **Excel** (y planillas con IA, apagadas): sin columna «Autorizó», sin la declaración de planillas firmadas y sin
+  texto aprobado; todo archivo es una **lista** (§11) y todas las filas válidas se importan.
+- **Asistentes nuevos**: `autoriza_datos = false`, `consent_id = null`, `link_status = pendiente` (se aprueban a
+  Votantes como siempre; la ficha queda con `lideres.autoriza_datos = false`). No se escribe en `data_consents`.
+- `data_consents` (append-only, dueño `postgres`) **no se toca ni se borra**: conserva lo registrado antes y
+  simplemente deja de crearse. `consent_texts` y `php artisan eventos:consent-text` siguen existiendo, pero nada se
+  bloquea por ellos.
+- La regla de contacto del agente (solo datos de contacto de quien autorizó, `lideres.autoriza_datos`) **no cambia**.
+
+Datos anteriores: los asistentes que quedaron como `sin_autorizacion` (listas cargadas antes) pasan a `pendiente`
+con el SQL de despliegue de §11 ("Paso de despliegue 2026-11-07").
 
 ---
 
@@ -191,7 +199,7 @@ Las `provincias` vienen filtradas por el territorio del usuario (solo municipios
 ### `Eventos/Show` — `GET /eventos/{id}`
 
 Query de la tabla de asistentes: `link_status`, `source` (`qr|operador|excel`), `q` (nombre o cédula), `page`.
-`kpis` trae además `excel` (asistentes cargados desde Excel; todos con autorización, ver §11). `source` del asistente
+`kpis` trae además `excel` (asistentes cargados desde Excel, §11) y `ocr`. `source` del asistente
 puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
 
 ```jsonc
@@ -202,7 +210,6 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
   },
   "kpis": { "total": 3, "vinculados": 1, "pendientes": 1, "aprobados": 1, "descartados": 0, "qr": 2, "operador": 1 },
   "filters": { "link_status": null, "source": null, "q": null },
-  "consent": { "id": "uuid", "version": "provisional-1", "cuerpo": "...", "approved": false },
   "tipos": [ { "id": "uuid", "nombre": "Gira" } ],                 // para el formulario de edición
   "provincias": [ ... ],                                           // igual que en Index
   "can": { "manage": true, "register": true, "edit": true }        // edit = manage && campaña propia
@@ -230,9 +237,7 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
 {
   "id": "uuid", "nombres": "Ana", "apellidos": "Pérez", "cedula": "1098765432",
   "celular": "3001234567", "fijo": null, "fecha_nacimiento": "1980-04-02", "direccion": null,
-  "barrio": "El Poblado", "autoriza_datos": true,
-  "consentimiento_provisional": false, // true = aceptó un texto NO aprobado (operador con texto provisional):
-                                       // al aprobarlo a Votantes la ficha queda con autoriza_datos = false
+  "barrio": "El Poblado", "nota": null,
   "source": "qr",                    // qr | operador
   "link_status": "pendiente",        // vinculado | pendiente | sin_cedula | aprobado | descartado
   "lider_id": "uuid|null",           // ficha en Votantes (vinculado/aprobado)
@@ -247,7 +252,6 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
 {
   "evento": { "id", "nombre", "status", "starts_at", "sitio_encuentro", "municipio": {...}, "provincia": {...},
               "tipo": {...}, "barrios": ["..."], "public_url": "...", "accepts_registrations": true },
-  "consent": { "id": "uuid", "version": "...", "cuerpo": "...", "approved": false }, // approved=false → mostrar "TEXTO PROVISIONAL"
   "registrados": 37,                                  // total del evento
   "mis_registros": [ { "id": "uuid", "nombres": "...", "apellidos": "...", "created_at": "..." } ], // últimos 20 del operador
   "client_uuid": "uuid"                                // sugerido para el primer envío (el front puede generar los suyos)
@@ -265,7 +269,6 @@ Si el evento no acepta registros (cerrado/cancelado), la página se muestra igua
               "starts_at": "...", "ends_at": "...|null", "sitio_encuentro": "...",
               "municipio": "Girón", "provincia": "Soto" },
   "barrios": ["El Poblado", "Centro"], // sugerencias; el barrio es texto libre
-  "consent": { "id": "uuid", "version": "v1", "cuerpo": "..." },   // null si estado = cerrado
   "form_token": "cadena opaca",        // devolver tal cual en el POST
   "client_uuid": "uuid",               // devolver tal cual en el POST (idempotencia ante doble envío)
   "submitted": false,
@@ -324,8 +327,7 @@ Regenerar token invalida el QR anterior (el viejo da 404).
 ```jsonc
 {
   "client_uuid": "uuid",               // requerido: idempotencia (reintento offline = misma respuesta)
-  "consent_text_id": "uuid",           // requerido: el `consent.id` mostrado; si cambió → 422 (recargar)
-  "autoriza_datos": true,              // requerido y aceptado
+                                       // consent_text_id / autoriza_datos (clientes viejos): se ignoran (§4)
   "nombres": "Ana",                    // requerido, ≤ 100
   "apellidos": "Pérez Gómez",          // requerido, ≤ 100
   "cedula": "1.098.765.432",           // requerido; se normaliza a dígitos; 5–12 dígitos
@@ -344,7 +346,7 @@ Respuestas:
   (mismo `client_uuid` o misma cédula en el mismo evento; no se crea nada nuevo).
 - **409** `{ success: false, message: "Ese registro pertenece a otro evento." }` si el `client_uuid` ya se usó en otro evento.
 - **410** `{ success: false, message: "El evento ya no recibe registros." }` (cerrado/cancelado).
-- **422** validación (`errors`) o texto de autorización cambiado (`errors.consent_text_id`).
+- **422** validación (`errors`).
   `message` resume en español: el primer error más `(y 1 error más)` / `(y N errores más)` (`lang/es.json`).
   Mensajes de `fecha_nacimiento` (uno solo por envío, en este orden): formato distinto de `AAAA-MM-DD` →
   `"La fecha de nacimiento debe tener el formato AAAA-MM-DD."`; fecha que no existe (`2026-02-31`, `1981-02-29`) →
@@ -368,8 +370,8 @@ Mismo body que el operador **más**:
 - Honeypot lleno, `form_token` ausente/inválido/de otro evento, envío antes de 4 s desde que se cargó la página o
   `form_token` de más de **6 horas** → la misma respuesta 200, sin guardar nada (si el asistente dejó la página
   abierta más de 6 h, el front debe recargarla antes de enviar).
-- **422** validación (p. ej. sin `autoriza_datos` → `errors.autoriza_datos`). En Inertia llegan como `errors`.
-- **410** evento no abierto/vencido o texto sin aprobar: JSON `{ success: false, message: "Este evento ya no recibe registros." }`;
+- **422** validación (p. ej. sin `nombres` → `errors.nombres`). En Inertia llegan como `errors`.
+- **410** evento no abierto/vencido: JSON `{ success: false, message: "Este evento ya no recibe registros." }`;
   Inertia → `Eventos/Publico` con `estado: "cerrado"`.
 - **404** token desconocido. **429** rate limit.
 
@@ -384,7 +386,7 @@ Aprobar (solo `pendiente`; los demás se omiten):
 - Si la cédula ya existe en Votantes de la campaña del evento → se vincula (`vinculado`, `lider_id`), **sin tocar la ficha**.
 - Si no → crea la ficha en `lideres` en la **campaña del evento** con `tipo = "asistente_evento"`, municipio del
   evento, barrio/dirección/fecha de nacimiento del asistente, `telefono = celular`, `autoriza_datos = true` **solo si
-  el consentimiento fue sobre un texto aprobado** (con el texto provisional queda `false`), `observacion` vacía (nunca el
+  el consentimiento fue sobre un texto aprobado** (registros anteriores a 2026-11-07; desde entonces queda `false`), `observacion` vacía (nunca el
   nombre del evento: la ficha la leen usuarios sin `view.eventos`; el vínculo queda en `event_attendees.lider_id`) y el fijo como contacto; el asistente
   pasa a `aprobado` con `lider_id`.
 - Aprobar dos veces no duplica.
@@ -426,8 +428,8 @@ municipio/departamento de la contienda (null en circunscripción nacional).
 unificar líderes no se reasigna, mientras que `event_attendees.lider_id` y `event_organizers.lider_id` sí pasan al
 líder que sobrevive). Todas con PK UUID. Únicos: `events.public_token`,
 `event_attendees.client_uuid`, `event_attendees (event_id, cedula)` parcial (cédula no nula).
-`link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado | sin_autorizacion` (`sin_cedula` queda reservado; en Fases
-1–3 la cédula es obligatoria). `event_attendees.source`: `qr | operador | excel | ocr` (CHECK en PostgreSQL; `excel` lo agrega
+`link_status`: `vinculado | pendiente | sin_cedula | aprobado | descartado | sin_autorizacion` (`sin_cedula` queda reservado;
+`sin_autorizacion` es histórico: no se escribe desde 2026-11-07 y el SQL de §11 lo pasa a `pendiente`). `event_attendees.source`: `qr | operador | excel | ocr` (CHECK en PostgreSQL; `excel` lo agrega
 la migración `2026_11_01_000001` y `ocr` la `2026_11_03_000001` (§13); ninguna toca `data_consents`). Fase 3 agrega `event_imports`, `event_import_rows` y
 `event_attendees.import_id` (FK nullable a `event_imports`) (§11).
 
@@ -488,11 +490,10 @@ fotografía para lectura automática (Fase 5).
 - **Contenido por página:** tipo y nombre del evento, fecha y hora (inicio–fin, America/Bogota), lugar, municipio
   (provincia), barrios; "Página X de Y"; código corto del evento (8 primeros caracteres del id) y **QR**.
   Tabla de 12 filas numeradas: Nombres y Apellidos (MAYÚSCULAS), Cédula (10 casillas), Celular (10), Tel. fijo (7),
-  Fecha de nacimiento `DD / MM / AAAA` (8 casillas), Dirección, Barrio, casilla Autorizo y Firma; filas con
+  Fecha de nacimiento `DD / MM / AAAA` (8 casillas), Dirección, Barrio y Firma (constancia de asistencia); filas con
   sombreado alterno; marcas de esquina en L negras en las 4 esquinas para enderezar fotos.
-  Pie: resumen del texto de autorización vigente de la campaña (cortado en una frase, con `[…]`) y su **versión**;
-  si el texto no está aprobado (o no hay) imprime **"TEXTO PROVISIONAL — no válido como autorización"**; indica que el
-  texto completo se lee a la persona y se pide al organizador; línea de trazabilidad con el id completo del evento.
+  Pie: solo la línea de trazabilidad con el id completo del evento. Desde 2026-11-07 (§4) no hay casilla «Autorizo»,
+  ni instrucción de autorizar, ni texto de autorización / "TEXTO PROVISIONAL" en el pie.
 - **QR:** PNG (chillerlan/php-qrcode, ECC M) con el JSON `{"e":"<event id>","p":<página>}`. **Nunca** lleva el token
   público. Para la Fase 5: leer el QR, ubicar el evento por `e` y la página por `p`; el total de páginas va impreso.
 - **Frontend:** `Eventos/Show` muestra el enlace "Planilla para imprimir" con `can.register` y estado ≠ cancelado.
@@ -536,28 +537,39 @@ Solo `manage.eventos`, en eventos de la **campaña propia** y del territorio (ig
 (`"El evento está cancelado: no se pueden cargar asistentes."`); se puede cargar en `borrador`, `abierto` y `cerrado`
 (las planillas suelen llegar después del evento). Sin cola: todo corre en la petición (límites abajo).
 
-**Regla de autorización (igual que QR y operador):** en un archivo **con** la columna `Autorizó` (con algo escrito en al
-menos una fila), una fila es importable **solo si `Autorizó` = SÍ**, y confirmar **exige** la declaración "Tengo las
-planillas firmadas que respaldan las autorizaciones de este archivo"; esos asistentes quedan con autorización
-(`autoriza_datos = true` y su fila en `data_consents`). Un archivo **sin** esa columna (o con ella vacía en todas las
-filas) es una **lista sin autorización** (decisión de Marly 2026-11-05): ver "Listas sin autorización" más abajo.
+**Sin autorización desde 2026-11-07 (decisión de la campaña, §4):** todo archivo de Excel es una **lista** (ver
+"Listas" más abajo): no hay columna «Autorizó» obligatoria (si el archivo la trae, se ignora), no hay declaración
+de planillas firmadas ni se exige texto aprobado, y **todas las filas válidas se importan**. Quien tiene cédula
+registrada (o se confirma por teléfono + nombre) se vincula al historial de su ficha; el resto queda `pendiente` de
+aprobar para pasar a Votantes. `POST .../confirmar` ya no lee `declaracion` (un cliente viejo puede mandarla: se
+ignora). Las cargas en staging subidas antes con «Autorizó» (filas `sin_autorizacion = false`) se confirman con su
+validación completa, también sin declaración ni texto. No se escribe en `data_consents`.
 
-**Texto aprobado obligatorio para las filas con SÍ (como el QR público):** confirmar una carga con filas con SÍ por
-importar exige que el texto de autorización vigente de la campaña esté **aprobado**. Con solo el texto provisional (o sin
-texto) → **422** `errors.consent` `"Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta
-tenerlo."`. **Subir** el archivo ya no lo exige (cambio 2026-11-05: una lista sin autorización no registra
-autorizaciones); la pantalla de subida muestra un aviso en amarillo explicando que sin texto aprobado solo se pueden
-importar listas sin «Autorizó».
+### Paso de despliegue 2026-11-07 (datos, PostgreSQL de producción)
+
+Los asistentes de listas cargadas antes (`link_status = sin_autorizacion`, 118 en prod el 2026-11-07, sin ficha)
+pasan a pendientes para poder aprobarlos. Ver antes, aplicar en una transacción y comprobar:
+
+```sql
+-- 1) cuántos (dry run)
+SELECT count(*) FROM event_attendees WHERE link_status = 'sin_autorizacion' AND lider_id IS NULL;
+-- 2) aplicar
+BEGIN;
+UPDATE event_attendees SET link_status = 'pendiente', updated_at = now()
+ WHERE link_status = 'sin_autorizacion' AND lider_id IS NULL;
+-- el número de filas debe coincidir con el paso 1; si no, ROLLBACK;
+COMMIT;
+```
+
+No toca `data_consents` ni `lideres`. Los que no tienen cédula se aprueban creando una ficha sin cédula.
 
 ### Plantilla — `GET /eventos/{id}/plantilla.xlsx`
 
 Hoja **Asistentes** con encabezados fijos: `Nombres`, `Apellidos`, `Cédula`, `Celular`, `Teléfono fijo`,
-`Fecha de nacimiento (DD/MM/AAAA)`, `Dirección`, `Barrio`, `Autorizó (SÍ/NO)`, `Municipio`, `Liderazgo o actividad`
-(estas dos opcionales). Las instrucciones explican que dejar `Autorizó` vacío en todas las filas carga una lista sin
-autorización. Columnas C–F (cédula, celular, fijo y
-fecha) con formato **texto** en las filas 2–2001 (Excel no muestra `1,09877E+09` ni quita ceros) y lista `SÍ,NO` en
-`Autorizó`. Hoja **Instrucciones** con cómo llenarla ("solo se cargan las personas con SÍ") y el texto de autorización
-vigente de la campaña con su **versión**; si es provisional, una advertencia en amarillo.
+`Fecha de nacimiento (DD/MM/AAAA)`, `Dirección`, `Barrio`, `Municipio`, `Liderazgo o actividad`
+(estas dos opcionales). Columnas C–F (cédula, celular, fijo y fecha) con formato **texto** en las filas 2–2001 (Excel
+no muestra `1,09877E+09` ni quita ceros). Hoja **Instrucciones** con cómo llenarla (sin texto de autorización desde
+2026-11-07).
 Nombre: `plantilla-asistentes-<evento>.xlsx`.
 
 ### Flujo y estados de `event_imports.status`
@@ -663,7 +675,7 @@ por el operador).
 a_importar, omitidas, importadas }` (`validas = nuevas + en_plataforma`; `autorizaron = total - no_autorizaron`;
 `omitidas` = válidas marcadas "No importar").
 
-### Prueba de la autorización en `data_consents` (Ley 1581)
+### Prueba de la autorización en `data_consents` (Ley 1581) — HISTÓRICO: solo cargas confirmadas antes del 2026-11-07
 
 - **Canal `operador`, no `excel`.** `data_consents` es de dueño `postgres` en producción y su CHECK solo admite
   `qr|operador`; ampliarlo exigiría correr `data_consents_owner_revert.sql`, migrar y volver a correr
@@ -721,6 +733,9 @@ personas** queda deshabilitado hasta marcar la declaración y pide confirmación
 se puede deshacer."). Textos de 16 px o más (18 px en lo que lee el operador) y enlaces/botones de 44 px de alto o más.
 
 ### Listas sin autorización (sin cédula y/o sin «Autorizó») — decisiones A y B de Marly, 2026-11-05
+
+> **Cambio 2026-11-07:** desde ese día todo archivo es una lista y quien no está en la plataforma queda `pendiente`
+> (aprobable), ya no `sin_autorizacion` "solo en la lista del evento". Lo de abajo sobre autorización es histórico.
 
 Listas reales (Word/Excel con `MUNICIPIO | NOMBRE | LIDERAZGO | TELÉFONO`, o las de jornadas con `NOMBRES Y APELLIDOS |
 NO. DOCUMENTO IDENTIDAD (CEDULA) | CELULAR /FIJO | FECHA DE CUMPLEAÑOS | DIRECCIÓN | BARRIO | ACTIVIDAD`) no traen
@@ -1064,7 +1079,7 @@ o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto 
      5 MB por imagen de la API) y la copia de 1600 px para el QR. Esto ocurre **antes** de reservar la llamada: si la foto
      no se puede preparar, la página queda con error sin gastar intentos ni el tope diario. El original se guarda tal cual.
    - La IA responde, por cada fila con algo escrito (las vacías se omiten): `nombres, apellidos, cedula, celular, fijo,
-     fecha_nacimiento, direccion, barrio` (texto o null), `autorizo` y `firma_presente` (booleanos), cada uno con
+     fecha_nacimiento, direccion, barrio` (texto o null) y `firma_presente` (booleano, solo informativo), cada uno con
      `confianza` 0–1; más `es_planilla`, `evento_id`, `codigo_evento`, `pagina`, `total_paginas`, `paginas_documento`.
      `es_planilla = false` → página `rechazada` `"Esta imagen no parece una planilla de asistencia de la plataforma: no se leyó."`.
    - Las filas van a `event_import_rows` como una fila de Excel ya mapeada (`mapped`, `errors` con `ImportRowValidator`)
@@ -1083,19 +1098,13 @@ o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto 
    revalida y pone su confianza en 1 (ya no es dudosa). Una fila válida cuya **cédula** tiene confianza bajo el umbral
    arranca en **"No importar"** hasta que alguien la corrija (vuelve a "Importar") o marque "Importar" a mano (se respeta
    aunque se corrijan otras filas). Filtros de §11.
-   - **Regla de consentimiento** (igual que QR, operador y Excel): una fila es importable **solo** si la IA vio
-     **marcada la casilla «Autorizo» Y una firma**, las dos con confianza ≥ umbral. Si no, queda `no_autorizo` con el
-     motivo (`"La IA no vio marcada la casilla «Autorizo»…"`, `"La IA no vio la firma de esta fila…"`,
-     `"La IA no está segura de la casilla «Autorizo» o de la firma…"`) y **no se puede cambiar** en la revisión (vale lo
-     que leyó la IA en la planilla; si la persona sí autorizó, se registra por el modo operador). Decisión del
-     orquestador: no se permite marcar a mano una autorización que la IA no vio.
-4. **Confirmar**: `POST .../importar/{import}/confirmar` `{ "declaracion": true }`, con la casilla
-   "Revisé las filas contra las fotos y tengo las planillas firmadas que respaldan estas autorizaciones." y texto
-   **aprobado**. Registra con `RegisterAttendee::handleMany`: `source = 'ocr'`, `import_id`, consentimiento en
-   `data_consents` con canal `operador` (como Excel; `data_consents` no se toca). Los nuevos quedan `pendiente` o
-   `vinculado`; pasar a Votantes sigue siendo manual. Tras confirmar: se vacían `raw` y `mapped` de las filas
-   `no_autorizo` (minimización: lo leído de quien no autorizó no se conserva) y se borran los archivos que no tienen
-   ninguna página leída (de otro evento, no planilla, fallidas).
+   - **Sin regla de consentimiento desde 2026-11-07 (§4):** ni «Autorizo» (ya no está en la planilla; si una planilla
+     vieja la trae, el prompt la ignora) ni la firma deciden si una fila se importa; una duda de la IA en la firma no
+     cuenta como celda dudosa.
+4. **Confirmar**: `POST .../importar/{import}/confirmar` (sin declaración ni texto aprobado desde 2026-11-07).
+   Registra con `RegisterAttendee::handleMany`: `source = 'ocr'`, `import_id`, sin fila en `data_consents`. Los nuevos
+   quedan `pendiente` o `vinculado`; pasar a Votantes sigue siendo manual. Tras confirmar se borran los archivos que no
+   tienen ninguna página leída (de otro evento, no planilla, fallidas); las filas `no_autorizo` históricas se vacían.
 
 ### Tablas (migración `2026_11_03_000001_add_ocr_to_eventos`, aditiva; no toca `data_consents`)
 
@@ -1159,8 +1168,8 @@ verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca ta
 **sí envía las imágenes a Anthropic** (pregunta antes, salvo `--force`): con planillas reales, solo después del DPA/ZDR.
 
 - CSV (`,` o `;`, UTF-8) con las columnas `archivo`, `pagina` (página del archivo; 1 en una foto), `fila` (N.º 1–12),
-  `nombres`, `apellidos`, `cedula`, `celular`, `fijo`, `fecha_nacimiento`, `direccion`, `barrio`, `autorizo` (SI/NO) y
-  `firma` (SI/NO). Una fila por persona escrita.
+  `nombres`, `apellidos`, `cedula`, `celular`, `fijo`, `fecha_nacimiento`, `direccion`, `barrio` y
+  `firma` (SI/NO). Una columna `autorizo` de un CSV viejo se ignora. Una fila por persona escrita.
 - Informe: por página (filas, QR leído o no, modelo que respondió, tokens, costo estimado, segundos, error); filas en la
   verdad / detectadas / omitidas / sobrantes; **precisión por campo** (cédula, celular, nombres, apellidos, fecha,
   autorizó, firma, y fijo, dirección, barrio) comparando dígitos, fechas normalizadas y texto en mayúsculas sin tildes; y

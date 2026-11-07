@@ -1,7 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
-import AttendeeFields, { ConsentBox } from '@/Components/Eventos/AttendeeFields';
+import AttendeeFields from '@/Components/Eventos/AttendeeFields';
 import { StatusBadge } from '@/Components/Eventos/EventoBadges';
 import { ConnectionStatus, PendingAttendees } from '@/Components/Eventos/OperadorOffline';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
@@ -24,7 +24,7 @@ const BLOCKING_REASONS = ['session', 'password'];
 const REQUEST_TIMEOUT_MS = 15000;
 
 function hasTypedData(data) {
-    const { birth = {}, autoriza_datos: _consent, ...fields } = data;
+    const { birth = {}, ...fields } = data;
     return Object.values(fields).some(v => String(v ?? '').trim() !== '') || Object.values(birth).some(Boolean);
 }
 
@@ -37,13 +37,12 @@ async function freshUuid(uuid) {
     }
 }
 
-export default function Operador({ evento: serverEvento, consent: serverConsent, registrados, mis_registros: misRegistros, client_uuid: clientUuid }) {
+export default function Operador({ evento: serverEvento, registrados, mis_registros: misRegistros, client_uuid: clientUuid }) {
     const { props } = usePage();
     const perms = props.auth?.user?.permissions || [];
     const canSeeDetail = perms.includes('*') || perms.includes('view.eventos') || perms.includes('manage.eventos');
     const [snapshot, setSnapshot] = useState(null);
     const evento = snapshot?.evento ?? serverEvento;
-    const consent = snapshot ? snapshot.consent : serverConsent;
     const [accepts, setAccepts] = useState(!!serverEvento.accepts_registrations);
     const [total, setTotal] = useState(registrados ?? 0);
     // Saved with signal in this session, plus the client_uuids kept on the phone (those the server refuses stop counting).
@@ -75,8 +74,8 @@ export default function Operador({ evento: serverEvento, consent: serverConsent,
     useEffect(() => {
         let active = true;
         if (navigator.onLine) {
-            // Kept for later without signal: the event, the consent text shown and this page itself.
-            saveEventSnapshot(serverEvento, serverConsent).catch(err => console.warn('No se pudo guardar el evento en el teléfono', err));
+            // Kept for later without signal: the event and this page itself.
+            saveEventSnapshot(serverEvento).catch(err => console.warn('No se pudo guardar el evento en el teléfono', err));
             precacheExtraPages([`/eventos/${serverEvento.id}/operador`]);
         } else {
             getEventSnapshot(serverEvento.id)
@@ -84,11 +83,10 @@ export default function Operador({ evento: serverEvento, consent: serverConsent,
                 .catch(err => console.warn('No se pudo leer el evento guardado en el teléfono', err));
         }
         return () => { active = false; };
-    }, [serverEvento, serverConsent]);
+    }, [serverEvento]);
 
     const form = useAttendeeForm({
         url: `/eventos/${evento.id}/asistentes`,
-        consentId: consent?.id,
         initialUuid: clientUuid,
         timeoutMs: REQUEST_TIMEOUT_MS,
         prepareUuid: freshUuid,
@@ -137,7 +135,7 @@ export default function Operador({ evento: serverEvento, consent: serverConsent,
         if (hasTypedData(form.data) && !window.confirm('El formulario tiene datos escritos. ¿Reemplazarlos por el registro que va a corregir?')) return;
         setSuccess(null);
         setCorrectingId(change.id);
-        form.load(attendeeFormFromPayload(change.data?.payload, { consentId: consent?.id }));
+        form.load(attendeeFormFromPayload(change.data?.payload));
         firstFieldRef.current?.focus();
     }
 
@@ -231,19 +229,10 @@ export default function Operador({ evento: serverEvento, consent: serverConsent,
 
                         <div>
                             <h2 className="text-[20px] font-extrabold text-[var(--color-ink)]">Registrar asistente</h2>
-                            <p className="mt-1 text-[18px] text-[var(--color-ink-soft)]">Los campos con <span className="text-red-600 font-bold">*</span> son obligatorios. Lea el texto de autorización a la persona antes de marcar la casilla.</p>
+                            <p className="mt-1 text-[18px] text-[var(--color-ink-soft)]">Los campos con <span className="text-red-600 font-bold">*</span> son obligatorios.</p>
                         </div>
 
                         <AttendeeFields form={form} barrios={evento.barrios} firstFieldRef={firstFieldRef} />
-
-                        <ConsentBox
-                            consent={consent}
-                            checked={form.data.autoriza_datos}
-                            onChange={v => form.set('autoriza_datos', v)}
-                            error={form.errors.autoriza_datos}
-                            provisional={consent && !consent.approved}
-                            expandable
-                        />
 
                         {form.notice && (
                             <div ref={noticeRef} tabIndex={-1} role="alert" className="px-4 py-3 rounded-xl bg-red-50 border-2 border-red-300 text-[18px] font-semibold text-red-800">

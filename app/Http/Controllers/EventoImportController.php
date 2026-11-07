@@ -9,7 +9,6 @@ use App\Http\Requests\Eventos\ImportRowRequest;
 use App\Http\Requests\Eventos\ImportUploadRequest;
 use App\Models\AuditLog;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
 use App\Models\EventImport;
 use App\Models\EventImportRow;
 use App\Services\Eventos\AttendeeSheetReader;
@@ -40,9 +39,6 @@ class EventoImportController extends Controller
 
     public const ROWS_PER_PAGE = 50;
 
-    // Everything imported keeps a data authorization, so (as the public QR) a load needs the campaign's approved text.
-    public const NEEDS_APPROVED_TEXT = 'Falta el texto de autorización aprobado por la campaña; no se puede cargar Excel hasta tenerlo.';
-
     public const FILTERS = ['nuevas', 'plataforma', 'error', 'no_autorizo', 'duplicada', 'en_evento', 'omitidas', 'sugerida', 'sin_ficha'];
 
     public function __construct(private EventImportService $imports) {}
@@ -50,16 +46,15 @@ class EventoImportController extends Controller
     public function template(Request $request, string $id): HttpResponse
     {
         $event = $this->findEvent($id);
-        $consent = ConsentText::currentFor($event->campaign_id);
         self::raiseMemoryLimit();
-        $content = (new AttendeeTemplate)->build($event, $consent);
+        $content = (new AttendeeTemplate)->build($event);
 
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => 'EVENTO_PLANTILLA_EXCEL_DESCARGADA',
             'entity_type' => 'evento',
             'entity_id' => $event->id,
-            'metadata' => ['route' => 'eventos.importar.plantilla', 'consent_text_id' => $consent?->id],
+            'metadata' => ['route' => 'eventos.importar.plantilla'],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -84,8 +79,6 @@ class EventoImportController extends Controller
     {
         $event = $this->findEvent($id);
         $this->assertAcceptsImports($event);
-        // No approved text needed to upload: a list without authorization never registers consents; confirming
-        // rows with SÍ still needs it.
         $this->limits();
 
         try {
@@ -172,9 +165,6 @@ class EventoImportController extends Controller
         }
         abort_unless(Str::isUuid($rowId), 404);
         $row = EventImportRow::where('import_id', $import->id)->findOrFail($rowId);
-        if ($row->status === 'no_autorizo') {
-            throw ValidationException::withMessages(['fila' => 'Esta fila no se puede cambiar: en «Autorizó» no dice SÍ, la persona no autorizó el tratamiento de sus datos.']);
-        }
 
         $suggestion = $request->validated('sugerencia');
         try {
@@ -213,13 +203,6 @@ class EventoImportController extends Controller
         if ($import->status === 'subido') {
             throw ValidationException::withMessages(['confirmar' => $import->isOcr() ? 'Primero termine de leer las páginas.' : 'Primero revise las columnas del archivo.']);
         }
-        $authorized = $import->isOcr() || EventImportService::hasAuthorizedRows($import);
-        if ($authorized) {
-            if (! $request->boolean('declaracion')) {
-                throw ValidationException::withMessages(['declaracion' => ImportConfirmRequest::MESSAGE]);
-            }
-            $this->assertApprovedText($event, $import->isOcr() ? EventoOcrController::NEEDS_APPROVED_TEXT : self::NEEDS_APPROVED_TEXT);
-        }
         $this->limits();
 
         try {
@@ -231,17 +214,17 @@ class EventoImportController extends Controller
             app(OcrImportService::class)->afterConfirm($import);
         }
 
+        $parts = array_filter([
+            $result['historial'] ? self::plural($result['historial'], 'quedó', 'quedaron').' en el historial de su ficha' : null,
+            $result['solo_evento'] ? self::plural($result['solo_evento'], 'quedó pendiente', 'quedaron pendientes').' de aprobar para pasar a Votantes' : null,
+            $result['ya_estaban'] ? self::plural($result['ya_estaban'], 'ya estaba', 'ya estaban').' en el evento' : null,
+        ]);
         $list = $result['historial'] + $result['solo_evento'];
-        $isList = (int) ($import->fresh()->counts['sin_autorizacion'] ?? 0) > 0;
         $message = match (true) {
             $result['nuevos'] === 0 && $result['ya_estaban'] === 0 => 'No había filas nuevas para registrar: este archivo ya estaba importado.',
-            $isList => 'Se registr'.($list === 1 ? 'ó ' : 'aron ').self::plural($list, 'asistente', 'asistentes')
-                .' sin autorización de datos: '.self::plural($result['historial'], 'quedó', 'quedaron').' en el historial de su ficha y '
-                .self::plural($result['solo_evento'], 'quedó', 'quedaron').' solo en la lista del evento'
-                .($result['ya_estaban'] ? '; '.self::plural($result['ya_estaban'], 'ya estaba', 'ya estaban').' en el evento' : '').'.',
+            $list > 0 => 'Se registr'.($list === 1 ? 'ó ' : 'aron ').self::plural($list, 'asistente', 'asistentes').': '.implode('; ', $parts).'.',
             default => 'Se registr'.($result['nuevos'] === 1 ? 'ó ' : 'aron ').self::plural($result['nuevos'], 'asistente nuevo', 'asistentes nuevos')
-                .', con autorización de datos'
-                .($result['ya_estaban'] ? '; '.self::plural($result['ya_estaban'], 'ya estaba', 'ya estaban').' en el evento' : '').'.',
+                .($result['ya_estaban'] ? '; '.end($parts) : '').'.',
         };
 
         return $this->done($request, $message, $result);
@@ -265,7 +248,6 @@ class EventoImportController extends Controller
 
     private function page(CampaignEvent $event, ?EventImport $import, ?string $filter, ?Request $request): Response
     {
-        $consent = ConsentText::currentFor($event->campaign_id);
         $filas = null;
         if ($import && $import->status !== 'subido') {
             $filas = EventImportRow::where('import_id', $import->id)
@@ -278,7 +260,6 @@ class EventoImportController extends Controller
 
         return Inertia::render('Eventos/Importar', [
             'evento' => self::eventProps($event),
-            'consent' => $consent ? ['id' => $consent->id, 'version' => $consent->version, 'approved' => $consent->approved] : null,
             'importacion' => $import ? self::importProps($import) : null,
             'muestra' => $import && $import->status === 'subido' ? $this->sample($import) : [],
             'filas' => $filas,
@@ -330,7 +311,6 @@ class EventoImportController extends Controller
             'encabezados' => $import->headers,
             'columnas' => $import->column_mapping,
             'counts' => $import->counts,
-            'declaro_planillas' => $import->consent_declared,
             'sin_autorizacion' => (int) ($import->counts['sin_autorizacion'] ?? 0) > 0,
             'hoja' => $import->sheet_name,
             'hojas' => $import->sheets ?? [],
@@ -385,9 +365,6 @@ class EventoImportController extends Controller
         if ($r->page_id !== null) {
             $props['fila_pagina'] = $r->page_row;
             $props['confianza'] = $r->confidence ?? (object) [];
-            $props['motivo'] = $r->status === 'no_autorizo' && $r->mapped !== null
-                ? OcrImportService::authorizationReason($r->mapped, $r->confidence ?? [])
-                : null;
         }
 
         return $props;
@@ -420,14 +397,6 @@ class EventoImportController extends Controller
     {
         if ($event->status === 'cancelado') {
             throw ValidationException::withMessages(['evento' => 'El evento está cancelado: no se pueden cargar asistentes.']);
-        }
-    }
-
-    // $message: the Excel text, or the one of the printed sheets read with AI (§13) for an OCR load.
-    private function assertApprovedText(CampaignEvent $event, string $message = self::NEEDS_APPROVED_TEXT): void
-    {
-        if (! ConsentText::currentFor($event->campaign_id)?->approved) {
-            throw ValidationException::withMessages(['consent' => $message]);
         }
     }
 

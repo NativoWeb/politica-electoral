@@ -15,7 +15,7 @@ class OcrPilot extends Command
 {
     protected $signature = 'eventos:ocr-piloto
         {carpeta : Carpeta con las fotos (jpg, png, webp) o PDF de las planillas}
-        {verdad : CSV con lo que dice cada fila (archivo, pagina, fila, nombres, apellidos, cedula, celular, fijo, fecha_nacimiento, direccion, barrio, autorizo, firma)}
+        {verdad : CSV con lo que dice cada fila (archivo, pagina, fila, nombres, apellidos, cedula, celular, fijo, fecha_nacimiento, direccion, barrio, firma)}
         {--model= : Modelo a probar (por defecto EVENTOS_OCR_MODEL)}
         {--json= : Guarda el informe completo en este archivo JSON}
         {--force : No pregunta antes de enviar las imágenes al proveedor}';

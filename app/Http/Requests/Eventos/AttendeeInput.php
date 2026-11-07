@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 class AttendeeInput
 {
     public const FIELDS = [
-        'client_uuid', 'consent_text_id', 'autoriza_datos', 'nombres', 'apellidos', 'cedula', 'celular',
+        'client_uuid', 'nombres', 'apellidos', 'cedula', 'celular',
         'barrio', 'fijo', 'fecha_nacimiento', 'direccion',
     ];
 
@@ -64,8 +64,6 @@ class AttendeeInput
     {
         return [
             'client_uuid' => ['required', 'uuid'],
-            'consent_text_id' => ['required', 'uuid'],
-            'autoriza_datos' => ['accepted'],
             'nombres' => ['required', 'string', 'max:100'],
             'apellidos' => ['required', 'string', 'max:100'],
             'cedula' => ['required', 'string', 'regex:/^\d{5,12}$/'],
@@ -89,7 +87,6 @@ class AttendeeInput
     public static function messages(): array
     {
         return [
-            'autoriza_datos.accepted' => 'Debe autorizar el tratamiento de sus datos para registrarse.',
             'nombres.required' => 'Escriba los nombres.',
             'nombres.max' => 'Los nombres no pueden tener más de 100 caracteres.',
             'apellidos.required' => 'Escriba los apellidos.',
@@ -107,8 +104,6 @@ class AttendeeInput
             'direccion.max' => 'La dirección no puede tener más de 255 caracteres.',
             'client_uuid.required' => 'Falta el identificador del registro. Recargue la página.',
             'client_uuid.uuid' => 'Identificador de registro inválido. Recargue la página.',
-            'consent_text_id.required' => 'Falta el texto de autorización. Recargue la página.',
-            'consent_text_id.uuid' => 'El texto de autorización no es válido. Recargue la página.',
             '*.string' => 'El campo :attribute debe ser un texto.',
         ];
     }
@@ -117,8 +112,6 @@ class AttendeeInput
     {
         return [
             'client_uuid' => 'identificador del registro',
-            'consent_text_id' => 'texto de autorización',
-            'autoriza_datos' => 'autorización de datos',
             'nombres' => 'nombres',
             'apellidos' => 'apellidos',
             'cedula' => 'cédula',

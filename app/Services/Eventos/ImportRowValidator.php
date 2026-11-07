@@ -9,8 +9,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 // Turns a sheet row into attendee fields and validates them with the same rules as the QR and the operator
 // (AttendeeInput), with the differences of a paper sign-in sheet: cédula of 5 to 10 digits, the barrio may be empty,
-// dates come as DD/MM/AAAA (or as an Excel date) and "Autorizó" says whether the person signed the authorization.
-// "Autorizó" is not editable in the preview: only what the paper sheet says counts.
+// dates come as DD/MM/AAAA (or as an Excel date).
 class ImportRowValidator
 {
     public const EDITABLE = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'municipio', 'liderazgo'];
@@ -50,16 +49,14 @@ class ImportRowValidator
             'fecha_nacimiento' => self::date($get('fecha_nacimiento')),
             'direccion' => self::text($get('direccion')),
             'barrio' => self::text($get('barrio')),
-            'autoriza' => self::text($get('autoriza')),
             'municipio' => self::text($get('municipio')),
             'liderazgo' => self::text($get('liderazgo')),
-            // The phone cell as written ("300 123 4567 / 310 765 4321"): a list without authorization reads its numbers.
+            // The phone cell as written ("300 123 4567 / 310 765 4321"): a list reads its numbers.
             'telefonos' => self::text($get('celular')),
         ];
     }
 
-    // A list without authorization (no «Autorizó» column, or that column empty in every row): only the name is
-    // required; cédula and phones, when present, are only used to find who is already in the platform. The birth
+    // A list (every Excel file since 2026-11-07): only the name is required; cédula and phones, when present, are only used to find who is already in the platform. The birth
     // date is not an error here (see listData()).
     public function validateList(array $mapped): array
     {
@@ -123,21 +120,9 @@ class ImportRowValidator
         ];
     }
 
-    // 'si', 'no' (NO or anything that is not SÍ) or 'vacio' (nothing written).
-    public static function authorization(array $mapped): string
-    {
-        $value = $mapped['autoriza'] ?? null;
-        if ($value === null || trim($value) === '') {
-            return 'vacio';
-        }
-
-        return self::yesNo($value) === true ? 'si' : 'no';
-    }
-
     // ['data' => normalized values ready for RegisterAttendee, 'errors' => [field => message]] (errors empty = valid).
     public function validate(array $mapped): array
     {
-        $autoriza = self::yesNo($mapped['autoriza'] ?? null);
         $input = self::normalized($mapped);
 
         $rules = array_intersect_key(AttendeeInput::rules(), array_flip(['nombres', 'apellidos', 'celular', 'fijo', 'fecha_nacimiento', 'direccion']));
@@ -161,7 +146,7 @@ class ImportRowValidator
         }
 
         return [
-            'data' => array_merge($input, ['autoriza' => $autoriza === true]),
+            'data' => $input,
             'errors' => $errors,
         ];
     }
@@ -169,7 +154,7 @@ class ImportRowValidator
     // The values of a row that already passed validate(), ready for RegisterAttendee (no validation again).
     public static function data(array $mapped): array
     {
-        return array_merge(self::normalized($mapped), ['autoriza' => self::yesNo($mapped['autoriza'] ?? null) === true]);
+        return self::normalized($mapped);
     }
 
     private static function normalized(array $mapped): array
@@ -282,7 +267,7 @@ class ImportRowValidator
         return null;
     }
 
-    // true, false or 'invalid'. An empty cell is a NO; only true lets a row be imported.
+    // true, false or 'invalid'. An empty cell is a NO (OCR pilot).
     public static function yesNo(?string $value): bool|string
     {
         if ($value === null || trim($value) === '') {

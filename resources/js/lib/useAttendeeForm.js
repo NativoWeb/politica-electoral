@@ -32,7 +32,7 @@ const NETWORK_MESSAGE = 'No hay conexión con el servidor. Revise el internet y 
 // onQueued gets the reason: 'offline', 'session', 'password' or 'server'.
 // `prepareUuid` may swap the current client_uuid for a fresh one before sending (e.g. one already used).
 export default function useAttendeeForm({
-    url, consentId, initialUuid, extraPayload, onSaved, onClosed, queueOffline, onQueued, prepareUuid, timeoutMs,
+    url, initialUuid, extraPayload, onSaved, onClosed, queueOffline, onQueued, prepareUuid, timeoutMs,
 }) {
     const [data, setData] = useState(EMPTY_ATTENDEE);
     const [errors, setErrors] = useState({});
@@ -99,7 +99,7 @@ export default function useAttendeeForm({
         let timer = null;
         try {
             if (prepareUuid) clientUuid.current = await prepareUuid(clientUuid.current);
-            const payload = { ...attendeePayload(data, { clientUuid: clientUuid.current, consentId }), ...(extraPayload?.() ?? {}) };
+            const payload = { ...attendeePayload(data, { clientUuid: clientUuid.current }), ...(extraPayload?.() ?? {}) };
             if (queueOffline && typeof navigator !== 'undefined' && navigator.onLine === false) {
                 return await queue(payload);
             }
@@ -134,7 +134,7 @@ export default function useAttendeeForm({
             if (res.status === 422) {
                 const fieldErrors = firstErrors(json.errors);
                 setErrors(fieldErrors);
-                setNotice(fieldErrors.consent_text_id || 'Revise los campos marcados en rojo.');
+                setNotice('Revise los campos marcados en rojo.');
                 return false;
             }
             if (res.status === 410) {

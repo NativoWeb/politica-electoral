@@ -5,8 +5,6 @@ namespace App\Actions\Eventos;
 use App\Http\Requests\Eventos\AttendeeInput;
 use App\Models\AuditLog;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
-use App\Models\DataConsent;
 use App\Models\EventAttendee;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -17,24 +15,20 @@ use Illuminate\Support\Str;
 // (event, cédula). Everything lands in the EVENT's campaign: the lider lookup filters it explicitly because the
 // Lider global scope does not restrict anything without an authenticated user. An existing lider is only linked,
 // never modified, and a new person stays "pendiente" until someone approves it (ApproveAttendees).
-// Every registration carries its consent proof in data_consents. An Excel import (only rows marked SÍ and declared
-// by the operator) registers with $channel = 'excel', the proof with the channel 'operador' (data_consents only
-// allows qr|operador and is not altered), import_id = the import, and audits once for the whole file.
+// Since 2026-11-07 (decision of the campaign) no data authorization is collected: autoriza_datos stays false and no
+// data_consents row is written. An Excel/OCR import registers with its own channel and import_id, and audits once
+// for the whole file.
 class RegisterAttendee
 {
     // $data was validated with AttendeeInput (normalized cédula and phones). Returns
     // ['attendee' => EventAttendee|null, 'created' => bool, 'conflict' => bool]; conflict = client_uuid of another event.
-    // $options: consent_channel (default $channel), audit (bool, default true), import_id (Excel import, default null).
-    public function handle(CampaignEvent $event, ConsentText $consent, array $data, string $channel, ?User $user, ?string $ip, ?string $userAgent, array $options = []): array
+    // $options: audit (bool, default true), import_id (Excel import, default null).
+    public function handle(CampaignEvent $event, array $data, string $channel, ?User $user, ?string $ip, ?string $userAgent, array $options = []): array
     {
-        $consentChannel = $options['consent_channel'] ?? $channel;
         $audit = $options['audit'] ?? true;
         $importId = $options['import_id'] ?? null;
 
         $previous = $this->previous($event, $data);
-        if ($previous !== null && $this->unauthorized($previous, $data)) {
-            return $this->authorizeExisting($event, $consent, $previous['attendee'], $data, $channel, $user, $ip, $userAgent, $consentChannel, $audit);
-        }
         if ($previous !== null) {
             return $audit ? $this->repeated($event, $previous, $channel, $user, $ip, $userAgent) : $previous;
         }
@@ -43,7 +37,7 @@ class RegisterAttendee
             ->where('cedula', $data['cedula'])->value('id');
 
         try {
-            $attendee = DB::transaction(function () use ($event, $consent, $data, $channel, $user, $ip, $userAgent, $liderId, $consentChannel, $audit, $importId) {
+            $attendee = DB::transaction(function () use ($event, $data, $channel, $user, $ip, $userAgent, $liderId, $audit, $importId) {
                 $attendee = (new EventAttendee)->forceFill([
                     'event_id' => $event->id,
                     'campaign_id' => $event->campaign_id,
@@ -57,7 +51,7 @@ class RegisterAttendee
                     'direccion' => $data['direccion'] ?? null,
                     'barrio' => $data['barrio'] ?? null,
                     'barrio_normalizado' => AttendeeInput::barrioKey($data['barrio'] ?? null),
-                    'autoriza_datos' => true,
+                    'autoriza_datos' => false,
                     'source' => $channel,
                     'import_id' => $importId,
                     'link_status' => $liderId ? 'vinculado' : 'pendiente',
@@ -67,23 +61,6 @@ class RegisterAttendee
                     'user_agent' => $userAgent,
                 ]);
                 $attendee->save();
-
-                $proof = (new DataConsent)->forceFill([
-                    'campaign_id' => $event->campaign_id,
-                    'consent_text_id' => $consent->id,
-                    'text_sha256' => $consent->sha256,
-                    'cedula' => $data['cedula'],
-                    'lider_id' => $liderId,
-                    'event_id' => $event->id,
-                    'attendee_id' => $attendee->id,
-                    'channel' => $consentChannel,
-                    'ip' => $ip,
-                    'user_agent' => $userAgent,
-                    'accepted_at' => now(),
-                ]);
-                $proof->save();
-
-                $attendee->forceFill(['consent_id' => $proof->id])->save();
                 if ($audit) {
                     $this->audit($event, $attendee, $channel, 'nuevo', $user, $ip, $userAgent);
                 }
@@ -96,9 +73,6 @@ class RegisterAttendee
             if ($previous === null) {
                 throw $e;
             }
-            if ($this->unauthorized($previous, $data)) {
-                return $this->authorizeExisting($event, $consent, $previous['attendee'], $data, $channel, $user, $ip, $userAgent, $consentChannel, $audit);
-            }
 
             return $audit ? $this->repeated($event, $previous, $channel, $user, $ip, $userAgent) : $previous;
         }
@@ -107,11 +81,11 @@ class RegisterAttendee
     }
 
     // Many registrations of one event at once (Excel import), with the same rules as handle() but one lookup and one
-    // insert per table for the whole list. $items: [key => validated attendee data]. Items whose client_uuid or cédula
-    // is already registered (or repeated inside the list) go through handle(), which returns the previous attendee; if
+    // insert for the whole list. $items: [key => validated attendee data]. Items whose client_uuid or cédula is
+    // already registered (or repeated inside the list) go through handle(), which returns the previous attendee; if
     // a concurrent registration hits a unique index, the whole list does. Nothing is audited here: the caller audits
     // the batch. Returns [key => ['attendee_id' => ?string, 'created' => bool, 'conflict' => bool]].
-    public function handleMany(CampaignEvent $event, ConsentText $consent, array $items, string $channel, ?User $user, ?string $ip, ?string $userAgent, string $consentChannel, ?string $importId = null): array
+    public function handleMany(CampaignEvent $event, array $items, string $channel, ?User $user, ?string $ip, ?string $userAgent, ?string $importId = null): array
     {
         if ($items === []) {
             return [];
@@ -136,31 +110,27 @@ class RegisterAttendee
 
         $results = [];
         try {
-            $results = DB::transaction(fn () => $this->insertMany($event, $consent, $fresh, $lideres, $channel, $user, $ip, $userAgent, $consentChannel, $importId));
+            $results = DB::transaction(fn () => $this->insertMany($event, $fresh, $lideres, $channel, $user, $ip, $userAgent, $importId));
         } catch (UniqueConstraintViolationException) {
             $slow += $fresh;
         }
 
         foreach ($slow as $key => $data) {
-            $outcome = $this->handle($event, $consent, $data, $channel, $user, $ip, $userAgent, [
-                'consent_channel' => $consentChannel, 'audit' => false, 'import_id' => $importId,
-            ]);
+            $outcome = $this->handle($event, $data, $channel, $user, $ip, $userAgent, ['audit' => false, 'import_id' => $importId]);
             $results[$key] = ['attendee_id' => $outcome['attendee']?->id, 'created' => $outcome['created'], 'conflict' => $outcome['conflict']];
         }
 
         return $results;
     }
 
-    private function insertMany(CampaignEvent $event, ConsentText $consent, array $items, array $lideres, string $channel, ?User $user, ?string $ip, ?string $userAgent, string $consentChannel, ?string $importId): array
+    private function insertMany(CampaignEvent $event, array $items, array $lideres, string $channel, ?User $user, ?string $ip, ?string $userAgent, ?string $importId): array
     {
         $now = now();
         $attendees = [];
-        $proofs = [];
         $results = [];
         foreach ($items as $key => $data) {
             $id = (string) Str::uuid();
             $liderId = $lideres[$data['cedula']] ?? null;
-            $consentId = (string) Str::uuid();
             $attendees[] = [
                 'id' => $id,
                 'event_id' => $event->id,
@@ -175,8 +145,7 @@ class RegisterAttendee
                 'direccion' => $data['direccion'] ?? null,
                 'barrio' => $data['barrio'] ?? null,
                 'barrio_normalizado' => AttendeeInput::barrioKey($data['barrio'] ?? null),
-                'autoriza_datos' => true,
-                'consent_id' => $consentId,
+                'autoriza_datos' => false,
                 'source' => $channel,
                 'import_id' => $importId,
                 'link_status' => $liderId ? 'vinculado' : 'pendiente',
@@ -187,91 +156,14 @@ class RegisterAttendee
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
-            $proofs[] = [
-                'id' => $consentId,
-                'campaign_id' => $event->campaign_id,
-                'consent_text_id' => $consent->id,
-                'text_sha256' => $consent->sha256,
-                'cedula' => $data['cedula'],
-                'lider_id' => $liderId,
-                'event_id' => $event->id,
-                'attendee_id' => $id,
-                'channel' => $consentChannel,
-                'ip' => $ip,
-                'user_agent' => $userAgent,
-                'accepted_at' => $now,
-            ];
             $results[$key] = ['attendee_id' => $id, 'created' => true, 'conflict' => false];
         }
 
         foreach (array_chunk($attendees, 100) as $chunk) {
             DB::table('event_attendees')->insert($chunk);
         }
-        foreach (array_chunk($proofs, 100) as $chunk) {
-            DB::table('data_consents')->insert($chunk);
-        }
 
         return $results;
-    }
-
-    // The same cédula already in the event from a list without authorization (another submission): this registration
-    // brings the authorization, so that attendee is completed instead of answering "ya estaba".
-    private function unauthorized(array $previous, array $data): bool
-    {
-        $attendee = $previous['attendee'];
-
-        return $attendee !== null && ! $attendee->autoriza_datos && $attendee->client_uuid !== $data['client_uuid'];
-    }
-
-    // Adds the consent proof to an attendee of a list without authorization: data_consents row, consent_id,
-    // autoriza_datos, and link_status vinculado (it had or now finds its ficha) or pendiente (to approve). Only empty
-    // fields are filled with what the person typed; nothing already stored is overwritten.
-    private function authorizeExisting(CampaignEvent $event, ConsentText $consent, EventAttendee $found, array $data, string $channel, ?User $user, ?string $ip, ?string $userAgent, string $consentChannel, bool $audit): array
-    {
-        return DB::transaction(function () use ($event, $consent, $found, $data, $channel, $user, $ip, $userAgent, $consentChannel, $audit) {
-            $attendee = EventAttendee::whereKey($found->id)->lockForUpdate()->first();
-            if ($attendee->autoriza_datos) {
-                return ['attendee' => $attendee, 'created' => false, 'conflict' => false];
-            }
-            $liderId = $attendee->lider_id ?? DB::table('lideres')->where('campaign_id', $event->campaign_id)
-                ->where('cedula', $data['cedula'])->value('id');
-
-            $proof = (new DataConsent)->forceFill([
-                'campaign_id' => $event->campaign_id,
-                'consent_text_id' => $consent->id,
-                'text_sha256' => $consent->sha256,
-                'cedula' => $data['cedula'],
-                'lider_id' => $liderId,
-                'event_id' => $event->id,
-                'attendee_id' => $attendee->id,
-                'channel' => $consentChannel,
-                'ip' => $ip,
-                'user_agent' => $userAgent,
-                'accepted_at' => now(),
-            ]);
-            $proof->save();
-
-            $fill = [
-                'consent_id' => $proof->id,
-                'autoriza_datos' => true,
-                'lider_id' => $liderId,
-                'link_status' => $liderId ? 'vinculado' : 'pendiente',
-            ];
-            foreach (['celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio'] as $field) {
-                if ($attendee->{$field} === null && ($data[$field] ?? null) !== null) {
-                    $fill[$field] = $data[$field];
-                }
-            }
-            if (isset($fill['barrio'])) {
-                $fill['barrio_normalizado'] = AttendeeInput::barrioKey($fill['barrio']);
-            }
-            $attendee->forceFill($fill)->save();
-            if ($audit) {
-                $this->audit($event, $attendee, $channel, 'autorizo', $user, $ip, $userAgent);
-            }
-
-            return ['attendee' => $attendee, 'created' => true, 'conflict' => false];
-        });
     }
 
     private function previous(CampaignEvent $event, array $data): ?array

@@ -12,7 +12,6 @@ use App\Http\Requests\Eventos\EventRequest;
 use App\Http\Requests\Eventos\OperatorAttendeeRequest;
 use App\Models\AuditLog;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
 use App\Models\EventAttendee;
 use App\Models\EventType;
 use App\Services\Eventos\Ocr\OcrSettings;
@@ -102,11 +101,8 @@ class EventoController extends Controller
         $filters = $this->attendeeFilters($request);
 
         $asistentes = $this->attendeesQuery($event, $filters)->paginate(50)->withQueryString();
-        $approvedConsents = $this->approvedConsents($asistentes->getCollection());
         $fichas = $this->linkedFichas($asistentes->getCollection());
         $asistentes->through(fn (EventAttendee $a) => $this->attendee($a) + [
-            // An attendee of a list without authorization has no consent at all: not a "provisional" one.
-            'consentimiento_provisional' => $a->autoriza_datos && ($a->consent_id === null || ! ($approvedConsents[$a->consent_id] ?? false)),
             'ficha' => $a->lider_id ? ($fichas[$a->lider_id] ?? null) : null,
         ]);
 
@@ -115,7 +111,6 @@ class EventoController extends Controller
             'asistentes' => $asistentes,
             'kpis' => $this->kpis($event),
             'filters' => $filters,
-            'consent' => ConsentText::currentFor($event->campaign_id)?->toProps(),
             'tipos' => $this->tipos(),
             'provincias' => $this->provincias(),
             'can' => [
@@ -136,7 +131,6 @@ class EventoController extends Controller
         ini_set('memory_limit', '256M');
 
         $attendees = $this->attendeesQuery($event, $filters)->get();
-        $approvedConsents = $this->approvedConsents($attendees);
         $rows = $attendees->map(fn (EventAttendee $a) => [
             'nombres' => $a->nombres,
             'apellidos' => $a->apellidos,
@@ -146,12 +140,6 @@ class EventoController extends Controller
             'fecha_nacimiento' => $a->fecha_nacimiento?->format('d/m/Y'),
             'direccion' => $a->direccion,
             'barrio' => $a->barrio,
-            'autoriza' => $a->autoriza_datos ? 'Sí' : 'No',
-            'texto' => match (true) {
-                ! $a->autoriza_datos => 'Sin autorización',
-                $a->consent_id !== null && ($approvedConsents[$a->consent_id] ?? false) => 'Aprobado',
-                default => 'Provisional',
-            },
             'origen' => EventoIntegracionController::SOURCES[$a->source] ?? $a->source,
             'registrado_por' => $a->registeredBy?->name,
             'estado' => EventoIntegracionController::LINK_STATUSES[$a->link_status] ?? $a->link_status,
@@ -169,12 +157,12 @@ class EventoController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
-        $columns = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio', 'autoriza',
-            'texto', 'origen', 'registrado_por', 'estado', 'en_votantes', 'fecha_registro'];
+        $columns = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio',
+            'origen', 'registrado_por', 'estado', 'en_votantes', 'fecha_registro'];
         $labels = [
             'nombres' => 'NOMBRES', 'apellidos' => 'APELLIDOS', 'cedula' => 'CÉDULA', 'celular' => 'CELULAR', 'fijo' => 'TELÉFONO FIJO',
-            'fecha_nacimiento' => 'FECHA DE NACIMIENTO', 'direccion' => 'DIRECCIÓN', 'barrio' => 'BARRIO', 'autoriza' => 'AUTORIZÓ DATOS',
-            'texto' => 'TEXTO DE AUTORIZACIÓN', 'origen' => 'ORIGEN', 'registrado_por' => 'REGISTRADO POR',
+            'fecha_nacimiento' => 'FECHA DE NACIMIENTO', 'direccion' => 'DIRECCIÓN', 'barrio' => 'BARRIO',
+            'origen' => 'ORIGEN', 'registrado_por' => 'REGISTRADO POR',
             'estado' => 'ESTADO DE VÍNCULO', 'en_votantes' => 'EN VOTANTES', 'fecha_registro' => 'FECHA DE REGISTRO',
         ];
         $filename = 'asistentes-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento').'.xlsx';
@@ -246,13 +234,7 @@ class EventoController extends Controller
         $event = $this->findEvent($id, true);
         $this->assertTransition($event, ['borrador', 'cerrado'], 'Solo se puede abrir un evento en borrador o cerrado.');
 
-        $consent = ConsentText::currentFor($event->campaign_id);
-        if (! $consent?->approved) {
-            throw ValidationException::withMessages(['consent' => 'La campaña no tiene un texto de autorización de datos aprobado. '
-                .'El QR público no se puede abrir hasta que lo esté; mientras tanto el operador puede registrar con el texto provisional.']);
-        }
-
-        $event->forceFill(['status' => 'abierto', 'consent_text_id' => $consent->id])->save();
+        $event->forceFill(['status' => 'abierto'])->save();
 
         return $this->statusDone($request, $event, 'Evento abierto: el QR ya recibe registros.');
     }
@@ -286,14 +268,12 @@ class EventoController extends Controller
     public function operador(Request $request, string $id): Response
     {
         $event = $this->findEvent($id, true);
-        $consent = ConsentText::currentFor($event->campaign_id);
 
         return Inertia::render('Eventos/Operador', [
             'evento' => array_merge($this->summary($event), [
                 'public_url' => $this->publicUrl($event),
-                'accepts_registrations' => $event->acceptsOperatorRegistrations() && $consent !== null,
+                'accepts_registrations' => $event->acceptsOperatorRegistrations(),
             ]),
-            'consent' => $consent?->toProps(),
             'registrados' => EventAttendee::where('event_id', $event->id)->count(),
             'mis_registros' => EventAttendee::where('event_id', $event->id)->where('registered_by', $request->user()->id)
                 ->orderByDesc('created_at')->limit(20)->get(['id', 'nombres', 'apellidos', 'created_at'])
@@ -320,7 +300,6 @@ class EventoController extends Controller
 
         $paginas = self::planillaPages($request->query('paginas'));
         ini_set('memory_limit', '256M');
-        $consent = ConsentText::currentFor($event->campaign_id);
 
         $pages = array_map(fn (int $page) => [
             'numero' => $page,
@@ -332,7 +311,7 @@ class EventoController extends Controller
             'action' => 'EVENTO_PLANILLA_DESCARGADA',
             'entity_type' => 'evento',
             'entity_id' => $event->id,
-            'metadata' => ['route' => 'eventos.planilla', 'paginas' => $paginas, 'consent_text_id' => $consent?->id],
+            'metadata' => ['route' => 'eventos.planilla', 'paginas' => $paginas],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -343,8 +322,6 @@ class EventoController extends Controller
             'total' => $paginas,
             'filas' => self::PLANILLA_ROWS,
             'cuando' => $this->planillaWhen($event),
-            'consent' => $consent,
-            'consentResumen' => $consent ? self::consentSummary($consent->cuerpo) : null,
         ])->setPaper('letter', 'landscape')
             ->setOption('isRemoteEnabled', false)
             ->setOption('isPhpEnabled', false)
@@ -358,22 +335,6 @@ class EventoController extends Controller
         $pages = filter_var($value, FILTER_VALIDATE_INT);
 
         return $pages === false ? 3 : max(1, min(self::PLANILLA_MAX_PAGES, $pages));
-    }
-
-    // The consent text cut at a sentence (or word) end so the footer keeps one short paragraph.
-    public static function consentSummary(string $body, int $limit = 480): string
-    {
-        $body = trim(preg_replace('/\s+/u', ' ', $body));
-        if (mb_strlen($body) <= $limit) {
-            return $body;
-        }
-        $cut = mb_substr($body, 0, $limit);
-        $sentence = mb_strrpos($cut, '. ');
-        if ($sentence !== false && $sentence > $limit / 2) {
-            return mb_substr($cut, 0, $sentence + 1).' […]';
-        }
-
-        return rtrim(mb_substr($cut, 0, (int) mb_strrpos($cut, ' ')), ' ,;:').' […]';
     }
 
     private function planillaWhen(CampaignEvent $event): ?string
@@ -394,16 +355,11 @@ class EventoController extends Controller
     public function registerAttendee(OperatorAttendeeRequest $request, string $id, RegisterAttendee $register): JsonResponse
     {
         $event = $this->findEvent($id, true);
-        $consent = ConsentText::currentFor($event->campaign_id);
-        if (! $event->acceptsOperatorRegistrations() || ! $consent) {
+        if (! $event->acceptsOperatorRegistrations()) {
             return response()->json(['success' => false, 'message' => 'El evento ya no recibe registros.'], 410);
         }
-        $data = $request->validated();
-        if ($data['consent_text_id'] !== $consent->id) {
-            throw ValidationException::withMessages(['consent_text_id' => 'El texto de autorización cambió. Recargue la página y léalo de nuevo a la persona.']);
-        }
 
-        $result = $register->handle($event, $consent, $data, 'operador', $request->user(), $request->ip(), $request->userAgent());
+        $result = $register->handle($event, $request->validated(), 'operador', $request->user(), $request->ip(), $request->userAgent());
         if ($result['conflict']) {
             return response()->json(['success' => false, 'message' => 'Ese registro pertenece a otro evento.'], 409);
         }
@@ -670,7 +626,6 @@ class EventoController extends Controller
             'direccion' => $a->direccion,
             'barrio' => $a->barrio,
             'nota' => $a->nota,
-            'autoriza_datos' => $a->autoriza_datos,
             'source' => $a->source,
             'link_status' => $a->link_status,
             'lider_id' => $a->lider_id,
@@ -714,14 +669,6 @@ class EventoController extends Controller
             ->mapWithKeys(fn ($l) => [$l->id => ['cargo' => $l->cargo, 'lider' => $l->tipo !== ApproveAttendees::TIPO]])->all();
     }
 
-    // consent id => whether its text was approved.
-    private function approvedConsents($attendees)
-    {
-        return DB::table('data_consents as d')->join('consent_texts as t', 'd.consent_text_id', '=', 't.id')
-            ->whereIn('d.id', $attendees->pluck('consent_id')->filter()->values())
-            ->pluck('t.approved', 'd.id');
-    }
-
     private function kpis(CampaignEvent $event): array
     {
         $byStatus = EventAttendee::where('event_id', $event->id)->groupBy('link_status')
@@ -735,7 +682,6 @@ class EventoController extends Controller
             'pendientes' => (int) ($byStatus['pendiente'] ?? 0),
             'aprobados' => (int) ($byStatus['aprobado'] ?? 0),
             'descartados' => (int) ($byStatus['descartado'] ?? 0),
-            'sin_autorizacion' => (int) ($byStatus['sin_autorizacion'] ?? 0),
             'qr' => (int) ($bySource['qr'] ?? 0),
             'operador' => (int) ($bySource['operador'] ?? 0),
             'excel' => (int) ($bySource['excel'] ?? 0),
@@ -747,8 +693,7 @@ class EventoController extends Controller
     {
         return ! $event->trashed()
             && $event->status === 'abierto'
-            && now()->lt($event->publicClosesAt())
-            && (bool) ConsentText::currentFor($event->campaign_id)?->approved;
+            && now()->lt($event->publicClosesAt());
     }
 
     private function publicUrl(CampaignEvent $event): string

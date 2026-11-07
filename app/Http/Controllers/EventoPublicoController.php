@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Actions\Eventos\RegisterAttendee;
 use App\Http\Requests\Eventos\AttendeeInput;
 use App\Models\CampaignEvent;
-use App\Models\ConsentText;
 use App\Support\Provincias;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
@@ -15,7 +14,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -63,14 +61,9 @@ class EventoPublicoController extends Controller
             AttendeeInput::attributes(),
         )->validate();
 
-        $consent = ConsentText::currentFor($event->campaign_id);
-        if ($data['consent_text_id'] !== $consent->id) {
-            throw ValidationException::withMessages(['consent_text_id' => 'El texto de autorización cambió. Recargue la página y vuelva a enviar.']);
-        }
-
         $this->countAgainstEventQuota($event);
 
-        $result = $register->handle($event, $consent, $data, 'qr', null, $request->ip(), $request->userAgent());
+        $result = $register->handle($event, $data, 'qr', null, $request->ip(), $request->userAgent());
         if (! $result['created']) {
             // A repeated cédula answers faster than a new one: blur the timing so it does not reveal that either.
             usleep(random_int(50_000, 150_000));
@@ -138,7 +131,6 @@ class EventoPublicoController extends Controller
     private function page(Request $request, CampaignEvent $event, bool $submitted, ?string $message): Response
     {
         $open = EventoController::publicOpen($event);
-        $consent = $open ? ConsentText::currentFor($event->campaign_id) : null;
         $tz = EventoController::TZ;
 
         $props = [
@@ -154,7 +146,6 @@ class EventoPublicoController extends Controller
                 'provincia' => Provincias::display($event->provincia?->canonical_name),
             ],
             'barrios' => $open ? $event->barrios->pluck('nombre')->values()->all() : [],
-            'consent' => $consent ? ['id' => $consent->id, 'version' => $consent->version, 'cuerpo' => $consent->cuerpo] : null,
             'form_token' => $open ? Crypt::encryptString(json_encode(['e' => $event->id, 't' => now()->timestamp])) : null,
             'client_uuid' => $open ? (string) Str::uuid() : null,
             'submitted' => $submitted,

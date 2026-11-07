@@ -39,10 +39,10 @@ class EventOperatorTest extends TestCase
         $event ??= $this->event;
 
         return $this->actingAs($user ?? $this->operator)
-            ->postJson("/eventos/{$event->id}/asistentes", $this->attendeePayload($this->provisionalText()->id, $overrides));
+            ->postJson("/eventos/{$event->id}/asistentes", $this->attendeePayload(null, $overrides));
     }
 
-    public function test_an_operator_registers_with_the_provisional_text_but_cannot_manage_events(): void
+    public function test_an_operator_registers_without_any_consent_but_cannot_manage_events(): void
     {
         $response = $this->register()->assertCreated()
             ->assertJsonPath('success', true)
@@ -52,9 +52,9 @@ class EventOperatorTest extends TestCase
         $this->assertSame('operador', $attendee->source);
         $this->assertSame($this->operator->id, $attendee->registered_by);
         $this->assertSame('pendiente', $attendee->link_status);
-        $consent = DB::table('data_consents')->first();
-        $this->assertSame($this->provisionalText()->id, $consent->consent_text_id);
-        $this->assertSame('operador', $consent->channel);
+        $this->assertFalse((bool) $attendee->autoriza_datos);
+        $this->assertNull($attendee->consent_id);
+        $this->assertSame(0, DB::table('data_consents')->count());
         $this->assertSame(0, DB::table('lideres')->count());
 
         $this->actingAs($this->operator)->postJson('/eventos', ['nombre' => 'X'])->assertForbidden();
@@ -67,7 +67,7 @@ class EventOperatorTest extends TestCase
                 ->where('can', ['manage' => false, 'view' => false, 'register' => true]));
         $this->actingAs($this->operator)->get("/eventos/{$this->event->id}/operador")->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page->component('Eventos/Operador')
-                ->where('consent.approved', false)
+                ->missing('consent')
                 ->where('registrados', 1)
                 ->where('evento.accepts_registrations', true)
                 ->has('mis_registros', 1));
@@ -90,7 +90,7 @@ class EventOperatorTest extends TestCase
         $this->register(['cedula' => '1.098.765.432'])->assertOk()->assertJsonPath('data.id', $id)->assertJsonPath('data.duplicate', true);
 
         $this->assertSame(1, DB::table('event_attendees')->count());
-        $this->assertSame(1, DB::table('data_consents')->count());
+        $this->assertSame(0, DB::table('data_consents')->count());
     }
 
     public function test_a_client_uuid_of_another_event_is_409(): void
@@ -115,8 +115,7 @@ class EventOperatorTest extends TestCase
     public function test_operator_validation_errors(): void
     {
         $this->register(['autoriza_datos' => false, 'celular' => '123'])->assertStatus(422)
-            ->assertJsonValidationErrors(['autoriza_datos', 'celular']);
-        $this->register(['consent_text_id' => (string) Str::uuid()])->assertStatus(422)->assertJsonValidationErrors('consent_text_id');
+            ->assertJsonValidationErrors(['celular'])->assertJsonMissingValidationErrors(['autoriza_datos', 'consent_text_id']);
         $this->register(['client_uuid' => 'no-es-uuid'])->assertStatus(422)->assertJsonValidationErrors('client_uuid');
 
         $this->assertSame(0, DB::table('event_attendees')->count());
@@ -142,7 +141,7 @@ class EventOperatorTest extends TestCase
         $this->assertSame($this->giron, $lider->geographic_unit_id);
         $this->assertSame('El Poblado', $lider->barrio);
         $this->assertSame('1980-04-02', substr($lider->fecha_nacimiento, 0, 10));
-        $this->assertEquals(0, $lider->autoriza_datos, 'Accepted over the provisional text: not an authorization in Votantes');
+        $this->assertEquals(0, $lider->autoriza_datos, 'No authorization is collected: the ficha has none');
         $this->assertNull($lider->observacion, 'The ficha never names the event: attendance is only seen with view.eventos');
         $this->assertSame('6076543210', DB::table('lider_contactos')->where('lider_id', $lider->id)->where('tipo', 'fijo')->value('valor'));
 
@@ -151,27 +150,27 @@ class EventOperatorTest extends TestCase
         $this->assertSame(1, DB::table('lideres')->count());
     }
 
-    public function test_only_a_consent_over_an_approved_text_authorizes_the_data_in_votantes(): void
+    // An offline queue saved before 2026-11-07 still carries consent_text_id (even of a text that changed since) and
+    // autoriza_datos: it syncs like a current one, without consent, and is approvable.
+    public function test_a_queued_registration_with_the_old_consent_fields_still_syncs_and_is_approvable(): void
     {
-        $provisional = $this->register()->json('data.id');
-        $text = $this->approvedText(Campaign::DEFAULT_ID);
-        $approved = $this->actingAs($this->operator)->postJson("/eventos/{$this->event->id}/asistentes",
-            $this->attendeePayload($text->id, ['cedula' => '22334455']))->assertCreated()->json('data.id');
+        $old = $this->actingAs($this->operator)
+            ->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload((string) Str::uuid(), ['cedula' => '22334455']))
+            ->assertCreated()->json('data.id');
+        $current = $this->register()->assertCreated()->json('data.id');
 
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}")
-            ->assertInertia(function (AssertableInertia $page) use ($provisional, $approved) {
-                $flags = collect($page->toArray()['props']['asistentes']['data'])->pluck('consentimiento_provisional', 'id');
-                $this->assertTrue($flags[$provisional]);
-                $this->assertFalse($flags[$approved]);
-            });
+            ->assertInertia(function (AssertableInertia $page) {
+                $rows = collect($page->toArray()['props']['asistentes']['data']);
+                $this->assertSame(['pendiente'], $rows->pluck('link_status')->unique()->values()->all());
+                $this->assertFalse($rows->contains(fn ($r) => array_key_exists('consentimiento_provisional', $r) || array_key_exists('autoriza_datos', $r)));
+            })
+            ->assertInertia(fn (AssertableInertia $page) => $page->missing('consent')->missing('kpis.sin_autorizacion'));
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => [$provisional, $approved]])
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => [$old, $current]])
             ->assertOk()->assertJsonPath('data.aprobados', 2);
-
-        $flag = fn (string $id) => (bool) DB::table('lideres')
-            ->where('id', DB::table('event_attendees')->where('id', $id)->value('lider_id'))->value('autoriza_datos');
-        $this->assertFalse($flag($provisional));
-        $this->assertTrue($flag($approved));
+        $this->assertSame(0, DB::table('data_consents')->count());
+        $this->assertSame(0, DB::table('lideres')->where('autoriza_datos', true)->count());
     }
 
     public function test_an_approved_lider_gets_the_province_as_the_platform_stores_it(): void

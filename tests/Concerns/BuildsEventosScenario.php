@@ -325,12 +325,15 @@ trait BuildsEventosScenario
         return $id;
     }
 
-    protected function attendeePayload(string $consentId, array $overrides = []): array
+    // $consentId: a client from before 2026-11-07 (or its offline queue) still sends consent_text_id and
+    // autoriza_datos; null sends the current payload, without them.
+    protected function attendeePayload(?string $consentId = null, array $overrides = []): array
     {
+        $legacy = $consentId !== null ? ['consent_text_id' => $consentId, 'autoriza_datos' => true] : [];
+
         return array_merge([
             'client_uuid' => (string) Str::uuid(),
-            'consent_text_id' => $consentId,
-            'autoriza_datos' => true,
+            ...$legacy,
             'nombres' => 'Ana María',
             'apellidos' => 'Pérez Gómez',
             'cedula' => '1098765432',
@@ -345,7 +348,7 @@ trait BuildsEventosScenario
         return Crypt::encryptString(json_encode(['e' => $event->id, 't' => now()->timestamp - $secondsAgo]));
     }
 
-    protected function publicPayload(CampaignEvent $event, string $consentId, array $overrides = []): array
+    protected function publicPayload(CampaignEvent $event, ?string $consentId = null, array $overrides = []): array
     {
         return array_merge($this->attendeePayload($consentId), ['form_token' => $this->formToken($event), 'website' => ''], $overrides);
     }

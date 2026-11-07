@@ -16,9 +16,9 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\Concerns\BuildsEventosScenario;
 use Tests\TestCase;
 
-// Lists of attendees without cédula or authorization (docs/eventos-api.md §11, "Listas sin autorización"):
-// suggestion by phone + name confirmed by the operator, link by cédula as history only, the rest only in the event's
-// list (never approvable), and workbooks with one sheet per jornada. Synthetic data only. SQLite.
+// Lists of attendees (docs/eventos-api.md §11; every Excel file since 2026-11-07, when the campaign withdrew the data
+// authorization): suggestion by phone + name confirmed by the operator, link by cédula as history only, the rest
+// pendientes de aprobar, and workbooks with one sheet per jornada. Synthetic data only. SQLite.
 class EventListImportTest extends TestCase
 {
     use BuildsEventosScenario;
@@ -35,7 +35,7 @@ class EventListImportTest extends TestCase
         $this->setUpEventos();
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos', 'view.votantes']);
-        // Only the provisional text: a list without authorization does not need the approved one.
+        // Only the provisional text: nothing needs an approved one.
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID, ['status' => 'cerrado']);
     }
 
@@ -129,7 +129,7 @@ class EventListImportTest extends TestCase
         $this->assertStringNotContainsString('300', $audit);
         $this->assertStringNotContainsString('PEREZ', strtoupper($audit));
 
-        // No declaration and no approved text needed: nothing is registered with consent.
+        // No declaration and no approved text: nothing is registered with consent.
         $this->confirm($id)->assertOk()->assertJsonPath('data.nuevos', 1)->assertJsonPath('data.historial', 1);
         $attendee = DB::table('event_attendees')->first();
         $this->assertSame($ana, $attendee->lider_id);
@@ -154,13 +154,13 @@ class EventListImportTest extends TestCase
         // The event page shows the cargo of the linked ficha and that it is a registered lider.
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}")->assertInertia(fn (AssertableInertia $page) => $page
             ->where('asistentes.data.0.ficha.cargo', 'Edil')->where('asistentes.data.0.ficha.lider', true)
-            ->where('asistentes.data.0.consentimiento_provisional', false));
+            ->missing('asistentes.data.0.consentimiento_provisional'));
         $noVotantes = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos']);
         $this->actingAs($noVotantes)->get("/eventos/{$this->event->id}")->assertInertia(fn (AssertableInertia $page) => $page
             ->where('asistentes.data.0.ficha', null));
     }
 
-    public function test_rejecting_the_suggestion_leaves_the_row_only_in_the_event(): void
+    public function test_rejecting_the_suggestion_leaves_the_person_pending_in_the_event(): void
     {
         $this->lider(Campaign::DEFAULT_ID, 'Ana Pérez', null, ['telefono' => '3001234567']);
         $id = $this->load($this->listFile([['Girón', 'Ana Pérez', null, '3001234567']]));
@@ -169,7 +169,7 @@ class EventListImportTest extends TestCase
             ->assertJsonPath('data.fila.status', 'sin_ficha');
         $this->confirm($id)->assertOk()->assertJsonPath('data.solo_evento', 1);
         $this->assertNull(DB::table('event_attendees')->value('lider_id'));
-        $this->assertSame('sin_autorizacion', DB::table('event_attendees')->value('link_status'));
+        $this->assertSame('pendiente', DB::table('event_attendees')->value('link_status'));
     }
 
     public function test_same_phone_with_another_name_or_outside_the_territory_is_not_suggested(): void
@@ -192,24 +192,41 @@ class EventListImportTest extends TestCase
         }
     }
 
-    public function test_new_people_without_authorization_stay_in_the_event_and_cannot_be_approved(): void
+    public function test_new_people_of_a_list_stay_pending_and_can_be_approved(): void
     {
         $id = $this->load($this->listFile([['Girón', 'Pedro Pablo Díaz', 'Edil', '3201112233'], ['Girón', 'Rosa', null, null]]));
         $this->assertSame('sin_ficha', $this->row($id, 2)->status);
         $this->assertSame('sin_ficha', $this->row($id, 3)->status, 'one word is enough: only the name is required');
 
         $this->confirm($id)->assertOk()->assertJsonPath('data.solo_evento', 2)
-            ->assertJsonPath('message', 'Se registraron 2 asistentes sin autorización de datos: 0 quedaron en el historial de su ficha y 2 quedaron solo en la lista del evento.');
+            ->assertJsonPath('message', 'Se registraron 2 asistentes: 2 quedaron pendientes de aprobar para pasar a Votantes.');
         $attendees = DB::table('event_attendees')->get();
         $this->assertCount(2, $attendees);
-        $this->assertTrue($attendees->every(fn ($a) => $a->lider_id === null && $a->link_status === 'sin_autorizacion' && ! $a->autoriza_datos && $a->consent_id === null));
+        $this->assertTrue($attendees->every(fn ($a) => $a->lider_id === null && $a->link_status === 'pendiente' && ! $a->autoriza_datos && $a->consent_id === null));
         $this->assertSame(0, DB::table('data_consents')->count());
+        $this->actingAs($this->manager)->get("/eventos/{$this->event->id}?link_status=pendiente")->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('asistentes.total', 2)->where('kpis.pendientes', 2)->missing('kpis.sin_autorizacion'));
 
         $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => $attendees->pluck('id')->all()])->assertOk()
+            ->assertJsonPath('data.aprobados', 2);
+        $this->assertSame(2, DB::table('lideres')->where('tipo', 'asistente_evento')->where('autoriza_datos', false)->count());
+        $this->assertSame(['aprobado'], DB::table('event_attendees')->distinct()->pluck('link_status')->all());
+    }
+
+    // Attendees loaded before 2026-11-07 as "sin_autorizacion" are turned into pendiente by the deploy SQL
+    // (docs/eventos-api.md §11) and then approved like any other.
+    public function test_a_legacy_sin_autorizacion_attendee_is_approvable_once_the_deploy_sql_ran(): void
+    {
+        $id = $this->load($this->listFile([['Girón', 'Pedro Pablo Díaz', 'Edil', '3201112233']]));
+        $this->confirm($id)->assertOk();
+        DB::table('event_attendees')->update(['link_status' => 'sin_autorizacion']);
+        $attendee = DB::table('event_attendees')->value('id');
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => [$attendee]])->assertOk()
             ->assertJsonPath('data.aprobados', 0);
-        $this->assertSame(0, DB::table('lideres')->count(), 'no ficha in Votantes/Mapa without authorization');
-        $this->actingAs($this->manager)->get("/eventos/{$this->event->id}?link_status=sin_autorizacion")->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('asistentes.total', 2)->where('kpis.sin_autorizacion', 2));
+
+        DB::statement("UPDATE event_attendees SET link_status = 'pendiente', updated_at = CURRENT_TIMESTAMP WHERE link_status = 'sin_autorizacion' AND lider_id IS NULL");
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes/aprobar", ['ids' => [$attendee]])->assertOk()
+            ->assertJsonPath('data.aprobados', 1);
     }
 
     public function test_a_row_with_an_existing_cedula_is_linked_directly(): void
@@ -245,8 +262,8 @@ class EventListImportTest extends TestCase
         $this->assertSame(['LEBRIJA', 'GIRÓN'], array_column($sheets, 'nombre'));
         $this->assertStringStartsWith('JORNADA "DEL CONGRESO AL BARRIO"', $sheets[1]['titulo']);
         $mapping = json_decode($import->column_mapping, true);
-        $this->assertSame([2, 3, 4, 5, 6, 7, 8, null], [$mapping['nombre_completo'], $mapping['cedula'], $mapping['celular'],
-            $mapping['fecha_nacimiento'], $mapping['direccion'], $mapping['barrio'], $mapping['liderazgo'], $mapping['autoriza']]);
+        $this->assertSame([2, 3, 4, 5, 6, 7, 8], [$mapping['nombre_completo'], $mapping['cedula'], $mapping['celular'],
+            $mapping['fecha_nacimiento'], $mapping['direccion'], $mapping['barrio'], $mapping['liderazgo']]);
 
         $this->actingAs($this->manager)->putJson("{$this->base()}/{$id}/columnas", ['columnas' => $mapping])->assertOk();
         $this->assertSame('sin_ficha', $this->row($id, 6)->status);
@@ -269,78 +286,68 @@ class EventListImportTest extends TestCase
             ->assertJsonValidationErrors('importacion');
     }
 
-    public function test_the_authorized_flow_is_unchanged_when_the_file_has_si(): void
+    public function test_a_file_with_the_old_autorizo_column_imports_every_row_without_a_declaration(): void
     {
         $file = $this->workbook(['Asistentes' => [
             ['Nombres', 'Apellidos', 'Cédula', 'Celular', 'Barrio', 'Autorizó (SÍ/NO)'],
             ['Ana', 'Pérez', '1090000001', '3001234567', 'Centro', 'SÍ'],
             ['Beto', 'Gil', '1090000002', '3001234568', 'Centro', ''],
+            ['Caro', 'Díaz', '1090000003', '3001234569', 'Centro', 'NO'],
         ]]);
         $id = $this->load($file);
-        $this->assertSame('valida', $this->row($id, 2)->status);
-        $this->assertSame('no_autorizo', $this->row($id, 3)->status, 'with SÍ in some rows an empty cell is still "no autorizó"');
-        $this->confirm($id, ['declaracion' => true])->assertUnprocessable()->assertJsonValidationErrors('consent');
-        $this->approvedText(Campaign::DEFAULT_ID);
-        $this->confirm($id)->assertUnprocessable()->assertJsonValidationErrors('declaracion');
-        $this->confirm($id, ['declaracion' => true])->assertOk()->assertJsonPath('data.nuevos', 1);
-        $this->assertSame('pendiente', DB::table('event_attendees')->value('link_status'));
-        $this->assertSame(1, DB::table('data_consents')->count());
+        foreach ([2, 3, 4] as $n) {
+            $this->assertSame('sin_ficha', $this->row($id, $n)->status, "row {$n}");
+        }
+        $this->confirm($id)->assertOk()->assertJsonPath('data.nuevos', 3);
+        $this->assertSame(['pendiente'], DB::table('event_attendees')->distinct()->pluck('link_status')->all());
+        $this->assertSame(0, DB::table('data_consents')->count());
     }
 
-    // A list attendee with cédula (no authorization, no ficha) of an event that is open for QR and operator.
+    // A list attendee with cédula (no ficha) of an event that is open for QR and operator.
     private function listAttendee(string $cedula = '1098765432'): object
     {
         $this->event->forceFill(['status' => 'abierto'])->save();
         $file = $this->workbook(['Hoja1' => [['NOMBRES Y APELLIDOS', 'CÉDULA', 'CELULAR'], ['Ana María Pérez Gómez', $cedula, '3001234567']]]);
         $this->confirm($this->load($file))->assertOk()->assertJsonPath('data.solo_evento', 1);
         $attendee = DB::table('event_attendees')->first();
-        $this->assertSame('sin_autorizacion', $attendee->link_status);
+        $this->assertSame('pendiente', $attendee->link_status);
 
         return $attendee;
     }
 
-    private function assertAuthorized(object $before, string $status = 'pendiente'): void
+    private function assertUnchanged(object $before): void
     {
-        $this->assertSame(1, DB::table('event_attendees')->count(), 'the same attendee is completed, not duplicated');
-        $after = DB::table('event_attendees')->first();
-        $this->assertSame($before->id, $after->id);
-        $this->assertSame(1, (int) $after->autoriza_datos);
-        $this->assertSame($status, $after->link_status);
-        $this->assertNotNull($after->consent_id);
-        $this->assertSame($after->consent_id, DB::table('data_consents')->where('attendee_id', $after->id)->value('id'));
+        $this->assertSame(1, DB::table('event_attendees')->count(), 'the same attendee, not duplicated');
+        $this->assertEquals($before, DB::table('event_attendees')->first());
+        $this->assertSame(0, DB::table('data_consents')->count());
     }
 
-    public function test_a_list_attendee_who_then_authorizes_by_qr_gets_the_authorization(): void
+    public function test_a_list_attendee_who_then_registers_by_qr_is_not_duplicated(): void
     {
-        $text = $this->approvedText(Campaign::DEFAULT_ID);
         $before = $this->listAttendee();
-        $this->postJson("/e/{$this->event->public_token}", $this->publicPayload($this->event, $text->id))->assertOk();
-        $this->assertAuthorized($before);
-        $this->assertSame('autorizo', json_decode(DB::table('audit_logs')->where('action', 'EVENTO_ASISTENTE_QR')->value('metadata'), true)['resultado']);
+        $this->postJson("/e/{$this->event->public_token}", $this->publicPayload($this->event))->assertOk();
+        $this->assertUnchanged($before);
+        $this->assertSame('repetido', json_decode(DB::table('audit_logs')->where('action', 'EVENTO_ASISTENTE_QR')->value('metadata'), true)['resultado']);
     }
 
-    public function test_a_list_attendee_who_then_authorizes_with_the_operator_gets_the_authorization_and_its_ficha(): void
+    public function test_a_list_attendee_who_then_registers_with_the_operator_is_not_duplicated(): void
     {
-        $text = $this->approvedText(Campaign::DEFAULT_ID);
         $before = $this->listAttendee();
-        $ana = $this->lider(Campaign::DEFAULT_ID, 'Ana María Pérez Gómez', '1098765432');
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload($text->id))->assertSuccessful();
-        $this->assertAuthorized($before, 'vinculado');
-        $this->assertSame($ana, DB::table('event_attendees')->value('lider_id'));
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/asistentes", $this->attendeePayload())
+            ->assertOk()->assertJsonPath('data.duplicate', true);
+        $this->assertUnchanged($before);
     }
 
-    public function test_a_list_attendee_who_then_comes_in_an_excel_with_si_gets_the_authorization(): void
+    public function test_a_list_attendee_who_then_comes_in_another_excel_is_already_in_the_event(): void
     {
-        $this->approvedText(Campaign::DEFAULT_ID);
         $before = $this->listAttendee();
         $id = $this->load($this->workbook(['Asistentes' => [
-            ['Nombres', 'Apellidos', 'Cédula', 'Celular', 'Barrio', 'Autorizó (SÍ/NO)'],
-            ['Ana María', 'Pérez Gómez', '1098765432', '3001234567', 'Centro', 'SÍ'],
-        ]], 'firmadas.xlsx'));
-        $this->assertSame('valida', $this->row($id, 2)->status, 'not "ya está en el evento": it brings the authorization');
-        $this->confirm($id, ['declaracion' => true])->assertOk()->assertJsonPath('data.nuevos', 1);
-        $this->assertAuthorized($before);
-        $this->assertSame('Centro', DB::table('event_attendees')->value('barrio'), 'an empty field is filled');
+            ['Nombres', 'Apellidos', 'Cédula', 'Celular', 'Barrio'],
+            ['Ana María', 'Pérez Gómez', '1098765432', '3001234567', 'Centro'],
+        ]], 'otra.xlsx'));
+        $this->assertSame('en_evento', $this->row($id, 2)->status);
+        $this->confirm($id)->assertOk()->assertJsonPath('data.nuevos', 0);
+        $this->assertUnchanged($before);
     }
 
     public function test_without_view_permissions_nobody_is_suggested_and_a_tie_suggests_nobody(): void

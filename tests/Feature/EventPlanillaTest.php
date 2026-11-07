@@ -107,29 +107,20 @@ class EventPlanillaTest extends TestCase
         $this->assertStringNotContainsString($this->event->public_token, PlanillaQr::payload($this->event->id, 1));
     }
 
-    public function test_the_provisional_text_is_marked_and_an_approved_one_is_not(): void
+    // Since 2026-11-07 (decision of the campaign) the sheet asks for no data authorization: no «Autorizo» box, no
+    // consent text in the footer; the signature stays as proof of attendance.
+    public function test_the_sheet_has_no_authorization_and_keeps_the_signature(): void
     {
+        $this->approvedText(Campaign::DEFAULT_ID, 'Autorizo a la campaña el tratamiento de mis datos.');
         $this->planilla()->assertOk();
+        $this->assertArrayNotHasKey('consent', $this->viewData);
         $html = view('eventos.planilla', $this->viewData)->render();
-        $this->assertSame('provisional-1', $this->viewData['consent']->version);
-        $this->assertStringContainsString('TEXTO PROVISIONAL — no válido como autorización', $html);
-        $this->assertStringContainsString('Versión provisional-1', $html);
-
-        $this->approvedText(Campaign::DEFAULT_ID, 'Autorizo a la campaña el tratamiento de mis datos. '.str_repeat('Detalle de la política de datos. ', 40));
-        $this->planilla()->assertOk();
-        $html = view('eventos.planilla', $this->viewData)->render();
-        $this->assertStringNotContainsString('TEXTO PROVISIONAL', $html);
-        $this->assertStringContainsString('Versión v1', $html);
-        $this->assertStringContainsString('[…]', $html, 'A long text is summarized');
-    }
-
-    public function test_the_consent_summary_cuts_at_a_sentence_end(): void
-    {
-        $this->assertSame('Texto corto.', EventoController::consentSummary("Texto   corto.\n"));
-        $long = 'Primera frase de la autorización con bastante contenido para ocupar espacio. '.str_repeat('palabra ', 100);
-        $summary = EventoController::consentSummary($long, 120);
-        $this->assertSame('Primera frase de la autorización con bastante contenido para ocupar espacio. […]', $summary);
-        $this->assertLessThanOrEqual(130, mb_strlen(EventoController::consentSummary(str_repeat('palabra ', 100), 120)));
+        foreach (['AUTO-', 'Autorizo', 'AUTORIZACIÓN', 'PROVISIONAL', 'Ley 1581', 'Versión'] as $gone) {
+            $this->assertStringNotContainsString($gone, $html);
+        }
+        $this->assertStringContainsString('<th>FIRMA</th>', $html);
+        $this->assertStringContainsString('constancia de asistencia', $html);
+        $this->assertArrayNotHasKey('consent_text_id', json_decode(DB::table('audit_logs')->where('action', 'EVENTO_PLANILLA_DESCARGADA')->value('metadata'), true));
     }
 
     public function test_isolation_matches_the_event_detail(): void

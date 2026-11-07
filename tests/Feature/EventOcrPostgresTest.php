@@ -81,12 +81,13 @@ class EventOcrPostgresTest extends TestCase
         $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/ocr/{$id}/procesar")->assertOk()->assertJsonPath('data.listo', true);
         $this->assertEqualsWithDelta(0.4, (float) DB::table('event_import_rows')->where('import_id', $id)->where('page_row', 1)->value(DB::raw("(confidence->>'apellidos')::numeric")), 0.001);
 
-        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar", ['declaracion' => true])
-            ->assertOk()->assertJsonPath('data.nuevos', 1);
+        // Since 2026-11-07 the row without signature is imported too, and nothing goes to data_consents.
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/importar/{$id}/confirmar")
+            ->assertOk()->assertJsonPath('data.nuevos', 2);
 
         $attendee = DB::table('event_attendees')->where('event_id', $this->event->id)->first();
         $this->assertSame('ocr', $attendee->source);
-        $this->assertSame('operador', DB::table('data_consents')->where('attendee_id', $attendee->id)->value('channel'));
+        $this->assertSame(0, DB::table('data_consents')->where('event_id', $this->event->id)->count());
 
         $this->expectException(QueryException::class);
         DB::table('event_import_pages')->where('import_id', $id)->update(['status' => 'leyendo']);
