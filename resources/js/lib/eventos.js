@@ -140,7 +140,8 @@ export function sourceLabel(attendee) {
 /* ── Birth date with three selects ── */
 
 export function birthYears(now = new Date()) {
-    const newest = now.getFullYear() - 18;
+    // Youth councillors register from 14.
+    const newest = now.getFullYear() - 14;
 
     return Array.from({ length: newest - 1900 + 1 }, (_, i) => newest - i);
 }

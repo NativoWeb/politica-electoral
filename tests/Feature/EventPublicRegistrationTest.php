@@ -120,7 +120,7 @@ class EventPublicRegistrationTest extends TestCase
     {
         $this->submit(['nombres' => '', 'apellidos' => '', 'cedula' => 'abc', 'celular' => '12345', 'barrio' => ' '])
             ->assertStatus(422)->assertJsonValidationErrors(['nombres', 'apellidos', 'cedula', 'celular', 'barrio']);
-        $this->submit(['fecha_nacimiento' => now()->subYears(17)->toDateString()])
+        $this->submit(['fecha_nacimiento' => now()->subYears(13)->toDateString()])
             ->assertStatus(422)->assertJsonValidationErrors('fecha_nacimiento');
 
         $this->assertThanks($this->submit(['fecha_nacimiento' => '1980-04-02', 'fijo' => '607 654 3210', 'direccion' => 'Cra 1 # 2-3']));

@@ -221,11 +221,13 @@ class EventPlanillaTest extends TestCase
         $this->register(['fecha_nacimiento' => '1880-01-01'])->assertStatus(422)
             ->assertJsonPath('errors.fecha_nacimiento', ['Revise la fecha de nacimiento.']);
         $this->register(['fecha_nacimiento' => now()->subYears(10)->toDateString()])->assertStatus(422)
-            ->assertJsonPath('errors.fecha_nacimiento', ['El registro es solo para mayores de 18 años.']);
+            ->assertJsonPath('errors.fecha_nacimiento', ['El registro es solo para mayores de 14 años.']);
         $this->register(['fecha_nacimiento' => ['1980-01-01']])->assertStatus(422)->assertJsonValidationErrors('fecha_nacimiento');
 
         $this->assertSame(0, DB::table('event_attendees')->count());
         $this->register(['fecha_nacimiento' => '1980-02-29'])->assertCreated();
+        // Youth councillors: 14 to 17 can register.
+        $this->register(['fecha_nacimiento' => now()->subYears(15)->toDateString(), 'cedula' => '1098765400'])->assertCreated();
     }
 
     // Needs APP_LOCALE=es (config default); production must not override it with en.

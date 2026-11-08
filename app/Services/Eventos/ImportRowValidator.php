@@ -103,12 +103,12 @@ class ImportRowValidator
             'direccion' => $mapped['direccion'] ?? null,
             'barrio' => $mapped['barrio'] ?? null,
         ]);
-        // A birthday that is not a real date of an adult is left out without stopping the row (lists bring
+        // A birthday that is not a real date of someone old enough (14) is left out without stopping the row (lists bring
         // "FECHA DE CUMPLEAÑOS" with any year).
         $fecha = self::isoDate($mapped['fecha_nacimiento'] ?? null);
         if ($fecha !== null) {
             [$y, $m, $d] = array_map('intval', explode('-', $fecha));
-            $adult = checkdate($m, $d, $y) && $y >= 1900 && $fecha <= now('America/Bogota')->subYears(18)->toDateString();
+            $adult = checkdate($m, $d, $y) && $y >= 1900 && $fecha <= now('America/Bogota')->subYears(\App\Http\Requests\Eventos\AttendeeInput::MIN_AGE)->toDateString();
             $fecha = $adult ? $fecha : null;
         }
 
