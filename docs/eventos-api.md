@@ -62,6 +62,8 @@ Aislamiento por campaña (igual que Votantes):
 | GET | `/eventos/buscar/organizadores?q=` | `eventos.buscar.organizadores` | `manage.eventos` | JSON |
 | GET | `/eventos/buscar/figuras?q=` | `eventos.buscar.figuras` | `manage.eventos` | JSON |
 | POST | `/eventos/tipos` | `eventos.tipos.store` | `manage.eventos` | JSON 201 creado / 200 si ya existía uno global o de la campaña propia con el mismo nombre (sin mayúsculas ni tildes) |
+| PUT | `/eventos/tipos/{id}` | `eventos.tipos.update` | `manage.eventos` | JSON 200; solo tipos de la campaña propia (globales: solo R01); 422 "Ya existe un tipo con ese nombre" si repite otro tipo usable activo; 403 / 404 |
+| DELETE | `/eventos/tipos/{id}` | `eventos.tipos.destroy` | `manage.eventos` | JSON 200 `deleted: true` si ningún evento (ni borrado) lo usa; si no, lo desactiva (`deactivated: true`) y los eventos lo conservan |
 | GET | `/eventos/{id}` | `eventos.show` | `view.eventos\|manage.eventos` | Inertia `Eventos/Show` |
 | GET | `/eventos/{id}/operador` | `eventos.operador` | `register.asistentes\|manage.eventos` | Inertia `Eventos/Operador` |
 | POST | `/eventos/{id}/asistentes` | `eventos.asistentes.store` | `register.asistentes\|manage.eventos` | JSON 201 / 200 |

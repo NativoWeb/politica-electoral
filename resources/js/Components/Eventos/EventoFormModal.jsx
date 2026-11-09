@@ -4,6 +4,7 @@ import { apiFetch } from '@/lib/api';
 import { addBarrio, barrioSuggestions, eventErrorMessage, eventFormData, eventFormErrors, eventPayload, figureSummary } from '@/lib/eventos';
 import useDialogFocus from '@/lib/useDialogFocus';
 import useEscapeKey from '@/lib/useEscapeKey';
+import TipoAdminModal from '@/Components/Eventos/TipoAdminModal';
 import { unshownErrors } from '@/lib/userAdmin';
 
 const inputCls = 'w-full px-3 py-3 border border-[var(--color-line)] rounded-lg text-[16px] bg-white focus:outline-none focus:border-[var(--color-primary)] disabled:bg-[var(--color-bg)] disabled:text-[var(--color-ink-faint)]';
@@ -324,8 +325,12 @@ function typeFailure(status, body) {
 }
 
 // Only global types and the own campaign's can be used; a new one is created in the own campaign and selected.
-function TipoField({ tipos, value, onChange, error }) {
+// The event's current type stays shown (disabled) when it was deactivated after the event was created.
+function TipoField({ tipos, current, value, onChange, error }) {
     const [added, setAdded] = useState([]);
+    const [renamed, setRenamed] = useState({});
+    const [removed, setRemoved] = useState([]);
+    const [managing, setManaging] = useState(false);
     const [nombre, setNombre] = useState(null);
     const [saving, setSaving] = useState(false);
     const [failure, setFailure] = useState('');
@@ -333,8 +338,23 @@ function TipoField({ tipos, value, onChange, error }) {
         const usable = tipos.filter(t => t.usable !== false);
         const extra = added.filter(a => !usable.some(t => t.id === a.id));
 
-        return [...usable, ...extra].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-    }, [tipos, added]);
+        return [...usable, ...extra]
+            .filter(t => !removed.includes(t.id))
+            .map(t => (renamed[t.id] ? { ...t, nombre: renamed[t.id] } : t))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    }, [tipos, added, renamed, removed]);
+    const inactiveCurrent = current?.id && current.id === value && !options.some(t => t.id === value)
+        ? { id: current.id, nombre: renamed[current.id] ?? current.nombre }
+        : null;
+
+    function typeRenamed(tipo) {
+        setRenamed(map => ({ ...map, [tipo.id]: tipo.nombre }));
+    }
+
+    function typeRemoved(tipo) {
+        setRemoved(list => [...list, tipo.id]);
+        if (value === tipo.id && current?.id !== tipo.id) onChange('');
+    }
 
     function cancel() {
         setNombre(null);
@@ -367,8 +387,15 @@ function TipoField({ tipos, value, onChange, error }) {
             <select id="evento-tipo" className={inputCls} value={value} onChange={e => (e.target.value === NEW_TYPE ? setNombre('') : onChange(e.target.value))}>
                 <option value="">Elija un tipo</option>
                 {options.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                {inactiveCurrent && <option value={inactiveCurrent.id} disabled>{inactiveCurrent.nombre} (desactivado)</option>}
                 <option value={NEW_TYPE}>+ Crear nuevo tipo…</option>
             </select>
+            {(managing || options.some(t => t.editable)) && (
+                <button type="button" onClick={() => setManaging(true)} className="mt-1 min-h-[44px] text-[14px] font-bold text-[var(--color-primary)] underline underline-offset-2">
+                    Administrar tipos
+                </button>
+            )}
+            {managing && <TipoAdminModal tipos={options} onRenamed={typeRenamed} onRemoved={typeRemoved} onClose={() => setManaging(false)} />}
             {nombre !== null && (
                 <div className="mt-2 border border-dashed border-[var(--color-line-strong)] rounded-lg p-3 space-y-2">
                     <label htmlFor="evento-tipo-nuevo" className={labelCls}>Nombre del nuevo tipo *</label>
@@ -449,7 +476,7 @@ export default function EventoFormModal({ evento, tipos, provincias, knownBarrio
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <TipoField tipos={tipos} value={form.data.event_type_id} onChange={v => form.setData('event_type_id', v)} error={errors.event_type_id} />
+                                <TipoField tipos={tipos} current={evento?.tipo} value={form.data.event_type_id} onChange={v => form.setData('event_type_id', v)} error={errors.event_type_id} />
                                 <div>
                                     <label htmlFor="evento-inicio" className={labelCls}>Fecha y hora *</label>
                                     <input id="evento-inicio" type="datetime-local" className={inputCls} value={form.data.starts_at} onChange={e => form.setData('starts_at', e.target.value)} />

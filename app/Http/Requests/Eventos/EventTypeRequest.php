@@ -5,7 +5,7 @@ namespace App\Http\Requests\Eventos;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 
-// A new event type for the own campaign, created from the event form.
+// The name of an event type, created or renamed from the event form.
 class EventTypeRequest extends FormRequest
 {
     public function authorize(): bool

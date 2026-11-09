@@ -4,6 +4,8 @@ namespace App\Http\Requests\Eventos;
 
 use App\Support\CurrentCampaign;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 // Create (POST) and edit (PUT) an event. On PUT every field is optional and barrios, organizadores and figuras
@@ -25,6 +27,16 @@ class EventRequest extends FormRequest
         }
     }
 
+    // Editing an event may keep the type it already has, even if that type was deactivated afterwards.
+    private function keepsCurrentType(): bool
+    {
+        $id = $this->route('id');
+        $typeId = $this->input('event_type_id');
+
+        return $this->isMethod('PUT') && is_string($id) && Str::isUuid($id) && is_string($typeId) && $typeId !== ''
+            && DB::table('events')->where('id', $id)->value('event_type_id') === $typeId;
+    }
+
     public function rules(): array
     {
         // On PUT a field may be left out, but when it is sent it cannot be empty (an empty string arrives as null).
@@ -36,7 +48,7 @@ class EventRequest extends FormRequest
         return [
             'nombre' => [...$required, 'string', 'max:200'],
             'descripcion' => ['sometimes', 'nullable', 'string', 'max:5000'],
-            'event_type_id' => [...$required, 'uuid', Rule::exists('event_types', 'id')->where('is_active', true)
+            'event_type_id' => $this->keepsCurrentType() ? [...$required, 'uuid'] : [...$required, 'uuid', Rule::exists('event_types', 'id')->where('is_active', true)
                 ->where(fn ($q) => $q->whereNull('campaign_id')->when($own, fn ($q) => $q->orWhere('campaign_id', $own)))],
             'starts_at' => [...$required, 'date'],
             'ends_at' => $afterStart,

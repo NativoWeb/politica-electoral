@@ -210,6 +210,104 @@ describe('EventoFormModal', () => {
     });
 });
 
+describe('TipoAdminModal (from the event form)', () => {
+    const TIPOS = [
+        { id: 't1', nombre: 'Gira', usable: true, editable: false },
+        { id: 't2', nombre: 'Cabalgata', usable: true, editable: true },
+        { id: 't3', nombre: 'Caravana', usable: true, editable: true },
+    ];
+
+    beforeEach(() => {
+        mockPage.props = { auth: { user: ADMIN }, visibleCampaigns: [], errors: {}, flash: {} };
+    });
+
+    afterEach(cleanup);
+
+    function openAdmin(props = {}) {
+        render(<EventoFormModal tipos={TIPOS} provincias={[]} onClose={() => {}} {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Administrar tipos' }));
+
+        return screen.getByRole('dialog', { name: 'TIPOS DE EVENTO' });
+    }
+
+    it('is offered only when some type is editable and global types have no actions', () => {
+        render(<EventoFormModal tipos={[TIPOS[0]]} provincias={[]} onClose={() => {}} />);
+        expect(screen.queryByRole('button', { name: 'Administrar tipos' })).not.toBeInTheDocument();
+        cleanup();
+
+        const dialog = openAdmin();
+        expect(within(dialog).getByText('General: no se puede modificar')).toBeInTheDocument();
+        expect(within(dialog).queryByRole('button', { name: 'Editar Gira' })).not.toBeInTheDocument();
+        expect(within(dialog).getByRole('button', { name: 'Editar Cabalgata' })).toBeInTheDocument();
+    });
+
+    it('renames a type and the select shows the new name', async () => {
+        globalThis.fetch = vi.fn().mockReturnValueOnce(jsonResponse(200, { success: true, data: { id: 't2', nombre: 'Cabalgata rural', usable: true, editable: true } }));
+        const dialog = openAdmin();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Editar Cabalgata' }));
+        fireEvent.change(within(dialog).getByLabelText('Nuevo nombre para «Cabalgata»'), { target: { value: 'Cabalgata rural' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+        expect(await within(dialog).findByText('Tipo de evento actualizado.')).toBeInTheDocument();
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/eventos/tipos/t2');
+        expect(globalThis.fetch.mock.calls[0][1].method).toBe('PUT');
+        expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({ nombre: 'Cabalgata rural' });
+        expect(within(screen.getByLabelText('Tipo de evento *')).getByRole('option', { name: 'Cabalgata rural' })).toBeInTheDocument();
+    });
+
+    it('shows the duplicate-name error and keeps editing', async () => {
+        globalThis.fetch = vi.fn().mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { nombre: ['Ya existe un tipo con ese nombre.'] } }));
+        const dialog = openAdmin();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Editar Cabalgata' }));
+        fireEvent.change(within(dialog).getByLabelText('Nuevo nombre para «Cabalgata»'), { target: { value: 'Gira' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+        expect(await within(dialog).findByText('Ya existe un tipo con ese nombre.')).toBeInTheDocument();
+        expect(within(dialog).getByLabelText('Nuevo nombre para «Cabalgata»')).toHaveValue('Gira');
+    });
+
+    it('asks before deleting, removes the type and clears it from the select', async () => {
+        globalThis.fetch = vi.fn().mockReturnValueOnce(jsonResponse(200, { success: true, deleted: false, deactivated: true, message: 'Se desactivó: ya hay eventos con este tipo.' }));
+        const dialog = openAdmin();
+        const select = screen.getByLabelText('Tipo de evento *');
+        fireEvent.change(select, { target: { value: 't3' } });
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar Caravana' }));
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, eliminar' }));
+
+        expect(await within(dialog).findByText('Se desactivó: ya hay eventos con este tipo.')).toBeInTheDocument();
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/eventos/tipos/t3');
+        expect(globalThis.fetch.mock.calls[0][1].method).toBe('DELETE');
+        expect(within(dialog).queryByText('Caravana')).not.toBeInTheDocument();
+        expect(within(select).queryByRole('option', { name: 'Caravana' })).not.toBeInTheDocument();
+        expect(select).toHaveValue('');
+    });
+
+    it('keeps the type when the deletion is cancelled or refused', async () => {
+        globalThis.fetch = vi.fn().mockReturnValueOnce(jsonResponse(403, { message: 'Forbidden' }));
+        const dialog = openAdmin();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar Cabalgata' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'No, conservar' }));
+        expect(within(dialog).getByText('Cabalgata')).toBeInTheDocument();
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar Cabalgata' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, eliminar' }));
+        expect(await within(dialog).findByText('No tiene permiso para modificar este tipo de evento.')).toBeInTheDocument();
+        expect(within(screen.getByLabelText('Tipo de evento *')).getByRole('option', { name: 'Cabalgata' })).toBeInTheDocument();
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Listo' }));
+        expect(screen.queryByRole('dialog', { name: 'TIPOS DE EVENTO' })).not.toBeInTheDocument();
+    });
+
+    it('shows the deactivated type of an edited event as a disabled option', () => {
+        render(<EventoFormModal evento={{ ...EVENTO, tipo: { id: 't9', nombre: 'Antiguo' } }} tipos={TIPOS} provincias={[]} onClose={() => {}} />);
+        const select = screen.getByLabelText('Tipo de evento *');
+        expect(select).toHaveValue('t9');
+        expect(within(select).getByRole('option', { name: 'Antiguo (desactivado)' })).toBeDisabled();
+    });
+});
+
 describe('Eventos/Show', () => {
     const KPIS = { total: 3, vinculados: 1, pendientes: 2, aprobados: 0, descartados: 0, qr: 3, operador: 0 };
     const ROWS = [attendee('a1', 'pendiente', 'Ana'), attendee('a2', 'vinculado', 'Beto'), attendee('a3', 'pendiente', 'Carla')];

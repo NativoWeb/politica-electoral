@@ -438,8 +438,69 @@ class EventoController extends Controller
             'success' => true,
             'message' => $created ? 'Tipo de evento creado.' : 'Ese tipo de evento ya existía.',
             'created' => $created,
-            'data' => ['id' => $type->id, 'nombre' => $type->nombre, 'usable' => true],
+            'data' => ['id' => $type->id, 'nombre' => $type->nombre, 'usable' => true, 'editable' => $this->canManageType($type->campaign_id)],
         ], $created ? 201 : 200);
+    }
+
+    // Renames a type of the own campaign (a global one only the superadmin); the name cannot repeat another usable active type.
+    public function updateType(EventTypeRequest $request, string $id): JsonResponse
+    {
+        $type = $this->manageableType($id);
+        $before = ['event_type_id' => $type->id, 'nombre' => $type->nombre];
+        $nombre = $request->validated('nombre');
+        $key = $this->typeKey($nombre);
+
+        DB::transaction(function () use ($type, $nombre, $key) {
+            if ($type->campaign_id !== null) {
+                DB::table('campaigns')->where('id', $type->campaign_id)->lockForUpdate()->first(['id']);
+            }
+            EventType::whereKey($type->id)->lockForUpdate()->first(['id']);
+            $duplicate = EventType::where('is_active', true)->whereKeyNot($type->id)
+                ->when($type->campaign_id !== null, fn ($q) => $q->where(fn ($q) => $q->whereNull('campaign_id')->orWhere('campaign_id', $type->campaign_id)))
+                ->get(['nombre'])
+                ->contains(fn ($t) => $this->typeKey($t->nombre) === $key);
+            if ($duplicate) {
+                throw ValidationException::withMessages(['nombre' => 'Ya existe un tipo con ese nombre.']);
+            }
+            $type->forceFill(['nombre' => $nombre])->save();
+        });
+
+        request()->attributes->set(AuditActivity::BEFORE_STATE, $before);
+        request()->attributes->set(AuditActivity::AFTER_STATE, ['event_type_id' => $type->id, 'nombre' => $type->nombre]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tipo de evento actualizado.',
+            'data' => ['id' => $type->id, 'nombre' => $type->nombre, 'usable' => true, 'editable' => true],
+        ]);
+    }
+
+    // Deletes an unused type; one that any event uses (even a deleted one) is deactivated so those events keep it.
+    public function destroyType(Request $request, string $id): JsonResponse
+    {
+        $type = $this->manageableType($id);
+
+        $deleted = DB::transaction(function () use ($type) {
+            EventType::whereKey($type->id)->lockForUpdate()->first(['id']);
+            if (CampaignEvent::withTrashed()->where('event_type_id', $type->id)->exists()) {
+                $type->forceFill(['is_active' => false])->save();
+
+                return false;
+            }
+            $type->delete();
+
+            return true;
+        });
+
+        $request->attributes->set(AuditActivity::BEFORE_STATE, ['event_type_id' => $type->id, 'nombre' => $type->nombre, 'is_active' => true]);
+        $request->attributes->set(AuditActivity::AFTER_STATE, ['event_type_id' => $type->id, 'resultado' => $deleted ? 'borrado' : 'desactivado']);
+
+        return response()->json([
+            'success' => true,
+            'deleted' => $deleted,
+            'deactivated' => ! $deleted,
+            'message' => $deleted ? 'Tipo de evento eliminado.' : 'Se desactivó: ya hay eventos con este tipo.',
+        ]);
     }
 
     // Lideres of the own campaign (and territory) to pick an organizer.
@@ -763,8 +824,33 @@ class EventoController extends Controller
         return EventType::where('is_active', true)
             ->where(fn ($q) => $q->whereNull('campaign_id')->when($visible !== null, fn ($q) => $q->orWhereIn('campaign_id', $visible)))
             ->orderBy('nombre')->get(['id', 'nombre', 'campaign_id'])
-            ->map(fn ($t) => ['id' => $t->id, 'nombre' => $t->nombre, 'usable' => $t->campaign_id === null || $t->campaign_id === $own])
+            ->map(fn ($t) => [
+                'id' => $t->id,
+                'nombre' => $t->nombre,
+                'usable' => $t->campaign_id === null || $t->campaign_id === $own,
+                'editable' => $this->canManageType($t->campaign_id),
+            ])
             ->all();
+    }
+
+    // Active type the user may rename or delete: one of the own campaign, or a global one for the superadmin.
+    private function manageableType(string $id): EventType
+    {
+        $type = EventType::where('is_active', true)->find($id);
+        abort_unless($type && ($type->campaign_id === null || $this->campaign()->isVisible($type->campaign_id)), 404);
+        abort_unless($this->canManageType($type->campaign_id), 403, 'No puede modificar este tipo de evento.');
+
+        return $type;
+    }
+
+    private function canManageType(?string $campaignId): bool
+    {
+        if ($campaignId === null) {
+            return $this->campaign()->isSuperadmin();
+        }
+        $own = $this->campaign()->ownId();
+
+        return $own !== null && $campaignId === $own;
     }
 
     private function typeKey(string $nombre): string
