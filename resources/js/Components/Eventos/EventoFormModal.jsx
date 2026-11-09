@@ -313,6 +313,86 @@ function FiguresField({ value, onChange, errors }) {
     );
 }
 
+const NEW_TYPE = '__nuevo__';
+
+function typeFailure(status, body) {
+    if (status === 403) return 'No tiene permiso para crear tipos de evento.';
+    if (status === 419) return 'La página estuvo abierta mucho tiempo. Recárguela e intente de nuevo.';
+    if (status === 422) return body?.errors?.nombre?.[0] || body?.message || 'Revise el nombre del tipo.';
+
+    return 'No se pudo crear el tipo. Intente de nuevo en un momento.';
+}
+
+// Only global types and the own campaign's can be used; a new one is created in the own campaign and selected.
+function TipoField({ tipos, value, onChange, error }) {
+    const [added, setAdded] = useState([]);
+    const [nombre, setNombre] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [failure, setFailure] = useState('');
+    const options = useMemo(() => {
+        const usable = tipos.filter(t => t.usable !== false);
+        const extra = added.filter(a => !usable.some(t => t.id === a.id));
+
+        return [...usable, ...extra].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    }, [tipos, added]);
+
+    function cancel() {
+        setNombre(null);
+        setFailure('');
+    }
+
+    async function save() {
+        if (saving) return;
+        const text = (nombre ?? '').trim();
+        if (!text) { setFailure('Escriba el nombre del tipo de evento.'); return; }
+        setSaving(true);
+        setFailure('');
+        try {
+            const res = await apiFetch('/eventos/tipos', { method: 'POST', body: JSON.stringify({ nombre: text }) });
+            const body = await res.json().catch(() => null);
+            if (!res.ok || !body?.success) { setFailure(typeFailure(res.status, body)); return; }
+            setAdded(list => [...list.filter(t => t.id !== body.data.id), body.data]);
+            onChange(body.data.id);
+            setNombre(null);
+        } catch {
+            setFailure('No hay conexión con el servidor. Intente de nuevo.');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div>
+            <label htmlFor="evento-tipo" className={labelCls}>Tipo de evento *</label>
+            <select id="evento-tipo" className={inputCls} value={value} onChange={e => (e.target.value === NEW_TYPE ? setNombre('') : onChange(e.target.value))}>
+                <option value="">Elija un tipo</option>
+                {options.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                <option value={NEW_TYPE}>+ Crear nuevo tipo…</option>
+            </select>
+            {nombre !== null && (
+                <div className="mt-2 border border-dashed border-[var(--color-line-strong)] rounded-lg p-3 space-y-2">
+                    <label htmlFor="evento-tipo-nuevo" className={labelCls}>Nombre del nuevo tipo *</label>
+                    <input
+                        id="evento-tipo-nuevo"
+                        autoFocus
+                        className={inputCls}
+                        value={nombre}
+                        maxLength={80}
+                        onChange={e => setNombre(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
+                    />
+                    <Err>{failure}</Err>
+                    <div className="flex gap-2">
+                        <button type="button" aria-label="Guardar nuevo tipo" onClick={save} disabled={saving || !nombre.trim()} className={`${smallBtnCls} bg-[var(--color-primary)] text-white disabled:opacity-40`}>{saving ? 'Guardando...' : 'Guardar'}</button>
+                        <button type="button" aria-label="Cancelar nuevo tipo" onClick={cancel} disabled={saving} className={`${smallBtnCls} border-2 border-gray-200 text-[var(--color-ink-soft)]`}>Cancelar</button>
+                    </div>
+                </div>
+            )}
+            <Err>{error}</Err>
+        </div>
+    );
+}
+
 export default function EventoFormModal({ evento, tipos, provincias, knownBarrios = [], onClose }) {
     const isEdit = !!evento?.id;
     const form = useForm(eventFormData(evento));
@@ -369,14 +449,7 @@ export default function EventoFormModal({ evento, tipos, provincias, knownBarrio
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <label htmlFor="evento-tipo" className={labelCls}>Tipo de evento *</label>
-                                    <select id="evento-tipo" className={inputCls} value={form.data.event_type_id} onChange={e => form.setData('event_type_id', e.target.value)}>
-                                        <option value="">Elija un tipo</option>
-                                        {tipos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                                    </select>
-                                    <Err>{errors.event_type_id}</Err>
-                                </div>
+                                <TipoField tipos={tipos} value={form.data.event_type_id} onChange={v => form.setData('event_type_id', v)} error={errors.event_type_id} />
                                 <div>
                                     <label htmlFor="evento-inicio" className={labelCls}>Fecha y hora *</label>
                                     <input id="evento-inicio" type="datetime-local" className={inputCls} value={form.data.starts_at} onChange={e => form.setData('starts_at', e.target.value)} />

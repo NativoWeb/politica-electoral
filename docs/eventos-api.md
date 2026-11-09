@@ -61,6 +61,7 @@ Aislamiento por campaña (igual que Votantes):
 | GET | `/eventos` | `eventos.index` | `view.eventos\|manage.eventos\|register.asistentes` | Inertia `Eventos/Index` |
 | GET | `/eventos/buscar/organizadores?q=` | `eventos.buscar.organizadores` | `manage.eventos` | JSON |
 | GET | `/eventos/buscar/figuras?q=` | `eventos.buscar.figuras` | `manage.eventos` | JSON |
+| POST | `/eventos/tipos` | `eventos.tipos.store` | `manage.eventos` | JSON 201 creado / 200 si ya existía uno global o de la campaña propia con el mismo nombre (sin mayúsculas ni tildes) |
 | GET | `/eventos/{id}` | `eventos.show` | `view.eventos\|manage.eventos` | Inertia `Eventos/Show` |
 | GET | `/eventos/{id}/operador` | `eventos.operador` | `register.asistentes\|manage.eventos` | Inertia `Eventos/Operador` |
 | POST | `/eventos/{id}/asistentes` | `eventos.asistentes.store` | `register.asistentes\|manage.eventos` | JSON 201 / 200 |

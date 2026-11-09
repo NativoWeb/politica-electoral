@@ -173,6 +173,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         Route::middleware('permission:manage.eventos')->group(function () {
             Route::post('/', [EventoController::class, 'store'])->name('store');
+            Route::post('/tipos', [EventoController::class, 'storeType'])->name('tipos.store');
             Route::put('/{id}', [EventoController::class, 'update'])->name('update')->whereUuid('id');
             Route::delete('/{id}', [EventoController::class, 'destroy'])->name('destroy')->whereUuid('id');
             Route::post('/{id}/abrir', [EventoController::class, 'open'])->name('open')->whereUuid('id');

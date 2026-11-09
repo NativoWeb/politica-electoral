@@ -172,6 +172,42 @@ describe('EventoFormModal', () => {
         expect(screen.getByLabelText('Municipio *')).toBeEnabled();
         expect(within(screen.getByLabelText('Municipio *')).getByRole('option', { name: 'Girón' })).toBeInTheDocument();
     });
+
+    it('only offers usable types and selects a type created from the form', async () => {
+        globalThis.fetch = vi.fn().mockReturnValueOnce(jsonResponse(201, { success: true, created: true, data: { id: 't9', nombre: 'Caravana', usable: true } }));
+        render(<EventoFormModal tipos={[{ id: 't1', nombre: 'Gira', usable: true }, { id: 't2', nombre: 'De la subcampaña', usable: false }]} provincias={[]} onClose={() => {}} />);
+        const select = screen.getByLabelText('Tipo de evento *');
+        expect(within(select).queryByRole('option', { name: 'De la subcampaña' })).not.toBeInTheDocument();
+
+        fireEvent.change(select, { target: { value: '__nuevo__' } });
+        fireEvent.change(screen.getByLabelText('Nombre del nuevo tipo *'), { target: { value: '  Caravana ' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar nuevo tipo' }));
+
+        await waitFor(() => expect(select).toHaveValue('t9'));
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/eventos/tipos');
+        expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({ nombre: 'Caravana' });
+        expect(screen.queryByLabelText('Nombre del nuevo tipo *')).not.toBeInTheDocument();
+    });
+
+    it('shows the server reason when a type cannot be created and keeps the previous choice', async () => {
+        globalThis.fetch = vi.fn()
+            .mockReturnValueOnce(jsonResponse(422, { message: 'x', errors: { nombre: ['El nombre del tipo de evento no puede tener más de 80 caracteres.'] } }))
+            .mockReturnValueOnce(jsonResponse(403, { message: 'Forbidden' }));
+        render(<EventoFormModal tipos={[{ id: 't1', nombre: 'Gira' }]} provincias={[]} onClose={() => {}} />);
+        const select = screen.getByLabelText('Tipo de evento *');
+        fireEvent.change(select, { target: { value: 't1' } });
+        fireEvent.change(select, { target: { value: '__nuevo__' } });
+        fireEvent.change(screen.getByLabelText('Nombre del nuevo tipo *'), { target: { value: 'Algo' } });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar nuevo tipo' }));
+        expect(await screen.findByText('El nombre del tipo de evento no puede tener más de 80 caracteres.')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar nuevo tipo' }));
+        expect(await screen.findByText('No tiene permiso para crear tipos de evento.')).toBeInTheDocument();
+        expect(select).toHaveValue('t1');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancelar nuevo tipo' }));
+        expect(screen.queryByLabelText('Nombre del nuevo tipo *')).not.toBeInTheDocument();
+    });
 });
 
 describe('Eventos/Show', () => {

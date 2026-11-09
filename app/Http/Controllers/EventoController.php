@@ -6,9 +6,11 @@ use App\Actions\Eventos\ApproveAttendees;
 use App\Actions\Eventos\RegisterAttendee;
 use App\Exports\GenericExport;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Http\Middleware\AuditActivity;
 use App\Http\Requests\Eventos\AttendeeIdsRequest;
 use App\Http\Requests\Eventos\AttendeeInput;
 use App\Http\Requests\Eventos\EventRequest;
+use App\Http\Requests\Eventos\EventTypeRequest;
 use App\Http\Requests\Eventos\OperatorAttendeeRequest;
 use App\Models\AuditLog;
 use App\Models\CampaignEvent;
@@ -404,6 +406,42 @@ class EventoController extends Controller
         return $this->done($request, "Descartados: {$descartados}.", $counts);
     }
 
+    // A type for the own campaign; a visible active one with the same name (ignoring case and accents) is returned instead.
+    public function storeType(EventTypeRequest $request): JsonResponse
+    {
+        $own = $this->campaign()->ownId();
+        if ($own === null) {
+            throw ValidationException::withMessages(['nombre' => 'Su usuario no tiene una campaña asignada.']);
+        }
+        $nombre = $request->validated('nombre');
+        $key = $this->typeKey($nombre);
+
+        [$type, $created] = DB::transaction(function () use ($own, $nombre, $key) {
+            DB::table('campaigns')->where('id', $own)->lockForUpdate()->first(['id']);
+            $existing = EventType::where('is_active', true)
+                ->where(fn ($q) => $q->whereNull('campaign_id')->orWhere('campaign_id', $own))
+                ->orderByRaw('campaign_id IS NULL DESC')->orderBy('created_at')
+                ->get(['id', 'nombre'])
+                ->first(fn ($t) => $this->typeKey($t->nombre) === $key);
+            if ($existing) {
+                return [$existing, false];
+            }
+            $type = new EventType(['nombre' => $nombre, 'is_active' => true]);
+            $type->forceFill(['campaign_id' => $own])->save();
+
+            return [$type, true];
+        });
+
+        request()->attributes->set(AuditActivity::AFTER_STATE, ['event_type_id' => $type->id, 'nombre' => $type->nombre, 'creado' => $created]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $created ? 'Tipo de evento creado.' : 'Ese tipo de evento ya existía.',
+            'created' => $created,
+            'data' => ['id' => $type->id, 'nombre' => $type->nombre, 'usable' => true],
+        ], $created ? 201 : 200);
+    }
+
     // Lideres of the own campaign (and territory) to pick an organizer.
     public function searchOrganizers(Request $request): JsonResponse
     {
@@ -720,11 +758,18 @@ class EventoController extends Controller
     private function tipos(): array
     {
         $visible = $this->campaign()->visibleIds();
+        $own = $this->campaign()->ownId();
 
         return EventType::where('is_active', true)
             ->where(fn ($q) => $q->whereNull('campaign_id')->when($visible !== null, fn ($q) => $q->orWhereIn('campaign_id', $visible)))
-            ->orderBy('nombre')->get(['id', 'nombre'])
-            ->map(fn ($t) => ['id' => $t->id, 'nombre' => $t->nombre])->all();
+            ->orderBy('nombre')->get(['id', 'nombre', 'campaign_id'])
+            ->map(fn ($t) => ['id' => $t->id, 'nombre' => $t->nombre, 'usable' => $t->campaign_id === null || $t->campaign_id === $own])
+            ->all();
+    }
+
+    private function typeKey(string $nombre): string
+    {
+        return Str::lower(Str::squish(Str::ascii($nombre)));
     }
 
     private function canManage(): bool
