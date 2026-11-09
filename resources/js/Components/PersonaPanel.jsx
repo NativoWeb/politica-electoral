@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import { getOfflinePersona, offlineUpdatePersona, offlineCreateNexo, offlineDeleteNexo } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
@@ -117,7 +117,10 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
-    const [editMode, setEditMode] = useState(false);
+    const [editMode, setEditModeState] = useState(false);
+    // Read by loadData: a reload while editing (after adding a nexo, a contact...) must not wipe what is being typed.
+    const editingRef = useRef(false);
+    const setEditMode = (value) => { editingRef.current = value; setEditModeState(value); };
     const [form, setForm] = useState({});
     const [nexoForm, setNexoForm] = useState({ nombre: '', parentesco: '', cargo: '', edad: '', gustos: '', observaciones: '', cedula: '', telefono: '' });
     const [showNexoForm, setShowNexoForm] = useState(false);
@@ -183,7 +186,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     const nextForm = buildFormFromData(d);
                     setData(d);
                     setLoadError(false);
-                    setForm(nextForm);
+                    if (!editingRef.current) setForm(nextForm);
                     if (d?.id) loadPosibles(d.id);
                 } catch {
                     setData(null);
@@ -195,7 +198,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 if (source) {
                     setData({ ...source, _offline: true });
                     setLoadError(false);
-                    setForm(buildFormFromData(source));
+                    if (!editingRef.current) setForm(buildFormFromData(source));
                 } else {
                     setLoadError(true);
                 }
@@ -590,7 +593,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     {/* Actions bar */}
                     <div className="flex items-center gap-2 px-4 lg:px-8 py-3 border-b border-[var(--color-line)] flex-wrap">
                         {!campaignReadOnly && (
-                            <button onClick={() => setEditMode(!editMode)} className="px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
+                            <button onClick={() => { if (!editMode && data) setForm(buildFormFromData(data)); setEditMode(!editMode); }} className="px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
                                 {editMode ? 'Cancelar' : 'Editar'}
                             </button>
                         )}

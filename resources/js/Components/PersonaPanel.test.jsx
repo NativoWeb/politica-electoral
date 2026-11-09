@@ -70,6 +70,22 @@ describe('PersonaPanel campaign read-only', () => {
         expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument();
     });
 
+    it('keeps what is being typed when the ficha reloads after a nexo change', async () => {
+        mockFetch(persona('cd'));
+        render(<PersonaPanel personId="l1" onClose={vi.fn()} />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+        fireEvent.change(screen.getByPlaceholderText('Información clave del registro'), { target: { value: 'Es cafetero y gallero.' } });
+
+        fireEvent.click(screen.getByRole('button', { name: /Nexos/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Eliminar' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+        await waitFor(() => expect(globalThis.fetch.mock.calls.filter(([, o = {}]) => (o.method || 'GET') === 'GET').length).toBeGreaterThan(2));
+
+        fireEvent.click(screen.getByRole('button', { name: /Basicos/i }));
+        expect(screen.getByPlaceholderText('Información clave del registro')).toHaveValue('Es cafetero y gallero.');
+    });
+
     it('keeps an own lider editable', async () => {
         mockFetch(persona('cd'));
         render(<PersonaPanel personId="l1" onClose={vi.fn()} />);

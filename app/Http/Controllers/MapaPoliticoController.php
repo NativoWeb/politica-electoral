@@ -842,6 +842,7 @@ class MapaPoliticoController extends Controller
             'barrio' => 'nullable|string|max:100',
             'zona' => 'nullable|in:rural,urbana',
             'observacion' => 'nullable|string|max:1000',
+            'partido' => 'nullable|string|max:255',
             // Extended fields
             'tipo_documento' => 'nullable|string|max:20',
             'fecha_expedicion_doc' => 'nullable|date',
@@ -931,6 +932,7 @@ class MapaPoliticoController extends Controller
             'barrio' => $data['barrio'] ?? null,
             'zona' => $data['zona'] ?? null,
             'observacion' => $data['observacion'] ?? null,
+            'partido' => filled($data['partido'] ?? null) ? \App\Models\PoliticalOrganization::upperName($data['partido']) : null,
             'geographic_unit_id' => $data['municipio_id'],
             'created_at' => now(),
             'updated_at' => now(),

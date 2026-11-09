@@ -1004,4 +1004,39 @@ class CampaignIsolationTest extends TestCase
         // Seeing is not editing: another campaign's records stay read only for the superadmin too.
         $this->actingAs($super)->putJson("/votantes/{$this->liderC}", ['nombre' => 'Otro'])->assertForbidden();
     }
+
+    public function test_creating_a_lider_keeps_every_field_of_the_form(): void
+    {
+        $this->actingAs($this->userCd)->postJson('/mapa-politico/crear-lider', [
+            'nombre' => 'Carlo Prueba Garza', 'municipio_id' => $this->mun, 'tipos' => ['Nuevos Líderes'], 'cargo' => 'Lider',
+            'observacion' => 'Es cafetero y gallero.', 'genero' => 'Masculino', 'tipo_documento' => 'CC',
+            'fecha_nacimiento' => '1971-08-01', 'fecha_expedicion_doc' => '1997-07-30', 'estado_civil' => 'Soltero/a',
+            'direccion' => 'Cra 5 # 3-12', 'barrio' => 'Centro', 'zona' => 'urbana', 'profesion' => 'agricultor',
+            'escolaridad' => 'Primaria', 'partido' => 'Centro Democrático',
+        ])->assertOk();
+
+        $l = DB::table('lideres')->where('nombre', 'Carlo Prueba Garza')->first();
+        foreach (['observacion' => 'Es cafetero y gallero.', 'genero' => 'Masculino', 'tipo_documento' => 'CC', 'estado_civil' => 'Soltero/a',
+            'direccion' => 'Cra 5 # 3-12', 'barrio' => 'Centro', 'zona' => 'urbana', 'profesion' => 'agricultor', 'escolaridad' => 'Primaria'] as $k => $v) {
+            $this->assertSame($v, $l->$k, $k);
+        }
+        $this->assertStringStartsWith('1971-08-01', (string) $l->fecha_nacimiento);
+        $this->assertStringStartsWith('1997-07-30', (string) $l->fecha_expedicion_doc);
+        $this->assertSame('CENTRO DEMOCRÁTICO', $l->partido, 'partido');
+    }
+
+    public function test_the_panel_shows_every_field_of_a_new_lider(): void
+    {
+        $id = (string) \Illuminate\Support\Str::uuid();
+        $this->actingAs($this->userCd)->postJson('/mapa-politico/crear-lider', [
+            'client_id' => $id, 'nombre' => 'Carlo Panel Garza', 'municipio_id' => $this->mun, 'tipos' => ['Nuevos Líderes'], 'cargo' => 'Lider',
+            'observacion' => 'Es cafetero.', 'genero' => 'Masculino', 'tipo_documento' => 'CC', 'estado_civil' => 'Soltero/a',
+            'fecha_nacimiento' => '1971-08-01', 'direccion' => 'Cra 5', 'zona' => 'urbana',
+        ])->assertOk();
+
+        $json = $this->actingAs($this->userCd)->getJson("/mapa-politico/persona/{$id}")->assertOk()->json();
+        foreach (['observacion' => 'Es cafetero.', 'genero' => 'Masculino', 'tipo_documento' => 'CC', 'estado_civil' => 'Soltero/a', 'direccion' => 'Cra 5', 'zona' => 'urbana'] as $k => $v) {
+            $this->assertSame($v, $json[$k] ?? null, $k);
+        }
+    }
 }
