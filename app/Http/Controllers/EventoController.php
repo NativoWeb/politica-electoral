@@ -4,23 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Actions\Eventos\ApproveAttendees;
 use App\Actions\Eventos\RegisterAttendee;
+use App\Actions\Eventos\UndoEventImport;
 use App\Exports\GenericExport;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Http\Middleware\AuditActivity;
 use App\Http\Requests\Eventos\AttendeeIdsRequest;
 use App\Http\Requests\Eventos\AttendeeInput;
+use App\Http\Requests\Eventos\AttendeeUpdateRequest;
 use App\Http\Requests\Eventos\EventRequest;
 use App\Http\Requests\Eventos\EventTypeRequest;
 use App\Http\Requests\Eventos\OperatorAttendeeRequest;
 use App\Models\AuditLog;
 use App\Models\CampaignEvent;
 use App\Models\EventAttendee;
+use App\Models\EventImport;
 use App\Models\EventType;
 use App\Services\Eventos\Ocr\OcrSettings;
 use App\Support\Cedula;
 use App\Support\PlanillaQr;
 use App\Support\Provincias;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -101,6 +105,7 @@ class EventoController extends Controller
     {
         $event = $this->findEvent($id);
         $filters = $this->attendeeFilters($request);
+        $editable = $this->canManage() && $this->campaign()->isOwn($event->campaign_id);
 
         $asistentes = $this->attendeesQuery($event, $filters)->paginate(50)->withQueryString();
         $fichas = $this->linkedFichas($asistentes->getCollection());
@@ -115,10 +120,11 @@ class EventoController extends Controller
             'filters' => $filters,
             'tipos' => $this->tipos(),
             'provincias' => $this->provincias(),
+            'cargas' => $editable ? $this->confirmedLoads($event) : [],
             'can' => [
                 'manage' => $this->canManage(),
                 'register' => $this->canRegister(),
-                'edit' => $this->canManage() && $this->campaign()->isOwn($event->campaign_id),
+                'edit' => $editable,
                 // Reading printed sheets with AI (§13): only while both switches are on.
                 'ocr' => $this->canManage() && $this->campaign()->isOwn($event->campaign_id) && OcrSettings::enabledFor($event->campaign_id),
             ],
@@ -404,6 +410,124 @@ class EventoController extends Controller
         ]);
 
         return $this->done($request, "Descartados: {$descartados}.", $counts);
+    }
+
+    // Corrects the attendee only: a linked ficha in Votantes is never changed from here.
+    public function updateAttendee(AttendeeUpdateRequest $request, string $id, string $asistente): JsonResponse|RedirectResponse
+    {
+        $event = $this->findEvent($id, true);
+        $data = $request->validated() + array_fill_keys(AttendeeUpdateRequest::FIELDS, null);
+        $taken = fn () => ValidationException::withMessages(['cedula' => 'Esa cédula ya está registrada en otro asistente de este evento.']);
+        if ($data['cedula'] && EventAttendee::where('event_id', $event->id)->where('cedula', $data['cedula'])->whereKeyNot($asistente)->exists()) {
+            throw $taken();
+        }
+
+        [$attendee, $changed] = DB::transaction(function () use ($event, $asistente, $data, $taken) {
+            $attendee = EventAttendee::where('event_id', $event->id)->lockForUpdate()->findOrFail($asistente);
+            // Approved meanwhile.
+            if (in_array($attendee->link_status, AttendeeUpdateRequest::LOCKED_STATUSES, true)) {
+                throw ValidationException::withMessages(['asistente' => 'Este asistente ya está en Votantes: corrija sus datos en su ficha.']);
+            }
+            $attendee->forceFill($data + ['barrio_normalizado' => AttendeeInput::barrioKey($data['barrio'])]);
+            $changed = array_values(array_intersect(array_keys($attendee->getDirty()), AttendeeUpdateRequest::FIELDS));
+            try {
+                DB::transaction(fn () => $attendee->save());
+            } catch (UniqueConstraintViolationException) {
+                throw $taken();
+            }
+
+            return [$attendee, $changed];
+        });
+
+        $request->attributes->set(AuditActivity::AFTER_STATE, ['attendee_id' => $attendee->id, 'campos' => $changed]);
+
+        return $this->done($request, 'Datos del asistente actualizados.', ['id' => $attendee->id, 'campos' => $changed]);
+    }
+
+    // Descartado → pendiente.
+    public function recoverAttendees(AttendeeIdsRequest $request, string $id): JsonResponse|RedirectResponse
+    {
+        $event = $this->findEvent($id, true);
+        $ids = $this->attendeeIds($event, $request->validated('ids'));
+        $recuperados = EventAttendee::where('event_id', $event->id)->whereIn('id', $ids)
+            ->where('link_status', 'descartado')->update(['link_status' => 'pendiente', 'updated_at' => now()]);
+        $counts = ['recuperados' => $recuperados, 'omitidos' => count($ids) - $recuperados];
+        $this->auditAttendees($request, $event, 'EVENTO_ASISTENTES_RECUPERADOS', $ids, $counts);
+
+        return $this->done($request, "Recuperados: {$recuperados}. Quedan pendientes de aprobar.", $counts);
+    }
+
+    // Aprobado / vinculado → pendiente without a ficha; the ficha stays in Votantes.
+    public function unlinkAttendees(AttendeeIdsRequest $request, string $id): JsonResponse|RedirectResponse
+    {
+        $event = $this->findEvent($id, true);
+        $ids = $this->attendeeIds($event, $request->validated('ids'));
+        $desvinculados = EventAttendee::where('event_id', $event->id)->whereIn('id', $ids)
+            ->whereIn('link_status', ['aprobado', 'vinculado'])
+            ->update(['link_status' => 'pendiente', 'lider_id' => null, 'updated_at' => now()]);
+        $counts = ['desvinculados' => $desvinculados, 'omitidos' => count($ids) - $desvinculados];
+        $this->auditAttendees($request, $event, 'EVENTO_ASISTENTES_DESVINCULADOS', $ids, $counts);
+
+        return $this->done($request, "Desvinculados: {$desvinculados}. Sus fichas siguen en Votantes.", $counts);
+    }
+
+    // Deletes attendees in any status; their fichas in Votantes are never deleted. One with a recorded consent stays
+    // (data_consents is append-only and points to it).
+    public function destroyAttendees(AttendeeIdsRequest $request, string $id): JsonResponse|RedirectResponse
+    {
+        $event = $this->findEvent($id, true);
+        $ids = $this->attendeeIds($event, $request->validated('ids'));
+        $consented = DB::table('data_consents')->whereIn('attendee_id', $ids)->distinct()->pluck('attendee_id')->all();
+        $deletable = array_values(array_diff($ids, $consented));
+        $eliminados = $deletable === [] ? 0 : EventAttendee::where('event_id', $event->id)->whereIn('id', $deletable)->delete();
+        $counts = ['eliminados' => $eliminados, 'conservados' => count($ids) - $eliminados];
+        $this->auditAttendees($request, $event, 'EVENTO_ASISTENTES_ELIMINADOS', $ids, $counts);
+
+        $message = "Eliminados: {$eliminados}."
+            .($counts['conservados'] ? " No se pudieron eliminar {$counts['conservados']} (tienen una autorización de datos registrada)." : '');
+
+        return $this->done($request, $message, $counts);
+    }
+
+    // What undoing a confirmed load would delete, for the confirmation dialog.
+    public function importUndoPreview(string $id, string $import, UndoEventImport $undo): JsonResponse
+    {
+        $event = $this->findEvent($id, true);
+        $plan = $undo->plan($this->confirmedImport($event, $import));
+
+        return response()->json(['success' => true, 'data' => collect($plan)->except(['attendee_ids', 'lider_ids'])->all()]);
+    }
+
+    public function undoImport(Request $request, string $id, string $import, UndoEventImport $undo): JsonResponse|RedirectResponse
+    {
+        $event = $this->findEvent($id, true);
+        $counts = $undo->handle($this->confirmedImport($event, $import), $request->user());
+
+        $message = "Se eliminaron {$counts['asistentes']} asistentes de la carga y {$counts['fichas_borrar']} fichas creadas al aprobarlos."
+            .($counts['fichas_conservar'] ? " Se conservaron {$counts['fichas_conservar']} fichas que ya tienen otra información." : '')
+            .($counts['con_autorizacion'] ? " {$counts['con_autorizacion']} asistentes con autorización de datos registrada se conservaron." : '');
+
+        return $this->done($request, $message, $counts);
+    }
+
+    private function confirmedImport(CampaignEvent $event, string $import): EventImport
+    {
+        abort_unless(Str::isUuid($import), 404);
+
+        return EventImport::where('event_id', $event->id)->where('status', 'confirmado')->findOrFail($import);
+    }
+
+    private function auditAttendees(Request $request, CampaignEvent $event, string $action, array $ids, array $counts): void
+    {
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => $action,
+            'entity_type' => 'evento',
+            'entity_id' => $event->id,
+            'metadata' => ['attendee_ids' => $ids, ...$counts],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
     }
 
     // A type for the own campaign; a visible active one with the same name (ignoring case and accents) is returned instead.
@@ -728,9 +852,27 @@ class EventoController extends Controller
             'source' => $a->source,
             'link_status' => $a->link_status,
             'lider_id' => $a->lider_id,
+            'import_id' => $a->import_id,
             'registered_by' => $a->registeredBy ? ['id' => $a->registeredBy->id, 'name' => $a->registeredBy->name] : null,
             'created_at' => $this->iso($a->created_at),
         ];
+    }
+
+    // Confirmed loads that still have attendees, newest first, for "Deshacer carga".
+    private function confirmedLoads(CampaignEvent $event): array
+    {
+        return EventImport::where('event_id', $event->id)->where('status', 'confirmado')
+            ->withCount('attendees')->with('creator:id,name')
+            ->orderByDesc('confirmed_at')->get()
+            ->filter(fn (EventImport $i) => $i->attendees_count > 0)
+            ->map(fn (EventImport $i) => [
+                'id' => $i->id,
+                'kind' => $i->kind,
+                'nombre' => $i->original_name,
+                'created_by' => $i->creator?->name,
+                'confirmed_at' => $this->iso($i->confirmed_at),
+                'asistentes' => (int) $i->attendees_count,
+            ])->values()->all();
     }
 
     private function attendeeFilters(Request $request): array

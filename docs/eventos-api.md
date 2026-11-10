@@ -77,6 +77,12 @@ Aislamiento por campaña (igual que Votantes):
 | POST | `/eventos/{id}/token` | `eventos.token` | `manage.eventos` | 200 JSON / redirect back |
 | POST | `/eventos/{id}/asistentes/aprobar` | `eventos.asistentes.approve` | `manage.eventos` | 200 JSON / redirect back |
 | POST | `/eventos/{id}/asistentes/descartar` | `eventos.asistentes.discard` | `manage.eventos` | 200 JSON / redirect back |
+| POST | `/eventos/{id}/asistentes/recuperar` | `eventos.asistentes.recover` | `manage.eventos` | 200 JSON / redirect back (§6.1) |
+| POST | `/eventos/{id}/asistentes/desvincular` | `eventos.asistentes.unlink` | `manage.eventos` | 200 JSON / redirect back (§6.1) |
+| POST | `/eventos/{id}/asistentes/eliminar` | `eventos.asistentes.destroy` | `manage.eventos` | 200 JSON / redirect back (§6.1) |
+| PUT | `/eventos/{id}/asistentes/{asistente}` | `eventos.asistentes.update` | `manage.eventos` | 200 JSON / redirect back (§6.1) |
+| GET | `/eventos/{id}/cargas/{import}/deshacer` | `eventos.cargas.preview` | `manage.eventos` | 200 JSON (§6.2) |
+| DELETE | `/eventos/{id}/cargas/{import}` | `eventos.cargas.destroy` | `manage.eventos` | 200 JSON / redirect back (§6.2) |
 | GET | `/eventos/{id}/plantilla.xlsx` | `eventos.importar.plantilla` | `manage.eventos` | Excel (descarga), ver §11 |
 | GET | `/eventos/{id}/importar` | `eventos.importar` | `manage.eventos` | Inertia `Eventos/Importar` (paso 1) |
 | POST | `/eventos/{id}/importar` | `eventos.importar.subir` | `manage.eventos` | 201 JSON / redirect a `/eventos/{id}/importar/{import}` |
@@ -215,6 +221,9 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
   "filters": { "link_status": null, "source": null, "q": null },
   "tipos": [ { "id": "uuid", "nombre": "Gira" } ],                 // para el formulario de edición
   "provincias": [ ... ],                                           // igual que en Index
+  "cargas": [                                                      // cargas confirmadas con asistentes; [] si !can.edit
+    { "id": "uuid", "kind": "excel|ocr", "nombre": "lista.xlsx", "created_by": "Sandra", "confirmed_at": "...", "asistentes": 269 }
+  ],
   "can": { "manage": true, "register": true, "edit": true }        // edit = manage && campaña propia
 }
 ```
@@ -244,6 +253,7 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
   "source": "qr",                    // qr | operador
   "link_status": "pendiente",        // vinculado | pendiente | sin_cedula | aprobado | descartado
   "lider_id": "uuid|null",           // ficha en Votantes (vinculado/aprobado)
+  "import_id": "uuid|null",          // carga de Excel/OCR que lo creó
   "registered_by": { "id": "uuid", "name": "..." } | null,
   "created_at": "..."
 }
@@ -400,6 +410,49 @@ Descartar (solo `pendiente`): pasa a `descartado`. **200** `{ success: true, mes
 
 Ids que no son del evento → 422 (`errors.ids`). Sin `manage.eventos` → 403.
 
+### 6.1 Acciones por asistente (2026-11-10)
+
+Todas exigen `manage.eventos`, evento de la **campaña propia** (de una subcampaña visible → 403; invisible → 404) y
+dentro del territorio del usuario (fuera → 403). En pantalla: botón «Acciones» en cada asistente y, con casillas,
+selección de pendientes y descartados (Eliminar / Recuperar / Descartar / Pasar a Votantes según lo elegido).
+
+- **Editar** — `PUT /eventos/{id}/asistentes/{asistente}`, cuerpo completo (lo que no llega queda `null`):
+  `{ nombres, apellidos, cedula, celular, fijo, fecha_nacimiento, direccion, barrio, nota }`. Reglas de `AttendeeInput`
+  (edad mínima 14, cédula 5–12 dígitos, celular 3xxxxxxxxx, fijo 7–10 dígitos, `nota` ≤ 255). Cédula, celular y barrio son
+  opcionales **solo** si el asistente llegó sin ellos (listas sin cédula). Cédula de otro asistente del mismo evento →
+  422 `errors.cedula`. **Solo antes de pasar a Votantes**: un asistente `aprobado` o `vinculado` → 422
+  `errors.asistente` («corrija sus datos en su ficha»); en pantalla esos asistentes no tienen «Editar» sino
+  «Ver ficha» (abre el `PersonaPanel` del Mapa Político; solo con `view.mapa`, y solo si la ficha está en su
+  territorio). Editar **nunca** modifica la ficha de Votantes. Asistente de otro evento → 404.
+  **200** `{ success, message, data: { id, campos: ["nombres", ...] } }` (campos que cambiaron).
+- **Recuperar** — `POST .../asistentes/recuperar` `{ ids }`: `descartado` → `pendiente`; los demás se omiten.
+  **200** `data: { recuperados, omitidos }`.
+- **Desvincular** — `POST .../asistentes/desvincular` `{ ids }`: `aprobado`/`vinculado` → `pendiente` con
+  `lider_id = null`. **La ficha se queda en Votantes.** **200** `data: { desvinculados, omitidos }`.
+- **Eliminar** — `POST .../asistentes/eliminar` `{ ids }`: borra los asistentes en cualquier estado. **Nunca borra
+  fichas de Votantes** (la confirmación lo dice cuando hay aprobados/vinculados). Un asistente con una fila en
+  `data_consents` (append-only, con FK) no se borra y se cuenta en `conservados`. **200** `data: { eliminados, conservados }`.
+
+`ids` igual que aprobar: 1–200, todos de este evento (si no → 422 `errors.ids`).
+
+### 6.2 Deshacer una carga de Excel / OCR (2026-11-10)
+
+`GET /eventos/{id}/cargas/{import}/deshacer` (vista previa para la confirmación) y `DELETE /eventos/{id}/cargas/{import}`
+(`UndoEventImport`). Solo cargas `confirmado` de este evento (otra → 404). Mismos permisos que §6.1.
+
+- Borra los asistentes con `event_attendees.import_id = {import}` (salvo los que tengan `data_consents`).
+- Fichas **creadas** al aprobar asistentes de esa carga (asistente `aprobado`, ficha `tipo = asistente_evento` de la
+  campaña del evento): se borran **solo si no tienen otra actividad**: ninguna otra asistencia (otro evento u otro
+  asistente), organizador de evento, contactos aparte del fijo que copió la aprobación, información política,
+  seguimientos, municipios de influencia, nexos, referidos (otra ficha con `referente_documento` = su cédula),
+  etiquetas, favoritos, envíos de WhatsApp, `data_consents`, ni edición posterior (`updated_at` ≠ `created_at`). Las
+  demás se conservan. Las fichas que ya existían y solo se **vincularon** nunca se tocan.
+- La carga (`event_imports`, con sus filas y páginas) y su archivo también se borran: el mismo archivo se puede volver a subir.
+- Todo en una transacción con bloqueo de la carga y de las fichas; el plan se recalcula bajo el bloqueo.
+
+Vista previa **200** `data: { asistentes, con_autorizacion, fichas_borrar, fichas_conservar, vinculadas }`; el DELETE
+devuelve lo mismo con el mensaje («Se conservaron X fichas que ya tienen otra información.»).
+
 ### Búsquedas
 
 `GET /eventos/buscar/organizadores?q=gom` (≥ 2 caracteres; líderes activos de la campaña propia y del territorio, por
@@ -460,6 +513,11 @@ comando, migrar y volver a ejecutar `data_consents_owner.sql`. El resto de migra
 - `RegisterAttendee` deja además su propia fila: `EVENTO_ASISTENTE_QR` / `EVENTO_ASISTENTE_OPERADOR`, entidad
   `evento_asistente`, `user_id` null en el QR, metadata `{ event_id, channel, resultado: nuevo|repetido }`, **sin cédula**.
 - Aprobar/descartar: `EVENTO_ASISTENTES_APROBADOS` / `EVENTO_ASISTENTES_DESCARTADOS` con ids y conteos.
+- Acciones por asistente (§6.1): `EVENTO_ASISTENTES_RECUPERADOS` / `_DESVINCULADOS` / `_ELIMINADOS` con ids y conteos.
+  Editar: el middleware registra `PUT eventos.asistentes.update` **solo con los nombres de los campos enviados**
+  (`campos`) y `after_state { attendee_id, campos }`: nunca los valores (ni nombres).
+- Deshacer carga (§6.2): `EVENTO_CARGA_DESHECHA`, entidad `evento`, metadata `{ import_id, kind, lider_ids_borrados,
+  asistentes, con_autorizacion, fichas_borrar, fichas_conservar, vinculadas }`, sin datos personales.
 - Descarga de la planilla: `EVENTO_PLANILLA_DESCARGADA`, entidad `evento`, metadata
   `{ route: "eventos.planilla", paginas, consent_text_id }` (el middleware `audit` no registra GET).
 - Cargue desde Excel (§11): el middleware `audit` registra `POST eventos.importar.subir`, `PUT eventos.importar.columnas`,

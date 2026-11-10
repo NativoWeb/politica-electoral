@@ -184,6 +184,12 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/{id}/token', [EventoController::class, 'regenerateToken'])->name('token')->whereUuid('id');
             Route::post('/{id}/asistentes/aprobar', [EventoController::class, 'approve'])->name('asistentes.approve')->whereUuid('id');
             Route::post('/{id}/asistentes/descartar', [EventoController::class, 'discard'])->name('asistentes.discard')->whereUuid('id');
+            Route::post('/{id}/asistentes/recuperar', [EventoController::class, 'recoverAttendees'])->name('asistentes.recover')->whereUuid('id');
+            Route::post('/{id}/asistentes/desvincular', [EventoController::class, 'unlinkAttendees'])->name('asistentes.unlink')->whereUuid('id');
+            Route::post('/{id}/asistentes/eliminar', [EventoController::class, 'destroyAttendees'])->name('asistentes.destroy')->whereUuid('id');
+            Route::put('/{id}/asistentes/{asistente}', [EventoController::class, 'updateAttendee'])->name('asistentes.update')->whereUuid(['id', 'asistente']);
+            Route::get('/{id}/cargas/{import}/deshacer', [EventoController::class, 'importUndoPreview'])->name('cargas.preview')->whereUuid(['id', 'import']);
+            Route::delete('/{id}/cargas/{import}', [EventoController::class, 'undoImport'])->name('cargas.destroy')->whereUuid(['id', 'import']);
 
             // Attendees from an Excel/CSV file (phase 3)
             Route::get('/{id}/plantilla.xlsx', [EventoImportController::class, 'template'])->name('importar.plantilla')->whereUuid('id');

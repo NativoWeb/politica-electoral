@@ -1,16 +1,32 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import CampaignChip from '@/Components/CampaignChip';
 import ConfirmDialog from '@/Components/ConfirmDialog';
+import AttendeeActions from '@/Components/Eventos/AttendeeActions';
+import AttendeeEditModal from '@/Components/Eventos/AttendeeEditModal';
 import { LinkStatusBadge, StatusBadge } from '@/Components/Eventos/EventoBadges';
 import EventoFormModal from '@/Components/Eventos/EventoFormModal';
 import EventoQr from '@/Components/Eventos/EventoQr';
+import ImportLoads from '@/Components/Eventos/ImportLoads';
 import Pagination from '@/Components/Eventos/Pagination';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import { attendeesExcelUrl } from '@/lib/eventosIntegracion';
 import { useCampaign } from '@/lib/campaign';
-import { APPROVE_MESSAGE, allSelected, canManageEventos, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
+import { APPROVE_MESSAGE, allSelected, canManageEventos, canSeeFicha, deleteAttendeesMessage, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
+
+// The ficha of the Mapa Político, loaded only when someone opens one.
+const PersonaPanel = lazy(() => import('@/Components/PersonaPanel'));
+
+const ATTENDEE_URLS = {
+    approve: 'asistentes/aprobar',
+    discard: 'asistentes/descartar',
+    recover: 'asistentes/recuperar',
+    unlink: 'asistentes/desvincular',
+    delete: 'asistentes/eliminar',
+};
+
+const plural = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
 const STATUS_ACTIONS = {
     open: {
@@ -71,7 +87,7 @@ function PeopleList({ title, items, render }) {
     );
 }
 
-function AttendeeRow({ a, selectable, checked, onToggle }) {
+function AttendeeRow({ a, selectable, checked, onToggle, fichaVisible, busy, onAction }) {
     const contact = [a.cedula && `C.C. ${a.cedula}`, a.celular && `Cel. ${a.celular}`, a.barrio].filter(Boolean).join(' · ');
     return (
         <li className={`flex items-start gap-3 px-4 py-3 ${checked ? 'bg-blue-50' : 'bg-white'}`}>
@@ -100,12 +116,13 @@ function AttendeeRow({ a, selectable, checked, onToggle }) {
                 <p className="text-[12px] text-[var(--color-ink-faint)] mt-0.5">
                     {sourceLabel(a)} · {formatShortDate(a.created_at)}
                 </p>
+                <AttendeeActions attendee={a} editable={selectable} fichaVisible={fichaVisible} disabled={busy} onAction={onAction} />
             </div>
         </li>
     );
 }
 
-export default function Show({ evento, asistentes, kpis, filters, tipos, provincias, can }) {
+export default function Show({ evento, asistentes, kpis, filters, tipos, provincias, can, cargas }) {
     const { props } = usePage();
     const errors = props.errors || {};
     const success = props.flash?.success;
@@ -120,6 +137,10 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
     const [actionError, setActionError] = useState('');
     const [search, setSearch] = useState(filters?.q ?? '');
     const [busy, setBusy] = useState(false);
+    const [editingAttendee, setEditingAttendee] = useState(null);
+    const [fichaId, setFichaId] = useState(null);
+    const [notice, setNotice] = useState('');
+    const fichaVisible = canSeeFicha(props.auth?.user);
 
     useEffect(() => {
         setSelected(prev => pruneSelection(prev, rows));
@@ -140,11 +161,27 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
     function onConfirm() {
         const c = confirm;
         setConfirm(null);
-        if (c.kind === 'approve' || c.kind === 'discard') {
-            runAction(c.kind === 'approve' ? 'asistentes/aprobar' : 'asistentes/descartar', { ids: c.ids }, () => setSelected(new Set()));
+        setNotice('');
+        if (ATTENDEE_URLS[c.kind]) {
+            runAction(ATTENDEE_URLS[c.kind], { ids: c.ids }, () => setSelected(new Set()));
         } else {
             runAction(STATUS_ACTIONS[c.kind].url, {});
         }
+    }
+
+    function onAttendeeAction(kind, a) {
+        if (kind === 'ficha') setFichaId(a.lider_id);
+        else if (kind === 'edit') setEditingAttendee(a);
+        else setConfirm({ kind, ids: [a.id], attendees: [a] });
+    }
+
+    function reloadAfter(message) {
+        setNotice(message);
+        router.reload({ only: ['asistentes', 'kpis', 'cargas'], preserveScroll: true });
+    }
+
+    function askBulk(kind) {
+        setConfirm({ kind, ids: [...selected], attendees: rows.filter(r => selected.has(r.id)) });
     }
 
     function applyFilters(next) {
@@ -157,21 +194,40 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
         errors.status, errors.ids, errors.evento, actionError,
     ].filter(Boolean);
 
-    const confirmMeta = confirm && (confirm.kind === 'approve'
-        ? {
-            title: `¿Pasar ${confirm.ids.length === 1 ? '1 asistente' : `${confirm.ids.length} asistentes`} a Votantes?`,
+    const attendeeConfirms = confirm && {
+        approve: {
+            title: `¿Pasar ${plural(confirm.ids?.length, 'asistente', 'asistentes')} a Votantes?`,
             message: APPROVE_MESSAGE,
             confirm: 'Sí, pasar a Votantes',
-        }
-        : confirm.kind === 'discard'
-            ? {
-                title: `¿Descartar ${confirm.ids.length === 1 ? '1 asistente' : `${confirm.ids.length} asistentes`}?`,
-                message: 'No pasarán a Votantes. Seguirán en la lista del evento marcados como descartados.',
-                confirm: 'Sí, descartar', danger: true,
-            }
-            : { ...STATUS_ACTIONS[confirm.kind] });
+        },
+        discard: {
+            title: `¿Descartar ${plural(confirm.ids?.length, 'asistente', 'asistentes')}?`,
+            message: 'No pasarán a Votantes. Seguirán en la lista del evento marcados como descartados.',
+            confirm: 'Sí, descartar', danger: true,
+        },
+        recover: {
+            title: `¿Recuperar ${plural(confirm.ids?.length, 'asistente', 'asistentes')}?`,
+            message: 'Vuelven a quedar pendientes de aprobar.',
+            confirm: 'Sí, recuperar',
+        },
+        unlink: {
+            title: `¿Desvincular ${plural(confirm.ids?.length, 'asistente', 'asistentes')}?`,
+            message: 'Vuelve a quedar pendiente en el evento. Su ficha en Votantes NO se borra.',
+            confirm: 'Sí, desvincular', danger: true,
+        },
+        delete: {
+            title: `¿Eliminar ${plural(confirm.ids?.length, 'asistente', 'asistentes')}?`,
+            message: deleteAttendeesMessage(confirm.attendees ?? []),
+            confirm: 'Sí, eliminar', danger: true, back: 'No, mantener',
+        },
+    }[confirm.kind];
+    const confirmMeta = confirm && (attendeeConfirms ?? { ...STATUS_ACTIONS[confirm.kind] });
 
     const pendingOnPage = rows.filter(isSelectable).length;
+    const onlyPending = rows.filter(isSelectable).every(r => r.link_status === 'pendiente');
+    const selectedRows = rows.filter(r => selected.has(r.id));
+    const selectedPending = selectedRows.some(r => r.link_status === 'pendiente');
+    const selectedDiscarded = selectedRows.some(r => r.link_status === 'descartado');
 
     return (
         <AppLayout title={evento.nombre} breadcrumb={[{ label: 'EVENTOS', href: '/eventos' }, { label: evento.nombre }]}>
@@ -226,7 +282,7 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
             </div>
 
             <div className="p-4 max-w-6xl space-y-4">
-                {success && <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[15px] font-semibold text-emerald-800">{success}</div>}
+                {(notice || success) && <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[15px] font-semibold text-emerald-800">{notice || success}</div>}
                 {errorMessages.length > 0 && (
                     <div role="alert" className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[15px] font-semibold text-red-700 space-y-1">
                         {errorMessages.map(m => <p key={m}>{m}</p>)}
@@ -277,6 +333,8 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                     <EventoQr evento={evento} canOpen={editable} />
                 </div>
 
+                {editable && <ImportLoads eventId={evento.id} cargas={cargas} onDone={reloadAfter} />}
+
                 <section aria-labelledby="asistentes-title" className="bg-white border border-[var(--color-line)] rounded-2xl overflow-hidden">
                     <div className="px-4 pt-4 pb-3 space-y-3 border-b border-[var(--color-line)]">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -305,7 +363,9 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                         {editable && pendingOnPage > 0 && (
                             <label className="flex items-center gap-3 min-h-[44px] cursor-pointer">
                                 <input type="checkbox" checked={allSelected(selected, rows)} onChange={() => setSelected(prev => toggleAll(prev, rows))} className="w-6 h-6 accent-[var(--color-primary)]" />
-                                <span className="text-[15px] font-semibold text-[var(--color-ink)]">Seleccionar todos los pendientes de esta página ({pendingOnPage})</span>
+                                <span className="text-[15px] font-semibold text-[var(--color-ink)]">
+                                    {onlyPending ? 'Seleccionar todos los pendientes' : 'Seleccionar todos los pendientes y descartados'} de esta página ({pendingOnPage})
+                                </span>
                             </label>
                         )}
                     </div>
@@ -313,7 +373,7 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                     {rows.length > 0 ? (
                         <ul className="divide-y divide-[var(--color-line)]" aria-label="Lista de asistentes">
                             {rows.map(a => (
-                                <AttendeeRow key={a.id} a={a} selectable={editable} checked={selected.has(a.id)} onToggle={id => setSelected(prev => toggleSelected(prev, id))} />
+                                <AttendeeRow key={a.id} a={a} selectable={editable} checked={selected.has(a.id)} onToggle={id => setSelected(prev => toggleSelected(prev, id))} fichaVisible={fichaVisible} busy={busy} onAction={onAttendeeAction} />
                             ))}
                         </ul>
                     ) : (
@@ -334,8 +394,16 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                 <div className="fixed left-0 right-0 bottom-[72px] lg:bottom-0 lg:left-[200px] z-30 bg-white border-t-2 border-[var(--color-primary)] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] px-4 py-3 safe-bottom">
                     <div className="max-w-6xl flex flex-wrap items-center gap-2">
                         <p className="text-[15px] font-bold text-[var(--color-ink)] mr-auto" aria-live="polite">{selected.size === 1 ? '1 seleccionado' : `${selected.size} seleccionados`}</p>
-                        <button type="button" disabled={busy} onClick={() => setConfirm({ kind: 'discard', ids: [...selected] })} className="min-h-[48px] px-4 py-2.5 rounded-xl border-2 border-gray-300 bg-white text-[15px] font-bold text-[var(--color-ink-soft)] disabled:opacity-50">Descartar</button>
-                        <button type="button" disabled={busy} onClick={() => setConfirm({ kind: 'approve', ids: [...selected] })} className="min-h-[48px] px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-[15px] font-bold disabled:opacity-50">Pasar a Votantes</button>
+                        <button type="button" disabled={busy} onClick={() => askBulk('delete')} className="min-h-[48px] px-4 py-2.5 rounded-xl border-2 border-red-300 bg-white text-[15px] font-bold text-red-700 disabled:opacity-50">Eliminar</button>
+                        {selectedDiscarded && (
+                            <button type="button" disabled={busy} onClick={() => askBulk('recover')} className="min-h-[48px] px-4 py-2.5 rounded-xl border-2 border-[var(--color-primary)] bg-white text-[15px] font-bold text-[var(--color-primary)] disabled:opacity-50">Recuperar</button>
+                        )}
+                        {selectedPending && (
+                            <>
+                                <button type="button" disabled={busy} onClick={() => askBulk('discard')} className="min-h-[48px] px-4 py-2.5 rounded-xl border-2 border-gray-300 bg-white text-[15px] font-bold text-[var(--color-ink-soft)] disabled:opacity-50">Descartar</button>
+                                <button type="button" disabled={busy} onClick={() => askBulk('approve')} className="min-h-[48px] px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-[15px] font-bold disabled:opacity-50">Pasar a Votantes</button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
@@ -350,6 +418,21 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                     onConfirm={onConfirm}
                     onCancel={() => setConfirm(null)}
                 />
+            )}
+
+            {editingAttendee && (
+                <AttendeeEditModal
+                    eventId={evento.id}
+                    attendee={editingAttendee}
+                    onClose={() => setEditingAttendee(null)}
+                    onSaved={message => { setEditingAttendee(null); reloadAfter(message); }}
+                />
+            )}
+
+            {fichaId && (
+                <Suspense fallback={null}>
+                    <PersonaPanel personId={fichaId} onClose={() => setFichaId(null)} />
+                </Suspense>
             )}
 
             {editing && (

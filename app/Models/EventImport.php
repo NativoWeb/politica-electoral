@@ -40,6 +40,11 @@ class EventImport extends Model
         return $this->hasMany(EventImportRow::class, 'import_id');
     }
 
+    public function attendees(): HasMany
+    {
+        return $this->hasMany(EventAttendee::class, 'import_id');
+    }
+
     public function pages(): HasMany
     {
         return $this->hasMany(EventImportPage::class, 'import_id');

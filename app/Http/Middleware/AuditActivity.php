@@ -103,6 +103,11 @@ class AuditActivity
             return $fields === [] ? $kept : $kept + ['campos' => $fields];
         }
 
+        // Attendee correction: only which fields were sent, never the names, phones or address.
+        if ($request->route()?->getName() === 'eventos.asistentes.update') {
+            return ['campos' => array_keys($data)];
+        }
+
         // Personal data (cedula, phones, email, address...) is masked by AuditLog on insert, see config/audit.php.
         return $data;
     }

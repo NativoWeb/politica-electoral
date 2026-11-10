@@ -82,10 +82,83 @@ export function newClientUuid() {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/* ── Attendee selection (only pending attendees can be approved or discarded) ── */
+/* ── Attendee selection (pending ones to approve or discard, discarded ones to recover; both can be deleted) ── */
 
 export function isSelectable(attendee) {
-    return attendee?.link_status === 'pendiente';
+    return attendee?.link_status === 'pendiente' || attendee?.link_status === 'descartado';
+}
+
+/* ── Actions on one attendee ── */
+
+// Already in Votantes: corrected in the ficha, not in the event.
+export const LOCKED_LINK_STATUSES = ['aprobado', 'vinculado'];
+
+export function canSeeFicha(user) {
+    const perms = user?.permissions || [];
+
+    return !!user?.isSuperadmin || perms.includes('*') || perms.includes('view.mapa');
+}
+
+// Keys, in display order: ficha, edit, approve, discard, recover, unlink, delete.
+export function attendeeActions(attendee, { editable = false, fichaVisible = false } = {}) {
+    if (!attendee) return [];
+    const locked = LOCKED_LINK_STATUSES.includes(attendee.link_status);
+    const actions = [];
+    if (locked && fichaVisible && attendee.lider_id && attendee.ficha) actions.push('ficha');
+    if (!editable) return actions;
+    if (!locked) actions.push('edit');
+    if (attendee.link_status === 'pendiente') actions.push('approve', 'discard');
+    if (attendee.link_status === 'descartado') actions.push('recover');
+    if (locked) actions.push('unlink');
+    actions.push('delete');
+
+    return actions;
+}
+
+export function deleteAttendeesMessage(attendees) {
+    const inVotantes = attendees.filter(a => LOCKED_LINK_STATUSES.includes(a?.link_status)).length;
+    const base = 'Se borran de la lista del evento. Esto no se puede deshacer.';
+    if (!inVotantes) return base;
+
+    return `${base} ${attendees.length === 1 ? 'Su ficha en Votantes NO se borra.' : 'Las fichas en Votantes de los aprobados NO se borran.'}`;
+}
+
+export function attendeeEditData(attendee) {
+    const value = v => v ?? '';
+
+    return {
+        nombres: value(attendee?.nombres), apellidos: value(attendee?.apellidos), cedula: value(attendee?.cedula),
+        celular: value(attendee?.celular), fijo: value(attendee?.fijo), fecha_nacimiento: value(attendee?.fecha_nacimiento),
+        direccion: value(attendee?.direccion), barrio: value(attendee?.barrio), nota: value(attendee?.nota),
+    };
+}
+
+// First message of each field of a 422 body.
+export function fieldErrors(body) {
+    return Object.fromEntries(Object.entries(body?.errors || {}).map(([k, v]) => [k, Array.isArray(v) ? v[0] : String(v)]));
+}
+
+/* ── Confirmed loads (Deshacer carga) ── */
+
+export function loadLabel(carga) {
+    const origin = carga?.kind === 'ocr' ? 'Planilla leída con IA' : 'Por Excel';
+    const who = carga?.created_by ? `: ${carga.created_by}` : '';
+    const when = carga?.confirmed_at ? ` · ${formatShortDate(carga.confirmed_at)}` : '';
+    const n = carga?.asistentes ?? 0;
+
+    return `${origin}${who}${when} · ${n === 1 ? '1 persona' : `${n} personas`}`;
+}
+
+export function undoLoadMessage(preview) {
+    const n = preview?.asistentes ?? 0;
+    const parts = [`Se eliminarán ${n === 1 ? '1 asistente' : `${n} asistentes`} de esta carga.`];
+    if (preview?.fichas_borrar) parts.push(`También se borrarán ${preview.fichas_borrar === 1 ? '1 ficha creada' : `${preview.fichas_borrar} fichas creadas`} al aprobarlos, que no tienen otra información.`);
+    if (preview?.fichas_conservar) parts.push(`Se conservarán ${preview.fichas_conservar === 1 ? '1 ficha que ya tiene' : `${preview.fichas_conservar} fichas que ya tienen`} otra información.`);
+    if (preview?.vinculadas) parts.push(`Las ${preview.vinculadas === 1 ? 'ficha que ya existía' : `${preview.vinculadas} fichas que ya existían`} en Votantes no se tocan.`);
+    if (preview?.con_autorizacion) parts.push(`${preview.con_autorizacion} con autorización de datos registrada se conservan.`);
+    parts.push('Esto no se puede deshacer.');
+
+    return parts.join(' ');
 }
 
 export function toggleSelected(selected, id) {
