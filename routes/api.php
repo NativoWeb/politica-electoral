@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Api\Agent\AgentIdentityController;
+use App\Http\Controllers\Api\Agent\AgentMapaQueryController;
 use App\Http\Controllers\Api\Agent\AgentVotanteController;
 use App\Http\Controllers\Api\Agent\AgentVotanteQueryController;
 use App\Http\Controllers\ReportController;
@@ -32,6 +33,10 @@ Route::prefix('agent/v1')->name('api.agent.')->middleware(['throttle:agent', 'ag
             Route::middleware(['permission:view.votantes', 'throttle:agent-votantes-read'])->group(function () {
                 Route::get('/votantes', [AgentVotanteQueryController::class, 'index'])->name('votantes.index');
                 Route::get('/votantes/export', [AgentVotanteQueryController::class, 'export'])->name('votantes.export');
+            });
+            Route::middleware(['permission:view.mapa', 'throttle:agent-votantes-read'])->group(function () {
+                Route::get('/mapa', [AgentMapaQueryController::class, 'index'])->name('mapa.index');
+                Route::get('/mapa/export', [AgentMapaQueryController::class, 'export'])->name('mapa.export');
             });
             Route::get('/votantes/{id}/seguimientos', [AgentVotanteController::class, 'seguimientos'])->name('votantes.seguimientos.index');
             Route::middleware('throttle:agent-reports')->group(function () {

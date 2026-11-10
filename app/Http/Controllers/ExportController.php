@@ -16,7 +16,7 @@ class ExportController extends Controller
 {
     use ScopesTerritory;
 
-    private const PDF_MAX_ROWS = 500;
+    public const PDF_MAX_ROWS = 500;
 
     // Mapa Politico rows (leaders, candidates 2027) carry key notes in observacion.
     private function defaultColumns(Request $request): string

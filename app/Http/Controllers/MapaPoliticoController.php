@@ -50,6 +50,10 @@ class MapaPoliticoController extends Controller
 
     public const ASISTENTES_EVENTO_LABEL = 'Asistentes a eventos';
 
+    public const AREA_METROPOLITANA = 'Área Metropolitana';
+
+    public const AREA_METROPOLITANA_MUNICIPIOS = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
+
     // Cámara candidates endorsed by a party that ran inside a coalition list; votes are reported under the list name.
     private const CAMARA_LIST_BY_PARTY = [
         'ALIANZA VERDE' => 'VERDE / EN MARCHA',
@@ -176,8 +180,7 @@ class MapaPoliticoController extends Controller
         }
         $barrios = $barriosQuery->pluck('barrio')->sort()->values()->toArray();
 
-        // A row with several tipos counts once in each of its sections, as the page groups them.
-        $sectionCounts = collect($data)->flatMap(fn ($row) => self::tipoLabels($row['tipo_registro'] ?? ''))->countBy()->toArray();
+        $sectionCounts = self::sectionCounts($data);
 
         $partyTotals = $this->partyTotalsWithLista($munId, $provinciaIds);
         if ($partido) {
@@ -244,6 +247,12 @@ class MapaPoliticoController extends Controller
         return 'directorio';
     }
 
+    // A row with several tipos counts once in each of its sections, as the page groups them.
+    public static function sectionCounts(array $rows): array
+    {
+        return collect($rows)->flatMap(fn ($row) => self::tipoLabels($row['tipo_registro'] ?? ''))->countBy()->toArray();
+    }
+
     private static function tipoLabels(string $tipos): array
     {
         return array_values(array_unique(array_filter(array_map('trim', explode(',', $tipos)), fn ($t) => $t !== '')));
@@ -252,6 +261,24 @@ class MapaPoliticoController extends Controller
     private static function mergeTipos(string ...$tipos): string
     {
         return implode(', ', self::tipoLabels(implode(',', $tipos)));
+    }
+
+    // Municipality id => true, plus normalized name => id: what municipioKey() resolves against.
+    public static function municipioIndex(): array
+    {
+        $index = [];
+        foreach (CachedQueries::allMunicipios() as $m) {
+            $index[$m['id']] = true;
+            $index[Str::lower(Str::ascii(trim($m['name'])))] = $m['id'];
+        }
+
+        return $index;
+    }
+
+    // Same uppercase name in the same municipio: how an electoral row and a lider are taken for one person.
+    public static function personKey(array $row, array $municipios): string
+    {
+        return mb_strtoupper(trim((string) ($row['nombre'] ?? ''))).'|'.self::municipioKey($row, $municipios);
     }
 
     // The municipio a row belongs to: its municipality id, or its name (without accents) resolved to one.
@@ -298,7 +325,6 @@ class MapaPoliticoController extends Controller
         $searchEscaped = $search ? $this->escapeLike($search) : null;
         $barrioEscaped = $barrio ? $this->escapeLike($barrio) : null;
 
-        $areaMetropolitana = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
         $municipios = CachedQueries::allMunicipios();
 
         // Territory scope: restrict municipios for users with territory_scope
@@ -318,8 +344,8 @@ class MapaPoliticoController extends Controller
         $provincia = $request->input('provincia');
         $provinciaIds = null;
         if ($provincia && ! $munId) {
-            if ($provincia === 'Área Metropolitana') {
-                $provinciaIds = collect($municipios)->filter(fn ($m) => in_array($m['name'], $areaMetropolitana))->pluck('id')->toArray();
+            if ($provincia === self::AREA_METROPOLITANA) {
+                $provinciaIds = collect($municipios)->filter(fn ($m) => in_array($m['name'], self::AREA_METROPOLITANA_MUNICIPIOS))->pluck('id')->toArray();
             } else {
                 $provinciaIds = collect($municipios)->filter(fn ($m) => ($m['provincia'] ?? '') === $provincia)->pluck('id')->toArray();
             }
@@ -671,11 +697,7 @@ class MapaPoliticoController extends Controller
 
         // #6: Enrich non-líder rows — only load líderes for relevant municipios. Only the own campaign's lideres:
         // the electoral row unifies under the own campaign, a subcampaign's lider keeps its own row.
-        $municipioIds = [];
-        foreach (CachedQueries::allMunicipios() as $m) {
-            $municipioIds[$m['id']] = true;
-            $municipioIds[Str::lower(Str::ascii(trim($m['name'])))] = $m['id'];
-        }
+        $municipioIds = self::municipioIndex();
         $relevantMunicipios = array_unique(array_filter(array_column($data, 'municipio')));
         $relevantGeoIds = array_unique(array_filter(array_column($data, 'geographic_unit_id')));
         $lideresLookup = [];
@@ -687,7 +709,7 @@ class MapaPoliticoController extends Controller
                 ->where(fn ($q) => $q->whereIn('municipio', $relevantMunicipios)->orWhereIn('geographic_unit_id', $relevantGeoIds))
                 ->get();
             foreach ($lideresAll as $l) {
-                $lideresLookup[mb_strtoupper(trim($l->nombre)).'|'.self::municipioKey((array) $l, $municipioIds)] ??= $l;
+                $lideresLookup[self::personKey((array) $l, $municipioIds)] ??= $l;
             }
         }
 
@@ -706,7 +728,7 @@ class MapaPoliticoController extends Controller
                 continue;
             }
 
-            $key = mb_strtoupper(trim($row['nombre'] ?? '')).'|'.self::municipioKey($row, $municipioIds);
+            $key = self::personKey($row, $municipioIds);
             $lider = $lideresLookup[$key] ?? null;
             if ($lider) {
                 if (empty($row['telefono'])) {
@@ -756,9 +778,9 @@ class MapaPoliticoController extends Controller
         $ownCampaignId = $this->campaign()->ownId() ?? '';
         // Two lider records with different cédulas are different people, even with the same name and municipio.
         $liderOfKey = [];
+        $fichasOfKey = [];
         foreach ($data as $row) {
-            $key = mb_strtoupper(trim($row['nombre'] ?? '')).'|'.self::municipioKey($row, $municipioIds)
-                .'|'.($row['campaign_id'] ?? $ownCampaignId);
+            $key = self::personKey($row, $municipioIds).'|'.($row['campaign_id'] ?? $ownCampaignId);
             if (array_key_exists('campaign_id', $row) && ! empty($row['id'])) {
                 $cedula = trim((string) ($row['cedula'] ?? ''));
                 $first = $liderOfKey[$key] ?? null;
@@ -766,6 +788,7 @@ class MapaPoliticoController extends Controller
                     $key .= '|'.$row['id'];
                 }
                 $liderOfKey[$key] ??= ['id' => $row['id'], 'cedula' => $cedula];
+                $fichasOfKey[$key][$row['id']] = true;
             }
             if (isset($unified[$key])) {
                 $unified[$key]['tipo_registro'] = self::mergeTipos($unified[$key]['tipo_registro'] ?? '', $row['tipo_registro'] ?? '');
@@ -805,6 +828,11 @@ class MapaPoliticoController extends Controller
                 $unified[$key] = $row;
             }
         }
+        // Ids of the rows merged from more than one lider ficha, apart from the rows: the page never receives them.
+        $multiFicha = array_values(array_map(
+            fn ($key) => $unified[$key]['id'],
+            array_keys(array_filter($fichasOfKey, fn ($ids) => count($ids) > 1)),
+        ));
         $data = array_values($unified);
 
         // Filtrar por barrio (post-unificación)
@@ -823,7 +851,7 @@ class MapaPoliticoController extends Controller
             }));
         }
 
-        return compact('data', 'municipios', 'provincias', 'municipioInfo', 'munId', 'provinciaIds', 'partido', 'campana', 'applyEstado');
+        return compact('data', 'municipios', 'provincias', 'municipioInfo', 'munId', 'provinciaIds', 'partido', 'campana', 'applyEstado', 'multiFicha');
     }
 
     public function storeLider(Request $request)
