@@ -26,7 +26,7 @@ export default function AttendeeActions({ attendee, editable, fichaVisible, disa
     const panelId = `acciones-${attendee.id}`;
 
     return (
-        <div className="mt-2">
+        <div className="mt-2 sm:mt-0 flex flex-col items-start sm:items-end">
             <button
                 type="button"
                 aria-expanded={open}
@@ -38,7 +38,7 @@ export default function AttendeeActions({ attendee, editable, fichaVisible, disa
                 Acciones {open ? '▴' : '▾'}
             </button>
             {open && (
-                <div id={panelId} role="group" aria-label={`Acciones de ${name}`} className="mt-2 flex flex-wrap gap-2">
+                <div id={panelId} role="group" aria-label={`Acciones de ${name}`} className="mt-2 flex flex-wrap gap-2 sm:justify-end">
                     {actions.map(key => (
                         <button
                             key={key}

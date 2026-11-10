@@ -90,7 +90,7 @@ function PeopleList({ title, items, render }) {
 function AttendeeRow({ a, selectable, checked, onToggle, fichaVisible, busy, onAction }) {
     const contact = [a.cedula && `C.C. ${a.cedula}`, a.celular && `Cel. ${a.celular}`, a.barrio].filter(Boolean).join(' · ');
     return (
-        <li className={`flex items-start gap-3 px-4 py-3 ${checked ? 'bg-blue-50' : 'bg-white'}`}>
+        <li className={`flex flex-wrap sm:flex-nowrap items-start gap-x-3 px-4 py-3 ${checked ? 'bg-blue-50' : 'bg-white'}`}>
             <div className="w-11 flex-shrink-0 flex justify-center pt-0.5">
                 {selectable && isSelectable(a) && (
                     <input
@@ -116,6 +116,9 @@ function AttendeeRow({ a, selectable, checked, onToggle, fichaVisible, busy, onA
                 <p className="text-[12px] text-[var(--color-ink-faint)] mt-0.5">
                     {sourceLabel(a)} · {formatShortDate(a.created_at)}
                 </p>
+            </div>
+            {/* Phones: below the data; wider screens: on the right of the row. */}
+            <div className="w-full pl-14 sm:w-auto sm:pl-0 sm:max-w-[55%] flex sm:justify-end">
                 <AttendeeActions attendee={a} editable={selectable} fichaVisible={fichaVisible} disabled={busy} onAction={onAction} />
             </div>
         </li>
