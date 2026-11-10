@@ -214,7 +214,7 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
 ```jsonc
 {
   "evento": EventoDetalle,
-  "asistentes": {                   // paginador (50 por página), orden created_at desc
+  "asistentes": {                   // paginador (20 por página), orden created_at desc
     "data": [ Asistente ], "current_page": 1, "last_page": 1, "per_page": 50, "total": 3, "links": [ ... ]
   },
   "kpis": { "total": 3, "vinculados": 1, "pendientes": 1, "aprobados": 1, "descartados": 0, "qr": 2, "operador": 1 },
@@ -951,7 +951,7 @@ solo a quien **sí** tiene el permiso:
 ### Vista por territorio — `GET /eventos/territorio` (Inertia `Eventos/Territorio`)
 
 Query: `municipio` (uuid de municipio; fuera del territorio → **403**; otro valor → sin selección), `barrio` (texto
-opcional, ≤ 120), `page` (asistentes, 50 por página), `pagina_lideres` (líderes, 25 por página).
+opcional, ≤ 120), `page` (asistentes, 20 por página), `pagina_lideres` (líderes, 25 por página).
 Enlace "Ver por territorio" en `/eventos` (con `can.view`).
 
 **Barrio normalizado:** se compara la clave `AttendeeInput::barrioKey` = minúsculas, sin tildes y con espacios

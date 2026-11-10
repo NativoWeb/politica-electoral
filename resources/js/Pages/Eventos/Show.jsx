@@ -373,6 +373,11 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                         )}
                     </div>
 
+                    {asistentes?.last_page > 1 && (
+                        <div className="px-4 py-2 border-b border-[var(--color-line)]">
+                            <Pagination paginator={asistentes} label="Páginas de asistentes (arriba)" only={['asistentes', 'filters']} />
+                        </div>
+                    )}
                     {rows.length > 0 ? (
                         <ul className="divide-y divide-[var(--color-line)]" aria-label="Lista de asistentes">
                             {rows.map(a => (

@@ -107,7 +107,7 @@ class EventoController extends Controller
         $filters = $this->attendeeFilters($request);
         $editable = $this->canManage() && $this->campaign()->isOwn($event->campaign_id);
 
-        $asistentes = $this->attendeesQuery($event, $filters)->paginate(50)->withQueryString();
+        $asistentes = $this->attendeesQuery($event, $filters)->paginate(20)->withQueryString();
         $fichas = $this->linkedFichas($asistentes->getCollection());
         $asistentes->through(fn (EventAttendee $a) => $this->attendee($a) + [
             'ficha' => $a->lider_id ? ($fichas[$a->lider_id] ?? null) : null,
