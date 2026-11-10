@@ -281,7 +281,7 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                 </div>
             </div>
 
-            <div className="p-4 max-w-6xl space-y-4">
+            <div className="p-4 lg:px-6 space-y-4">
                 {(notice || success) && <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[15px] font-semibold text-emerald-800">{notice || success}</div>}
                 {errorMessages.length > 0 && (
                     <div role="alert" className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[15px] font-semibold text-red-700 space-y-1">
@@ -392,7 +392,7 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
 
             {selected.size > 0 && editable && (
                 <div className="fixed left-0 right-0 bottom-[72px] lg:bottom-0 lg:left-[200px] z-30 bg-white border-t-2 border-[var(--color-primary)] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] px-4 py-3 safe-bottom">
-                    <div className="max-w-6xl flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <p className="text-[15px] font-bold text-[var(--color-ink)] mr-auto" aria-live="polite">{selected.size === 1 ? '1 seleccionado' : `${selected.size} seleccionados`}</p>
                         <button type="button" disabled={busy} onClick={() => askBulk('delete')} className="min-h-[48px] px-4 py-2.5 rounded-xl border-2 border-red-300 bg-white text-[15px] font-bold text-red-700 disabled:opacity-50">Eliminar</button>
                         {selectedDiscarded && (

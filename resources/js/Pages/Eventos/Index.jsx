@@ -216,7 +216,7 @@ export default function Index({ eventos, filters = {}, provincias = [], tipos = 
                 </div>
             </div>
 
-            <div className="p-4 space-y-3 max-w-5xl">
+            <div className="p-4 lg:px-6 space-y-3">
                 {success && <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[15px] font-semibold text-emerald-800">{success}</div>}
 
                 {rows.length > 0 ? (

@@ -48,7 +48,7 @@ export default function Importar({ evento, importacion, muestra, filas, filters,
                 <p className="text-[16px] text-white/85 mt-0.5 first-letter:uppercase">{evento.nombre}{evento.starts_at ? ` · ${formatEventDate(evento.starts_at, { withTime: false })}` : ''}</p>
             </div>
 
-            <div className="p-4 max-w-6xl space-y-4">
+            <div className="p-4 lg:px-6 space-y-4">
                 <ImportStepper step={step} />
 
                 {success && <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[16px] font-semibold text-emerald-800">{success}</div>}

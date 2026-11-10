@@ -27,7 +27,7 @@ export default function Territorio({ filters = {}, municipio = null, provincias 
                 <p className="text-[15px] text-white/80 mt-0.5">Elija un municipio (y si quiere un barrio) para ver sus líderes, los eventos que se hicieron ahí y quiénes asistieron.</p>
             </div>
 
-            <div className="p-4 max-w-6xl space-y-4">
+            <div className="p-4 lg:px-6 space-y-4">
                 <TerritorioFiltros provincias={provincias} barrios={barrios} filters={filters} onSearch={search} />
                 {resultado ? (
                     <TerritorioResultado resultado={resultado} filters={filters} lugar={lugar} />
