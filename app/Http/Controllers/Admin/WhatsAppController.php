@@ -759,16 +759,20 @@ class WhatsAppController extends Controller
             ], 422);
         }
 
-        $isBirthdayTemplate = $template->meta_name === 'oscarfc';
+        $campaignType = match ($template->meta_name) {
+            'oscarfc' => 'birthday',
+            'invitacion_evento' => 'event',
+            default => null,
+        };
 
         $send = DB::transaction(function () use (
             $template,
             $recipients,
-            $isBirthdayTemplate
+            $campaignType
         ) {
             $send = $this->createSend($template, [
-                'campaign_type' => $isBirthdayTemplate ? 'birthday' : null,
-                'campaign_date' => $isBirthdayTemplate
+                'campaign_type' => $campaignType,
+                'campaign_date' => $campaignType !== null
                     ? Carbon::now('America/Bogota')->toDateString()
                     : null,
             ]);
@@ -1112,6 +1116,7 @@ class WhatsAppController extends Controller
     /**
      * Actualiza el estado de un destinatario usando el teléfono recibido desde Meta.
      */
+
     public function updateRecipientStatusByPhone(Request $request)
     {
         if (!$this->hasValidBirthdayToken($request)) {
@@ -1122,29 +1127,39 @@ class WhatsAppController extends Controller
 
         $validated = $request->validate([
             'phone' => ['required', 'string', 'max:30'],
-            'status' => ['required', 'in:delivered,read,failed'],
+            'status' => ['required', 'in:sent,delivered,read,failed'],
             'send_id' => ['nullable', 'integer'],
+            'error_reason' => ['nullable', 'string', 'max:10000'],
+            'error_data' => ['nullable', 'array'],
+            'error_data.details' => ['nullable', 'string', 'max:10000'],
+            'title' => ['nullable', 'string', 'max:1000'],
+            'message' => ['nullable', 'string', 'max:10000'],
         ]);
-    
-        // Normalizar el teléfono recibido desde Meta.
+
         $phoneDigits = preg_replace('/\D+/', '', $validated['phone']);
-    
+
         if (strlen($phoneDigits) < 10) {
             return response()->json([
                 'success' => false,
                 'message' => 'El número de teléfono no es válido.',
             ], 422);
         }
-    
-        // Comparar los últimos 10 dígitos para ignorar el indicativo 57.
+
         $lastTenDigits = substr($phoneDigits, -10);
-    
-        // Buscar el destinatario pendiente más reciente que coincida, solo en envíos de campañas con WhatsApp
-        // (y del envío indicado, si n8n lo manda). Meta no devuelve un id de mensaje que esté guardado aquí.
+
         $recipient = WhatsAppSendRecipient::query()
-            ->whereHas('send', fn ($q) => $q->whereIn('campaign_id', $this->whatsappCampaignIds()))
-            ->when($validated['send_id'] ?? null, fn ($q, $sendId) => $q->where('whatsapp_send_id', $sendId))
-    ->whereIn('status', ['pendiente', 'enviando', 'enviado'])
+            ->whereHas('send', fn ($q) => $q->whereIn(
+                'campaign_id',
+                $this->whatsappCampaignIds()
+            ))
+            ->when(
+                $validated['send_id'] ?? null,
+                fn ($q, $sendId) => $q->where(
+                    'whatsapp_send_id',
+                    $sendId
+                )
+            )
+            ->whereIn('status', ['pendiente', 'enviando', 'enviado'])
             ->whereRaw(
                 "right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = ?",
                 [$lastTenDigits]
@@ -1152,26 +1167,44 @@ class WhatsAppController extends Controller
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->first();
-    
+
         if (!$recipient) {
             return response()->json([
                 'success' => false,
                 'message' => 'No se encontró un destinatario pendiente para ese teléfono.',
             ], 404);
         }
-    
-        // Mantener los estados actuales de la aplicación.
 
         $newStatus = match ($validated['status']) {
+            'sent' => 'enviando',
             'delivered' => 'enviado',
             'read' => 'leido',
             'failed' => 'error',
         };
 
+        $errorReason = null;
+
+        if ($validated['status'] === 'failed') {
+            $errorReason = $validated['error_reason']
+                ?? data_get($validated, 'error_data.details')
+                ?? $validated['title']
+                ?? $validated['message']
+                ?? null;
+
+            $errorReason = is_string($errorReason)
+                ? trim($errorReason)
+                : null;
+
+            if ($errorReason === '') {
+                $errorReason = null;
+            }
+        }
+
         $recipient->update([
             'status' => $newStatus,
+            'error_reason' => $errorReason,
         ]);
-    
+
         return response()->json([
             'success' => true,
             'recipient_id' => $recipient->id,
@@ -1179,9 +1212,9 @@ class WhatsAppController extends Controller
             'phone' => $recipient->phone,
             'meta_status' => $validated['status'],
             'status' => $recipient->status,
+            'error_reason' => $recipient->error_reason,
         ]);
     }
-
     
     public function updateBirthdayRecipientStatus(
         Request $request,
@@ -1222,7 +1255,7 @@ class WhatsAppController extends Controller
         abort_unless($send->campaign_id === $this->ownCampaignId(), 404);
 
         $send->load([
-            'recipients:id,whatsapp_send_id,person_id,name,phone,status',
+            'recipients:id,whatsapp_send_id,person_id,name,phone,status,error_reason',
         ]);
 
         return response()->json([
@@ -1249,7 +1282,7 @@ class WhatsAppController extends Controller
         $sends = WhatsAppSend::query()
             ->with([
                 'template:id,name,meta_name',
-                'recipients:id,whatsapp_send_id,person_id,name,phone,status,created_at,updated_at',
+                'recipients:id,whatsapp_send_id,person_id,name,phone,status,error_reason,created_at,updated_at',
             ])
             ->where('campaign_id', $this->ownCampaignId())
             ->where('campaign_type', 'birthday')
@@ -1292,6 +1325,7 @@ class WhatsAppController extends Controller
                         'phone' => $recipient->phone,
                         'birth_date' => $this->dateValue($birthDate),
                         'status' => $recipient->status,
+                        'error_reason' => $recipient->error_reason,
                         'campaign_date' => $this->dateValue(
                             $send->campaign_date
                         ),
@@ -1311,6 +1345,70 @@ class WhatsAppController extends Controller
                 'enviando' => $recipients->where('status', 'enviando')->count(),
                 'enviado' => $recipients->where('status', 'enviado')->count(),
                 'leido' => $recipients->where('status', 'leido')->count(),                                
+                'error' => $recipients->where('status', 'error')->count(),
+            ],
+            'recipients' => $recipients,
+        ]);
+    }
+
+    /**
+     * Historial de eventos para una fecha concreta.
+     * Ruta web: /admin/whatsapp/events/history?date=YYYY-MM-DD
+     */
+    public function eventHistory(Request $request)
+    {
+        $validated = $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $date = $validated['date']
+            ?? Carbon::now('America/Bogota')->toDateString();
+
+        $sends = WhatsAppSend::query()
+            ->with([
+                'template:id,name,meta_name',
+                'recipients:id,whatsapp_send_id,person_id,name,phone,status,error_reason,created_at,updated_at',
+            ])
+            ->where('campaign_id', $this->ownCampaignId())
+            ->where('campaign_type', 'event')
+            ->whereDate('campaign_date', $date)
+            ->whereHas('template', function ($query) {
+                $query->where('meta_name', 'invitacion_evento');
+            })
+            ->orderBy('id')
+            ->get();
+
+        $recipients = $sends
+            ->flatMap(function (WhatsAppSend $send) {
+                return $send->recipients->map(function (
+                    WhatsAppSendRecipient $recipient
+                ) use ($send) {
+                    return [
+                        'id' => $recipient->id,
+                        'send_id' => $send->id,
+                        'name' => $recipient->name,
+                        'phone' => $recipient->phone,
+                        'status' => $recipient->status,
+                        'error_reason' => $recipient->error_reason,
+                        'campaign_date' => $this->dateValue(
+                            $send->campaign_date
+                        ),
+                        'created_at' => $recipient->created_at,
+                        'updated_at' => $recipient->updated_at,
+                    ];
+                });
+            })
+            ->values();
+
+        return response()->json([
+            'date' => $date,
+            'campaigns_count' => $sends->count(),
+            'recipients_count' => $recipients->count(),
+            'summary' => [
+                'pendiente' => $recipients->where('status', 'pendiente')->count(),
+                'enviando' => $recipients->where('status', 'enviando')->count(),
+                'enviado' => $recipients->where('status', 'enviado')->count(),
+                'leido' => $recipients->where('status', 'leido')->count(),
                 'error' => $recipients->where('status', 'error')->count(),
             ],
             'recipients' => $recipients,

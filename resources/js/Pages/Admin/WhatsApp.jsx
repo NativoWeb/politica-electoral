@@ -189,6 +189,30 @@ export default function WhatsApp({
     const [birthdayHistoryLoading, setBirthdayHistoryLoading] = useState(false);
     const [birthdayHistoryError, setBirthdayHistoryError] = useState('');
 
+        // Historial de eventos
+    const [eventMode, setEventMode] = useState('manual');
+
+    const [eventHistoryDate, setEventHistoryDate] = useState(() => {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    });
+
+    const [eventHistory, setEventHistory] = useState(null);
+    const [eventHistoryLoading, setEventHistoryLoading] = useState(false);
+    const [eventHistoryError, setEventHistoryError] = useState('');
+
+    const STATUS_FILTERS = [
+        { value: 'todos', label: 'Todos los estados' },
+        { value: 'pendiente', label: 'Pendiente' },
+        { value: 'enviando', label: 'Enviando' },
+        { value: 'enviado', label: 'Enviado' },
+        { value: 'leido', label: 'Leído' },
+        { value: 'error', label: 'Error' },
+    ];
+
+    const [birthdayStatusFilter, setBirthdayStatusFilter] = useState('todos');
+    const [eventStatusFilter, setEventStatusFilter] = useState('todos');    
+    
     const contactData = contacts?.data ?? [];
 
     const selectedTemplate = useMemo(
@@ -199,6 +223,7 @@ export default function WhatsApp({
     );
 
     const isBirthdayTemplate = selectedTemplate?.meta_name === 'oscarfc';
+    const isEventTemplate = selectedTemplate?.meta_name === 'invitacion_evento';
     const hasImageHeader = selectedTemplate?.header_type === 'image';
 
     const configuredFilters = useMemo(() => {
@@ -330,6 +355,12 @@ export default function WhatsApp({
         setBirthdayMode('manual');
         setBirthdayHistory(null);
         setBirthdayHistoryError('');
+        setEventMode('manual');
+        setEventHistory(null);
+        setEventHistoryError('');
+
+        setBirthdayStatusFilter('todos');
+        setEventStatusFilter('todos');        
         setVariableValues({});
         clearSelection();
         setBirthdayDate('');
@@ -766,6 +797,47 @@ export default function WhatsApp({
         }
     };
 
+    const loadEventHistory = async () => {
+        if (!eventHistoryDate) {
+            setEventHistoryError('Selecciona una fecha para consultar.');
+            setEventHistory(null);
+            return;
+        }
+
+        setEventHistoryLoading(true);
+        setEventHistoryError('');
+        setEventHistory(null);
+
+        try {
+            const response = await fetch(
+                `/admin/whatsapp/events/history?date=${encodeURIComponent(eventHistoryDate)}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data?.message ?? 'No fue posible consultar el historial de eventos.'
+                );
+            }
+
+            setEventHistory(data);
+        } catch (error) {
+            setEventHistoryError(
+                error?.message ?? 'Ocurrió un error consultando el historial.'
+            );
+        } finally {
+            setEventHistoryLoading(false);
+        }
+    };
+
     const formatBirthDate = (birthDate) => {
         if (!birthDate) return 'Sin fecha';
 
@@ -801,6 +873,38 @@ export default function WhatsApp({
             default: return 'bg-gray-100 text-gray-600';
         }
     };
+
+
+
+    const filterHistoryRecipients = (recipients, statusFilter) => {
+        const rows = recipients ?? [];
+
+        if (statusFilter === 'todos') {
+            return rows;
+        }
+
+        return rows.filter(
+            (recipient) => normalizeStatus(recipient.status) === statusFilter
+        );
+    };
+
+    const filteredBirthdayRecipients = filterHistoryRecipients(
+        birthdayHistory?.recipients,
+        birthdayStatusFilter
+    );
+
+    const filteredEventRecipients = filterHistoryRecipients(
+        eventHistory?.recipients,
+        eventStatusFilter
+    );
+
+    const getFilteredSummary = (recipients) => ({
+        pendiente: recipients.filter((item) => normalizeStatus(item.status) === 'pendiente').length,
+        enviando: recipients.filter((item) => normalizeStatus(item.status) === 'enviando').length,
+        enviado: recipients.filter((item) => normalizeStatus(item.status) === 'enviado').length,
+        leido: recipients.filter((item) => normalizeStatus(item.status) === 'leido').length,
+        error: recipients.filter((item) => normalizeStatus(item.status) === 'error').length,
+    });
 
     const canSend =
         Boolean(selectedTemplate) &&
@@ -913,10 +1017,59 @@ export default function WhatsApp({
                                 </div>
                             </div>
                         )}
+                    {isEventTemplate && (
+                        <div className="mb-6 mt-5">
+                            <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                Modo de eventos
+                            </p>
 
-                        <div className={`space-y-6 ${
-                            isBirthdayTemplate && birthdayMode === 'history' ? 'hidden' : ''
-                        }`}>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setEventMode('manual')}
+                                    className={`rounded-lg border p-4 text-left transition ${
+                                        eventMode === 'manual'
+                                            ? 'border-[var(--color-primary)] bg-gray-50 ring-1 ring-[var(--color-primary)]'
+                                            : 'border-[var(--color-line)] bg-white hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <span className="block text-sm font-bold text-[var(--color-ink)]">
+                                        Envío manual
+                                    </span>
+                                    <span className="mt-1 block text-[11px] text-[var(--color-ink-faint)]">
+                                        Seleccionar destinatarios y preparar un envío.
+                                    </span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setEventMode('history');
+                                        setEventHistory(null);
+                                        setEventHistoryError('');
+                                    }}
+                                    className={`rounded-lg border p-4 text-left transition ${
+                                        eventMode === 'history'
+                                            ? 'border-[var(--color-primary)] bg-gray-50 ring-1 ring-[var(--color-primary)]'
+                                            : 'border-[var(--color-line)] bg-white hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <span className="block text-sm font-bold text-[var(--color-ink)]">
+                                        Historial de eventos
+                                    </span>
+                                    <span className="mt-1 block text-[11px] text-[var(--color-ink-faint)]">
+                                        Consultar destinatarios y estados por fecha.
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                            <div className={`space-y-6 ${
+                                (isBirthdayTemplate && birthdayMode === 'history') ||
+                                (isEventTemplate && eventMode === 'history')
+                                    ? 'hidden'
+                                    : ''
+                            }`}>
                             {selectedTemplate ? (
                                 <>
                                     <div className="rounded-lg border border-[var(--color-line)] bg-gray-50 p-4">
@@ -1452,13 +1605,34 @@ export default function WhatsApp({
 
                                 {birthdayHistory && (
                                     <>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <label
+                                        htmlFor="birthday-status-filter"
+                                        className="text-[11px] font-semibold text-[var(--color-ink)]"
+                                    >
+                                        Filtrar por estado
+                                    </label>
+
+                                    <select
+                                        id="birthday-status-filter"
+                                        value={birthdayStatusFilter}
+                                        onChange={(event) => setBirthdayStatusFilter(event.target.value)}
+                                        className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
+                                    >
+                                        {STATUS_FILTERS.map((filter) => (
+                                            <option key={filter.value} value={filter.value}>
+                                                {filter.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                                         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                                             {[
-                                                { label: 'Enviados', value: birthdayHistory.summary?.enviado ?? 0, style: 'bg-green-50 text-green-700' },
-                                                { label: 'Leídos', value: birthdayHistory.summary?.leido ?? 0, style: 'bg-purple-50 text-purple-700' },
-                                                { label: 'Con error', value: birthdayHistory.summary?.error ?? 0, style: 'bg-red-50 text-red-700' },
-                                                { label: 'Pendientes', value: birthdayHistory.summary?.pendiente ?? 0, style: 'bg-gray-100 text-gray-700' },
-                                                { label: 'En curso', value: birthdayHistory.summary?.enviando ?? 0, style: 'bg-blue-50 text-blue-700' },
+                                                { label: 'Enviados', value: getFilteredSummary(filteredBirthdayRecipients).enviado, style: 'bg-green-50 text-green-700' },
+                                                { label: 'Leídos', value: getFilteredSummary(filteredBirthdayRecipients).leido, style: 'bg-purple-50 text-purple-700' },
+                                                { label: 'Con error', value: getFilteredSummary(filteredBirthdayRecipients).error, style: 'bg-red-50 text-red-700' },
+                                                { label: 'Pendientes', value: getFilteredSummary(filteredBirthdayRecipients).pendiente, style: 'bg-gray-100 text-gray-700' },
+                                                { label: 'En curso', value: getFilteredSummary(filteredBirthdayRecipients).enviando, style: 'bg-blue-50 text-blue-700' },
                                             ].map((item) => (
                                                 <div
                                                     key={item.label}
@@ -1482,7 +1656,7 @@ export default function WhatsApp({
                                                 Campañas: <strong>{birthdayHistory.campaigns_count}</strong>
                                             </span>
                                             <span>
-                                                Destinatarios: <strong>{birthdayHistory.recipients_count}</strong>
+                                                Destinatarios: <strong>{filteredBirthdayRecipients.length}</strong>
                                             </span>
                                         </div>
 
@@ -1505,8 +1679,8 @@ export default function WhatsApp({
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {(birthdayHistory.recipients ?? []).length > 0 ? (
-                                                        birthdayHistory.recipients.map((recipient) => (
+                                                    {filteredBirthdayRecipients.length > 0 ? (
+                                                        filteredBirthdayRecipients.map((recipient) => (
                                                             <tr
                                                                 key={recipient.id}
                                                                 className="border-b border-[var(--color-line)] last:border-b-0"
@@ -1523,11 +1697,19 @@ export default function WhatsApp({
                                                                     {formatBirthDate(recipient.birth_date)}
                                                                 </td>
                                                                 <td className="px-4 py-3">
-                                                                    <span
-                                                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}
-                                                                    >
-                                                                        {getStatusLabel(recipient.status)}
-                                                                    </span>
+                                                                    <div className="space-y-1">
+                                                                        <span
+                                                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}
+                                                                        >
+                                                                            {getStatusLabel(recipient.status)}
+                                                                        </span>
+
+                                                                        {normalizeStatus(recipient.status) === 'error' && (
+                                                                            <p className="max-w-xs text-[10px] text-red-600">
+                                                                                {recipient.error_reason || 'Sin detalle del error'}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
                                                                 </td>
                                                             </tr>
                                                         ))
@@ -1535,6 +1717,205 @@ export default function WhatsApp({
                                                         <tr>
                                                             <td
                                                                 colSpan={4}
+                                                                className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]"
+                                                            >
+                                                                No hay destinatarios registrados para esta fecha.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        {/* Historial de eventos */}
+                        {isEventTemplate && eventMode === 'history' && (
+                            <div className="mt-6 space-y-5">
+                                <div>
+                                    <h3 className="text-sm font-bold text-[var(--color-ink)]">
+                                        Historial de envíos de eventos
+                                    </h3>
+                                    <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">
+                                        Consulta las campañas registradas para una fecha.
+                                    </p>
+                                </div>
+
+                                {/* Fecha de consulta */}
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                    <div className="flex-1">
+                                        <label
+                                            htmlFor="event-history-date"
+                                            className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]"
+                                        >
+                                            Fecha del envío
+                                        </label>
+                                        <input
+                                            id="event-history-date"
+                                            type="date"
+                                            value={eventHistoryDate}
+                                            onChange={(event) => {
+                                                setEventHistoryDate(event.target.value);
+                                                setEventHistory(null);
+                                                setEventHistoryError('');
+                                            }}
+                                            className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)]"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={loadEventHistory}
+                                        disabled={eventHistoryLoading || !eventHistoryDate}
+                                        className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {eventHistoryLoading ? 'Consultando...' : 'Consultar historial'}
+                                    </button>
+                                </div>
+
+                                {eventHistoryError && (
+                                    <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-[11px] text-red-700">
+                                        {eventHistoryError}
+                                    </p>
+                                )}
+
+                                {eventHistory && (
+                                    <>
+                                        {/* Filtro por estado */}
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <label
+                                                htmlFor="event-status-filter"
+                                                className="text-[11px] font-semibold text-[var(--color-ink)]"
+                                            >
+                                                Filtrar por estado
+                                            </label>
+
+                                            <select
+                                                id="event-status-filter"
+                                                value={eventStatusFilter}
+                                                onChange={(event) => setEventStatusFilter(event.target.value)}
+                                                className="rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-sm text-[var(--color-ink)]"
+                                            >
+                                                {STATUS_FILTERS.map((filter) => (
+                                                    <option key={filter.value} value={filter.value}>
+                                                        {filter.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Resumen */}
+                                        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                                            {[
+                                                {
+                                                    label: 'Enviados',
+                                                    value: getFilteredSummary(filteredEventRecipients).enviado,
+                                                    style: 'bg-green-50 text-green-700',
+                                                },
+                                                {
+                                                    label: 'Leídos',
+                                                    value: getFilteredSummary(filteredEventRecipients).leido,
+                                                    style: 'bg-purple-50 text-purple-700',
+                                                },
+                                                {
+                                                    label: 'Con error',
+                                                    value: getFilteredSummary(filteredEventRecipients).error,
+                                                    style: 'bg-red-50 text-red-700',
+                                                },
+                                                {
+                                                    label: 'Pendientes',
+                                                    value: getFilteredSummary(filteredEventRecipients).pendiente,
+                                                    style: 'bg-gray-100 text-gray-700',
+                                                },
+                                                {
+                                                    label: 'En curso',
+                                                    value: getFilteredSummary(filteredEventRecipients).enviando,
+                                                    style: 'bg-blue-50 text-blue-700',
+                                                },
+                                            ].map((item) => (
+                                                <div
+                                                    key={item.label}
+                                                    className={`rounded-lg p-4 ${item.style}`}
+                                                >
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider">
+                                                        {item.label}
+                                                    </p>
+                                                    <p className="mt-1 text-2xl font-extrabold">
+                                                        {item.value}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Información de la consulta */}
+                                        <div className="flex flex-wrap gap-4 text-[11px] text-[var(--color-ink-faint)]">
+                                            <span>
+                                                Fecha: <strong>{formatBirthDate(eventHistory.date)}</strong>
+                                            </span>
+                                            <span>
+                                                Campañas: <strong>{eventHistory.campaigns_count}</strong>
+                                            </span>
+                                            <span>
+                                                Destinatarios: <strong>{filteredEventRecipients.length}</strong>
+                                            </span>
+                                        </div>
+
+                                        {/* Tabla */}
+                                        <div className="overflow-x-auto rounded-lg border border-[var(--color-line)]">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="border-b border-[var(--color-line)] bg-gray-50">
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Destinatario
+                                                        </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Celular
+                                                        </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Estado
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+
+                                                <tbody>
+                                                    {filteredEventRecipients.length > 0 ? (
+                                                        filteredEventRecipients.map((recipient) => (
+                                                            <tr
+                                                                key={recipient.id}
+                                                                className="border-b border-[var(--color-line)] last:border-b-0"
+                                                            >
+                                                                <td className="px-4 py-3">
+                                                                    <p className="text-[12px] font-semibold text-[var(--color-ink)]">
+                                                                        {recipient.name}
+                                                                    </p>
+                                                                </td>
+
+                                                                <td className="px-4 py-3 text-[11px] text-[var(--color-ink)]">
+                                                                    {recipient.phone || 'Sin celular'}
+                                                                </td>
+
+                                                                <td className="px-4 py-3">
+                                                                    <div className="space-y-1">
+                                                                        <span
+                                                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${getStatusClass(recipient.status)}`}
+                                                                        >
+                                                                            {getStatusLabel(recipient.status)}
+                                                                        </span>
+
+                                                                        {normalizeStatus(recipient.status) === 'error' && (
+                                                                            <p className="max-w-xs text-[10px] text-red-600">
+                                                                                {recipient.error_reason || 'Sin detalle del error'}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    ) : (
+                                                        <tr>
+                                                            <td
+                                                                colSpan={3}
                                                                 className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]"
                                                             >
                                                                 No hay destinatarios registrados para esta fecha.

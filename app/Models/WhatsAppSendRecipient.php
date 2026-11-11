@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +14,7 @@ class WhatsAppSendRecipient extends Model
         'name',
         'phone',
         'status',
+        'error_reason',
     ];
 
     public function send(): BelongsTo
