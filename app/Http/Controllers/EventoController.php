@@ -641,7 +641,7 @@ class EventoController extends Controller
             ->where('is_active', true)
             ->where(fn ($w) => $w->whereRaw('LOWER(nombre) LIKE ?', [$like])->orWhere('cedula', 'like', $cedula))
             ->orderBy('nombre')->limit(10)
-            ->get(['id', 'nombre', 'cedula', 'telefono', 'municipio']);
+            ->get(['id', 'nombre', 'cedula', 'telefono', 'municipio', 'cargo']);
 
         return response()->json(['success' => true, 'data' => $rows]);
     }

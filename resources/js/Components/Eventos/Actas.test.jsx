@@ -30,16 +30,30 @@ describe('Actas components', () => {
     it('adds an attendee of the event as a participant with one click', () => {
         const onChange = vi.fn();
         render(<ActaParticipantes items={[]} onChange={onChange} municipio="GIRÓN" asistentes={[{ id: 'A1', nombre: 'Ana Pérez', telefono: '300', cedula: '123' }, { id: 'A2', nombre: 'Luis Gómez' }]} />);
-        fireEvent.change(screen.getByLabelText('Agregar desde los asistentes del evento'), { target: { value: 'perez' } });
+        fireEvent.change(screen.getByLabelText('Agregar participante'), { target: { value: 'perez' } });
         expect(screen.queryByText('Luis Gómez')).toBeNull();
         fireEvent.click(screen.getByText('Ana Pérez'));
         expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ nombre: 'Ana Pérez', attendee_id: 'A1', municipio: 'GIRÓN' })]);
     });
 
-    it('says when no attendee matches and hides editing when read-only', () => {
+    it('searches the system, adds a found person linked and offers a new one', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ data: [{ id: 'L1', nombre: 'Nelson Díaz', telefono: '3005476151', cedula: '91466940', municipio: 'Rionegro', cargo: 'Presidente JAC' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+        const onChange = vi.fn();
+        render(<ActaParticipantes items={[]} onChange={onChange} municipio="RIONEGRO" asistentes={[]} />);
+        fireEvent.change(screen.getByLabelText('Agregar participante'), { target: { value: 'nelson' } });
+        fireEvent.click(await screen.findByText('Nelson Díaz', {}, { timeout: 2000 }));
+        expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ nombre: 'Nelson Díaz', lider_id: 'L1', perfil: 'Presidente JAC', cedula: '91466940' })]);
+
+        fireEvent.change(screen.getByLabelText('Agregar participante'), { target: { value: 'Pedro Nuevo' } });
+        fireEvent.click(screen.getByText('+ Agregar «Pedro Nuevo» como persona nueva'));
+        expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ nombre: 'Pedro Nuevo', lider_id: null, municipio: 'RIONEGRO' })]);
+    });
+
+    it('says when nobody matches and hides editing when read-only', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
         const { rerender } = render(<ActaParticipantes items={[]} onChange={() => {}} asistentes={[{ id: 'A1', nombre: 'Ana' }]} />);
-        fireEvent.change(screen.getByLabelText('Agregar desde los asistentes del evento'), { target: { value: 'zzz' } });
-        expect(screen.getByText('Ningún asistente con ese nombre.')).toBeTruthy();
+        fireEvent.change(screen.getByLabelText('Agregar participante'), { target: { value: 'zzz' } });
+        expect(await screen.findByText('No está en el sistema.', {}, { timeout: 2000 })).toBeTruthy();
         rerender(<ActaParticipantes items={[]} onChange={() => {}} asistentes={[{ id: 'A1', nombre: 'Ana' }]} disabled />);
         expect(screen.queryByText('Agregar participante')).toBeNull();
     });
