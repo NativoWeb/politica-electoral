@@ -154,7 +154,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                 </div>
             </div>
 
-            <form onSubmit={save} className="p-4 lg:px-6 space-y-4 max-w-[980px]">
+            <form onSubmit={save} className="p-4 lg:px-6 space-y-4">
                 {notice && <div role="status" className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[15px] font-semibold text-emerald-800">{notice}</div>}
                 {error && <div role="alert" className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[15px] font-semibold text-red-700">{error}</div>}
                 {avisos.length > 0 && (
@@ -164,12 +164,29 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                 )}
 
                 {editable && (
-                    <Section title={acta ? 'Archivo del acta' : 'Cargar acta (opcional)'}>
-                        <p className="text-[15px] text-[var(--color-ink-soft)]">
-                            Suba el acta en Word (.docx) y el formulario se llena solo para que lo revise. Un PDF o una foto se guarda como archivo adjunto y el formulario se llena a mano. Hasta 10 MB.
-                        </p>
-                        {acta?.archivo && <p className="text-[14px] text-[var(--color-ink)]">Archivo guardado: <b>{acta.archivo.nombre}</b> (si sube otro, lo reemplaza).</p>}
-                        <input ref={fileRef} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,image/jpeg,image/png" onChange={onFile} disabled={busy} aria-label="Archivo del acta" className="block text-[15px]" />
+                    <Section title={acta ? 'Archivo del acta' : '¿Ya tiene el acta en Word?'}>
+                        {!acta && (
+                            <p className="text-[15px] text-[var(--color-ink-soft)]">
+                                Si ya la escribieron en Word, súbala aquí: <b>el sistema la lee y llena el formulario de abajo</b> para que solo lo revise.
+                                Si no, déjelo así y llene el formulario directamente.
+                            </p>
+                        )}
+                        {acta?.archivo && <p className="text-[14px] text-[var(--color-ink)]">Archivo guardado: <b>{acta.archivo.nombre}</b>. Si sube otro, lo reemplaza.</p>}
+                        <input ref={fileRef} id="acta-archivo" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,image/jpeg,image/png" onChange={onFile} disabled={busy} className="sr-only" />
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border-2 border-dashed border-[var(--color-line-strong)] bg-[var(--color-surface,#f8fafc)]">
+                            <label
+                                htmlFor="acta-archivo"
+                                className={`inline-flex items-center justify-center gap-2 min-h-[48px] px-5 rounded-xl bg-[var(--color-primary)] text-white text-[15px] font-bold ${busy ? 'opacity-60 pointer-events-none' : 'cursor-pointer hover:opacity-90'}`}
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                {busy ? 'Leyendo el acta…' : (file ? 'Cambiar archivo' : 'Subir acta en Word')}
+                            </label>
+                            <p className="text-[14px] text-[var(--color-ink-soft)]" aria-live="polite">
+                                {file
+                                    ? <>Archivo: <b className="text-[var(--color-ink)]">{file.name}</b></>
+                                    : 'Word (.docx) para llenar el formulario solo. También acepta PDF o foto, que se guarda como adjunto (el formulario se llena a mano). Máximo 10 MB.'}
+                            </p>
+                        </div>
                     </Section>
                 )}
 
