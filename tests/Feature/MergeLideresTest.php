@@ -77,6 +77,11 @@ class MergeLideresTest extends TestCase
             $t->uuid('id')->primary();
             $t->uuid('geographic_unit_id');
         });
+        // A linked candidacy is checked against the territory below its contest's unit.
+        Schema::create('geographic_units', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('parent_id')->nullable();
+        });
         Schema::create('candidacies', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->uuid('person_id');

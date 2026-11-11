@@ -764,4 +764,123 @@ class TerritoryScopeTest extends TestCase
             ->assertStatus(422);
         $this->assertSame('Beto T', DB::table('persons')->where('id', $other)->value('full_name'));
     }
+
+    // A candidate of a contest held in the whole department (Cámara, Asamblea), above lider A's municipio.
+    private function departmentalCandidate(string $name): string
+    {
+        $dept = $this->geo('department', 'Santander');
+        DB::table('geographic_units')->where('id', $this->provincia)->update(['parent_id' => $dept]);
+
+        return $this->candidateWithoutLider($dept, $name);
+    }
+
+    private function linkedLiderOf(string $personId): ?string
+    {
+        $controller = app(\App\Http\Controllers\MapaPoliticoController::class);
+
+        return (new \ReflectionMethod($controller, 'linkedLiderId'))->invoke($controller, DB::table('persons')->find($personId));
+    }
+
+    private function linkedPersonsOf(string $liderId): array
+    {
+        return app(\App\Actions\Votantes\UpdateVotante::class)->linkedPersonIds(DB::table('lideres')->find($liderId))->all();
+    }
+
+    public function test_a_departmental_candidate_opens_as_the_only_namesake_lider_of_the_department(): void
+    {
+        $personId = $this->departmentalCandidate('Ana Territorio A');
+
+        $this->actingAs($this->admin)->getJson("/mapa-politico/persona/{$personId}")
+            ->assertOk()
+            ->assertJsonPath('id', $this->liderA)
+            ->assertJsonPath('source', 'lider');
+        $this->assertSame([$personId], $this->linkedPersonsOf($this->liderA));
+    }
+
+    public function test_a_departmental_candidate_with_two_namesake_lideres_links_to_neither(): void
+    {
+        $personId = $this->departmentalCandidate('Ana Territorio A');
+        $twin = $this->lider($this->munB, 'Ana Territorio A', '333');
+
+        $this->actingAs($this->admin);
+        $this->assertNull($this->linkedLiderOf($personId));
+        $this->assertSame([], $this->linkedPersonsOf($this->liderA));
+        $this->assertSame([], $this->linkedPersonsOf($twin));
+    }
+
+    public function test_a_namesake_outside_the_users_territory_still_keeps_the_candidate_unlinked(): void
+    {
+        $personId = $this->departmentalCandidate('Ana Territorio A');
+        $this->lider($this->munB, 'Ana Territorio A', '333');
+
+        request()->setUserResolver(fn () => $this->campo);
+        $this->assertNull($this->linkedLiderOf($personId));
+    }
+
+    public function test_the_only_namesake_outside_the_users_territory_is_not_linked_for_that_user(): void
+    {
+        $personId = $this->departmentalCandidate('Beto Territorio B');
+
+        // Outside an HTTP request the user is read from the request itself.
+        request()->setUserResolver(fn () => $this->campo);
+        $this->assertNull($this->linkedLiderOf($personId));
+        request()->setUserResolver(fn () => $this->admin);
+        $this->assertSame($this->liderB, $this->linkedLiderOf($personId));
+    }
+
+    public function test_two_namesake_lideres_in_the_candidates_municipio_link_neither(): void
+    {
+        $this->candidateLinkedToLiderA();
+        $twin = $this->lider($this->munA, 'Ana Territorio A', '333');
+
+        $this->assertSame([], $this->linkedPersonsOf($this->liderA));
+        $this->assertSame([], $this->linkedPersonsOf($twin));
+    }
+
+    public function test_linking_by_cedula_is_refused_when_a_namesake_would_break_the_link(): void
+    {
+        $personId = $this->departmentalCandidate('Ana T');
+        $this->lider($this->munB, 'Ana Territorio A', '333');
+
+        $this->actingAs($this->admin)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderA])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertSame('Ana T', DB::table('persons')->where('id', $personId)->value('full_name'));
+        $this->assertFalse(DB::table('person_aliases')->where('person_id', $personId)->exists());
+    }
+
+    public function test_a_municipal_candidate_of_another_municipio_is_not_linked_to_the_lider(): void
+    {
+        $personId = $this->candidateWithoutLider($this->munB, 'Ana Territorio A');
+
+        $this->actingAs($this->admin);
+        $this->assertNull($this->linkedLiderOf($personId));
+        $this->assertSame([], $this->linkedPersonsOf($this->liderA));
+        $this->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderA])->assertStatus(422);
+    }
+
+    public function test_a_departmental_candidate_typing_a_lider_cedula_is_offered_to_link(): void
+    {
+        $personId = $this->departmentalCandidate('Ana T');
+
+        $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '111'])
+            ->assertStatus(422)
+            ->assertJsonPath('duplicado.id', $this->liderA)
+            ->assertJsonPath('duplicado.vincular', true);
+        $this->actingAs($this->admin)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderA])
+            ->assertOk();
+
+        $this->assertSame('Ana Territorio A', DB::table('persons')->where('id', $personId)->value('full_name'));
+    }
+
+    public function test_saving_the_party_from_the_lider_never_fills_a_departmental_candidacy(): void
+    {
+        $this->departmentalCandidate('Ana Territorio A');
+        DB::table('political_organizations')->insert(['id' => (string) Str::uuid(), 'canonical_name' => 'Partido Actual']);
+
+        $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$this->liderA}", ['partido' => 'Partido Actual'])->assertOk();
+
+        $this->assertSame(0, DB::table('candidacy_endorsements')->count());
+    }
 }

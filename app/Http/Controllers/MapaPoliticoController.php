@@ -8,6 +8,7 @@ use App\Actions\Votantes\AddReferido;
 use App\Actions\Votantes\FindPossibleDuplicates;
 use App\Actions\Votantes\MergeLideres;
 use App\Actions\Votantes\UpdateVotante;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Campaign;
@@ -17,6 +18,7 @@ use App\Models\PoliticalOrganization;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
 use App\Support\Cedula;
+use App\Support\GeoTerritory;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -65,25 +67,44 @@ class MapaPoliticoController extends Controller
         UpdateVotante::renamePerson($personId, $fullName);
     }
 
-    // The single lider with the candidate's exact name in a municipio where they ran, inside the user's territory.
-    // The user's own campaign decides first; a subcampaign's lider is used only when the own campaign has none.
+    // The single lider with the candidate's exact name where they ran: in the contest's municipio, or anywhere below a
+    // departmental/national contest. A lider in the very municipio of a contest decides before the wider territory;
+    // two namesakes at the deciding level link none. Namesakes count in the whole campaign, not only in the user's
+    // territory, and the one found must then be inside it. The user's own campaign decides first; a subcampaign's
+    // lider is used only when the own campaign has none.
     private function linkedLiderId(object $person): ?string
     {
-        $find = fn ($lideres) => $this->scopeToTerritory($lideres, 'l.geographic_unit_id')
-            ->join('contests as con', 'con.geographic_unit_id', '=', 'l.geographic_unit_id')
-            ->join('candidacies as c', function ($j) use ($person) {
-                $j->on('c.contest_id', '=', 'con.id')->where('c.person_id', '=', $person->id);
-            })
-            ->whereRaw('LOWER(l.nombre) = LOWER(?)', [$person->full_name])
+        $contestGeoIds = DB::table('candidacies as c')
+            ->join('contests as con', 'con.id', '=', 'c.contest_id')
+            ->where('c.person_id', $person->id)
             ->distinct()
-            ->pluck('l.id');
+            ->pluck('con.geographic_unit_id');
+        if ($contestGeoIds->isEmpty()) {
+            return null;
+        }
+        $direct = $contestGeoIds->filter()->values()->all();
+        $national = $contestGeoIds->contains(null);
+        $territory = $national ? null : collect($direct)->flatMap(fn ($g) => GeoTerritory::selfAndDescendants($g))->unique()->values()->all();
 
-        $ids = $find($this->ownLideres('l'));
-        if ($ids->isEmpty()) {
-            $ids = $find($this->visibleLideres('l'));
+        $find = fn ($lideres) => $lideres
+            ->whereRaw('LOWER(TRIM(l.nombre)) = LOWER(TRIM(?))', [$person->full_name])
+            ->when($territory !== null, fn ($q) => $q->whereIn('l.geographic_unit_id', $territory))
+            ->get(['l.id', 'l.geographic_unit_id']);
+
+        $lideres = $find($this->ownLideres('l'));
+        if ($lideres->isEmpty()) {
+            $lideres = $find($this->visibleLideres('l'));
         }
 
-        return $ids->count() === 1 ? $ids->first() : null;
+        $inContestUnit = $lideres->whereIn('geographic_unit_id', $direct);
+        $deciding = ($inContestUnit->isNotEmpty() ? $inContestUnit : $lideres)->unique('id');
+        if ($deciding->count() !== 1) {
+            return null;
+        }
+        $lider = $deciding->first();
+        $allowed = $this->allowedGeoIds();
+
+        return $allowed === null || in_array($lider->geographic_unit_id, $allowed, true) ? $lider->id : null;
     }
 
     private function candidatePartido(string $personId): ?string
@@ -287,6 +308,9 @@ class MapaPoliticoController extends Controller
     // $municipios: municipality id => true, plus normalized name => id.
     private static function municipioKey(array $row, array $municipios): string
     {
+        if (isset($row['_mun_key'])) {
+            return $row['_mun_key'];
+        }
         $geoId = $row['geographic_unit_id'] ?? null;
         if ($geoId && ($municipios[$geoId] ?? null) === true) {
             return $geoId;
@@ -295,6 +319,35 @@ class MapaPoliticoController extends Controller
         $id = $municipios[$name] ?? null;
 
         return is_string($id) ? $id : 'name:'.$name;
+    }
+
+    // A Senado/Cámara/Asamblea row has no municipio of its own: it is taken for the own campaign's lider of the exact
+    // same name when that lider is the campaign's only one in the contest's territory, and inside the user's territory.
+    private function withDepartmentalLinks(array $data, array $municipios): array
+    {
+        $pending = array_filter($data, fn ($row) => array_key_exists('_contest_geo_id', $row) && ! empty($row['nombre']));
+        if ($pending === []) {
+            return $data;
+        }
+
+        $nameKey = fn ($nombre) => mb_strtolower(trim((string) $nombre));
+        $lideres = $this->ownLideres()
+            ->whereIn(DB::raw('LOWER(TRIM(nombre))'), array_values(array_unique(array_map(fn ($r) => $nameKey($r['nombre']), $pending))))
+            ->get(['nombre', 'municipio', 'geographic_unit_id'])
+            ->groupBy(fn ($l) => $nameKey($l->nombre));
+        $allowed = $this->allowedGeoIds();
+
+        foreach ($pending as $i => $row) {
+            $namesakes = ($lideres[$nameKey($row['nombre'])] ?? collect())
+                ->filter(fn ($l) => GeoTerritory::covers($row['_contest_geo_id'], $l->geographic_unit_id));
+            $lider = $namesakes->count() === 1 ? $namesakes->first() : null;
+            if ($lider && ($allowed === null || in_array($lider->geographic_unit_id, $allowed, true))) {
+                $data[$i]['_mun_key'] = self::municipioKey((array) $lider, $municipios);
+                $data[$i]['_lider_geo_id'] = $lider->geographic_unit_id;
+            }
+        }
+
+        return $data;
     }
 
     // The unified rows of the Mapa Político listing. The Excel/PDF export uses the same rows with $forExport,
@@ -666,6 +719,7 @@ class MapaPoliticoController extends Controller
                     )
                     ->select(
                         'p.id', 'p.full_name as nombre', DB::raw("'Santander' as municipio"),
+                        'con.geographic_unit_id as _contest_geo_id',
                         DB::raw('NULL as provincia'), 'po.canonical_name as partido',
                         'c.outcome', DB::raw('NULL as tipo_aval'),
                         DB::raw('res.votos')
@@ -698,8 +752,12 @@ class MapaPoliticoController extends Controller
         // #6: Enrich non-líder rows — only load líderes for relevant municipios. Only the own campaign's lideres:
         // the electoral row unifies under the own campaign, a subcampaign's lider keeps its own row.
         $municipioIds = self::municipioIndex();
+        $data = $this->withDepartmentalLinks($data, $municipioIds);
         $relevantMunicipios = array_unique(array_filter(array_column($data, 'municipio')));
-        $relevantGeoIds = array_unique(array_filter(array_column($data, 'geographic_unit_id')));
+        $relevantGeoIds = array_unique(array_filter(array_merge(
+            array_column($data, 'geographic_unit_id'),
+            array_column($data, '_lider_geo_id'),
+        )));
         $lideresLookup = [];
         if (! empty($relevantMunicipios)) {
             $lideresAllQuery = $this->ownLideres();
@@ -833,7 +891,10 @@ class MapaPoliticoController extends Controller
             fn ($key) => $unified[$key]['id'],
             array_keys(array_filter($fichasOfKey, fn ($ids) => count($ids) > 1)),
         ));
-        $data = array_values($unified);
+        $data = array_map(
+            fn ($row) => array_diff_key($row, ['_contest_geo_id' => true, '_mun_key' => true, '_lider_geo_id' => true]),
+            array_values($unified),
+        );
 
         // Filtrar por barrio (post-unificación)
         if (! empty($barrios_filter)) {
@@ -1738,18 +1799,22 @@ class MapaPoliticoController extends Controller
                 ]);
             }
             $this->renamePerson($person->id, $lider->nombre);
+            // Linking is by name: with a namesake ficha in the contest's territory it would not hold.
+            if ($this->linkedLiderId(DB::table('persons')->where('id', $person->id)->first()) !== $lider->id) {
+                throw new BusinessRuleException('Hay otro líder con el mismo nombre en el territorio de la candidatura: no se puede saber cuál es este candidato. Unifica primero los líderes duplicados.');
+            }
         });
 
         return response()->json(['success' => true, 'message' => 'Registros unificados.', 'lider' => ['id' => $lider->id]]);
     }
 
-    // Whether the person ran for something in that municipio (what lets a lider be linked to them).
+    // Whether the person ran for something held in that municipio, its department or nationally (what lets a lider
+    // be linked to them).
     private function candidateRanIn(string $personId, ?string $geoId): bool
     {
-        return $geoId !== null && DB::table('candidacies as c')
+        return $geoId !== null && GeoTerritory::whereCovers(DB::table('candidacies as c'), 'con.geographic_unit_id', $geoId)
             ->join('contests as con', 'con.id', '=', 'c.contest_id')
             ->where('c.person_id', $personId)
-            ->where('con.geographic_unit_id', $geoId)
             ->exists();
     }
 

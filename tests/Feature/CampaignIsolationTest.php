@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -714,6 +715,60 @@ class CampaignIsolationTest extends TestCase
         $this->assertStringContainsString('Alcaldía', $merged['tipo_registro']);
         $this->assertStringContainsString('Líderes', $merged['tipo_registro']);
         $this->assertSame('Líderes', $rows->firstWhere('campaign_id', $this->campX)['tipo_registro']);
+    }
+
+    // A Cámara candidate of the whole department, with votes in the municipio.
+    private function camaraCandidateNamedLike(string $name): string
+    {
+        $dept = $this->geo('department', 'Santander');
+        DB::table('geographic_units')->where('id', DB::table('geographic_units')->where('id', $this->mun)->value('parent_id'))
+            ->update(['parent_id' => $dept]);
+        $corp = DB::table('corporations')->where('name', 'Cámara de Representantes')->value('id');
+        if (! $corp) {
+            $corp = (string) Str::uuid();
+            DB::table('corporations')->insert(['id' => $corp, 'name' => 'Cámara de Representantes']);
+        }
+        $contest = (string) Str::uuid();
+        DB::table('contests')->insert(['id' => $contest, 'geographic_unit_id' => $dept, 'corporation_id' => $corp]);
+        $person = (string) Str::uuid();
+        DB::table('persons')->insert(['id' => $person, 'full_name' => $name]);
+        $candidacy = (string) Str::uuid();
+        DB::table('candidacies')->insert(['id' => $candidacy, 'person_id' => $person, 'contest_id' => $contest]);
+        DB::table('electoral_results')->insert(['id' => (string) Str::uuid(), 'candidacy_id' => $candidacy, 'geographic_unit_id' => $this->mun, 'metric_type' => 'votes', 'value' => 50]);
+
+        return $person;
+    }
+
+    private function mapaRowsNamed(string $name): Collection
+    {
+        return collect($this->actingAs($this->userCd)->get('/mapa-politico?tipo=camara,lideres')->assertOk()
+            ->viewData('page')['props']['data'])->where('nombre', $name)->values();
+    }
+
+    public function test_a_departmental_camara_row_merges_with_the_only_namesake_lider_of_the_campaign(): void
+    {
+        $this->camaraCandidateNamedLike('Ana Campaña CD');
+
+        $rows = $this->mapaRowsNamed('Ana Campaña CD');
+
+        $this->assertCount(1, $rows);
+        $this->assertSame($this->liderA, $rows[0]['id']);
+        $this->assertStringContainsString('Cámara', $rows[0]['tipo_registro']);
+        $this->assertStringContainsString('Líderes', $rows[0]['tipo_registro']);
+        $this->assertArrayNotHasKey('_contest_geo_id', $rows[0]);
+        $this->assertArrayNotHasKey('_mun_key', $rows[0]);
+    }
+
+    public function test_a_departmental_camara_row_stays_apart_when_the_campaign_has_two_namesakes(): void
+    {
+        $this->camaraCandidateNamedLike('Ana Campaña CD');
+        $otroMun = $this->geo('municipality', 'Lebrija', DB::table('geographic_units')->where('id', $this->mun)->value('parent_id'));
+        $this->lider(Campaign::DEFAULT_ID, 'Ana Campaña CD', '888', ['geographic_unit_id' => $otroMun, 'municipio' => 'Lebrija']);
+
+        $rows = $this->mapaRowsNamed('Ana Campaña CD');
+
+        $this->assertCount(3, $rows);
+        $this->assertSame(['Cámara'], $rows->pluck('tipo_registro')->filter(fn ($t) => str_contains($t, 'Cámara'))->values()->all());
     }
 
     public function test_exports_apply_the_campaign_filter_inside_the_visible_campaigns(): void

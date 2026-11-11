@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Services\Import\TextNormalizer;
 use App\Support\Cedula;
+use App\Support\GeoTerritory;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -119,20 +120,39 @@ class UpdateVotante
         return preg_replace('/\s+/u', ' ', trim($name));
     }
 
-    // Electoral persons linked to a lider by its CURRENT name (case-insensitive) with a candidacy in the lider's municipio.
+    // Electoral persons linked to a lider by its CURRENT name (case-insensitive) with a candidacy held where the lider
+    // is: its municipio, or a contest above it (Cámara, Asamblea, Gobernación) or national. Only while this lider is
+    // the campaign's one ficha with that name in the contest's territory: with a namesake, which one it is is unknown.
     public function linkedPersonIds(object $lider): Collection
     {
         if (! $lider->geographic_unit_id || ! $lider->nombre) {
             return collect();
         }
 
-        return DB::table('persons as p')
+        $matches = DB::table('persons as p')
             ->join('candidacies as c', 'c.person_id', '=', 'p.id')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')
-            ->whereRaw('LOWER(p.full_name) = LOWER(?)', [$lider->nombre])
-            ->where('con.geographic_unit_id', $lider->geographic_unit_id)
+            ->whereRaw('LOWER(TRIM(p.full_name)) = LOWER(TRIM(?))', [$lider->nombre])
             ->distinct()
-            ->pluck('p.id');
+            ->get(['p.id', 'con.geographic_unit_id as contest_geo_id']);
+
+        return $matches
+            ->filter(fn ($m) => GeoTerritory::covers($m->contest_geo_id, $lider->geographic_unit_id)
+                && $this->onlyNamesakeIn($lider, $m->contest_geo_id))
+            ->pluck('id')
+            ->unique()
+            ->values();
+    }
+
+    private function onlyNamesakeIn(object $lider, ?string $contestGeoId): bool
+    {
+        return DB::table('lideres')
+            ->where(fn ($q) => ($lider->campaign_id ?? null) === null
+                ? $q->whereNull('campaign_id')
+                : $q->where('campaign_id', $lider->campaign_id))
+            ->whereRaw('LOWER(TRIM(nombre)) = LOWER(TRIM(?))', [$lider->nombre])
+            ->when($contestGeoId !== null, fn ($q) => $q->whereIn('geographic_unit_id', GeoTerritory::selfAndDescendants($contestGeoId)))
+            ->count() === 1;
     }
 
     public static function renamePerson(string $personId, string $fullName): void
