@@ -12,6 +12,8 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EventoActaController;
+use App\Http\Controllers\EventoCompromisoController;
 use App\Http\Controllers\EventoController;
 use App\Http\Controllers\EventoImportController;
 use App\Http\Controllers\EventoIntegracionController;
@@ -159,6 +161,41 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/persona/{liderId}', [EventoIntegracionController::class, 'persona'])->name('persona')
                 ->middleware('permission:view.mapa|view.votantes');
             Route::get('/{id}/asistentes.xlsx', [EventoController::class, 'exportAttendees'])->name('asistentes.excel')->whereUuid('id');
+        });
+
+        // Actas de reunión and the follow-up of their compromisos (§14): seen with view.eventos
+        Route::middleware('permission:view.eventos|manage.eventos')->group(function () {
+            Route::get('/compromisos', [EventoCompromisoController::class, 'index'])->name('compromisos.index');
+            Route::get('/compromisos.xlsx', [EventoCompromisoController::class, 'export'])->name('compromisos.excel');
+            Route::get('/compromisos/alertas', [EventoCompromisoController::class, 'alertas'])->name('compromisos.alertas');
+            Route::get('/compromisos/{compromiso}', [EventoCompromisoController::class, 'show'])->name('compromisos.show')->whereUuid('compromiso');
+            Route::get('/compromisos/avances/{avance}/archivo', [EventoCompromisoController::class, 'file'])->name('compromisos.avances.archivo')->whereUuid('avance');
+            Route::get('/persona/{liderId}/compromisos', [EventoCompromisoController::class, 'persona'])->name('persona.compromisos')
+                ->middleware('permission:view.mapa|view.votantes');
+            Route::get('/{id}/actas', [EventoActaController::class, 'index'])->name('actas.index')->whereUuid('id');
+            Route::get('/{id}/actas/{acta}', [EventoActaController::class, 'show'])->name('actas.show')->whereUuid(['id', 'acta']);
+            Route::get('/{id}/actas/{acta}/acta.docx', [EventoActaController::class, 'word'])->name('actas.word')->whereUuid(['id', 'acta']);
+            Route::get('/{id}/actas/{acta}/acta.pdf', [EventoActaController::class, 'pdf'])->name('actas.pdf')->whereUuid(['id', 'acta'])
+                ->middleware('throttle:eventos-planilla');
+            Route::get('/{id}/actas/{acta}/archivo', [EventoActaController::class, 'file'])->name('actas.archivo')->whereUuid(['id', 'acta']);
+        });
+
+        Route::middleware('permission:manage.eventos')->group(function () {
+            Route::get('/{id}/actas/nueva', [EventoActaController::class, 'create'])->name('actas.create')->whereUuid('id');
+            Route::post('/{id}/actas/leer', [EventoActaController::class, 'read'])->name('actas.leer')->whereUuid('id')
+                ->middleware('throttle:eventos-importar');
+            Route::post('/{id}/actas/sugerencias', [EventoActaController::class, 'suggest'])->name('actas.sugerencias')->whereUuid('id')
+                ->middleware('throttle:eventos-importar');
+            Route::post('/{id}/actas', [EventoActaController::class, 'store'])->name('actas.store')->whereUuid('id');
+            Route::put('/{id}/actas/{acta}', [EventoActaController::class, 'update'])->name('actas.update')->whereUuid(['id', 'acta']);
+            Route::delete('/{id}/actas/{acta}', [EventoActaController::class, 'destroy'])->name('actas.destroy')->whereUuid(['id', 'acta']);
+            Route::post('/{id}/actas/{acta}/confirmar', [EventoActaController::class, 'confirm'])->name('actas.confirm')->whereUuid(['id', 'acta']);
+            Route::post('/{id}/actas/{acta}/archivo', [EventoActaController::class, 'attach'])->name('actas.attach')->whereUuid(['id', 'acta'])
+                ->middleware('throttle:eventos-importar');
+            Route::put('/compromisos/{compromiso}/estado', [EventoCompromisoController::class, 'estado'])->name('compromisos.estado')->whereUuid('compromiso');
+            Route::put('/compromisos/{compromiso}/recordatorio', [EventoCompromisoController::class, 'recordatorio'])->name('compromisos.recordatorio')->whereUuid('compromiso');
+            Route::post('/compromisos/{compromiso}/avances', [EventoCompromisoController::class, 'avance'])->name('compromisos.avances')->whereUuid('compromiso')
+                ->middleware('throttle:eventos-importar');
         });
 
         Route::get('/{id}', [EventoController::class, 'show'])->name('show')->whereUuid('id')

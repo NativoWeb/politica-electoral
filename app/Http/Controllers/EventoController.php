@@ -879,7 +879,7 @@ class EventoController extends Controller
     {
         return [
             'link_status' => in_array($request->query('link_status'), EventAttendee::LINK_STATUSES, true) ? $request->query('link_status') : null,
-            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel', 'ocr'], true) ? $request->query('source') : null,
+            'source' => in_array($request->query('source'), ['qr', 'operador', 'excel', 'ocr', 'acta'], true) ? $request->query('source') : null,
             'q' => $this->textOrNull($request->query('q')),
         ];
     }

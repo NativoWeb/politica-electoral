@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CampaignChip from '@/Components/CampaignChip';
 import { StatusBadge } from '@/Components/Eventos/EventoBadges';
+import PersonaCompromisos from '@/Components/Eventos/PersonaCompromisos';
 import { formatEventDate } from '@/lib/eventos';
 import { participationLine, personEventsSummary } from '@/lib/eventosIntegracion';
 
@@ -62,6 +63,7 @@ export default function PersonaEventos({ liderId, compact = false }) {
                     ))}
                 </ul>
             )}
+            <PersonaCompromisos liderId={liderId} compact={compact} />
         </div>
     );
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
 import { OfflineIndicator } from '@/Components/OfflineManager';
+import CompromisosCampana from '@/Components/Eventos/CompromisosCampana';
 import { logout } from '@/lib/logout';
 import { canExportFrom } from '@/lib/exportPermission';
 
@@ -427,6 +428,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
     const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm);
     const canExport = canExportFrom(url.split('?')[0], hasPerm);
+    const canSeeCompromisos = hasPerm('view.eventos') || hasPerm('manage.eventos');
     const tabItems = visibleItems.filter(item => !item.desktopOnly);
     // Six tabs (with Exportar) at 360px only fit with the smaller label.
     const tabLabelCls = tabItems.length + (canExport ? 1 : 0) > 5 ? 'text-[11px]' : 'text-[12px]';
@@ -475,6 +477,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     {/* Desktop header actions */}
                     <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
                         <OfflineIndicator />
+                        {canSeeCompromisos && <CompromisosCampana />}
                         {canExport && <ExportButtons url={url} />}
                         <div className="relative group">
                             <button className="flex items-center gap-2 hover:bg-white/10 rounded-lg px-2 py-1.5 transition-colors">
@@ -507,6 +510,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     {/* Mobile: offline + user menu */}
                     <div className="lg:hidden flex items-center gap-1.5">
                         <OfflineIndicator />
+                        {canSeeCompromisos && <CompromisosCampana />}
                         <button
                             onClick={() => setMobileUserMenu(!mobileUserMenu)}
                             className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center active:bg-white/30 text-white text-[11px] font-bold"

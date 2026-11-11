@@ -124,6 +124,11 @@ export default function Index({ eventos, filters = {}, provincias = [], tipos = 
                             Ver por territorio
                         </Link>
                     )}
+                    {can.view && (
+                        <Link href="/eventos/compromisos" className="min-h-[44px] px-4 py-2.5 bg-white/15 text-white text-[15px] font-bold rounded-xl active:bg-white/25 border border-white/20 flex items-center flex-shrink-0">
+                            Compromisos
+                        </Link>
+                    )}
                     {canCreate && (
                         <button type="button" onClick={() => setCreating(true)} className="min-h-[44px] px-4 py-2.5 bg-white/15 text-white text-[15px] font-bold rounded-xl active:bg-white/25 border border-white/20 flex-shrink-0">
                             + Nuevo evento

@@ -206,6 +206,7 @@ export function sourceLabel(attendee) {
 
     if (attendee?.source === 'excel') return `Por Excel${who}`;
     if (attendee?.source === 'ocr') return `Planilla leída con IA${who}`;
+    if (attendee?.source === 'acta') return `Acta de reunión${who}`;
 
     return `Operador${who}`;
 }

@@ -3,6 +3,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import CampaignChip from '@/Components/CampaignChip';
 import ConfirmDialog from '@/Components/ConfirmDialog';
+import ActasEvento from '@/Components/Eventos/ActasEvento';
 import AttendeeActions from '@/Components/Eventos/AttendeeActions';
 import AttendeeEditModal from '@/Components/Eventos/AttendeeEditModal';
 import { LinkStatusBadge, StatusBadge } from '@/Components/Eventos/EventoBadges';
@@ -337,6 +338,8 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                 </div>
 
                 {editable && <ImportLoads eventId={evento.id} cargas={cargas} onDone={reloadAfter} />}
+
+                <ActasEvento eventId={evento.id} editable={editable && evento.status !== 'cancelado'} />
 
                 <section aria-labelledby="asistentes-title" className="bg-white border border-[var(--color-line)] rounded-2xl overflow-hidden">
                     <div className="px-4 pt-4 pb-3 space-y-3 border-b border-[var(--color-line)]">

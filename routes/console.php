@@ -32,3 +32,6 @@ Schedule::command('cache:prune-expired')->daily();
 // Retention of the Excel import staging of Eventos (docs/eventos-api.md section 11). Needs the system cron
 // "* * * * * php artisan schedule:run" on the server.
 Schedule::command('eventos:limpiar-importaciones')->dailyAt('03:30');
+
+// Daily e-mail with each manager's overdue, due-soon and reminded compromisos (docs/eventos-api.md section 14).
+Schedule::command('compromisos:resumen-diario')->dailyAt('07:00')->timezone('America/Bogota');

@@ -1263,3 +1263,165 @@ verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca ta
 6. `php artisan eventos:ocr-campana {campaña} --activar` solo para las campañas que cumplieron lo anterior.
 7. Primera carga real acompañada: revisar en la auditoría `EVENTO_OCR_LECTURA_TERMINADA` el costo por página.
    Para apagar: `EVENTOS_OCR_ENABLED=false` (todo 404 tras `optimize`) o `--desactivar` por campaña.
+
+---
+
+## 14. Actas de reunión y seguimiento de compromisos (2026-11-10)
+
+Un evento tiene una o varias **actas de reunión** con el formato de las actas de la campaña: título, fecha, Municipio,
+Sitio, Hora; **PARTICIPANTES** (tabla NOMBRE | PERFIL | MUNICIPIO | TELEFONO); **PUNTOS DEL ORDEN DEL DÍA** (lista, con
+introducción opcional); **DESARROLLO DE LA REUNIÓN** (un texto por punto); **COMPROMISOS** (tabla NOMBRE | RESPONSABLE |
+TELEFONO, uno o varios responsables por compromiso) y el cierre ("Siendo las 12:00 m., se dio por terminada la reunión.").
+Cada compromiso se sigue con estado, fecha límite, recordatorio y avances.
+
+**Borrador → confirmada** (cambio de Marly 2026-11-10). Toda acta nace como `borrador`: se edita todo (encabezado,
+participantes, puntos, desarrollo, compromisos, responsables, archivo original) y se puede **borrar** completa. Mientras
+es borrador **no** se crean fichas, ni asistentes, ni se vinculan responsables: solo se guardan los datos y las
+elecciones de "¿Es esta persona?" (`lider_id` = ficha elegida, `sugerencia_rechazada` = ficha a la que se dijo que no,
+para no volver a preguntar; una pregunta sin responder queda pendiente). **"Confirmar acta"** aplica en una transacción
+todo lo de "Participantes → Votantes y asistentes" y "Responsables" y deja el acta `confirmada` (`confirmed_at`,
+`confirmed_by`): desde ahí no se edita ni se borra (422 `acta`; no hay "reabrir"), solo se descarga y se hace el
+seguimiento de sus compromisos. La pantalla pregunta todas las sugerencias pendientes antes de confirmar; si por API se
+confirma con alguna sin responder, cuenta como "no es esta persona" (participante → ficha nueva; responsable → texto).
+Los compromisos de un borrador no se listan ni reciben avances (404).
+
+### Permisos y aislamiento
+
+- Ver actas, descargarlas, ver compromisos y su historial: `view.eventos` o `manage.eventos`.
+- Crear/editar actas, cambiar estados y registrar avances: `manage.eventos` en la **campaña propia** del evento
+  (subcampaña visible = solo lectura → 403; campaña no visible → 404) y dentro del **territorio** del usuario (403).
+  Un evento **cancelado** no recibe ni cambia actas (422 `evento`).
+- `register.asistentes` solo no ve actas (403). La ficha de la persona (`/eventos/persona/{liderId}/compromisos`)
+  exige además `view.mapa` o `view.votantes`, como `/eventos/persona/{liderId}`.
+- Archivos (original del acta y adjuntos de avances) en el disco privado `local` (`storage/app/private/eventos/actas/{evento}/`,
+  `…/eventos/compromisos/{compromiso}/`), nombre UUID, servidos solo por rutas autenticadas con los mismos chequeos.
+- Auditoría sin datos personales (solo ids y conteos): `EVENTO_ACTA_CREADA`, `EVENTO_ACTA_ACTUALIZADA`, `EVENTO_ACTA_CONFIRMADA`,
+  `EVENTO_ACTA_BORRADA`, `EVENTO_ACTA_ARCHIVO`, `EVENTO_COMPROMISO_RECORDATORIO`, `EVENTO_COMPROMISO_ARCHIVO_DESCARGADO`,
+  `EVENTO_ACTA_DESCARGADA` (`formato`: docx/pdf/original), `EVENTO_COMPROMISO_ESTADO` (`de`, `a`), `EVENTO_COMPROMISO_AVANCE`,
+  `EVENTO_COMPROMISOS_EXPORTADOS`.
+
+### Rutas
+
+| Método y ruta | Permiso | Qué hace |
+|---|---|---|
+| `GET /eventos/{id}/actas` | view | JSON `[{id, titulo, fecha, compromisos, abiertos, archivo, created_by}]` (sección "Actas de reunión" del detalle) |
+| `GET /eventos/{id}/actas/nueva` | manage | Inertia `Eventos/Acta` con `defaults` del evento y `asistentes` (máx. 3000) |
+| `GET /eventos/{id}/actas/{acta}` | view | Inertia `Eventos/Acta` con `acta` (`can.edit` solo campaña propia y evento no cancelado) |
+| `POST /eventos/{id}/actas/leer` | manage | multipart `archivo` (≤ 10 MB, o el límite de PHP si es menor). `.docx` → `{tipo: 'docx', acta: {…, avisos[]}}` para prellenar; PDF/JPG/PNG → `{tipo: 'adjunto', acta: null}`. No guarda nada. 422 `archivo` si no es ninguno de esos (por contenido, no por nombre) |
+| `POST /eventos/{id}/actas/sugerencias` | manage | `{participantes: [{nombre, telefono, cedula}], responsables: [{nombre, telefono}]}` → `{participantes: {i: lider}, responsables: {i: lider}}`, `lider = {id, nombre, municipio, cargo, por: 'cedula'\|'telefono'}` |
+| `POST /eventos/{id}/actas` | manage | crea un **borrador** (201) `{data: acta, message}`; nada pasa a Votantes ni a los asistentes |
+| `PUT /eventos/{id}/actas/{acta}` | manage | actualiza un **borrador** (mismo cuerpo; reemplaza participantes y compromisos). Confirmada → 422 `acta` |
+| `DELETE /eventos/{id}/actas/{acta}` | manage | borra un **borrador** con participantes, compromisos, responsables y archivo. Confirmada → 422 |
+| `POST /eventos/{id}/actas/{acta}/confirmar` | manage | confirma: `{data: acta, resumen: {participantes, vinculados, fichas_creadas, asistentes_nuevos, compromisos, responsables_vinculados}, message}`. Ya confirmada → 422 `acta`; una ficha elegida que dejó de ser válida → 422 `participantes.N.lider_id` y no se escribe nada |
+| `PUT /eventos/compromisos/{compromiso}/recordatorio` | manage | `{recordar_el: YYYY-MM-DD\|null}` (también en compromisos de actas confirmadas) |
+| `GET /eventos/compromisos/alertas` | view | campanita: `{total, vencidos, por_vencer, recordatorios, items[≤15]: {id, tipo, descripcion, estado, fecha_limite, recordar_el, evento, url}}`, caché 5 min por usuario (se borra cuando el usuario cambia un estado o recordatorio) || `POST /eventos/{id}/actas/{acta}/archivo` | manage | multipart `archivo` (.docx, PDF, JPG o PNG): guarda o reemplaza el original (solo borrador) |
+| `GET /eventos/{id}/actas/{acta}/archivo` | view | descarga el original (`X-Content-Type-Options: nosniff`) |
+| `GET /eventos/{id}/actas/{acta}/acta.docx` | view | Word generado con el formato del ejemplo (ZipArchive, sin paquete nuevo) |
+| `GET /eventos/{id}/actas/{acta}/acta.pdf` | view | PDF (dompdf, vista `eventos/acta.blade.php`); throttle `eventos-planilla` |
+| `GET /eventos/compromisos` | view | Inertia `Eventos/Compromisos`, 20 por página |
+| `GET /eventos/compromisos.xlsx` | view | Excel con los mismos filtros (teléfonos como texto) |
+| `GET /eventos/compromisos/{compromiso}` | view | JSON con `avances` (historial, más reciente primero) |
+| `PUT /eventos/compromisos/{compromiso}/estado` | manage | `{estado, nota?}`; escribe un avance automático (`estado_anterior` → `estado_nuevo`). 422 si es el mismo estado |
+| `POST /eventos/compromisos/{compromiso}/avances` | manage | multipart `{nota?, archivo?}` (al menos uno; archivo foto JPG/PNG o PDF ≤ 10 MB) |
+| `GET /eventos/compromisos/avances/{avance}/archivo` | view | descarga el adjunto (auditado: `EVENTO_COMPROMISO_ARCHIVO_DESCARGADO`) |
+| `GET /eventos/persona/{liderId}/compromisos` | view + view.mapa\|view.votantes | compromisos donde la ficha es responsable confirmado (sección "Compromisos" bajo "Eventos" en PersonaPanel y VotanteDetail) |
+
+Cuerpo de `POST/PUT` actas: `titulo` (obligatorio), `fecha` (`YYYY-MM-DD`), `municipio`, `sitio`, `hora_inicio`/`hora_fin`
+(`HH:MM`), `introduccion`, `orden_dia: [string]`, `desarrollo: [{titulo, texto}]` (título vacío = introducción),
+`participantes: [{nombre, perfil, municipio, telefono, cedula, lider_id?, attendee_id?, sugerencia_rechazada?}]`,
+`compromisos: [{descripcion, fecha_limite?, recordar_el?, responsables: [{nombre, telefono, lider_id?, sugerencia_rechazada?}]}]`, `cierre`.
+
+### Participantes → Votantes y asistentes (decisión 2 de Marly)
+
+Al **confirmar**, para cada participante, en este orden:
+
+1. `lider_id` confirmado por el usuario en "¿Es esta persona?" (debe ser líder activo de la campaña del evento dentro del
+   territorio; si no, 422 `participantes.N.lider_id` y no se guarda nada).
+2. La ficha del asistente elegido de la lista (`attendee_id`, debe ser asistente de este evento).
+3. La misma cédula en la campaña del evento (se vincula sin preguntar; se busca en toda la campaña, no solo en el
+   territorio del usuario: la cédula es única por campaña y vincular solo guarda el id).
+4. Si no: **se crea la ficha** en la campaña del EVENTO: `tipo = directorio`, `cargo` = perfil normalizado
+   ("SENADOR DE LA REPUBLICA" → "Senador de la Republica"; vacío o "LÍDER …" → "Líder"), municipio del participante si es
+   un municipio conocido dentro del territorio del usuario (si no, el del evento), primer celular en `telefono` y los
+   demás en `lider_contactos`, `autoriza_datos = false`.
+
+Todos quedan como **asistentes** del evento (`event_attendees.source = 'acta'`, `link_status` `vinculado` si ya existía la
+ficha o `aprobado` si se creó, `nota` = perfil). No se duplica: si ya hay un asistente del evento con esa ficha o esa
+cédula, se usa ese (y si no tenía ficha, se le vincula). Sugerencia por teléfono: `AttendeeMatcher` (solo dígitos,
+últimos 10, en `lideres.telefono` y `lider_contactos.valor`, + al menos una palabra del nombre; empate = sin sugerencia),
+entre los líderes activos de la campaña del evento en el territorio del usuario (todos los municipios si no tiene).
+Quitar un participante del acta **no** borra su ficha ni su asistencia.
+
+### Responsables (decisión 3)
+
+Solo se vinculan a una ficha si el usuario confirma la sugerencia (`lider_id`, mismas reglas); si no, quedan como texto
+(nombre + teléfono) y **nunca** se crea ficha. Un responsable que también es participante nuevo del mismo acta no se
+vincula solo (su ficha se crea al confirmar, cuando el acta ya no se edita): queda como texto.
+
+### Seguimiento (decisión 4)
+
+- Estados: `pendiente`, `en_curso`, `cumplido`, `no_cumplido` (CHECK en PostgreSQL). Nuevo compromiso = `pendiente`.
+- **Vencido** = `fecha_limite` anterior a hoy (Bogotá) y estado `pendiente` o `en_curso`.
+- Cada cambio de estado escribe un avance (`estado_anterior`, `estado_nuevo`, nota opcional, usuario, fecha). Los avances
+  no se editan ni se borran desde la app.
+- Solo los compromisos de actas **confirmadas** tienen seguimiento (pantalla, ficha, campanita y correo).
+- `recordar_el` (opcional): ese día y mientras siga abierto aparece como "Recordatorio".
+
+### Pantalla Compromisos (decisión 5)
+
+Botón "Compromisos" en `/eventos` (y "Ver compromisos" en la sección de actas del detalle). Filtros: `estado`,
+`vencidos=1`, `responsable` (texto; sin tildes en PostgreSQL), `municipio` (del evento), `evento`, `desde`/`hasta`
+(**fecha de la reunión** del acta), `q` (texto del compromiso). Orden: abiertos primero, luego por fecha límite (sin
+fecha al final). Excel `compromisos.xlsx`: EVENTO, MUNICIPIO, ACTA, FECHA DEL ACTA, COMPROMISO, RESPONSABLES, TELÉFONOS
+(texto), FECHA LÍMITE, ESTADO, VENCIDO, AVANCES.
+
+### Lectura del .docx (`ActaDocxReader`)
+
+Solo prellena; el usuario revisa y guarda. Recorre `word/document.xml` (≤ 15 MB descomprimido, sin red; un XML con
+`<!DOCTYPE` o `<!ENTITY` se rechaza antes de leerlo, Word nunca los escribe) y detecta las secciones por su título (con o sin número, sin tildes, con `:` final o no):
+PARTICIPANTES/ASISTENTES, PUNTOS DEL ORDEN DEL DÍA/ORDEN DEL DÍA, DESARROLLO DE LA REUNIÓN, COMPROMISOS. Encabezado:
+primera línea = título, línea con fecha (`08 DE NOVIEMBRE 2026`, `08/11/2026`), `Municipio:`, `Sitio:`/`Lugar:`, `Hora:`
+(`10.45 A.M.`, `12:00 m`). Tablas: columnas por el encabezado (NOMBRE, PERFIL/CARGO, MUNICIPIO, TELEFONO/CELULAR,
+CEDULA; NOMBRE/COMPROMISO/DESCRIPCION, RESPONSABLE, TELEFONO, FECHA). En compromisos, un responsable por línea de la
+celda con el teléfono de la misma línea; si no cuadran, en orden, y un nombre partido en dos líneas ("ALEJANDRA" /
+"NAVAS") se une cuando así cuadran nombres y teléfonos. "(Fecha límite: dd/mm/aaaa)" al final de la descripción se lee
+como fecha límite (así lo escribe el Word generado). Lo que no encuentra va en `avisos`.
+
+Prueba de solo lectura contra el acta real de Rionegro (08 nov): 19 participantes (18 con teléfono), 7 puntos del orden
+del día + introducción, 8 textos de desarrollo (introducción + 7 puntos), 7 compromisos con 9 responsables, todos con
+teléfono; fecha, municipio, sitio, horas 10:45–12:00 y cierre leídos.
+
+### Tablas (migración `2026_11_10_000001_create_event_actas_tables`, aditiva; no toca `data_consents`)
+
+`event_actas` (event_id, campaign_id, estado borrador|confirmada, confirmed_at, confirmed_by, titulo, fecha, municipio, sitio, hora_inicio, hora_fin, introduccion, orden_dia jsonb,
+desarrollo jsonb, cierre, archivo_path/mime/nombre, created_by, updated_by), `event_acta_participantes` (acta_id, orden,
+nombre, perfil, municipio, telefono, cedula, lider_id, sugerencia_rechazada, attendee_id), `event_compromisos` (acta_id,
+event_id, campaign_id, orden, descripcion, fecha_limite, recordar_el, estado), `event_compromiso_responsables`
+(compromiso_id, orden, nombre, telefono, lider_id, sugerencia_rechazada), `event_compromiso_avances` (compromiso_id, nota, estado_anterior, estado_nuevo, archivo_*, user_id, created_at).
+Amplía `event_attendees_source_check` con `'acta'` (en producción hoy: qr, operador, excel, ocr). El `down()` falla a
+propósito en PostgreSQL mientras existan asistentes con `source = 'acta'`.
+
+### Alertas: campanita y resumen diario por correo
+
+`CompromisoAlertas` calcula, para el usuario actual (campañas visibles y territorio), los compromisos **abiertos**
+(`pendiente`, `en_curso`) de actas **confirmadas**: **vencidos** (fecha límite antes de hoy), **por vencer** (fecha límite
+de hoy a 3 días) y **recordatorios** (`recordar_el` hoy o antes). Cada uno cuenta una vez, en ese orden de prioridad.
+
+- **Campanita** en el encabezado (escritorio y móvil) para `view.eventos` o `manage.eventos`: número total y, al abrirla,
+  lista corta (vencidos, por vencer, recordatorios) con enlace `/eventos/compromisos?abrir={id}` (abre el seguimiento).
+  Una petición cada 5 minutos para toda la app (caché en el navegador + 5 min por usuario en el servidor).
+- **`php artisan compromisos:resumen-diario [--dry-run]`**, programado a las 7:00 a. m. (America/Bogota) en
+  `routes/console.php` (necesita el cron `schedule:run`, que ya existe en producción para www-data). Envía a cada usuario
+  activo con `manage.eventos`, correo válido y campaña activa un correo (`emails/compromisos-resumen`) con sus vencidos,
+  por vencer y recordatorios (hasta 50) y el enlace a la pantalla; si no tiene ninguno, no se envía. Si `MAIL_MAILER` es
+  `log`/`array` o SMTP sin host, registra "correo no configurado" y termina sin error. `--dry-run` muestra por usuario
+  (solo id y conteos) a quién se enviaría. El log solo lleva conteos e ids. Un envío fallido se registra y el comando
+  sigue con los demás (sale con código de error).
+- Producción (revisado 2026-11-10, sin mostrar valores): `MAIL_MAILER=smtp` con host, puerto, usuario, clave y remitente
+  definidos.
+
+### Despliegue
+
+Sin paquetes nuevos de Composer. `php artisan migrate --force`, `npm run build`, `php artisan optimize:clear && php artisan
+optimize`. Para subir actas o fotos de hasta 10 MB en producción, PHP-FPM necesita `upload_max_filesize ≥ 12M` y
+`post_max_size ≥ 16M` (hoy 2M/8M: con eso el límite real es 2 MB y los mensajes lo dicen).
