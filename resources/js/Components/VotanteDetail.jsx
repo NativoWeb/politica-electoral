@@ -4,6 +4,7 @@ import VotanteContactos from '@/Components/VotanteContactos';
 import VotanteInfoPolitica from '@/Components/VotanteInfoPolitica';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import PersonaEventos from '@/Components/Eventos/PersonaEventos';
+import UnificarModal from '@/Components/UnificarModal';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
@@ -122,7 +123,9 @@ export default function VotanteDetail({
     const prevIdRef = useRef(null);
     const rootRef = useRef(null);
     const campaign = useCampaign();
-    const canSeeEventos = canSeeEventAttendees(usePage().props.auth?.user);
+    const authUser = usePage().props.auth?.user;
+    const canSeeEventos = canSeeEventAttendees(authUser);
+    const [showUnificar, setShowUnificar] = useState(false);
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
     const campaignReadOnly = !creating && campaign.isOther(data?.campaign_id);
     const campaignName = campaignReadOnly ? campaign.nameOf(data?.campaign_id) : null;
@@ -321,6 +324,13 @@ export default function VotanteDetail({
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto px-4">
                 {campaignReadOnly && <ReadOnlyCampaignNotice campaignName={campaignName} className="mt-3" />}
+                {!creating && !editing && !campaignReadOnly && authUser?.canWrite && (
+                    <div className="pt-3">
+                        <button type="button" onClick={() => setShowUnificar(true)} className="px-3 py-1.5 text-[12px] font-bold text-[var(--color-primary)] border border-[var(--color-primary)] rounded-lg hover:bg-blue-50 transition-colors">
+                            Unificar con otra persona
+                        </button>
+                    </div>
+                )}
                 {/* Informacion Basica */}
                 <Accordion title="Informacion Basica" defaultOpen>
                     <div className="grid grid-cols-2 gap-3">
@@ -708,6 +718,17 @@ export default function VotanteDetail({
                         </div>
                     </div>
                 </>
+            )}
+            {showUnificar && (
+                <UnificarModal
+                    recordId={data.id}
+                    recordName={data.nombre}
+                    onClose={() => setShowUnificar(false)}
+                    onDone={(id) => {
+                        setShowUnificar(false);
+                        onSaved(id || data.id);
+                    }}
+                />
             )}
         </div>
     );

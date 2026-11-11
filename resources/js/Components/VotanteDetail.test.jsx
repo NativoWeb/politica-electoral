@@ -86,3 +86,22 @@ describe('VotanteDetail campaign read-only', () => {
         expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument();
     });
 });
+
+describe('VotanteDetail "Unificar con otra persona"', () => {
+    it('is offered only on an editable own record to who may write', () => {
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
+        const { unmount } = render(<VotanteDetail data={votante('cd')} loading={false} creating={false} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} apiFetch={vi.fn()} municipios={[]} showToast={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Unificar con otra persona' }));
+        expect(screen.getByRole('dialog', { name: 'Unificar con otra persona' })).toBeInTheDocument();
+        unmount();
+
+        renderDetail(votante('x'));
+        expect(screen.queryByRole('button', { name: 'Unificar con otra persona' })).not.toBeInTheDocument();
+    });
+
+    it('is hidden without write permission', () => {
+        page.props = { auth: { user: { campaign: CD, canWrite: false } }, visibleCampaigns: VISIBLE };
+        renderDetail(votante('cd'));
+        expect(screen.queryByRole('button', { name: 'Unificar con otra persona' })).not.toBeInTheDocument();
+    });
+});

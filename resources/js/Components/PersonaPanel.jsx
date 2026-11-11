@@ -9,6 +9,7 @@ import InfoPoliticaManager from '@/Components/InfoPoliticaManager';
 import TagsPanel from '@/Components/TagsPanel';
 import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
+import UnificarModal from '@/Components/UnificarModal';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
@@ -113,7 +114,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     // Escape closes an open confirmation first, otherwise the ficha just like its X button.
     useEscapeKey(() => (confirmOpen ? closeConfirm() : onClose()));
     const campaign = useCampaign();
-    const canSeeEventos = canSeeEventAttendees(usePage().props.auth?.user);
+    const authUser = usePage().props.auth?.user;
+    const canSeeEventos = canSeeEventAttendees(authUser);
+    const [showUnificar, setShowUnificar] = useState(false);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
@@ -600,6 +603,12 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                         {editMode && !campaignReadOnly && (
                             <button onClick={savePersona} disabled={saving} className="px-6 py-2.5 bg-[var(--color-good)] text-white text-[13px] font-bold rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50">
                                 {saving ? 'Guardando...' : 'Guardar cambios'}
+                            </button>
+                        )}
+                        {/* A candidate without ficha is shared electoral data: only who may edit it unites it. */}
+                        {!campaignReadOnly && !editMode && !data._offline && authUser?.canWrite && (isLider || authUser?.canEditElectoral !== false) && (
+                            <button type="button" onClick={() => setShowUnificar(true)} className="px-4 py-2.5 bg-white border border-[var(--color-primary)] text-[var(--color-primary)] text-[13px] font-bold rounded-lg hover:bg-blue-50 transition-colors">
+                                Unificar con otra persona
                             </button>
                         )}
                         <div className="flex-1" />
@@ -1459,6 +1468,25 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                 </div>
             </div>
             <ConfirmDialog />
+            {showUnificar && (
+                <UnificarModal
+                    recordId={targetId}
+                    recordName={data.nombre}
+                    onClose={() => setShowUnificar(false)}
+                    onDone={(id) => {
+                        setShowUnificar(false);
+                        setDuplicado(null);
+                        setPosibles([]);
+                        setMessage('Registros unificados');
+                        setErrorMessage('');
+                        const next = id || targetId;
+                        if (next !== targetId) setViewId(next);
+                        loadData(next);
+                        setTimeout(() => router.reload({ only: ['data'] }), 500);
+                        setTimeout(() => setMessage(''), 4000);
+                    }}
+                />
+            )}
         </>
     );
 }

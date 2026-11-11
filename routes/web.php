@@ -31,6 +31,7 @@ use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\TerritoryController;
+use App\Http\Controllers\UnificarController;
 use App\Http\Controllers\VotanteController;
 use App\Http\Controllers\WhatsAppLinkController;
 use Illuminate\Http\Request;
@@ -125,6 +126,13 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         // and the map's persona panel edits contactos and info politica through the Votantes ones.
         Route::middleware('permission:view.mapa|view.votantes')->group(function () {
             Route::post('/mapa-politico/persona/{id}/toggle', [MapaPoliticoController::class, 'toggleLider'])->name('mapa-politico.persona.toggle')->middleware('person.resolve');
+
+            // "Unificar con otra persona" (UnifyRecords): campaign, territory and electoral rights are checked in the action.
+            Route::middleware('permission:write.data')->group(function () {
+                Route::get('/mapa-politico/persona/{id}/unificar-con/buscar', [UnificarController::class, 'buscar'])->name('mapa-politico.persona.unificar-con.buscar')->middleware('person.resolve');
+                Route::post('/mapa-politico/persona/{id}/unificar-con/vista-previa', [UnificarController::class, 'vistaPrevia'])->name('mapa-politico.persona.unificar-con.preview')->middleware('person.resolve');
+                Route::post('/mapa-politico/persona/{id}/unificar-con', [UnificarController::class, 'unificar'])->name('mapa-politico.persona.unificar-con')->middleware('person.resolve');
+            });
             Route::post('/mapa-politico/persona/{id}/add-referido', [MapaPoliticoController::class, 'addReferido'])->name('mapa-politico.referido.add')->middleware('person.resolve');
             Route::delete('/mapa-politico/persona/{id}/referido/{referidoId}', [MapaPoliticoController::class, 'removeReferido'])->name('mapa-politico.referido.remove')->middleware('person.resolve');
 

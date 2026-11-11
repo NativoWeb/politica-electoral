@@ -673,7 +673,7 @@ class TerritoryScopeTest extends TestCase
         $routes = collect(\Illuminate\Support\Facades\Route::getRoutes()->getRoutes())
             ->filter(fn ($r) => str_starts_with($r->uri(), 'mapa-politico/persona/{id}'));
 
-        $this->assertCount(11, $routes);
+        $this->assertCount(14, $routes);
         foreach ($routes as $route) {
             $this->assertContains('person.resolve', $route->gatherMiddleware(), $route->uri());
         }

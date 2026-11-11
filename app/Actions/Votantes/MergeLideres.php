@@ -16,7 +16,7 @@ class MergeLideres
 
     // Rows pointing at a lider id, moved to the surviving record. data_consents.lider_id is not here on purpose:
     // that table is append-only proof of consent and keeps the lider id it was recorded with.
-    private const REFERENCES = [
+    public const REFERENCES = [
         ['lider_contactos', 'lider_id'], ['lider_info_politica', 'lider_id'], ['lider_seguimientos', 'lider_id'],
         ['lider_municipios_influencia', 'lider_id'], ['nexos_familiares', 'person_id'],
         ['whatsapp_send_recipients', 'person_id'], ['favorites', 'favoritable_id'], ['recent_views', 'viewable_id'],
