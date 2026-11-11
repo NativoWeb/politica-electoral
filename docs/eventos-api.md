@@ -31,6 +31,7 @@ Convenciones:
 | `view.eventos` | Ver el listado y el detalle de eventos (incluye asistentes con sus datos). |
 | `manage.eventos` | Todo lo anterior + crear/editar/borrar eventos, abrir/cerrar/cancelar, regenerar el QR, aprobar/descartar asistentes, buscar organizadores y figuras, y registrar asistentes en modo operador. |
 | `register.asistentes` | Ver el listado de eventos (sin asistentes) y entrar al **modo operador** a registrar asistentes. No ve el detalle con asistentes ni edita nada. No necesita `write.data`. |
+| `delete.actas` | **Eliminar actas confirmadas** (§14), por ejemplo una confirmada por error, deshaciendo lo que creó. Solo sirve junto con `manage.eventos`. Se otorga como los demás (solo quien lo tiene; el superadmin lo tiene implícito). |
 
 **Regla única:** gestionar eventos (crear, editar, borrar, abrir, cerrar, cancelar, regenerar QR, aprobar y descartar)
 exige **solo `manage.eventos`** (más campaña propia y territorio); **no** exige `write.data` ni un rol de escritura.
@@ -445,7 +446,7 @@ selección de pendientes y descartados (Eliminar / Recuperar / Descartar / Pasar
   campaña del evento): se borran **solo si no tienen otra actividad**: ninguna otra asistencia (otro evento u otro
   asistente), organizador de evento, contactos aparte del fijo que copió la aprobación, información política,
   seguimientos, municipios de influencia, nexos, referidos (otra ficha con `referente_documento` = su cédula),
-  etiquetas, favoritos, envíos de WhatsApp, `data_consents`, ni edición posterior (`updated_at` ≠ `created_at`). Las
+  etiquetas, favoritos, envíos de WhatsApp, `data_consents`, participante o responsable de un acta (desde 2026-11-11), ni edición posterior (`updated_at` ≠ `created_at`). Las
   demás se conservan. Las fichas que ya existían y solo se **vincularon** nunca se tocan.
 - La carga (`event_imports`, con sus filas y páginas) y su archivo también se borran: el mismo archivo se puede volver a subir.
 - Todo en una transacción con bloqueo de la carga y de las fichas; el plan se recalcula bajo el bloqueo.
@@ -1280,8 +1281,9 @@ es borrador **no** se crean fichas, ni asistentes, ni se vinculan responsables: 
 elecciones de "¿Es esta persona?" (`lider_id` = ficha elegida, `sugerencia_rechazada` = ficha a la que se dijo que no,
 para no volver a preguntar; una pregunta sin responder queda pendiente). **"Confirmar acta"** aplica en una transacción
 todo lo de "Participantes → Votantes y asistentes" y "Responsables" y deja el acta `confirmada` (`confirmed_at`,
-`confirmed_by`): desde ahí no se edita ni se borra (422 `acta`; no hay "reabrir"), solo se descarga y se hace el
-seguimiento de sus compromisos. La pantalla pregunta todas las sugerencias pendientes antes de confirmar; si por API se
+`confirmed_by`): desde ahí no se edita (422 `acta`; no hay "reabrir"), solo se descarga y se hace el
+seguimiento de sus compromisos. Solo quien tiene además **`delete.actas`** puede eliminarla (ver "Eliminar un acta
+confirmada"); sin ese permiso el DELETE responde 403. La pantalla pregunta todas las sugerencias pendientes antes de confirmar; si por API se
 confirma con alguna sin responder, cuenta como "no es esta persona" (participante → ficha nueva; responsable → texto).
 Los compromisos de un borrador no se listan ni reciben avances (404).
 
@@ -1296,7 +1298,7 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 - Archivos (original del acta y adjuntos de avances) en el disco privado `local` (`storage/app/private/eventos/actas/{evento}/`,
   `…/eventos/compromisos/{compromiso}/`), nombre UUID, servidos solo por rutas autenticadas con los mismos chequeos.
 - Auditoría sin datos personales (solo ids y conteos): `EVENTO_ACTA_CREADA`, `EVENTO_ACTA_ACTUALIZADA`, `EVENTO_ACTA_CONFIRMADA`,
-  `EVENTO_ACTA_BORRADA`, `EVENTO_ACTA_ARCHIVO`, `EVENTO_COMPROMISO_RECORDATORIO`, `EVENTO_COMPROMISO_ARCHIVO_DESCARGADO`,
+  `EVENTO_ACTA_BORRADA`, `EVENTO_ACTA_CONFIRMADA_BORRADA`, `EVENTO_ACTA_ARCHIVO`, `EVENTO_COMPROMISO_RECORDATORIO`, `EVENTO_COMPROMISO_ARCHIVO_DESCARGADO`,
   `EVENTO_ACTA_DESCARGADA` (`formato`: docx/pdf/original), `EVENTO_COMPROMISO_ESTADO` (`de`, `a`), `EVENTO_COMPROMISO_AVANCE`,
   `EVENTO_COMPROMISOS_EXPORTADOS`.
 
@@ -1311,7 +1313,8 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 | `POST /eventos/{id}/actas/sugerencias` | manage | `{participantes: [{nombre, telefono, cedula}], responsables: [{nombre, telefono}]}` → `{participantes: {i: lider}, responsables: {i: lider}}`, `lider = {id, nombre, municipio, cargo, por: 'cedula'\|'telefono'}` |
 | `POST /eventos/{id}/actas` | manage | crea un **borrador** (201) `{data: acta, message}`; nada pasa a Votantes ni a los asistentes |
 | `PUT /eventos/{id}/actas/{acta}` | manage | actualiza un **borrador** (mismo cuerpo; reemplaza participantes y compromisos). Confirmada → 422 `acta` |
-| `DELETE /eventos/{id}/actas/{acta}` | manage | borra un **borrador** con participantes, compromisos, responsables y archivo. Confirmada → 422 |
+| `DELETE /eventos/{id}/actas/{acta}` | manage | borra un **borrador** con participantes, compromisos, responsables y archivo. Confirmada: exige además `delete.actas` (si no, 403) y deshace lo que creó (abajo) |
+| `GET /eventos/{id}/actas/{acta}/eliminar` | manage + delete.actas | vista previa de eliminar un acta **confirmada**: `data: {participantes, asistentes, asistentes_conservados, fichas_borrar, fichas_conservar, vinculadas, compromisos, responsables, avances}`. Borrador → 422 `acta` |
 | `POST /eventos/{id}/actas/{acta}/confirmar` | manage | confirma: `{data: acta, resumen: {participantes, vinculados, fichas_creadas, asistentes_nuevos, compromisos, responsables_vinculados}, message}`. Ya confirmada → 422 `acta`; una ficha elegida que dejó de ser válida → 422 `participantes.N.lider_id` y no se escribe nada |
 | `PUT /eventos/compromisos/{compromiso}/recordatorio` | manage | `{recordar_el: YYYY-MM-DD\|null}` (también en compromisos de actas confirmadas) |
 | `GET /eventos/compromisos/alertas` | view | campanita: `{total, vencidos, por_vencer, recordatorios, items[≤15]: {id, tipo, descripcion, estado, fecha_limite, recordar_el, evento, url}}`, caché 5 min por usuario (se borra cuando el usuario cambia un estado o recordatorio) || `POST /eventos/{id}/actas/{acta}/archivo` | manage | multipart `archivo` (.docx, PDF, JPG o PNG): guarda o reemplaza el original (solo borrador) |
@@ -1351,6 +1354,27 @@ cédula, se usa ese (y si no tenía ficha, se le vincula). Sugerencia por teléf
 últimos 10, en `lideres.telefono` y `lider_contactos.valor`, + al menos una palabra del nombre; empate = sin sugerencia),
 entre los líderes activos de la campaña del evento en el territorio del usuario (todos los municipios si no tiene).
 Quitar un participante del acta **no** borra su ficha ni su asistencia.
+
+### Eliminar un acta confirmada (permiso `delete.actas`, 2026-11-11)
+
+Para un acta confirmada por error. Botón "Eliminar acta" en el encabezado del acta confirmada, solo con `can.delete_confirmed`
+(`manage.eventos` + `delete.actas`, campaña propia del evento y territorio). La confirmación muestra antes los conteos reales
+de `GET …/eliminar`. `DELETE /eventos/{id}/actas/{acta}` (`DeleteConfirmedActa`), en una transacción con bloqueo del acta, de
+los asistentes y de las fichas (el plan se recalcula bajo el bloqueo):
+
+- Borra el acta con participantes, compromisos, responsables y avances (cascada) y, después del commit, su archivo original
+  y los adjuntos de los avances.
+- Quita del evento los asistentes que **entraron por esta acta** (`event_acta_participantes.created_attendee`, `source = 'acta'`),
+  salvo los que tengan `data_consents` o que otra acta use como participante. Un asistente que ya estaba y solo se vinculó
+  **no** se borra (queda como quedó, vinculado a su ficha).
+- Borra las fichas que **la confirmación creó** (`created_lider`) solo si no tienen otra actividad (`FichaActivity`, la misma
+  regla que "Deshacer carga" §6.2: otra asistencia, organizador, contactos aparte de los celulares que copió la confirmación,
+  información política, seguimientos, municipios de influencia, nexos, referidos, etiquetas, favoritos, envíos de WhatsApp,
+  `data_consents`, participante o responsable de **otra** acta, o edición posterior). Las demás se conservan. Las fichas que
+  ya existían y solo se vincularon nunca se tocan. `data_consents` no se toca.
+- Actas confirmadas antes de 2026-11-11 (sin las marcas `created_*`): se trata como "no creó nada"; solo se borra el acta.
+- Respuesta: `{success, message, data: <mismos conteos>}`. Auditoría `EVENTO_ACTA_CONFIRMADA_BORRADA` con `acta_id`, ids de
+  asistentes y fichas borrados y conteos (sin nombres ni teléfonos).
 
 ### Responsables (decisión 3)
 
@@ -1395,7 +1419,8 @@ teléfono; fecha, municipio, sitio, horas 10:45–12:00 y cierre leídos.
 
 `event_actas` (event_id, campaign_id, estado borrador|confirmada, confirmed_at, confirmed_by, titulo, fecha, municipio, sitio, hora_inicio, hora_fin, introduccion, orden_dia jsonb,
 desarrollo jsonb, cierre, archivo_path/mime/nombre, created_by, updated_by), `event_acta_participantes` (acta_id, orden,
-nombre, perfil, municipio, telefono, cedula, lider_id, sugerencia_rechazada, attendee_id), `event_compromisos` (acta_id,
+nombre, perfil, municipio, telefono, cedula, lider_id, sugerencia_rechazada, attendee_id, created_lider, created_attendee — estas dos
+por la migración aditiva `2026_11_11_000001_add_created_flags_to_event_acta_participantes`, se llenan al confirmar), `event_compromisos` (acta_id,
 event_id, campaign_id, orden, descripcion, fecha_limite, recordar_el, estado), `event_compromiso_responsables`
 (compromiso_id, orden, nombre, telefono, lider_id, sugerencia_rechazada), `event_compromiso_avances` (compromiso_id, nota, estado_anterior, estado_nuevo, archivo_*, user_id, created_at).
 Amplía `event_attendees_source_check` con `'acta'` (en producción hoy: qr, operador, excel, ocr). El `down()` falla a
@@ -1423,5 +1448,6 @@ de hoy a 3 días) y **recordatorios** (`recordar_el` hoy o antes). Cada uno cuen
 ### Despliegue
 
 Sin paquetes nuevos de Composer. `php artisan migrate --force`, `npm run build`, `php artisan optimize:clear && php artisan
-optimize`. Para subir actas o fotos de hasta 10 MB en producción, PHP-FPM necesita `upload_max_filesize ≥ 12M` y
+optimize`. El permiso `delete.actas` (2026-11-11) trae la migración aditiva `2026_11_11_000001_add_created_flags_to_event_acta_participantes`
+(dos booleanos con default false; no toca `data_consents` ni las vistas `agent_ro`). Para subir actas o fotos de hasta 10 MB en producción, PHP-FPM necesita `upload_max_filesize ≥ 12M` y
 `post_max_size ≥ 16M` (hoy 2M/8M: con eso el límite real es 2 MB y los mensajes lo dicen).

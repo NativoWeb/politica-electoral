@@ -6,6 +6,7 @@ vi.mock('@inertiajs/react', () => ({
 }));
 
 import ActaCompromisos from './ActaCompromisos';
+import ActaEliminarConfirmada from './ActaEliminarConfirmada';
 import ActaParticipantes from './ActaParticipantes';
 import ActaSugerencias from './ActaSugerencias';
 import ActasEvento from './ActasEvento';
@@ -26,6 +27,32 @@ describe('Actas components', () => {
     const original = globalThis.fetch;
     beforeEach(() => { globalThis.fetch = vi.fn(); });
     afterEach(() => { globalThis.fetch = original; });
+
+    it('shows the real counts before deleting a confirmed acta and deletes on confirmation', async () => {
+        globalThis.fetch = vi.fn()
+            .mockReturnValueOnce(json(200, { success: true, data: { asistentes: 2, fichas_borrar: 1, fichas_conservar: 1, compromisos: 1, avances: 0 } }))
+            .mockReturnValueOnce(json(200, { success: true, message: 'Acta eliminada.' }));
+        const onDeleted = vi.fn();
+        render(<ActaEliminarConfirmada url="/eventos/e1/actas/a1" onDeleted={onDeleted} onError={() => {}} />);
+        fireEvent.click(screen.getByText('Eliminar acta'));
+        expect(await screen.findByText(/Se quitan 2 asistentes que entraron/)).toBeTruthy();
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/eventos/e1/actas/a1/eliminar');
+        fireEvent.click(screen.getByText('Sí, eliminar'));
+        await waitFor(() => expect(onDeleted).toHaveBeenCalledWith('Acta eliminada.'));
+        expect(globalThis.fetch.mock.calls[1][1].method).toBe('DELETE');
+    });
+
+    it('does not delete when the preview is refused', async () => {
+        globalThis.fetch = vi.fn(() => json(403, { message: 'No tiene permisos para acceder a esta sección.' }));
+        const onError = vi.fn();
+        const onDeleted = vi.fn();
+        render(<ActaEliminarConfirmada url="/eventos/e1/actas/a1" onDeleted={onDeleted} onError={onError} />);
+        fireEvent.click(screen.getByText('Eliminar acta'));
+        await waitFor(() => expect(onError).toHaveBeenLastCalledWith('No tiene permisos para acceder a esta sección.'));
+        expect(screen.queryByText('Sí, eliminar')).toBeNull();
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(onDeleted).not.toHaveBeenCalled();
+    });
 
     it('adds an attendee of the event as a participant with one click', () => {
         const onChange = vi.fn();

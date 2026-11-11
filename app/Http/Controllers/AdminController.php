@@ -57,6 +57,8 @@ class AdminController extends Controller
         ['key' => 'view.eventos', 'label' => 'Ver eventos y asistentes', 'group' => 'Eventos'],
         ['key' => 'manage.eventos', 'label' => 'Gestionar eventos (crear, abrir, aprobar asistentes)', 'group' => 'Eventos'],
         ['key' => 'register.asistentes', 'label' => 'Registrar asistentes (modo operador)', 'group' => 'Eventos'],
+        ['key' => 'delete.actas', 'label' => 'Eliminar actas confirmadas', 'group' => 'Eventos',
+            'description' => 'Borrar un acta ya confirmada (por ejemplo, confirmada por error) y deshacer lo que creó. Requiere también Gestionar eventos.'],
         ['key' => 'use.whatsapp', 'label' => 'Asistente de WhatsApp', 'group' => 'WhatsApp',
             'description' => 'Vincular su número en Mi perfil y consultar o registrar datos con el asistente por WhatsApp.',
             'requiresWhatsapp' => true],

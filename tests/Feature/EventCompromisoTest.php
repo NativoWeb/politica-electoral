@@ -30,6 +30,7 @@ class EventCompromisoTest extends TestCase
         parent::setUp();
         $this->setUpEventos();
         (require database_path('migrations/2026_11_10_000001_create_event_actas_tables.php'))->up();
+        (require database_path('migrations/2026_11_11_000001_add_created_flags_to_event_acta_participantes.php'))->up();
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos', 'view.eventos']);
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID);

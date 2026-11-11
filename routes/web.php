@@ -189,6 +189,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/{id}/actas', [EventoActaController::class, 'store'])->name('actas.store')->whereUuid('id');
             Route::put('/{id}/actas/{acta}', [EventoActaController::class, 'update'])->name('actas.update')->whereUuid(['id', 'acta']);
             Route::delete('/{id}/actas/{acta}', [EventoActaController::class, 'destroy'])->name('actas.destroy')->whereUuid(['id', 'acta']);
+            Route::get('/{id}/actas/{acta}/eliminar', [EventoActaController::class, 'deletePreview'])->name('actas.delete-preview')->whereUuid(['id', 'acta'])
+                ->middleware('permission:delete.actas');
             Route::post('/{id}/actas/{acta}/confirmar', [EventoActaController::class, 'confirm'])->name('actas.confirm')->whereUuid(['id', 'acta']);
             Route::post('/{id}/actas/{acta}/archivo', [EventoActaController::class, 'attach'])->name('actas.attach')->whereUuid(['id', 'acta'])
                 ->middleware('throttle:eventos-importar');

@@ -225,3 +225,21 @@ export function compromisosQuery(filters) {
     const qs = params.toString();
     return qs ? `?${qs}` : '';
 }
+
+const count = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+
+// What deleting a confirmed acta undoes (preview from GET /eventos/{id}/actas/{acta}/eliminar).
+export function deleteActaMessage(p = {}) {
+    const parts = ['Se elimina el acta con sus participantes y archivos.'];
+    parts.push(p.asistentes
+        ? `Se quitan ${count(p.asistentes, 'asistente que entró', 'asistentes que entraron')} al evento por esta acta.`
+        : 'No se quita ningún asistente del evento.');
+    if (p.asistentes_conservados) parts.push(`Se conservan ${count(p.asistentes_conservados, 'asistente que ya estaba', 'asistentes que ya estaban')} en el evento.`);
+    if (p.fichas_borrar) parts.push(`Se borran ${count(p.fichas_borrar, 'ficha creada', 'fichas creadas')} al confirmarla, sin otra información.`);
+    if (p.fichas_conservar) parts.push(`Se conservan ${count(p.fichas_conservar, 'ficha creada que ya tiene', 'fichas creadas que ya tienen')} otra información.`);
+    if (p.vinculadas) parts.push(`${count(p.vinculadas, 'ficha que ya existía', 'fichas que ya existían')} en Votantes no se tocan.`);
+    if (p.compromisos) parts.push(`Se eliminan ${count(p.compromisos, 'compromiso', 'compromisos')} con ${count(p.avances ?? 0, 'avance', 'avances')}.`);
+    parts.push('Esto no se puede deshacer.');
+
+    return parts.join(' ');
+}

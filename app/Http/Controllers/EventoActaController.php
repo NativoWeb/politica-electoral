@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Eventos\DeleteConfirmedActa;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Http\Requests\Eventos\ActaFileRequest;
 use App\Http\Requests\Eventos\ActaRequest;
@@ -142,15 +143,35 @@ class EventoActaController extends Controller
         return response()->json(['success' => true, 'message' => self::summary($counts), 'data' => $this->payload($model), 'resumen' => $counts]);
     }
 
-    // DELETE /eventos/{id}/actas/{acta}: only a borrador (nothing of it reached Votantes or the attendees).
-    public function destroy(Request $request, string $id, string $acta): JsonResponse
+    // DELETE /eventos/{id}/actas/{acta}: a borrador (nothing of it reached Votantes or the attendees) with manage.eventos;
+    // a confirmed acta also needs delete.actas and undoes what its confirmation created (DeleteConfirmedActa).
+    public function destroy(Request $request, string $id, string $acta, DeleteConfirmedActa $undo): JsonResponse
     {
         $event = $this->findEvent($id, true);
         $model = $this->findActa($event, $acta);
+        if (! $model->isDraft()) {
+            abort_unless($request->user()->hasPermission('delete.actas'), 403, 'No tiene permiso para eliminar actas confirmadas.');
+            $counts = $undo->handle($model, $request->user());
+            Cache::forget(EventoCompromisoController::alertsKey($request));
+
+            return response()->json(['success' => true, 'message' => self::deletedSummary($counts), 'data' => $counts]);
+        }
         $this->service->delete($model);
         $this->audit($request, 'EVENTO_ACTA_BORRADA', $model, []);
 
         return response()->json(['success' => true, 'message' => 'Borrador del acta borrado.']);
+    }
+
+    // GET /eventos/{id}/actas/{acta}/eliminar: what deleting a confirmed acta would undo (manage.eventos + delete.actas).
+    public function deletePreview(string $id, string $acta, DeleteConfirmedActa $undo): JsonResponse
+    {
+        $event = $this->findEvent($id, true);
+        $model = $this->findActa($event, $acta);
+        if ($model->isDraft()) {
+            throw ValidationException::withMessages(['acta' => 'El acta no está confirmada: se borra como borrador.']);
+        }
+
+        return response()->json(['success' => true, 'data' => collect($undo->plan($model))->except(['attendee_ids', 'lider_ids'])->all()]);
     }
 
     // POST /eventos/{id}/actas/{acta}/archivo: the original (.docx, PDF or photo), replacing the previous one.
@@ -262,6 +283,7 @@ class EventoActaController extends Controller
             'can' => [
                 'edit' => $editable && $event->status !== 'cancelado' && (! $acta || $acta->isDraft()),
                 'delete' => $editable && $acta !== null && $acta->isDraft(),
+                'delete_confirmed' => $editable && $acta !== null && ! $acta->isDraft() && request()->user()->hasPermission('delete.actas'),
             ],
         ]);
     }
@@ -346,6 +368,13 @@ class EventoActaController extends Controller
         }
 
         return implode(' ', $parts);
+    }
+
+    public static function deletedSummary(array $counts): string
+    {
+        return "Acta eliminada. Se quitaron {$counts['asistentes']} asistentes y se borraron {$counts['fichas_borrar']} fichas creadas al confirmarla."
+            .($counts['fichas_conservar'] ? " Se conservaron {$counts['fichas_conservar']} fichas que ya tienen otra información." : '')
+            .($counts['compromisos'] ? " Se eliminaron {$counts['compromisos']} compromisos y {$counts['avances']} avances." : '');
     }
 
     // Counts and ids only: never names, phones or what the acta says.

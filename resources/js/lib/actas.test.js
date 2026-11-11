@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAnswers, compromisosQuery, errorFor, mergeRead, participanteFromAsistente, suggestionList, suggestionRequest, toForm, toPayload } from './actas';
+import { applyAnswers, compromisosQuery, deleteActaMessage, errorFor, mergeRead, participanteFromAsistente, suggestionList, suggestionRequest, toForm, toPayload } from './actas';
 
 const read = {
     titulo: 'ACTA REUNIÓN VEREDA BERLÍN', fecha: '2026-11-08', municipio: 'RIONEGRO', sitio: null, hora_inicio: '10:45', hora_fin: null,
@@ -77,5 +77,16 @@ describe('actas', () => {
         expect(compromisosQuery({})).toBe('');
         expect(errorFor(422, { errors: { archivo: ['El archivo pesa más de 10 MB.'] } })).toBe('El archivo pesa más de 10 MB.');
         expect(errorFor(404, null)).toMatch(/Recargue/);
+    });
+
+    it('explains what deleting a confirmed acta undoes', () => {
+        const msg = deleteActaMessage({ asistentes: 3, asistentes_conservados: 1, fichas_borrar: 2, fichas_conservar: 1, vinculadas: 1, compromisos: 2, avances: 1 });
+        expect(msg).toContain('Se quitan 3 asistentes que entraron');
+        expect(msg).toContain('Se conservan 1 asistente que ya estaba');
+        expect(msg).toContain('Se borran 2 fichas creadas');
+        expect(msg).toContain('Se conservan 1 ficha creada que ya tiene otra información');
+        expect(msg).toContain('1 ficha que ya existía');
+        expect(msg).toContain('Se eliminan 2 compromisos con 1 avance');
+        expect(deleteActaMessage({ asistentes: 0 })).toContain('No se quita ningún asistente');
     });
 });

@@ -143,13 +143,16 @@ class ActaService
                 $counts[$created ? 'fichas_creadas' : 'vinculados']++;
 
                 $attendee ??= $this->attendeeOf($event, $liderId, $row->cedula);
+                $createdAttendee = false;
                 if (! $attendee) {
                     $attendee = $this->createAttendee($event, $fields, $liderId, $created, $user);
+                    $createdAttendee = true;
                     $counts['asistentes_nuevos']++;
                 } elseif (! $attendee->lider_id) {
                     $attendee->forceFill(['lider_id' => $liderId, 'link_status' => $created ? 'aprobado' : 'vinculado'])->save();
                 }
-                $row->forceFill(['lider_id' => $liderId, 'attendee_id' => $attendee->id])->save();
+                // What this confirmation created is what deleting the confirmed acta undoes.
+                $row->forceFill(['lider_id' => $liderId, 'attendee_id' => $attendee->id, 'created_lider' => $created, 'created_attendee' => $createdAttendee])->save();
             }
 
             $compromisos = EventCompromiso::where('acta_id', $acta->id)->with('responsables')->orderBy('orden')->get();

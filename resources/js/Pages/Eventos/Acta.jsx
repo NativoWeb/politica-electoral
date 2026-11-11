@@ -2,6 +2,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import ActaCompromisos from '@/Components/Eventos/ActaCompromisos';
+import ActaEliminarConfirmada from '@/Components/Eventos/ActaEliminarConfirmada';
 import ActaParticipantes, { inputCls } from '@/Components/Eventos/ActaParticipantes';
 import { Desarrollo, OrdenDia } from '@/Components/Eventos/ActaPuntos';
 import ActaSugerencias from '@/Components/Eventos/ActaSugerencias';
@@ -149,6 +150,13 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                             <a href={`${base}/${acta.id}/acta.docx`} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center">Descargar Word</a>
                             <a href={`${base}/${acta.id}/acta.pdf`} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center">Descargar PDF</a>
                             {acta.archivo && <a href={`${base}/${acta.id}/archivo`} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center">Archivo original</a>}
+                            {confirmed && can?.delete_confirmed && (
+                                <ActaEliminarConfirmada
+                                    url={`${base}/${acta.id}`}
+                                    onError={setError}
+                                    onDeleted={() => { resetCampanaCache(); router.visit(`/eventos/${evento.id}`); }}
+                                />
+                            )}
                         </div>
                     )}
                 </div>

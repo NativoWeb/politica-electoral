@@ -30,6 +30,7 @@ class EventActaTest extends TestCase
         parent::setUp();
         $this->setUpEventos();
         (require database_path('migrations/2026_11_10_000001_create_event_actas_tables.php'))->up();
+        (require database_path('migrations/2026_11_11_000001_add_created_flags_to_event_acta_participantes.php'))->up();
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos', 'view.eventos', 'view.votantes']);
         $this->event = $this->makeEvent(Campaign::DEFAULT_ID, ['nombre' => 'Del Congreso al campo']);
@@ -361,7 +362,7 @@ class EventActaTest extends TestCase
 
         $this->actingAs($this->manager)->putJson("/eventos/{$this->event->id}/actas/{$actaId}", $this->payload(['titulo' => 'Otro']))
             ->assertUnprocessable()->assertJsonValidationErrors('acta');
-        $this->actingAs($this->manager)->deleteJson("/eventos/{$this->event->id}/actas/{$actaId}")->assertUnprocessable();
+        $this->actingAs($this->manager)->deleteJson("/eventos/{$this->event->id}/actas/{$actaId}")->assertForbidden();
         $this->actingAs($this->manager)->post("/eventos/{$this->event->id}/actas/{$actaId}/archivo", ['archivo' => $this->upload($this->png(), 'foto.png')], ['Accept' => 'application/json'])
             ->assertUnprocessable();
         $this->assertSame('ACTA REUNIÓN VEREDA BERLÍN, MUNICIPIO GIRÓN', DB::table('event_actas')->value('titulo'));
@@ -369,7 +370,7 @@ class EventActaTest extends TestCase
         // Still downloadable, and the page has no edit nor delete.
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/actas/{$actaId}/acta.docx")->assertOk();
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/actas/{$actaId}")
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('can.edit', false)->where('can.delete', false)
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('can.edit', false)->where('can.delete', false)->where('can.delete_confirmed', false)
                 ->where('acta.estado', 'confirmada')->where('acta.confirmed_by', $this->manager->name));
     }
 
