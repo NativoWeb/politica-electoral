@@ -14,6 +14,8 @@ const EMPTY = { estado: null, vencidos: null, responsable: null, municipio: null
 // filters, Excel and the follow-up of each one.
 export default function Compromisos({ compromisos, filters, eventos, organizaciones = [], origenes = { evento: true, organizacion: false }, municipios, estados }) {
     const bothOrigins = !!(origenes?.evento && origenes?.organizacion);
+    // Who only has Empresarios goes back there, not to Eventos (which would send them away).
+    const back = origenes?.evento ? { href: '/eventos', label: 'Eventos' } : { href: '/empresarios', label: 'Empresarios' };
     const [draft, setDraft] = useState({ ...EMPTY, ...filters });
     // ?abrir={id} (links of the bell and the e-mail) opens that compromiso.
     const [open, setOpen] = useState(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('abrir')));
@@ -29,10 +31,10 @@ export default function Compromisos({ compromisos, filters, eventos, organizacio
     const field = (name, value) => setDraft(d => ({ ...d, [name]: value || null }));
 
     return (
-        <AppLayout title="Compromisos" breadcrumb={[{ label: 'EVENTOS', href: '/eventos' }, { label: 'Compromisos' }]}>
-            <Head title="Compromisos — Eventos" />
+        <AppLayout title="Compromisos" breadcrumb={[{ label: back.label.toUpperCase(), href: back.href }, { label: 'Compromisos' }]}>
+            <Head title={`Compromisos — ${back.label}`} />
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4">
-                <Link href="/eventos" className="inline-flex items-center min-h-[36px] text-[14px] font-semibold text-white/75 hover:text-white">← Eventos</Link>
+                <Link href={back.href} className="inline-flex items-center min-h-[36px] text-[14px] font-semibold text-white/75 hover:text-white">← {back.label}</Link>
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-1">
                     <h1 className="text-[20px] lg:text-[24px] font-extrabold leading-tight">Compromisos de las actas</h1>
                     {(compromisos?.total ?? 0) > 0 && (

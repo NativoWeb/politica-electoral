@@ -256,7 +256,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can, origen =
                 </Section>
 
                 {editable && (
-                    <div className="sticky bottom-[72px] lg:bottom-0 bg-white/95 border-t border-[var(--color-line)] py-3 flex gap-3">
+                    <div className="sticky bottom-[72px] lg:bottom-0 bg-white/95 border-t border-[var(--color-line)] py-3 flex flex-wrap gap-3">
                         <Link href={back} className="min-h-[48px] px-5 rounded-xl border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] flex items-center">Cancelar</Link>
                         <button type="submit" disabled={busy} className="flex-1 sm:flex-none min-h-[48px] px-6 rounded-xl border-2 border-[var(--color-primary)] text-[var(--color-primary)] text-[16px] font-bold disabled:opacity-50">
                             {busy ? 'Guardando…' : 'Guardar borrador'}

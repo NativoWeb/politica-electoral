@@ -8,6 +8,7 @@ use App\Models\OrganizacionMiembro;
 use App\Services\CachedQueries;
 use App\Support\CurrentCampaign;
 use App\Support\Nit;
+use App\Support\Provincias;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -131,18 +132,28 @@ class OrganizacionListing
 
     public function provincias(): array
     {
-        $names = collect($this->municipios())->pluck('provincia')->filter()->unique()->sort()->values()->all();
-        $metro = collect($this->municipios())->contains(fn ($m) => in_array($m['name'], MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS, true));
+        // "Area Metropolitana" (stored name) is the same option as the metropolitan area added below.
+        $names = collect($this->municipios())->pluck('provincia')->filter()
+            ->reject(fn ($p) => Provincias::display($p) === MapaPoliticoController::AREA_METROPOLITANA)
+            ->unique()->sort()->values()->all();
+        $metro = collect($this->municipios())->contains(fn ($m) => self::inMetro($m));
 
         return $metro && ! in_array(MapaPoliticoController::AREA_METROPOLITANA, $names, true)
             ? [MapaPoliticoController::AREA_METROPOLITANA, ...$names] : $names;
+    }
+
+    // The metropolitan municipios plus the rest of the province stored under that name ("Soto", "Area Metropolitana").
+    private static function inMetro(array $m): bool
+    {
+        return in_array($m['name'], MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS, true)
+            || Provincias::display($m['provincia'] ?? null) === MapaPoliticoController::AREA_METROPOLITANA;
     }
 
     private function provinciaIds(string $provincia): array
     {
         return collect($this->municipios())
             ->filter(fn ($m) => $provincia === MapaPoliticoController::AREA_METROPOLITANA
-                ? in_array($m['name'], MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS, true)
+                ? self::inMetro($m)
                 : ($m['provincia'] ?? '') === $provincia)
             ->pluck('id')->values()->all() ?: ['00000000-0000-0000-0000-000000000000'];
     }

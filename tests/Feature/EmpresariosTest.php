@@ -107,6 +107,19 @@ class EmpresariosTest extends TestCase
         $this->actingAs($this->manager)->getJson("/empresarios/{$id}")->assertNotFound();
     }
 
+    public function test_the_metropolitan_area_is_one_province_option_with_all_its_municipios(): void
+    {
+        // Tona is in the stored province "Soto" but is not one of the metropolitan area's named municipios.
+        $tona = $this->geo('municipality', 'Tona', $this->soto);
+        $this->org(Campaign::DEFAULT_ID, 'En Tona', ['municipio_id' => $tona]);
+        $this->org(Campaign::DEFAULT_ID, 'En Vélez', ['municipio_id' => $this->velez]);
+
+        $this->actingAs($this->manager)->get('/empresarios')->assertInertia(fn ($p) => $p
+            ->where('provincias', fn ($list) => collect($list)->filter(fn ($n) => in_array($n, ['Soto', 'Área Metropolitana', 'Area Metropolitana'], true))->values()->all() === ['Área Metropolitana']));
+        $this->actingAs($this->manager)->get('/empresarios?provincia='.urlencode('Área Metropolitana'))
+            ->assertInertia(fn ($p) => $p->has('data', 1)->where('data.0.nombre', 'En Tona'));
+    }
+
     public function test_validation_errors(): void
     {
         $this->actingAs($this->manager)->postJson('/empresarios', $this->payload(['nombre' => '', 'tipo' => 'otra', 'correo' => 'no-es-correo', 'empleados' => -3]))

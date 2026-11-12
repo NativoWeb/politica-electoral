@@ -34,3 +34,6 @@ lang/es/passwords.php
 qa-screenshots/
 mobile-*.png
 camara-*.png
+
+# Corridas de QA (bitácoras con ids de producción; el repo es público)
+/docs/qa/
