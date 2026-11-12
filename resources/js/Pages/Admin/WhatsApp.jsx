@@ -445,7 +445,6 @@ export default function WhatsApp({
     const applyFilters = (options = {}) => {
         const params = buildFilterParams(options);
 
-        clearSelection();
         setSendMessage('');
         setSendError('');
 
