@@ -22,9 +22,14 @@ function Section({ title, children }) {
     );
 }
 
-// Acta de reunión of an event. A BORRADOR is written by hand or prefilled from a Word file, saved as many times as
-// needed and deleted freely; "Confirmar acta" writes Votantes and the attendees and leaves it read-only.
-export default function Acta({ evento, acta, defaults, asistentes, can }) {
+// Acta de reunión of an event or, with `origen.tipo === 'organizacion'`, of an organization (docs/empresarios.md).
+// A BORRADOR is written by hand or prefilled from a Word file, saved as many times as needed and deleted freely;
+// "Confirmar acta" writes Votantes and the attendees (an organization: its members) and leaves it read-only.
+export default function Acta({ evento, acta, defaults, asistentes, can, origen = null }) {
+    const isOrg = origen?.tipo === 'organizacion';
+    const back = origen?.volver ?? `/eventos/${evento.id}`;
+    const seccion = origen?.seccion ?? { label: 'EVENTOS', href: '/eventos' };
+    const destino = isOrg ? 'como miembros de la organización' : 'como asistentes del evento';
     const editable = !!can?.edit;
     const confirmed = acta?.estado === 'confirmada';
     const [form, setForm] = useState(() => toForm(acta, defaults ?? {}));
@@ -38,7 +43,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
     const fileRef = useRef(null);
 
     const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
-    const base = `/eventos/${evento.id}/actas`;
+    const base = origen?.base ?? `/eventos/${evento.id}/actas`;
 
     async function onFile(e) {
         const chosen = e.target.files?.[0] ?? null;
@@ -127,14 +132,14 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
         const res = await request(`${base}/${acta.id}`, { method: 'DELETE' });
         setBusy(false);
         if (!res.ok) { setError(failure(res, 'No se pudo borrar el acta.')); return; }
-        router.visit(`/eventos/${evento.id}`);
+        router.visit(back);
     }
 
     return (
-        <AppLayout title="Acta de reunión" breadcrumb={[{ label: 'EVENTOS', href: '/eventos' }, { label: evento.nombre, href: `/eventos/${evento.id}` }, { label: 'Acta' }]}>
+        <AppLayout title="Acta de reunión" breadcrumb={[seccion, { label: evento.nombre, href: back }, { label: 'Acta' }]}>
             <Head title={`Acta — ${evento.nombre}`} />
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4">
-                <Link href={`/eventos/${evento.id}`} className="inline-flex items-center min-h-[36px] text-[14px] font-semibold text-white/75 hover:text-white">← {evento.nombre}</Link>
+                <Link href={back} className="inline-flex items-center min-h-[36px] text-[14px] font-semibold text-white/75 hover:text-white">← {evento.nombre}</Link>
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-1">
                     <div>
                         <CampaignChip campaignId={evento.campaign?.id} />
@@ -142,7 +147,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                         <p className="text-[14px] text-white/85 mt-0.5">
                             {confirmed
                                 ? `Confirmada${acta.confirmed_at ? ` el ${formatDateTime(acta.confirmed_at)}` : ''}${acta.confirmed_by ? ` por ${acta.confirmed_by}` : ''}: ya no se puede editar ni borrar.`
-                                : 'Borrador: se puede editar y borrar. Nada pasa a Votantes ni a los asistentes hasta confirmarla.'}
+                                : `Borrador: se puede editar y borrar. Nada pasa a Votantes ${isOrg ? 'ni a los miembros' : 'ni a los asistentes'} hasta confirmarla.`}
                         </p>
                     </div>
                     {acta && (
@@ -154,7 +159,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                                 <ActaEliminarConfirmada
                                     url={`${base}/${acta.id}`}
                                     onError={setError}
-                                    onDeleted={() => { resetCampanaCache(); router.visit(`/eventos/${evento.id}`); }}
+                                    onDeleted={() => { resetCampanaCache(); router.visit(back); }}
                                 />
                             )}
                         </div>
@@ -222,8 +227,8 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                 </Section>
 
                 <Section title="1. Participantes">
-                    {editable && <p className="text-[14px] text-[var(--color-ink-soft)]">Al confirmar el acta, cada participante queda en Votantes (si ya está, se vincula; si no, se crea su ficha) y como asistente del evento.</p>}
-                    <ActaParticipantes items={form.participantes} onChange={v => set('participantes', v)} asistentes={asistentes} municipio={form.municipio} disabled={!editable} confirmed={confirmed} />
+                    {editable && <p className="text-[14px] text-[var(--color-ink-soft)]">Al confirmar el acta, cada participante queda en Votantes (si ya está, se vincula; si no, se crea su ficha) y {destino}.</p>}
+                    <ActaParticipantes items={form.participantes} onChange={v => set('participantes', v)} asistentes={asistentes} municipio={form.municipio} disabled={!editable} confirmed={confirmed} searchUrl={origen?.buscar} />
                 </Section>
 
                 <Section title="2. Puntos del orden del día">
@@ -240,7 +245,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
                 <Section title="4. Compromisos">
                     {editable && <p className="text-[14px] text-[var(--color-ink-soft)]">Si un responsable ya está en Votantes, se le pregunta si es esa persona; si no, queda solo con nombre y teléfono.</p>}
                     <ActaCompromisos items={form.compromisos} onChange={v => set('compromisos', v)} disabled={!editable} confirmed={confirmed} />
-                    {confirmed && <Link href="/eventos/compromisos" className="inline-flex min-h-[44px] items-center text-[15px] font-bold text-[var(--color-primary)] underline">Seguimiento de los compromisos (estados y avances)</Link>}
+                    {confirmed && <Link href={isOrg ? '/eventos/compromisos?origen=organizacion' : '/eventos/compromisos'} className="inline-flex min-h-[44px] items-center text-[15px] font-bold text-[var(--color-primary)] underline">Seguimiento de los compromisos (estados y avances)</Link>}
                 </Section>
 
                 <Section title="Cierre">
@@ -252,7 +257,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
 
                 {editable && (
                     <div className="sticky bottom-[72px] lg:bottom-0 bg-white/95 border-t border-[var(--color-line)] py-3 flex gap-3">
-                        <Link href={`/eventos/${evento.id}`} className="min-h-[48px] px-5 rounded-xl border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] flex items-center">Cancelar</Link>
+                        <Link href={back} className="min-h-[48px] px-5 rounded-xl border-2 border-gray-200 text-[15px] font-bold text-[var(--color-ink-soft)] flex items-center">Cancelar</Link>
                         <button type="submit" disabled={busy} className="flex-1 sm:flex-none min-h-[48px] px-6 rounded-xl border-2 border-[var(--color-primary)] text-[var(--color-primary)] text-[16px] font-bold disabled:opacity-50">
                             {busy ? 'Guardando…' : 'Guardar borrador'}
                         </button>
@@ -281,7 +286,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can }) {
             {ask === 'confirm' && (
                 <ConfirmDialog
                     title="¿Confirmar el acta?"
-                    message="Los participantes pasan a Votantes y quedan como asistentes del evento. Si hay personas por confirmar, se le preguntará antes. Después de confirmar no se podrá editar ni borrar."
+                    message={`Los participantes pasan a Votantes y quedan ${destino}. Si hay personas por confirmar, se le preguntará antes. Después de confirmar no se podrá editar ni borrar.`}
                     confirmLabel="Sí, confirmar"
                     onConfirm={() => { setAsk(null); run(true); }}
                     onCancel={() => setAsk(null)}

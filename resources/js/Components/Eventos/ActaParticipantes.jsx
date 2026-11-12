@@ -7,7 +7,8 @@ export const inputCls = 'w-full min-w-0 px-3 py-2.5 border border-[var(--color-l
 const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // Participants of the acta: written by hand or added with one click from the event's attendees.
-export default function ActaParticipantes({ items, onChange, asistentes = [], municipio, disabled, confirmed = false }) {
+// searchUrl: where people already in Votantes are searched (an organization's acta uses /empresarios/buscar/personas).
+export default function ActaParticipantes({ items, onChange, asistentes = [], municipio, disabled, confirmed = false, searchUrl = '/eventos/buscar/organizadores' }) {
     const [q, setQ] = useState('');
     const [found, setFound] = useState([]);
     const [searching, setSearching] = useState(false);
@@ -25,14 +26,14 @@ export default function ActaParticipantes({ items, onChange, asistentes = [], mu
         if (term.length < 2) { setFound([]); setSearching(false); return undefined; }
         setSearching(true);
         const timer = setTimeout(() => {
-            apiFetch(`/eventos/buscar/organizadores?q=${encodeURIComponent(term)}`, { method: 'GET' })
+            apiFetch(`${searchUrl}?q=${encodeURIComponent(term)}`, { method: 'GET' })
                 .then(r => (r.ok ? r.json() : { data: [] }))
                 .then(body => setFound(body.data ?? []))
                 .catch(() => setFound([]))
                 .finally(() => setSearching(false));
         }, 300);
         return () => clearTimeout(timer);
-    }, [q]);
+    }, [q, searchUrl]);
 
     const attendeeLideres = useMemo(() => new Set(asistentes.map(a => a.lider_id).filter(Boolean)), [asistentes]);
     const enSistema = found.filter(l => !takenLideres.has(l.id) && !attendeeLideres.has(l.id));

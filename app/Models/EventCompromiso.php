@@ -34,6 +34,11 @@ class EventCompromiso extends Model
         return $this->belongsTo(CampaignEvent::class, 'event_id');
     }
 
+    public function organizacion(): BelongsTo
+    {
+        return $this->belongsTo(Organizacion::class, 'organizacion_id');
+    }
+
     public function responsables(): HasMany
     {
         return $this->hasMany(EventCompromisoResponsable::class, 'compromiso_id')->orderBy('orden');

@@ -9,6 +9,7 @@ use App\Models\AuditLog;
 use App\Models\EventActa;
 use App\Models\EventCompromiso;
 use App\Models\EventCompromisoAvance;
+use App\Services\Empresarios\OrganizacionScope;
 use App\Services\Eventos\Actas\ActaFileException;
 use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\Actas\CompromisoAlertas;
@@ -29,13 +30,14 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 // Only compromisos of CONFIRMED actas are listed and followed (a borrador's are edited in the acta).
-// Follow-up of the compromisos of the actas (docs/eventos-api.md §14): every compromiso of the visible events
-// (campaign + subcampaigns, territory), seen with view.eventos; estado and avances need manage.eventos in the own campaign.
+// Follow-up of the compromisos of the actas (docs/eventos-api.md §14, docs/empresarios.md): every compromiso of the
+// visible events (with view.eventos) and of the visible organizations (with view.empresarios), campaign +
+// subcampaigns and territory; estado and avances need manage.eventos / manage.empresarios (per origin) in the own campaign.
 class EventoCompromisoController extends Controller
 {
     use ScopesTerritory;
 
-    public function __construct(private EventScope $events) {}
+    public function __construct(private EventScope $events, private OrganizacionScope $orgs) {}
 
     // GET /eventos/compromisos
     public function index(Request $request): Response
@@ -48,10 +50,12 @@ class EventoCompromisoController extends Controller
         return Inertia::render('Eventos/Compromisos', [
             'compromisos' => $page,
             'filters' => $filters,
-            'eventos' => $this->events->options(),
+            'eventos' => $this->seesEvents() ? $this->events->options() : [],
+            'organizaciones' => $this->seesOrgs() ? $this->orgs->query('o')->orderBy('o.nombre')->limit(1000)->get(['o.id', 'o.nombre'])->map(fn ($o) => (array) $o)->all() : [],
+            'origenes' => ['evento' => $this->seesEvents(), 'organizacion' => $this->seesOrgs()],
             'municipios' => $this->municipios(),
             'estados' => EventCompromiso::LABELS,
-            'can' => ['manage' => $this->canManage()],
+            'can' => ['manage' => $this->canManage('evento') || $this->canManage('organizacion')],
         ]);
     }
 
@@ -67,7 +71,8 @@ class EventoCompromisoController extends Controller
             $r = collect($responsables[$c->id] ?? []);
 
             return [
-                'evento' => $c->evento,
+                'origen' => $c->event_id ? 'Evento' : 'Organización',
+                'evento' => $c->evento ?? $c->organizacion,
                 'municipio' => $c->municipio,
                 'acta' => $c->acta_titulo,
                 'fecha_acta' => $c->acta_fecha ? Carbon::parse($c->acta_fecha)->format('d/m/Y') : null,
@@ -85,15 +90,15 @@ class EventoCompromisoController extends Controller
             'user_id' => $request->user()->id,
             'action' => 'EVENTO_COMPROMISOS_EXPORTADOS',
             'entity_type' => 'evento',
-            'entity_id' => $filters['evento'],
+            'entity_id' => $filters['evento'] ?? $filters['organizacion'],
             'metadata' => ['route' => 'eventos.compromisos.excel', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
 
-        $columns = ['evento', 'municipio', 'acta', 'fecha_acta', 'compromiso', 'responsables', 'telefono', 'fecha_limite', 'estado', 'vencido', 'avances'];
+        $columns = ['origen', 'evento', 'municipio', 'acta', 'fecha_acta', 'compromiso', 'responsables', 'telefono', 'fecha_limite', 'estado', 'vencido', 'avances'];
         $labels = [
-            'evento' => 'EVENTO', 'municipio' => 'MUNICIPIO', 'acta' => 'ACTA', 'fecha_acta' => 'FECHA DEL ACTA', 'compromiso' => 'COMPROMISO',
+            'origen' => 'ORIGEN', 'evento' => 'EVENTO / ORGANIZACIÓN', 'municipio' => 'MUNICIPIO', 'acta' => 'ACTA', 'fecha_acta' => 'FECHA DEL ACTA', 'compromiso' => 'COMPROMISO',
             'responsables' => 'RESPONSABLES', 'telefono' => 'TELÉFONOS', 'fecha_limite' => 'FECHA LÍMITE', 'estado' => 'ESTADO',
             'vencido' => 'VENCIDO', 'avances' => 'AVANCES',
         ];
@@ -213,8 +218,8 @@ class EventoCompromisoController extends Controller
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => 'EVENTO_COMPROMISO_ARCHIVO_DESCARGADO',
-            'entity_type' => 'evento',
-            'entity_id' => $c->event_id,
+            'entity_type' => $c->event_id ? 'evento' : 'organizacion',
+            'entity_id' => $c->event_id ?? $c->organizacion_id,
             'metadata' => ['compromiso_id' => $c->id, 'avance_id' => $a->id],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
@@ -232,28 +237,46 @@ class EventoCompromisoController extends Controller
         abort_unless($lider, 404);
         $this->authorizeLiderRow($lider);
 
-        $items = $this->query(['lider' => $liderId] + array_fill_keys(['estado', 'vencidos', 'responsable', 'municipio', 'evento', 'desde', 'hasta', 'q'], null))
+        $items = $this->query(['lider' => $liderId] + array_fill_keys(self::FILTER_KEYS, null))
             ->limit(200)->get();
         $responsables = $this->responsables($items->pluck('id')->all());
 
         return response()->json(['success' => true, 'data' => $items->map(fn ($c) => $this->row($c, $responsables[$c->id] ?? []))->values()]);
     }
 
+    private const FILTER_KEYS = ['estado', 'vencidos', 'responsable', 'municipio', 'evento', 'organizacion', 'origen', 'desde', 'hasta', 'q'];
+
     private function query(array $f)
     {
         $today = EventCompromiso::today();
-        $query = $this->events->events()
-            ->join('event_compromisos as c', 'c.event_id', '=', 'ev.id')
+        $events = $this->seesEvents() && $f['origen'] !== 'organizacion';
+        $orgs = $this->seesOrgs() && $f['origen'] !== 'evento';
+        $query = DB::table('event_compromisos as c')
             ->join('event_actas as a', 'a.id', '=', 'c.acta_id')
             ->where('a.estado', EventActa::CONFIRMADA)
-            ->leftJoin('geographic_units as m', 'm.id', '=', 'ev.municipio_id')
+            ->leftJoin('events as ev', 'ev.id', '=', 'c.event_id')
+            ->leftJoin('organizaciones as o', 'o.id', '=', 'c.organizacion_id')
+            ->leftJoin('geographic_units as m', fn ($j) => $j->on('m.id', '=', 'ev.municipio_id')->orOn('m.id', '=', 'o.municipio_id'))
+            ->where(function ($w) use ($events, $orgs) {
+                if ($events) {
+                    $w->orWhere(fn ($e) => $this->events->scopeEvents($e->whereNotNull('c.event_id')));
+                }
+                if ($orgs) {
+                    $w->orWhere(fn ($o) => $this->orgs->scope($o->whereNotNull('c.organizacion_id'), 'o'));
+                }
+                if (! $events && ! $orgs) {
+                    $w->whereRaw('1 = 0');
+                }
+            })
             ->select(['c.id', 'c.descripcion', 'c.estado', 'c.fecha_limite', 'c.campaign_id', 'c.created_at', 'a.id as acta_id', 'a.titulo as acta_titulo',
-                'a.fecha as acta_fecha', 'ev.id as event_id', 'ev.nombre as evento', 'm.canonical_name as municipio'])
+                'a.fecha as acta_fecha', 'ev.id as event_id', 'ev.nombre as evento', 'o.id as organizacion_id', 'o.nombre as organizacion',
+                'm.id as municipio_id', 'm.canonical_name as municipio'])
             ->selectSub(DB::table('event_compromiso_avances as av')->whereColumn('av.compromiso_id', 'c.id')->selectRaw('count(*)'), 'avances')
             ->when($f['estado'], fn ($q, $v) => $q->where('c.estado', $v))
             ->when($f['vencidos'], fn ($q) => $q->whereNotNull('c.fecha_limite')->where('c.fecha_limite', '<', $today)->whereIn('c.estado', EventCompromiso::ABIERTOS))
-            ->when($f['municipio'], fn ($q, $v) => $q->where('ev.municipio_id', $v))
+            ->when($f['municipio'], fn ($q, $v) => $q->where('m.id', $v))
             ->when($f['evento'], fn ($q, $v) => $q->where('ev.id', $v))
+            ->when($f['organizacion'], fn ($q, $v) => $q->where('o.id', $v))
             ->when($f['desde'], fn ($q, $v) => $q->where('a.fecha', '>=', $v))
             ->when($f['hasta'], fn ($q, $v) => $q->where('a.fecha', '<', Carbon::parse($v)->addDay()->toDateString()))
             ->when($f['responsable'], fn ($q, $v) => $q->whereExists(fn ($r) => $this->whereContains(
@@ -282,6 +305,8 @@ class EventoCompromisoController extends Controller
             'responsable' => $text($request->query('responsable')),
             'municipio' => $uuid($request->query('municipio')),
             'evento' => $uuid($request->query('evento')),
+            'organizacion' => $uuid($request->query('organizacion')),
+            'origen' => in_array($request->query('origen'), ['evento', 'organizacion'], true) ? $request->query('origen') : null,
             'desde' => $date($request->query('desde')),
             'hasta' => $date($request->query('hasta')),
             'q' => $text($request->query('q')),
@@ -313,15 +338,17 @@ class EventoCompromisoController extends Controller
             'avances' => (int) $c->avances,
             'responsables' => $responsables,
             'acta' => ['id' => $c->acta_id, 'titulo' => $c->acta_titulo, 'fecha' => $c->acta_fecha ? substr((string) $c->acta_fecha, 0, 10) : null],
-            'evento' => ['id' => $c->event_id, 'nombre' => $c->evento, 'municipio' => $c->municipio],
+            'origen' => $c->event_id ? 'evento' : 'organizacion',
+            'evento' => $c->event_id ? ['id' => $c->event_id, 'nombre' => $c->evento, 'municipio' => $c->municipio] : null,
+            'organizacion' => $c->organizacion_id ? ['id' => $c->organizacion_id, 'nombre' => $c->organizacion, 'municipio' => $c->municipio] : null,
             'campaign_id' => $c->campaign_id,
-            'editable' => $this->canManage() && $this->campaign()->isOwn($c->campaign_id),
+            'editable' => $this->canManage($c->event_id ? 'evento' : 'organizacion') && $this->campaign()->isOwn($c->campaign_id),
         ];
     }
 
     private function detail(EventCompromiso $c): array
     {
-        $c->load(['responsables', 'avances.user:id,name', 'acta:id,titulo,fecha', 'event:id,nombre']);
+        $c->load(['responsables', 'avances.user:id,name', 'acta:id,titulo,fecha', 'event:id,nombre', 'organizacion:id,nombre']);
 
         return [
             'id' => $c->id,
@@ -332,8 +359,10 @@ class EventoCompromisoController extends Controller
             'vencido' => $c->vencido(),
             'responsables' => $c->responsables->map(fn ($r) => $r->only(['nombre', 'telefono', 'lider_id']))->values()->all(),
             'acta' => ['id' => $c->acta?->id, 'titulo' => $c->acta?->titulo, 'fecha' => $c->acta?->fecha?->toDateString()],
-            'evento' => ['id' => $c->event?->id, 'nombre' => $c->event?->nombre],
-            'editable' => $this->canManage() && $this->campaign()->isOwn($c->campaign_id),
+            'origen' => $c->event_id ? 'evento' : 'organizacion',
+            'evento' => $c->event_id ? ['id' => $c->event?->id, 'nombre' => $c->event?->nombre] : null,
+            'organizacion' => $c->organizacion_id ? ['id' => $c->organizacion?->id, 'nombre' => $c->organizacion?->nombre] : null,
+            'editable' => $this->canManage($c->event_id ? 'evento' : 'organizacion') && $this->campaign()->isOwn($c->campaign_id),
             'avances' => $c->avances->map(fn (EventCompromisoAvance $a) => [
                 'id' => $a->id,
                 'nota' => $a->nota,
@@ -351,10 +380,13 @@ class EventoCompromisoController extends Controller
     {
         abort_unless(Str::isUuid($id), 404);
         $c = EventCompromiso::find($id);
-        abort_unless($c && $this->events->visibleEventId($c->event_id), 404);
+        $visible = $c && ($c->event_id
+            ? $this->seesEvents() && $this->events->visibleEventId($c->event_id)
+            : $this->seesOrgs() && $this->orgs->query('o')->where('o.id', $c->organizacion_id)->exists());
+        abort_unless($visible, 404);
         abort_unless(EventActa::whereKey($c->acta_id)->where('estado', EventActa::CONFIRMADA)->exists(), 404);
         if ($write) {
-            abort_unless($this->canManage(), 403);
+            abort_unless($this->canManage($c->event_id ? 'evento' : 'organizacion'), 403);
             $this->authorizeCampaign($c->campaign_id, true);
         }
 
@@ -369,16 +401,25 @@ class EventoCompromisoController extends Controller
 
     private function municipios(): array
     {
-        return $this->events->events()->join('geographic_units as m', 'm.id', '=', 'ev.municipio_id')
-            ->whereExists(fn ($q) => $q->select(DB::raw(1))->from('event_compromisos as c')->join('event_actas as a', 'a.id', '=', 'c.acta_id')
-                ->where('a.estado', EventActa::CONFIRMADA)->whereColumn('c.event_id', 'ev.id'))
-            ->distinct()->orderBy('m.canonical_name')->get(['m.id', 'm.canonical_name as nombre'])
-            ->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre])->all();
+        $rows = DB::query()->fromSub($this->query(array_fill_keys(self::FILTER_KEYS, null))->reorder(), 'x')
+            ->whereNotNull('x.municipio_id')->distinct()->get(['x.municipio_id', 'x.municipio']);
+
+        return $rows->sortBy('municipio')->map(fn ($m) => ['id' => $m->municipio_id, 'nombre' => $m->municipio])->values()->all();
     }
 
-    private function canManage(): bool
+    private function canManage(string $origen = 'evento'): bool
     {
-        return (bool) request()->user()?->hasPermission('manage.eventos');
+        return (bool) request()->user()?->hasPermission($origen === 'evento' ? 'manage.eventos' : 'manage.empresarios');
+    }
+
+    private function seesEvents(): bool
+    {
+        return EventScope::canSeeAttendees(request()->user());
+    }
+
+    private function seesOrgs(): bool
+    {
+        return OrganizacionScope::canView(request()->user());
     }
 
     private function whereContains($query, string $column, string $value)
@@ -396,8 +437,8 @@ class EventoCompromisoController extends Controller
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => $action,
-            'entity_type' => 'evento',
-            'entity_id' => $c->event_id,
+            'entity_type' => $c->event_id ? 'evento' : 'organizacion',
+            'entity_id' => $c->event_id ?? $c->organizacion_id,
             'metadata' => ['compromiso_id' => $c->id, ...$metadata],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),

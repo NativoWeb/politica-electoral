@@ -31,6 +31,7 @@ class AuditActivity
         'eventos' => 'evento',
         'asistentes' => 'evento_asistente',
         'importar' => 'evento_importacion',
+        'empresarios' => 'organizacion',
     ];
 
     // Request attributes a controller may set with the changed fields (previous / new values); masked by AuditLog.
@@ -101,6 +102,11 @@ class AuditActivity
             $fields = array_values(array_diff(array_keys($data), self::IMPORT_KEYS));
 
             return $fields === [] ? $kept : $kept + ['campos' => $fields];
+        }
+
+        // Empresarios y gremios: only which fields were sent (names of representatives, members and actas never reach the log).
+        if (str_starts_with((string) $request->route()?->getName(), 'empresarios.')) {
+            return ['campos' => array_keys($data)];
         }
 
         // Attendee correction: only which fields were sent, never the names, phones or address.

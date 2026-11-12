@@ -11,6 +11,7 @@ export function exportPermissionFor(path) {
 // Event pages export from their own buttons (attendees, territory); the header would export the Mapa Político.
 export function canExportFrom(path, hasPerm) {
     if (path === '/eventos' || path.startsWith('/eventos/')) return false;
+    if (path === '/empresarios' || path.startsWith('/empresarios/')) return false;
     const needed = exportPermissionFor(path);
 
     return !needed || hasPerm(needed);

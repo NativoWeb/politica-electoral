@@ -14,12 +14,14 @@ class FichaActivity
         ['event_organizers', 'lider_id'], ['lider_info_politica', 'lider_id'], ['lider_seguimientos', 'lider_id'],
         ['lider_municipios_influencia', 'lider_id'], ['nexos_familiares', 'person_id'], ['whatsapp_send_recipients', 'person_id'],
         ['taggables', 'taggable_id'], ['favorites', 'favoritable_id'], ['data_consents', 'lider_id'],
+        ['organizaciones', 'representante_lider_id'],
     ];
 
     // Ficha ids of $liderIds with no activity besides the attendees in $ignoredAttendees and the acta $ignoredActa.
     // $copiedContacts null: the operation copied at most one fijo (approval of an attendee); otherwise
     // [lider_id => [valor, ...]] the celulares the operation itself wrote, and any other contact is activity.
-    public function free(array $liderIds, array $ignoredAttendees = [], ?string $ignoredActa = null, ?array $copiedContacts = null): array
+    // $ignoredMiembros: organization memberships the undone operation created (an organization's acta).
+    public function free(array $liderIds, array $ignoredAttendees = [], ?string $ignoredActa = null, ?array $copiedContacts = null, array $ignoredMiembros = []): array
     {
         if ($liderIds === []) {
             return [];
@@ -31,7 +33,7 @@ class FichaActivity
             }
         };
 
-        self::chunked($liderIds, function ($ids) use ($mark, $ignoredAttendees, $ignoredActa, $copiedContacts) {
+        self::chunked($liderIds, function ($ids) use ($mark, $ignoredAttendees, $ignoredActa, $copiedContacts, $ignoredMiembros) {
             $lideres = DB::table('lideres')->whereIn('id', $ids)->get(['id', 'campaign_id', 'cedula', 'created_at', 'updated_at']);
             // Edited after the operation created it.
             $mark($lideres->filter(fn ($l) => $l->updated_at !== null && (string) $l->updated_at !== (string) $l->created_at)->pluck('id'));
@@ -59,6 +61,12 @@ class FichaActivity
                 if (Schema::hasTable($table)) {
                     $mark(DB::table($table)->whereIn($column, $ids)->distinct()->pluck($column));
                 }
+            }
+
+            // Member of an organization (Empresarios y gremios), except through the memberships being undone.
+            if (Schema::hasTable('organizacion_miembros')) {
+                $mark(DB::table('organizacion_miembros')->whereIn('lider_id', $ids)
+                    ->when($ignoredMiembros !== [], fn ($q) => $q->whereNotIn('id', $ignoredMiembros))->distinct()->pluck('lider_id'));
             }
 
             // Participant or responsable of another acta.

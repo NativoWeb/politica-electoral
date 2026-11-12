@@ -25,6 +25,9 @@ use App\Http\Controllers\LiderController;
 use App\Http\Controllers\MapaPoliticoController;
 use App\Http\Controllers\MunicipioController;
 use App\Http\Controllers\OfflineController;
+use App\Http\Controllers\OrganizacionActaController;
+use App\Http\Controllers\OrganizacionController;
+use App\Http\Controllers\OrganizacionImportController;
 use App\Http\Controllers\PartidoController;
 use App\Http\Controllers\PartidoCrudController;
 use App\Http\Controllers\PersonaController;
@@ -143,6 +146,58 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         });
     });
 
+    // Empresarios y gremios (docs/empresarios.md): seen with view.empresarios, written with manage.empresarios;
+    // campaign and territory are checked in the controllers (OrganizacionScope).
+    Route::prefix('empresarios')->name('empresarios.')->group(function () {
+        Route::middleware('permission:view.empresarios|manage.empresarios')->group(function () {
+            Route::get('/', [OrganizacionController::class, 'index'])->name('index');
+            Route::get('/exportar.xlsx', [OrganizacionController::class, 'excel'])->name('exportar.excel');
+            Route::get('/exportar.pdf', [OrganizacionController::class, 'pdf'])->name('exportar.pdf')->middleware('throttle:eventos-planilla');
+            Route::get('/persona/{liderId}', [OrganizacionController::class, 'persona'])->name('persona')->whereUuid('liderId')
+                ->middleware('permission:view.mapa|view.votantes');
+            Route::get('/{id}', [OrganizacionController::class, 'show'])->name('show')->whereUuid('id');
+            Route::get('/{id}/actas', [OrganizacionActaController::class, 'index'])->name('actas.index')->whereUuid('id');
+            Route::get('/{id}/actas/{acta}', [OrganizacionActaController::class, 'show'])->name('actas.show')->whereUuid(['id', 'acta']);
+            Route::get('/{id}/actas/{acta}/acta.docx', [OrganizacionActaController::class, 'word'])->name('actas.word')->whereUuid(['id', 'acta']);
+            Route::get('/{id}/actas/{acta}/acta.pdf', [OrganizacionActaController::class, 'pdf'])->name('actas.pdf')->whereUuid(['id', 'acta'])
+                ->middleware('throttle:eventos-planilla');
+            Route::get('/{id}/actas/{acta}/archivo', [OrganizacionActaController::class, 'file'])->name('actas.archivo')->whereUuid(['id', 'acta']);
+        });
+
+        Route::middleware('permission:manage.empresarios')->group(function () {
+            Route::get('/buscar/personas', [OrganizacionController::class, 'searchPersonas'])->name('buscar.personas');
+            Route::post('/', [OrganizacionController::class, 'store'])->name('store');
+            Route::put('/{id}', [OrganizacionController::class, 'update'])->name('update')->whereUuid('id');
+            Route::delete('/{id}', [OrganizacionController::class, 'destroy'])->name('destroy')->whereUuid('id');
+            Route::post('/{id}/miembros', [OrganizacionController::class, 'storeMember'])->name('miembros.store')->whereUuid('id');
+            Route::put('/miembros/{miembro}', [OrganizacionController::class, 'updateMember'])->name('miembros.update')->whereUuid('miembro');
+            Route::delete('/miembros/{miembro}', [OrganizacionController::class, 'destroyMember'])->name('miembros.destroy')->whereUuid('miembro');
+            Route::post('/catalogos', [OrganizacionController::class, 'storeCatalog'])->name('catalogos.store');
+            Route::put('/catalogos/{catalogo}', [OrganizacionController::class, 'updateCatalog'])->name('catalogos.update')->whereUuid('catalogo');
+
+            Route::get('/plantilla.xlsx', [OrganizacionImportController::class, 'template'])->name('carga.plantilla');
+            Route::post('/carga', [OrganizacionImportController::class, 'store'])->name('carga.subir')->middleware('throttle:eventos-importar');
+            Route::get('/carga/{import}', [OrganizacionImportController::class, 'show'])->name('carga.ver')->whereUuid('import');
+            Route::patch('/carga/{import}/filas/{fila}', [OrganizacionImportController::class, 'updateRow'])->name('carga.fila')->whereUuid(['import', 'fila'])
+                ->middleware('throttle:eventos-importar-fila');
+            Route::post('/carga/{import}/confirmar', [OrganizacionImportController::class, 'confirm'])->name('carga.confirmar')->whereUuid('import')
+                ->middleware('throttle:eventos-importar');
+            Route::delete('/carga/{import}', [OrganizacionImportController::class, 'destroy'])->name('carga.descartar')->whereUuid('import');
+
+            Route::get('/{id}/actas/nueva', [OrganizacionActaController::class, 'create'])->name('actas.create')->whereUuid('id');
+            Route::post('/{id}/actas/leer', [OrganizacionActaController::class, 'read'])->name('actas.leer')->whereUuid('id')->middleware('throttle:eventos-importar');
+            Route::post('/{id}/actas/sugerencias', [OrganizacionActaController::class, 'suggest'])->name('actas.sugerencias')->whereUuid('id')->middleware('throttle:eventos-importar');
+            Route::post('/{id}/actas', [OrganizacionActaController::class, 'store'])->name('actas.store')->whereUuid('id');
+            Route::put('/{id}/actas/{acta}', [OrganizacionActaController::class, 'update'])->name('actas.update')->whereUuid(['id', 'acta']);
+            Route::delete('/{id}/actas/{acta}', [OrganizacionActaController::class, 'destroy'])->name('actas.destroy')->whereUuid(['id', 'acta']);
+            Route::get('/{id}/actas/{acta}/eliminar', [OrganizacionActaController::class, 'deletePreview'])->name('actas.delete-preview')->whereUuid(['id', 'acta'])
+                ->middleware('permission:delete.actas');
+            Route::post('/{id}/actas/{acta}/confirmar', [OrganizacionActaController::class, 'confirm'])->name('actas.confirm')->whereUuid(['id', 'acta']);
+            Route::post('/{id}/actas/{acta}/archivo', [OrganizacionActaController::class, 'attach'])->name('actas.attach')->whereUuid(['id', 'acta'])
+                ->middleware('throttle:eventos-importar');
+        });
+    });
+
     // Eventos especiales: managed with manage.eventos alone and operated with register.asistentes alone
     // (neither needs write.data nor a write role); campaign and territory are checked in the controller.
     Route::prefix('eventos')->name('eventos.')->group(function () {
@@ -163,8 +218,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/{id}/asistentes.xlsx', [EventoController::class, 'exportAttendees'])->name('asistentes.excel')->whereUuid('id');
         });
 
-        // Actas de reunión and the follow-up of their compromisos (§14): seen with view.eventos
-        Route::middleware('permission:view.eventos|manage.eventos')->group(function () {
+        // Compromisos of the actas of events (view.eventos) and of organizations (view.empresarios, docs/empresarios.md):
+        // the controller shows and writes each origin only with its own permission.
+        Route::middleware('permission:view.eventos|manage.eventos|view.empresarios|manage.empresarios')->group(function () {
             Route::get('/compromisos', [EventoCompromisoController::class, 'index'])->name('compromisos.index');
             Route::get('/compromisos.xlsx', [EventoCompromisoController::class, 'export'])->name('compromisos.excel');
             Route::get('/compromisos/alertas', [EventoCompromisoController::class, 'alertas'])->name('compromisos.alertas');
@@ -172,6 +228,14 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/compromisos/avances/{avance}/archivo', [EventoCompromisoController::class, 'file'])->name('compromisos.avances.archivo')->whereUuid('avance');
             Route::get('/persona/{liderId}/compromisos', [EventoCompromisoController::class, 'persona'])->name('persona.compromisos')
                 ->middleware('permission:view.mapa|view.votantes');
+            Route::put('/compromisos/{compromiso}/estado', [EventoCompromisoController::class, 'estado'])->name('compromisos.estado')->whereUuid('compromiso');
+            Route::put('/compromisos/{compromiso}/recordatorio', [EventoCompromisoController::class, 'recordatorio'])->name('compromisos.recordatorio')->whereUuid('compromiso');
+            Route::post('/compromisos/{compromiso}/avances', [EventoCompromisoController::class, 'avance'])->name('compromisos.avances')->whereUuid('compromiso')
+                ->middleware('throttle:eventos-importar');
+        });
+
+        // Actas de reunión of events (§14): seen with view.eventos
+        Route::middleware('permission:view.eventos|manage.eventos')->group(function () {
             Route::get('/{id}/actas', [EventoActaController::class, 'index'])->name('actas.index')->whereUuid('id');
             Route::get('/{id}/actas/{acta}', [EventoActaController::class, 'show'])->name('actas.show')->whereUuid(['id', 'acta']);
             Route::get('/{id}/actas/{acta}/acta.docx', [EventoActaController::class, 'word'])->name('actas.word')->whereUuid(['id', 'acta']);
@@ -193,10 +257,6 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
                 ->middleware('permission:delete.actas');
             Route::post('/{id}/actas/{acta}/confirmar', [EventoActaController::class, 'confirm'])->name('actas.confirm')->whereUuid(['id', 'acta']);
             Route::post('/{id}/actas/{acta}/archivo', [EventoActaController::class, 'attach'])->name('actas.attach')->whereUuid(['id', 'acta'])
-                ->middleware('throttle:eventos-importar');
-            Route::put('/compromisos/{compromiso}/estado', [EventoCompromisoController::class, 'estado'])->name('compromisos.estado')->whereUuid('compromiso');
-            Route::put('/compromisos/{compromiso}/recordatorio', [EventoCompromisoController::class, 'recordatorio'])->name('compromisos.recordatorio')->whereUuid('compromiso');
-            Route::post('/compromisos/{compromiso}/avances', [EventoCompromisoController::class, 'avance'])->name('compromisos.avances')->whereUuid('compromiso')
                 ->middleware('throttle:eventos-importar');
         });
 

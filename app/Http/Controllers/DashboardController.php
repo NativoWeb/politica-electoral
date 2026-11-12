@@ -24,6 +24,8 @@ class DashboardController extends Controller
         'view.eventos' => '/eventos',
         'manage.eventos' => '/eventos',
         'register.asistentes' => '/eventos',
+        'view.empresarios' => '/empresarios',
+        'manage.empresarios' => '/empresarios',
     ];
 
     public function index(Request $request)

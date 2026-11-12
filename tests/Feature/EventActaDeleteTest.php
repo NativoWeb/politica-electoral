@@ -30,6 +30,7 @@ class EventActaDeleteTest extends TestCase
         $this->setUpEventos();
         (require database_path('migrations/2026_11_10_000001_create_event_actas_tables.php'))->up();
         (require database_path('migrations/2026_11_11_000001_add_created_flags_to_event_acta_participantes.php'))->up();
+        (require database_path('migrations/2026_11_13_000002_add_organizacion_to_event_actas.php'))->up();
         Storage::fake('local');
         $this->manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos', 'view.eventos']);
         $this->deleter = $this->eventUser(Campaign::DEFAULT_ID, ['manage.eventos', 'view.eventos', 'delete.actas']);

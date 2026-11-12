@@ -38,7 +38,7 @@ export default function PersonaCompromisos({ liderId, compact = false }) {
                                 <CompromisoEstado estado={c.estado} vencido={c.vencido} />
                                 <p className={`${text} text-[var(--color-ink)] mt-1 line-clamp-3`}>{c.descripcion}</p>
                                 <p className="text-[13px] text-[var(--color-ink-soft)]">
-                                    {[c.fecha_limite && `Fecha límite: ${formatDate(c.fecha_limite)}`, c.evento?.nombre].filter(Boolean).join(' · ')}
+                                    {[c.fecha_limite && `Fecha límite: ${formatDate(c.fecha_limite)}`, c.evento?.nombre ?? c.organizacion?.nombre].filter(Boolean).join(' · ')}
                                 </p>
                             </button>
                         </li>

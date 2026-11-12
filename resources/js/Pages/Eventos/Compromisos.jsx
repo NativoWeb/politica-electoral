@@ -8,10 +8,12 @@ import { inputCls } from '@/Components/Eventos/ActaParticipantes';
 import Pagination from '@/Components/Eventos/Pagination';
 import { compromisosQuery, formatDate } from '@/lib/actas';
 
-const EMPTY = { estado: null, vencidos: null, responsable: null, municipio: null, evento: null, desde: null, hasta: null, q: null };
+const EMPTY = { estado: null, vencidos: null, responsable: null, municipio: null, origen: null, evento: null, organizacion: null, desde: null, hasta: null, q: null };
 
-// Every compromiso of the actas the user can see, with filters, Excel and the follow-up of each one.
-export default function Compromisos({ compromisos, filters, eventos, municipios, estados }) {
+// Every compromiso of the actas the user can see (of events and of organizations, each with its permission), with
+// filters, Excel and the follow-up of each one.
+export default function Compromisos({ compromisos, filters, eventos, organizaciones = [], origenes = { evento: true, organizacion: false }, municipios, estados }) {
+    const bothOrigins = !!(origenes?.evento && origenes?.organizacion);
     const [draft, setDraft] = useState({ ...EMPTY, ...filters });
     // ?abrir={id} (links of the bell and the e-mail) opens that compromiso.
     const [open, setOpen] = useState(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('abrir')));
@@ -59,12 +61,31 @@ export default function Compromisos({ compromisos, filters, eventos, municipios,
                                 {(municipios ?? []).map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                             </select>
                         </label>
-                        <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Evento
-                            <select className={inputCls} value={draft.evento ?? ''} onChange={e => field('evento', e.target.value)}>
-                                <option value="">Todos</option>
-                                {(eventos ?? []).map(ev => <option key={ev.id} value={ev.id}>{ev.nombre}</option>)}
-                            </select>
-                        </label>
+                        {bothOrigins && (
+                            <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Origen
+                                <select className={inputCls} value={draft.origen ?? ''} onChange={e => field('origen', e.target.value)}>
+                                    <option value="">Eventos y organizaciones</option>
+                                    <option value="evento">Solo eventos</option>
+                                    <option value="organizacion">Solo empresas y gremios</option>
+                                </select>
+                            </label>
+                        )}
+                        {origenes?.evento && draft.origen !== 'organizacion' && (
+                            <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Evento
+                                <select className={inputCls} value={draft.evento ?? ''} onChange={e => field('evento', e.target.value)}>
+                                    <option value="">Todos</option>
+                                    {(eventos ?? []).map(ev => <option key={ev.id} value={ev.id}>{ev.nombre}</option>)}
+                                </select>
+                            </label>
+                        )}
+                        {origenes?.organizacion && draft.origen !== 'evento' && (
+                            <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Empresa o gremio
+                                <select className={inputCls} value={draft.organizacion ?? ''} onChange={e => field('organizacion', e.target.value)}>
+                                    <option value="">Todas</option>
+                                    {organizaciones.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                </select>
+                            </label>
+                        )}
                         <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Reunión desde
                             <input type="date" className={inputCls} value={draft.desde ?? ''} onChange={e => field('desde', e.target.value)} />
                         </label>
@@ -107,7 +128,7 @@ export default function Compromisos({ compromisos, filters, eventos, municipios,
                                             {c.responsables.length > 0 ? `Responsables: ${c.responsables.map(r => [r.nombre, r.telefono].filter(Boolean).join(' ')).join(' / ')}` : 'Sin responsable'}
                                         </span>
                                         <span className="block text-[13px] text-[var(--color-ink-faint)]">
-                                            {[c.fecha_limite && `Fecha límite: ${formatDate(c.fecha_limite)}`, c.evento?.nombre, c.evento?.municipio, c.acta?.fecha && `Reunión: ${formatDate(c.acta.fecha)}`].filter(Boolean).join(' · ')}
+                                            {[c.fecha_limite && `Fecha límite: ${formatDate(c.fecha_limite)}`, c.evento?.nombre, c.organizacion && `Organización: ${c.organizacion.nombre}`, (c.evento ?? c.organizacion)?.municipio, c.acta?.fecha && `Reunión: ${formatDate(c.acta.fecha)}`].filter(Boolean).join(' · ')}
                                         </span>
                                     </button>
                                 </li>

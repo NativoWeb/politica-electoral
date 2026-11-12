@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Support\Cedula;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 // Two lider records of the same person become one.
 // The most complete record survives (its id keeps links, contacts, favorites...). Values come first from
@@ -22,6 +23,15 @@ class MergeLideres
         ['whatsapp_send_recipients', 'person_id'], ['favorites', 'favoritable_id'], ['recent_views', 'viewable_id'],
         ['taggables', 'taggable_id'], ['event_attendees', 'lider_id'], ['event_organizers', 'lider_id'],
     ];
+
+    // Empresarios y gremios: moved too when the tables exist (memberships and the organization's representative).
+    private const OPTIONAL_REFERENCES = [['organizacion_miembros', 'lider_id'], ['organizaciones', 'representante_lider_id']];
+
+    // REFERENCES plus the optional ones that exist in this database.
+    public static function references(): array
+    {
+        return [...self::REFERENCES, ...array_values(array_filter(self::OPTIONAL_REFERENCES, fn ($r) => Schema::hasTable($r[0])))];
+    }
 
     // Merged by hand below, or never copied.
     private const SPECIAL = ['id', 'nombre', 'cargo', 'observacion', 'telefono', 'cedula', 'votos', 'nivel_confianza',
@@ -88,7 +98,7 @@ class MergeLideres
             }
             $upd = array_filter($final, fn ($value, $col) => $value !== $keep->$col, ARRAY_FILTER_USE_BOTH);
 
-            foreach (self::REFERENCES as [$table, $column]) {
+            foreach (self::references() as [$table, $column]) {
                 $this->moveReferences($table, $column, $drop->id, $keep->id);
             }
             // The cédula is unique: free it before the surviving record takes it.
@@ -105,7 +115,7 @@ class MergeLideres
     private function completeness(object $lider): int
     {
         $filled = count(array_filter((array) $lider, fn ($v) => $v !== null && $v !== '' && $v !== false && $v !== 0));
-        foreach (self::REFERENCES as [$table, $column]) {
+        foreach (self::references() as [$table, $column]) {
             $filled += DB::table($table)->where($column, $lider->id)->count();
         }
 
@@ -197,6 +207,13 @@ class MergeLideres
     {
         // Rows that would duplicate one the surviving record already has are dropped instead of moved.
         $uniqueWith = ['lider_municipios_influencia' => 'geographic_unit_id', 'favorites' => 'user_id', 'taggables' => 'tag_id'][$table] ?? null;
+        if ($table === 'organizacion_miembros') {
+            // Unique per (organizacion, lider, rol): the same role in the same organization is kept once.
+            DB::table($table)->where($column, $from)
+                ->whereExists(fn ($q) => $q->select(DB::raw(1))->from('organizacion_miembros as k')->where('k.lider_id', $to)
+                    ->whereColumn('k.organizacion_id', 'organizacion_miembros.organizacion_id')->whereColumn('k.rol', 'organizacion_miembros.rol'))
+                ->delete();
+        }
         if ($uniqueWith) {
             DB::table($table)->where($column, $from)
                 ->whereIn($uniqueWith, DB::table($table)->where($column, $to)->select($uniqueWith))

@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-// "Acta de reunión" of an event (docs/eventos-api.md §14). campaign_id is the event's, set by the server. A borrador is
+// "Acta de reunión" of an event or of an organization (docs/eventos-api.md §14, docs/empresarios.md): exactly one of
+// event_id and organizacion_id. campaign_id is the owner's, set by the server. A borrador is
 // edited and deleted freely; confirming it writes Votantes and the attendees, and from then on it is read-only.
 class EventActa extends Model
 {
@@ -29,6 +30,11 @@ class EventActa extends Model
     public function event(): BelongsTo
     {
         return $this->belongsTo(CampaignEvent::class, 'event_id');
+    }
+
+    public function organizacion(): BelongsTo
+    {
+        return $this->belongsTo(Organizacion::class, 'organizacion_id');
     }
 
     public function participantes(): HasMany

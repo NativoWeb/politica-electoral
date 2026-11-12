@@ -228,9 +228,11 @@ function ExportButtons({ url }) {
 
 const SIDEBAR_ITEMS = [
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador' },
-    { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', permission: 'view.mapa' },
+    { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', tabLabel: 'Mapa', permission: 'view.mapa' },
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
     { name: 'EVENTOS', href: '/eventos', label: 'Eventos', permission: ['view.eventos', 'manage.eventos', 'register.asistentes'] },
+    // tabLabel: the shorter label of the mobile tab bar (up to 7 tabs at 360px).
+    { name: 'EMPRESARIOS', href: '/empresarios', label: 'Empresarios', tabLabel: 'Empresas', permission: ['view.empresarios', 'manage.empresarios'] },
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
     { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
@@ -265,6 +267,12 @@ const ICONS_EXTRA = {
             <rect x="3" y="5" width="18" height="16" rx="2" />
             <path d="M16 3v4M8 3v4M3 10h18" strokeLinecap="round" />
             <path d="M8 14h2m4 0h2m-8 3h2" strokeLinecap="round" />
+        </svg>
+    ),
+    EMPRESARIOS: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5" aria-hidden="true">
+            <rect x="3" y="7" width="18" height="13" rx="2" />
+            <path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 13h18" strokeLinecap="round" />
         </svg>
     ),
     ADMIN: (
@@ -428,7 +436,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
     const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm);
     const canExport = canExportFrom(url.split('?')[0], hasPerm);
-    const canSeeCompromisos = hasPerm('view.eventos') || hasPerm('manage.eventos');
+    const canSeeCompromisos = hasPerm('view.eventos') || hasPerm('manage.eventos') || hasPerm('view.empresarios') || hasPerm('manage.empresarios');
     const tabItems = visibleItems.filter(item => !item.desktopOnly);
     // Six tabs (with Exportar) at 360px only fit with the smaller label.
     const tabLabelCls = tabItems.length + (canExport ? 1 : 0) > 5 ? 'text-[11px]' : 'text-[12px]';
@@ -621,14 +629,14 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             <Link
                                 key={item.name}
                                 href={item.href}
-                                className={`flex flex-col items-center justify-center flex-1 gap-1 transition-colors active:bg-white/10 ${
+                                className={`flex flex-col items-center justify-center flex-1 min-w-0 gap-1 transition-colors active:bg-white/10 ${
                                     isActive ? 'text-[var(--color-accent)]' : 'text-white/50'
                                 }`}
                             >
                                 <span className="w-7 h-7 flex items-center justify-center [&>svg]:w-7 [&>svg]:h-7">
                                     {ICONS[item.icon ?? item.name] || ICONS_EXTRA[item.icon ?? item.name]}
                                 </span>
-                                <span className={`${tabLabelCls} font-bold leading-tight text-center`}>{item.label}</span>
+                                <span className={`${tabLabelCls} font-bold leading-tight text-center max-w-full truncate px-0.5`}>{item.tabLabel ?? item.label}</span>
                                 {isActive && <span className="w-6 h-[3px] bg-[var(--color-accent)] rounded-full" />}
                             </Link>
                         );
@@ -638,12 +646,12 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     {canExport && (
                     <button
                         onClick={() => setExportSheetOpen(true)}
-                        className="flex flex-col items-center justify-center flex-1 gap-1 text-white/50 active:bg-white/10 transition-colors"
+                        className="flex flex-col items-center justify-center flex-1 min-w-0 gap-1 text-white/50 active:bg-white/10 transition-colors"
                     >
                         <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <span className={`${tabLabelCls} font-bold leading-tight`}>Exportar</span>
+                        <span className={`${tabLabelCls} font-bold leading-tight max-w-full truncate px-0.5`}>Exportar</span>
                     </button>
                     )}
                 </div>

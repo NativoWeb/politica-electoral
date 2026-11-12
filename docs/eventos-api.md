@@ -1269,6 +1269,10 @@ verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca ta
 
 ## 14. Actas de reunión y seguimiento de compromisos (2026-11-10)
 
+> Desde 2026-11-13 un acta también puede pertenecer a una **organización** (Empresarios y gremios): ver
+> `docs/empresarios.md` §5. Las actas de eventos y estas rutas no cambian; `/eventos/compromisos` lista además los
+> compromisos de organizaciones a quien tiene `view.empresarios` (filtro `origen`).
+
 Un evento tiene una o varias **actas de reunión** con el formato de las actas de la campaña: título, fecha, Municipio,
 Sitio, Hora; **PARTICIPANTES** (tabla NOMBRE | PERFIL | MUNICIPIO | TELEFONO); **PUNTOS DEL ORDEN DEL DÍA** (lista, con
 introducción opcional); **DESARROLLO DE LA REUNIÓN** (un texto por punto); **COMPROMISOS** (tabla NOMBRE | RESPONSABLE |

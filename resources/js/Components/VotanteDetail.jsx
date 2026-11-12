@@ -4,6 +4,7 @@ import VotanteContactos from '@/Components/VotanteContactos';
 import VotanteInfoPolitica from '@/Components/VotanteInfoPolitica';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import PersonaEventos from '@/Components/Eventos/PersonaEventos';
+import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresarios/PersonaOrganizaciones';
 import UnificarModal from '@/Components/UnificarModal';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
@@ -125,6 +126,7 @@ export default function VotanteDetail({
     const campaign = useCampaign();
     const authUser = usePage().props.auth?.user;
     const canSeeEventos = canSeeEventAttendees(authUser);
+    const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
     const campaignReadOnly = !creating && campaign.isOther(data?.campaign_id);
@@ -636,6 +638,13 @@ export default function VotanteDetail({
                 {!creating && canSeeEventos && data?.id && (
                     <Accordion title="Eventos">
                         <PersonaEventos liderId={data.id} compact />
+                    </Accordion>
+                )}
+
+                {/* Empresas y gremios: loaded when the section is opened */}
+                {!creating && canSeeOrganizaciones && data?.id && (
+                    <Accordion title="Empresas y gremios">
+                        <PersonaOrganizaciones liderId={data.id} compact />
                     </Accordion>
                 )}
 

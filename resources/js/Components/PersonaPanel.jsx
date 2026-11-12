@@ -8,6 +8,7 @@ import ContactosManager from '@/Components/ContactosManager';
 import InfoPoliticaManager from '@/Components/InfoPoliticaManager';
 import TagsPanel from '@/Components/TagsPanel';
 import PersonaEventos from '@/Components/Eventos/PersonaEventos';
+import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresarios/PersonaOrganizaciones';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import UnificarModal from '@/Components/UnificarModal';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
@@ -116,6 +117,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     const campaign = useCampaign();
     const authUser = usePage().props.auth?.user;
     const canSeeEventos = canSeeEventAttendees(authUser);
+    const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -554,7 +556,8 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
     // Only a lider ficha takes part in events (attendees and organizers link to lideres), and only online.
     const showEventos = canSeeEventos && data.source === 'lider' && !data._offline;
-    const tabsWithCounts = [...TABS, ...(showEventos ? [{ key: 'eventos', label: 'Eventos' }] : [])].map(t => {
+    const showOrganizaciones = canSeeOrganizaciones && data.source === 'lider' && !data._offline;
+    const tabsWithCounts = [...TABS, ...(showEventos ? [{ key: 'eventos', label: 'Eventos' }] : []), ...(showOrganizaciones ? [{ key: 'empresas', label: 'Empresas y gremios' }] : [])].map(t => {
         if (t.key === 'nexos') return { ...t, count: data.nexos?.length ?? 0 };
         if (t.key === 'contactos') return { ...t, count: (data.contactos?.length ?? 0) };
         if (t.key === 'politica') return { ...t, count: (data.info_politica?.length ?? 0) };
@@ -1440,6 +1443,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
                         {/* ── EVENTOS ── */}
                         {activeTab === 'eventos' && showEventos && <PersonaEventos liderId={data.id} />}
+
+                        {/* ── EMPRESAS Y GREMIOS ── */}
+                        {activeTab === 'empresas' && showOrganizaciones && <PersonaOrganizaciones liderId={data.id} />}
 
                         {/* ── OPCIONES ── */}
                         {activeTab === 'opciones' && (

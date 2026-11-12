@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\EventActa;
 use App\Models\EventActaParticipante;
 use App\Models\EventAttendee;
+use App\Models\OrganizacionMiembro;
 use App\Models\User;
 use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\AttendeeMatcher;
@@ -17,7 +18,8 @@ use Illuminate\Validation\ValidationException;
 // compromisos, responsables, avances and files, the attendees its confirmation CREATED (created_attendee) and the
 // fichas it CREATED (created_lider) while they have no other activity (FichaActivity). Fichas and attendees that
 // already existed and were only linked are never touched, nor is data_consents. Actas confirmed before the flags
-// existed count as "nothing created": only the acta itself goes.
+// existed count as "nothing created": only the acta itself goes. An organization's acta (docs/empresarios.md) has no
+// attendees: it undoes the memberships (rol 'otro') its confirmation created (created_miembro).
 class DeleteConfirmedActa
 {
     public function __construct(private FichaActivity $activity) {}
@@ -25,7 +27,10 @@ class DeleteConfirmedActa
     // Counts for the confirmation dialog, plus the ids to delete.
     public function plan(EventActa $acta): array
     {
-        $rows = EventActaParticipante::where('acta_id', $acta->id)->get(['id', 'lider_id', 'attendee_id', 'telefono', 'created_lider', 'created_attendee']);
+        $rows = EventActaParticipante::where('acta_id', $acta->id)->get(['id', 'lider_id', 'attendee_id', 'telefono', 'created_lider', 'created_attendee', ...($acta->organizacion_id ? ['created_miembro'] : [])]);
+        // An organization's acta: the memberships (rol 'otro') its confirmation created.
+        $miembroIds = $acta->organizacion_id === null ? [] : OrganizacionMiembro::where('organizacion_id', $acta->organizacion_id)->where('rol', 'otro')
+            ->whereIn('lider_id', $rows->where('created_miembro', true)->pluck('lider_id')->filter()->unique()->values()->all())->pluck('id')->all();
 
         $createdAttendees = $rows->where('created_attendee', true)->pluck('attendee_id')->filter()->unique()->values()->all();
         $createdAttendees = FichaActivity::chunked($createdAttendees, fn ($ids) => EventAttendee::whereIn('id', $ids)
@@ -53,14 +58,16 @@ class DeleteConfirmedActa
                 $copied[$row->lider_id] = array_slice(AttendeeMatcher::phones($row->telefono), 1);
             }
         }
-        $free = $this->activity->free($created, $attendeeIds, $acta->id, $copied);
+        $free = $this->activity->free($created, $attendeeIds, $acta->id, $copied, $miembroIds);
 
         $compromisos = DB::table('event_compromisos')->where('acta_id', $acta->id)->pluck('id')->all();
 
         return [
             'attendee_ids' => $attendeeIds,
             'lider_ids' => $free,
+            'miembro_ids' => $miembroIds,
             'participantes' => $rows->count(),
+            ...($acta->organizacion_id ? ['miembros' => count($miembroIds)] : []),
             'asistentes' => count($attendeeIds),
             'asistentes_conservados' => $rows->pluck('attendee_id')->filter()->unique()->count() - count($attendeeIds),
             'fichas_borrar' => count($free),
@@ -94,6 +101,7 @@ class DeleteConfirmedActa
             // Participants, compromisos, responsables and avances go by cascade.
             $locked->delete();
             FichaActivity::chunked($plan['attendee_ids'], fn ($ids) => [EventAttendee::whereIn('id', $ids)->delete()]);
+            FichaActivity::chunked($plan['miembro_ids'], fn ($ids) => [OrganizacionMiembro::whereIn('id', $ids)->delete()]);
             FichaActivity::deleteFichas($plan['lider_ids']);
 
             return [$plan, $paths];
@@ -102,12 +110,13 @@ class DeleteConfirmedActa
             ActaFiles::delete($path);
         }
 
-        $counts = collect($plan)->except(['attendee_ids', 'lider_ids'])->all();
+        $counts = collect($plan)->except(['attendee_ids', 'lider_ids', 'miembro_ids'])->all();
+        $organizacion = $acta->organizacion_id !== null;
         AuditLog::create([
             'user_id' => $user->id,
-            'action' => 'EVENTO_ACTA_CONFIRMADA_BORRADA',
-            'entity_type' => 'evento',
-            'entity_id' => $acta->event_id,
+            'action' => $organizacion ? 'ORGANIZACION_ACTA_CONFIRMADA_BORRADA' : 'EVENTO_ACTA_CONFIRMADA_BORRADA',
+            'entity_type' => $organizacion ? 'organizacion' : 'evento',
+            'entity_id' => $organizacion ? $acta->organizacion_id : $acta->event_id,
             'metadata' => ['acta_id' => $acta->id, 'attendee_ids_borrados' => $plan['attendee_ids'], 'lider_ids_borrados' => $plan['lider_ids'], ...$counts],
             'ip_address' => request()->ip(),
             'user_agent' => request()->userAgent(),

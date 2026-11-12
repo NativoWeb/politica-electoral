@@ -18,7 +18,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 class GenericExport extends DefaultValueBinder implements FromArray, WithHeadings, WithTitle, WithStyles, WithCustomValueBinder, WithColumnFormatting
 {
     // Documents and phones are text: Excel would drop leading zeros or show long numbers as 1,09877E+09.
-    public const TEXT_COLUMNS = ['cedula', 'documento', 'referente_documento', 'celular', 'fijo', 'telefono'];
+    public const TEXT_COLUMNS = ['cedula', 'documento', 'referente_documento', 'celular', 'fijo', 'telefono', 'nit', 'representante_cedula', 'representante_celular'];
 
     private array $data;
     private array $columns;

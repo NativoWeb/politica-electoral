@@ -176,7 +176,7 @@ class UnifyRecords
     private function mergeLideres(object $a, object $b, ?string $cedula): array
     {
         $snapshot = ['lideres' => [(array) $a, (array) $b], 'referencias' => []];
-        foreach (MergeLideres::REFERENCES as [$table, $column]) {
+        foreach (MergeLideres::references() as [$table, $column]) {
             $rows = DB::table($table)->whereIn($column, [$a->id, $b->id])->get();
             if ($rows->isNotEmpty()) {
                 $snapshot['referencias']["{$table}.{$column}"] = $rows->map(fn ($r) => (array) $r)->all();

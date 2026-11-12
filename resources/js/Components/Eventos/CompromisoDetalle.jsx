@@ -94,7 +94,7 @@ export default function CompromisoDetalle({ compromisoId, onClose, onChanged }) 
                                     <CompromisoEstado estado={data.estado} vencido={data.vencido} />
                                     <p className="text-[16px] text-[var(--color-ink)] whitespace-pre-line">{data.descripcion}</p>
                                     <p className="text-[14px] text-[var(--color-ink-soft)]">
-                                        {[data.fecha_limite && `Fecha límite: ${formatDate(data.fecha_limite)}`, data.recordar_el && `Recordar el: ${formatDate(data.recordar_el)}`,data.evento?.nombre && `Evento: ${data.evento.nombre}`, data.acta?.titulo && `Acta: ${data.acta.titulo}`].filter(Boolean).join(' · ')}
+                                        {[data.fecha_limite && `Fecha límite: ${formatDate(data.fecha_limite)}`, data.recordar_el && `Recordar el: ${formatDate(data.recordar_el)}`,data.evento?.nombre && `Evento: ${data.evento.nombre}`, data.organizacion?.nombre && `Organización: ${data.organizacion.nombre}`, data.acta?.titulo && `Acta: ${data.acta.titulo}`].filter(Boolean).join(' · ')}
                                     </p>
                                     {data.responsables?.length > 0 && (
                                         <p className="text-[14px] text-[var(--color-ink-soft)]">

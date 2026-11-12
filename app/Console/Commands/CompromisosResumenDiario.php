@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
-// Daily e-mail (scheduled 7:00 a. m. Bogotá) to every active user with manage.eventos and a valid e-mail: their
+// Daily e-mail (scheduled 7:00 a. m. Bogotá) to every active user with manage.eventos or manage.empresarios and a valid e-mail: their
 // overdue, due-soon and reminded compromisos, only of their campaigns and territory (CompromisoAlertas runs as that
 // user). Nobody with nothing pending gets a message. Logs carry counts and user ids only.
 class CompromisosResumenDiario extends Command
@@ -32,7 +32,7 @@ class CompromisosResumenDiario extends Command
 
         $activeCampaigns = DB::table('campaigns')->where('is_active', true)->pluck('id')->all();
         $users = User::where('is_active', true)->with('role')->get()
-            ->filter(fn (User $u) => $u->hasPermission('manage.eventos')
+            ->filter(fn (User $u) => ($u->hasPermission('manage.eventos') || $u->hasPermission('manage.empresarios'))
                 && filter_var($u->email, FILTER_VALIDATE_EMAIL)
                 && in_array($u->campaignId(), $activeCampaigns, true));
 

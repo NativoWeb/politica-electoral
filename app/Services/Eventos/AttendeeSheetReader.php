@@ -40,14 +40,15 @@ class AttendeeSheetReader
     // ['header_row' => n, 'headers' => [string], 'rows' => [['row_number' => n, 'cells' => [index => value]]]]
     // $sheet: the sheet to read in a workbook with several (one per jornada); null = the default one.
     // Throws RuntimeException with a message for the user.
-    public function read(string $path, string $extension, ?string $sheet = null): array
+    // $score: how many known headers a row has (default: the attendee headers), to find the header row.
+    public function read(string $path, string $extension, ?string $sheet = null, ?callable $score = null): array
     {
         [$grid, $overflow] = $extension === 'csv' ? $this->readCsv($path) : $this->readSpreadsheet($path, $extension, $sheet);
         if ($overflow) {
             throw new RuntimeException(self::TOO_MANY_ROWS);
         }
 
-        [$headerRow, $headers] = $this->headerRow($grid);
+        [$headerRow, $headers] = $this->headerRow($grid, $score ?? ImportColumns::score(...));
         $rows = [];
         foreach ($grid as $rowNumber => $cells) {
             if ($rowNumber <= $headerRow || $this->isEmpty($cells)) {
@@ -288,12 +289,12 @@ class AttendeeSheetReader
     }
 
     // The row (within the first rows) with the most recognised headers; without any, the first non-empty row.
-    private function headerRow(array $grid): array
+    private function headerRow(array $grid, callable $scoreOf): array
     {
         $best = null;
         $bestScore = 0;
         foreach (array_slice($grid, 0, self::HEADER_SEARCH, true) as $rowNumber => $cells) {
-            $score = ImportColumns::score($cells);
+            $score = $scoreOf($cells);
             if ($score > $bestScore) {
                 [$best, $bestScore] = [$rowNumber, $score];
             }
