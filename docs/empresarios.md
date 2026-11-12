@@ -74,7 +74,7 @@ que es miembro o representante de una organización tiene actividad propia y no 
 | `GET /empresarios/carga/{c}` | manage | Inertia `Empresarios/Importar` (vista previa) |
 | `PATCH /empresarios/carga/{c}/filas/{f}` | manage | `{datos?: {...}, accion?: completar\|saltar}` corrige y vuelve a revisar |
 | `POST /empresarios/carga/{c}/confirmar` · `DELETE /empresarios/carga/{c}` | manage | guarda / descarta |
-| `GET /empresarios/{id}/actas` … | view / manage | las mismas rutas de actas de Eventos bajo `/empresarios/{id}/actas` (nueva, leer, sugerencias, store, update, destroy, eliminar, confirmar, archivo, acta.docx, acta.pdf) |
+| `GET /empresarios/{id}/actas` … | view / manage | las mismas rutas de actas de Eventos bajo `/empresarios/{id}/actas` (nueva, plantilla.xlsx, leer, sugerencias, store, update, destroy, eliminar, confirmar, archivo, acta.docx, acta.pdf) |
 
 Escrituras sin el permiso → 403 JSON; una página GET sin permiso redirige a `/`.
 
@@ -111,7 +111,7 @@ Las actas generalizan `event_actas` / `event_compromisos`: `organizacion_id` (nu
 de exactamente uno en PostgreSQL. Las actas de eventos no cambian (mismo contrato, mismas rutas). La página es la misma
 (`Eventos/Acta`) con la prop `origen = {tipo: 'organizacion', base, volver, seccion, buscar}`.
 
-- Borrador → confirmada, Word/PDF, lectura del .docx, compromisos con estado/avances/recordatorio: igual que en §14.
+- Borrador → confirmada, Word/PDF, lectura del .docx o de la plantilla Excel, compromisos con estado/avances/recordatorio: igual que en §14.
 - Al **confirmar**: cada participante queda con su ficha en Votantes (elegida, misma cédula o nueva) y, si no era miembro
   con ningún rol, como **miembro con rol Otro** (`event_acta_participantes.created_miembro`). No hay asistentes.
   Resumen `{participantes, vinculados, fichas_creadas, miembros_nuevos, compromisos, responsables_vinculados}`.

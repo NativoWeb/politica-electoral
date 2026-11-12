@@ -19,6 +19,8 @@ use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\Actas\ActaFormat;
 use App\Services\Eventos\Actas\ActaPresenter;
 use App\Services\Eventos\Actas\ActaService;
+use App\Services\Eventos\Actas\ActaSheetReader;
+use App\Services\Eventos\Actas\ActaTemplate;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -80,12 +82,17 @@ class EventoActaController extends Controller
         return $this->page($event, $this->findActa($event, $acta));
     }
 
-    // POST /eventos/{id}/actas/leer: prefill from a .docx; a PDF or a photo is only attached later (formulario a mano).
-    public function read(ActaFileRequest $request, string $id, ActaDocxReader $reader): JsonResponse
+    // POST /eventos/{id}/actas/leer: prefill from a .docx or the Excel template; a PDF or a photo is only attached later (formulario a mano).
+    public function read(ActaFileRequest $request, string $id, ActaDocxReader $reader, ActaSheetReader $sheet): JsonResponse
     {
         $file = $request->file('archivo');
         try {
             $mime = ActaFiles::mime($file);
+            if ($mime === ActaFiles::XLSX || $mime === ActaFiles::XLS) {
+                EventoImportController::raiseMemoryLimit();
+
+                return self::excelRead($sheet->read((string) $file->getRealPath(), ActaFiles::EXTENSIONS[$mime]));
+            }
             if ($mime !== ActaFiles::DOCX) {
                 return response()->json(['success' => true, 'data' => ['tipo' => 'adjunto', 'acta' => null,
                     'message' => 'Se guardará como archivo adjunto del acta. Llene el formulario a mano.']]);
@@ -97,6 +104,31 @@ class EventoActaController extends Controller
 
         return response()->json(['success' => true, 'data' => ['tipo' => 'docx', 'acta' => $acta,
             'message' => 'Revise lo que se leyó del documento antes de guardar.']]);
+    }
+
+    // GET /eventos/{id}/actas/plantilla.xlsx: the Excel template that "Cargar Word o Excel" reads (ActaSheetReader).
+    public function template(string $id): HttpResponse
+    {
+        $this->findEvent($id, true);
+
+        return self::templateResponse();
+    }
+
+    public static function templateResponse(): HttpResponse
+    {
+        EventoImportController::raiseMemoryLimit();
+
+        return response((new ActaTemplate)->build(), 200, [
+            'Content-Type' => ActaFiles::XLSX,
+            'Content-Disposition' => 'attachment; filename="plantilla-acta.xlsx"',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    public static function excelRead(array $acta): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => ['tipo' => 'excel', 'acta' => $acta,
+            'message' => 'Revise lo que se leyó del Excel antes de guardar.']]);
     }
 
     // POST /eventos/{id}/actas/sugerencias

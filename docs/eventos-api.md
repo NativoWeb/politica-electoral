@@ -1313,7 +1313,8 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 | `GET /eventos/{id}/actas` | view | JSON `[{id, titulo, fecha, compromisos, abiertos, archivo, created_by}]` (sección "Actas de reunión" del detalle) |
 | `GET /eventos/{id}/actas/nueva` | manage | Inertia `Eventos/Acta` con `defaults` del evento y `asistentes` (máx. 3000) |
 | `GET /eventos/{id}/actas/{acta}` | view | Inertia `Eventos/Acta` con `acta` (`can.edit` solo campaña propia y evento no cancelado) |
-| `POST /eventos/{id}/actas/leer` | manage | multipart `archivo` (≤ 10 MB, o el límite de PHP si es menor). `.docx` → `{tipo: 'docx', acta: {…, avisos[]}}` para prellenar; PDF/JPG/PNG → `{tipo: 'adjunto', acta: null}`. No guarda nada. 422 `archivo` si no es ninguno de esos (por contenido, no por nombre) |
+| `GET /eventos/{id}/actas/plantilla.xlsx` | manage | plantilla Excel del acta (hojas Acta, Participantes, Compromisos e Instrucciones; ver "Lectura del Excel") |
+| `POST /eventos/{id}/actas/leer` | manage | multipart `archivo` (≤ 10 MB, o el límite de PHP si es menor). `.docx` → `{tipo: 'docx', acta: {…, avisos[]}}` para prellenar; `.xlsx`/`.xls` → `{tipo: 'excel', acta: {…, avisos[]}}` (misma forma); PDF/JPG/PNG → `{tipo: 'adjunto', acta: null}`. No guarda nada. 422 `archivo` si no es ninguno de esos (por contenido, no por nombre) o si el Excel no tiene ninguna de las hojas |
 | `POST /eventos/{id}/actas/sugerencias` | manage | `{participantes: [{nombre, telefono, cedula}], responsables: [{nombre, telefono}]}` → `{participantes: {i: lider}, responsables: {i: lider}}`, `lider = {id, nombre, municipio, cargo, por: 'cedula'\|'telefono'}` |
 | `POST /eventos/{id}/actas` | manage | crea un **borrador** (201) `{data: acta, message}`; nada pasa a Votantes ni a los asistentes |
 | `PUT /eventos/{id}/actas/{acta}` | manage | actualiza un **borrador** (mismo cuerpo; reemplaza participantes y compromisos). Confirmada → 422 `acta` |
@@ -1321,7 +1322,7 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 | `GET /eventos/{id}/actas/{acta}/eliminar` | manage + delete.actas | vista previa de eliminar un acta **confirmada**: `data: {participantes, asistentes, asistentes_conservados, fichas_borrar, fichas_conservar, vinculadas, compromisos, responsables, avances}`. Borrador → 422 `acta` |
 | `POST /eventos/{id}/actas/{acta}/confirmar` | manage | confirma: `{data: acta, resumen: {participantes, vinculados, fichas_creadas, asistentes_nuevos, compromisos, responsables_vinculados}, message}`. Ya confirmada → 422 `acta`; una ficha elegida que dejó de ser válida → 422 `participantes.N.lider_id` y no se escribe nada |
 | `PUT /eventos/compromisos/{compromiso}/recordatorio` | manage | `{recordar_el: YYYY-MM-DD\|null}` (también en compromisos de actas confirmadas) |
-| `GET /eventos/compromisos/alertas` | view | campanita: `{total, vencidos, por_vencer, recordatorios, items[≤15]: {id, tipo, descripcion, estado, fecha_limite, recordar_el, evento, url}}`, caché 5 min por usuario (se borra cuando el usuario cambia un estado o recordatorio) || `POST /eventos/{id}/actas/{acta}/archivo` | manage | multipart `archivo` (.docx, PDF, JPG o PNG): guarda o reemplaza el original (solo borrador) |
+| `GET /eventos/compromisos/alertas` | view | campanita: `{total, vencidos, por_vencer, recordatorios, items[≤15]: {id, tipo, descripcion, estado, fecha_limite, recordar_el, evento, url}}`, caché 5 min por usuario (se borra cuando el usuario cambia un estado o recordatorio) || `POST /eventos/{id}/actas/{acta}/archivo` | manage | multipart `archivo` (.docx, .xlsx, .xls, PDF, JPG o PNG): guarda o reemplaza el original (solo borrador) |
 | `GET /eventos/{id}/actas/{acta}/archivo` | view | descarga el original (`X-Content-Type-Options: nosniff`) |
 | `GET /eventos/{id}/actas/{acta}/acta.docx` | view | Word generado con el formato del ejemplo (ZipArchive, sin paquete nuevo) |
 | `GET /eventos/{id}/actas/{acta}/acta.pdf` | view | PDF (dompdf, vista `eventos/acta.blade.php`); throttle `eventos-planilla` |
@@ -1418,6 +1419,34 @@ como fecha límite (así lo escribe el Word generado). Lo que no encuentra va en
 Prueba de solo lectura contra el acta real de Rionegro (08 nov): 19 participantes (18 con teléfono), 7 puntos del orden
 del día + introducción, 8 textos de desarrollo (introducción + 7 puntos), 7 compromisos con 9 responsables, todos con
 teléfono; fecha, municipio, sitio, horas 10:45–12:00 y cierre leídos.
+
+### Lectura del Excel (`ActaTemplate` / `ActaSheetReader`, 2026-11-12)
+
+Tercera forma de llenar el acta, junto a "Cargar Word o Excel" está "Descargar plantilla Excel" (en el acta de evento y en
+la de organización; mismos permisos que la lectura del Word: `manage.eventos` / `manage.empresarios` con los chequeos de
+campaña y territorio). La plantilla (generada con PhpSpreadsheet) trae:
+
+- **Acta**: `Campo | Valor` con Título, Fecha, Hora de inicio, Hora de fin, Municipio, Lugar, Objetivo / tema
+  (→ `introduccion`), Orden del día (un punto por línea de la celda, o la fila repetida), Desarrollo (una fila por punto del
+  orden del día, en el mismo orden: toma el título de ese punto), Conclusiones (→ un punto más del desarrollo titulado
+  "Conclusiones"; el acta no tiene campo propio) y Cierre. "Hora" sola acepta "10:45 - 12:00" (inicio y fin).
+- **Participantes**: Nombre, Cédula, Teléfono, Municipio, Perfil / cargo (cédula y teléfono con formato texto).
+- **Compromisos**: Descripción, Responsable, Teléfono del responsable, Fecha límite, Recordar el. Varios responsables: uno
+  por línea o separados por `;`, con sus teléfonos en el mismo orden (misma regla que el Word). El compromiso no tiene
+  "observación": no está en la plantilla.
+- **Instrucciones** con un ejemplo ficticio; las hojas de datos van sin filas de ejemplo para no cargar datos falsos.
+
+La lectura devuelve lo mismo que la del .docx (borrador prellenado; participantes y responsables pasan por "¿Es esta
+persona?" al guardar/confirmar como siempre) y el archivo se guarda como original del acta (`ActaFiles` reconoce
+`.xlsx` por `xl/workbook.xml` y `.xls` por la cabecera OLE + `Xls::canRead`). Hojas y encabezados se reconocen sin tildes
+ni mayúsculas. Fechas: número de fecha de Excel (solo años 2000–2100; otro → aviso) o texto (`dd/mm/aaaa`, `aaaa-mm-dd`,
+"8 de noviembre de 2026"); la celda de la fecha del acta y las de fechas de Compromisos vienen con formato `dd/mm/yyyy`.
+Horas: hora de Excel (también la hora de una fecha-hora), número entero 0–23 (`10` → 10:00) o texto; otro número o una
+fecha sin hora → aviso, nunca 00:00. Protecciones de `AttendeeSheetReader::workbook()`: zip bomb (≤ 50 MB descomprimido,
+razón ≤ 100:1), 30 columnas, 500 filas por hoja (más → 422). Errores sin perder lo válido, en `avisos`: hoja faltante
+("No se encontró la hoja «Compromisos»…"), fecha u hora inválida ("Compromisos, fila 3: la fecha límite «31/02/2026» no es
+válida…", el compromiso se carga sin fecha), fila sin nombre o sin descripción (se omite), sin título. Un libro sin
+ninguna de las tres hojas → 422 `archivo`. Máximo 300 participantes y 150 compromisos (el resto se avisa).
 
 ### Tablas (migración `2026_11_10_000001_create_event_actas_tables`, aditiva; no toca `data_consents`)
 

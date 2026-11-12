@@ -17,6 +17,7 @@ use App\Services\Eventos\Actas\ActaFileException;
 use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\Actas\ActaPresenter;
 use App\Services\Eventos\Actas\ActaService;
+use App\Services\Eventos\Actas\ActaSheetReader;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -69,11 +70,17 @@ class OrganizacionActaController extends Controller
     }
 
     // POST /empresarios/{id}/actas/leer
-    public function read(OrganizacionActaFileRequest $request, string $id, ActaDocxReader $reader): JsonResponse
+    public function read(OrganizacionActaFileRequest $request, string $id, ActaDocxReader $reader, ActaSheetReader $sheet): JsonResponse
     {
         $file = $request->file('archivo');
         try {
-            if (ActaFiles::mime($file) !== ActaFiles::DOCX) {
+            $mime = ActaFiles::mime($file);
+            if ($mime === ActaFiles::XLSX || $mime === ActaFiles::XLS) {
+                EventoImportController::raiseMemoryLimit();
+
+                return EventoActaController::excelRead($sheet->read((string) $file->getRealPath(), ActaFiles::EXTENSIONS[$mime]));
+            }
+            if ($mime !== ActaFiles::DOCX) {
                 return response()->json(['success' => true, 'data' => ['tipo' => 'adjunto', 'acta' => null,
                     'message' => 'Se guardará como archivo adjunto del acta. Llene el formulario a mano.']]);
             }
@@ -84,6 +91,14 @@ class OrganizacionActaController extends Controller
 
         return response()->json(['success' => true, 'data' => ['tipo' => 'docx', 'acta' => $acta,
             'message' => 'Revise lo que se leyó del documento antes de guardar.']]);
+    }
+
+    // GET /empresarios/{id}/actas/plantilla.xlsx
+    public function template(string $id): HttpResponse
+    {
+        $this->scope->find($id, true);
+
+        return EventoActaController::templateResponse();
     }
 
     // POST /empresarios/{id}/actas/sugerencias

@@ -116,6 +116,49 @@ class AttendeeSheetReader
         return $sheets;
     }
 
+    // Every sheet of an .xlsx/.xls as [title => grid], with the same protections (zip bomb, MAX_COLUMNS, rows
+    // limit). [sheets, overflow]: overflow = some sheet has cells below $maxRows. Used by the acta from Excel.
+    public function workbook(string $path, string $extension, int $maxRows): array
+    {
+        if ($extension === 'xlsx') {
+            $this->assertSafeZip($path);
+        }
+        $reader = $extension === 'xls' ? new Xls : new Xlsx;
+        $reader->setReadDataOnly(true);
+        $reader->setReadEmptyCells(false);
+        $filter = new class($maxRows, self::MAX_COLUMNS) implements IReadFilter
+        {
+            public bool $beyond = false;
+
+            public function __construct(private int $rows, private int $columns) {}
+
+            public function readCell($columnAddress, $row, $worksheetName = ''): bool
+            {
+                if ($row > $this->rows) {
+                    $this->beyond = true;
+
+                    return false;
+                }
+
+                return Coordinate::columnIndexFromString($columnAddress) <= $this->columns;
+            }
+        };
+        $reader->setReadFilter($filter);
+
+        try {
+            $spreadsheet = $reader->load($path);
+        } catch (\Throwable) {
+            throw new RuntimeException('No se pudo leer el archivo. Ábralo en Excel, guárdelo como .xlsx e intente de nuevo.');
+        }
+        $sheets = [];
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            $sheets[$sheet->getTitle()] = $this->grid($sheet);
+        }
+        $spreadsheet->disconnectWorksheets();
+
+        return [$sheets, $filter->beyond];
+    }
+
     private function readSpreadsheet(string $path, string $extension, ?string $sheet = null): array
     {
         if ($extension === 'xlsx') {

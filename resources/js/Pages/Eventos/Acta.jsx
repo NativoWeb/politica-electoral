@@ -60,7 +60,7 @@ export default function Acta({ evento, acta, defaults, asistentes, can, origen =
         if (!res.ok) { setError(failure(res, 'No se pudo leer el archivo.')); e.target.value = ''; setFile(null); return; }
         setFile(chosen);
         const read = res.body.data;
-        if (read.tipo === 'docx' && read.acta) {
+        if ((read.tipo === 'docx' || read.tipo === 'excel') && read.acta) {
             setForm(f => mergeRead(f, read.acta));
             setAvisos(read.acta.avisos ?? []);
         }
@@ -177,27 +177,31 @@ export default function Acta({ evento, acta, defaults, asistentes, can, origen =
                 )}
 
                 {editable && (
-                    <Section title={acta ? 'Archivo del acta' : '¿Ya tiene el acta en Word?'}>
+                    <Section title={acta ? 'Archivo del acta' : '¿Ya tiene el acta en Word o Excel?'}>
                         {!acta && (
                             <p className="text-[15px] text-[var(--color-ink-soft)]">
-                                Si ya la escribieron en Word, súbala aquí: <b>el sistema la lee y llena el formulario de abajo</b> para que solo lo revise.
+                                Si ya la escribieron en Word o en la plantilla Excel, súbala aquí: <b>el sistema la lee y llena el formulario de abajo</b> para que solo lo revise.
                                 Si no, déjelo así y llene el formulario directamente.
                             </p>
                         )}
                         {acta?.archivo && <p className="text-[14px] text-[var(--color-ink)]">Archivo guardado: <b>{acta.archivo.nombre}</b>. Si sube otro, lo reemplaza.</p>}
-                        <input ref={fileRef} id="acta-archivo" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,image/jpeg,image/png" onChange={onFile} disabled={busy} className="sr-only" />
+                        <input ref={fileRef} id="acta-archivo" type="file" accept=".docx,.xlsx,.xls,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,image/jpeg,image/png" onChange={onFile} disabled={busy} className="sr-only" />
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border-2 border-dashed border-[var(--color-line-strong)] bg-[var(--color-surface,#f8fafc)]">
                             <label
                                 htmlFor="acta-archivo"
                                 className={`inline-flex items-center justify-center gap-2 min-h-[48px] px-5 rounded-xl bg-[var(--color-primary)] text-white text-[15px] font-bold ${busy ? 'opacity-60 pointer-events-none' : 'cursor-pointer hover:opacity-90'}`}
                             >
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                {busy ? 'Leyendo el acta…' : (file ? 'Cambiar archivo' : 'Subir acta en Word')}
+                                {busy ? 'Leyendo el acta…' : (file ? 'Cambiar archivo' : 'Cargar Word o Excel')}
                             </label>
+                            <a href={`${base}/plantilla.xlsx`} className="inline-flex items-center justify-center gap-2 min-h-[48px] px-5 rounded-xl border border-[var(--color-line-strong)] bg-white text-[var(--color-primary)] text-[15px] font-bold hover:bg-blue-50">
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Descargar plantilla Excel
+                            </a>
                             <p className="text-[14px] text-[var(--color-ink-soft)]" aria-live="polite">
                                 {file
                                     ? <>Archivo: <b className="text-[var(--color-ink)]">{file.name}</b></>
-                                    : 'Word (.docx) para llenar el formulario solo. También acepta PDF o foto, que se guarda como adjunto (el formulario se llena a mano). Máximo 10 MB.'}
+                                    : 'Word (.docx) o la plantilla Excel (.xlsx o .xls) para llenar el formulario solo. También acepta PDF o foto, que se guarda como adjunto (el formulario se llena a mano). Máximo 10 MB.'}
                             </p>
                         </div>
                     </Section>

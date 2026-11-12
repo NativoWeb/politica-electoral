@@ -6,6 +6,7 @@ use App\Http\Requests\Eventos\ImportUploadRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\Reader\Xls;
 use ZipArchive;
 
 // Files of actas and avances: what they really are (by content, never by name or by the browser's MIME), stored on
@@ -18,7 +19,13 @@ class ActaFiles
 
     public const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    public const EXTENSIONS = [self::DOCX => 'docx', 'application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png'];
+    public const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+    public const XLS = 'application/vnd.ms-excel';
+
+    private const OLE = "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
+
+    public const EXTENSIONS = [self::DOCX => 'docx', self::XLSX => 'xlsx', self::XLS => 'xls', 'application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png'];
 
     // 10 MB, or less when PHP accepts less (upload_max_filesize / post_max_size), so the messages tell the real limit.
     public static function maxKb(): int
@@ -33,7 +40,7 @@ class ActaFiles
         return floor($mb) == $mb ? (int) $mb : round($mb, 1);
     }
 
-    // The real type of the file, or ActaFileException. $allowDocx: an avance only takes photos and PDF.
+    // The real type of the file, or ActaFileException. $allowDocx (Word and Excel): an avance only takes photos and PDF.
     public static function mime(UploadedFile $file, bool $allowDocx = true): string
     {
         $path = (string) $file->getRealPath();
@@ -51,15 +58,23 @@ class ActaFiles
             $zip = new ZipArchive;
             if ($zip->open($path) === true) {
                 $isWord = $zip->statName('word/document.xml') !== false;
+                $isExcel = $zip->statName('xl/workbook.xml') !== false;
                 $zip->close();
                 if ($isWord) {
                     return self::DOCX;
                 }
+                if ($isExcel) {
+                    return self::XLSX;
+                }
             }
+        }
+        // An old Excel (.xls) is an OLE file, as an old .doc is: only one with a workbook counts.
+        if ($allowDocx && str_starts_with($head, self::OLE) && (new Xls)->canRead($path)) {
+            return self::XLS;
         }
 
         throw new ActaFileException($allowDocx
-            ? 'El archivo debe ser un documento de Word (.docx), un PDF o una foto (JPG o PNG).'
+            ? 'El archivo debe ser un documento de Word (.docx), un Excel (.xlsx o .xls), un PDF o una foto (JPG o PNG).'
             : 'El archivo debe ser una foto (JPG o PNG) o un PDF.');
     }
 

@@ -193,6 +193,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::delete('/carga/{import}', [OrganizacionImportController::class, 'destroy'])->name('carga.descartar')->whereUuid('import');
 
             Route::get('/{id}/actas/nueva', [OrganizacionActaController::class, 'create'])->name('actas.create')->whereUuid('id');
+            Route::get('/{id}/actas/plantilla.xlsx', [OrganizacionActaController::class, 'template'])->name('actas.plantilla')->whereUuid('id');
             Route::post('/{id}/actas/leer', [OrganizacionActaController::class, 'read'])->name('actas.leer')->whereUuid('id')->middleware('throttle:eventos-importar');
             Route::post('/{id}/actas/sugerencias', [OrganizacionActaController::class, 'suggest'])->name('actas.sugerencias')->whereUuid('id')->middleware('throttle:eventos-importar');
             Route::post('/{id}/actas', [OrganizacionActaController::class, 'store'])->name('actas.store')->whereUuid('id');
@@ -254,6 +255,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         Route::middleware('permission:manage.eventos')->group(function () {
             Route::get('/{id}/actas/nueva', [EventoActaController::class, 'create'])->name('actas.create')->whereUuid('id');
+            Route::get('/{id}/actas/plantilla.xlsx', [EventoActaController::class, 'template'])->name('actas.plantilla')->whereUuid('id');
             Route::post('/{id}/actas/leer', [EventoActaController::class, 'read'])->name('actas.leer')->whereUuid('id')
                 ->middleware('throttle:eventos-importar');
             Route::post('/{id}/actas/sugerencias', [EventoActaController::class, 'suggest'])->name('actas.sugerencias')->whereUuid('id')
