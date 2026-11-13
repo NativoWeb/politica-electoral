@@ -1687,15 +1687,16 @@ class MapaPoliticoController extends Controller
 
         $excludeId = $request->input('exclude_id');
 
-        // Only used to pick referidos, which must belong to the user's own campaign.
-        $qe = $this->escapeLike($q);
+        // Picks referidos and the referente of a form: both must belong to the user's own campaign.
+        $qe = $this->escapeLike(Str::lower($q));
+        $qc = $this->escapeLike((string) Cedula::normalize($q));
         $query = $this->scopeToTerritory($this->ownLideres())
             ->where('is_active', true)
-            ->where(function ($qb) use ($qe) {
-                $qb->where('nombre', 'ilike', "%{$qe}%")
-                    ->orWhere('cedula', 'like', "%{$qe}%");
+            ->where(function ($qb) use ($qe, $qc) {
+                $qb->whereRaw('LOWER(nombre) LIKE ?', ["%{$qe}%"])
+                    ->orWhere('cedula', 'like', "%{$qc}%");
             })
-            ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
+            ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'cargo')
             ->orderBy('nombre')
             ->limit(10);
 

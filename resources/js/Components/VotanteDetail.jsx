@@ -6,12 +6,14 @@ import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip'
 import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresarios/PersonaOrganizaciones';
 import UnificarModal from '@/Components/UnificarModal';
+import ReferenteFields from '@/Components/ReferenteFields';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 const readCls = "text-[13px] text-[var(--color-ink)] py-1";
+const fieldLabelCls = "block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-0.5";
 
 const GENERO_OPTIONS = ['', 'Masculino', 'Femenino', 'Otro'];
 const ESTADO_CIVIL_OPTIONS = ['', 'Soltero/a', 'Casado/a', 'Union libre', 'Divorciado/a', 'Viudo/a'];
@@ -453,17 +455,15 @@ export default function VotanteDetail({
 
                 {/* Referente */}
                 <Accordion title="Referente">
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Documento">
-                            {editing ? <input value={form.referente_documento} onChange={e => setField('referente_documento', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.referente_documento || '-'}</p>}
-                        </Field>
-                        <Field label="Nombre">
-                            {editing ? <input value={form.referente_nombre} onChange={e => setField('referente_nombre', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.referente_nombre || '-'}</p>}
-                        </Field>
-                        <Field label="Apellido">
-                            {editing ? <input value={form.referente_apellido} onChange={e => setField('referente_apellido', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.referente_apellido || '-'}</p>}
-                        </Field>
-                    </div>
+                    {editing ? (
+                        <ReferenteFields values={form} onChange={setField} excludeId={data?.id} inputClassName={inputCls} labelClassName={fieldLabelCls} className="grid grid-cols-2 gap-3" />
+                    ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="Documento"><p className={readCls}>{form.referente_documento || '-'}</p></Field>
+                            <Field label="Nombre"><p className={readCls}>{form.referente_nombre || '-'}</p></Field>
+                            <Field label="Apellido"><p className={readCls}>{form.referente_apellido || '-'}</p></Field>
+                        </div>
+                    )}
                     {!creating && (
                         <div className="border-t border-[var(--color-line)] pt-3 mt-3">
                             <div className="flex items-center justify-between mb-2">

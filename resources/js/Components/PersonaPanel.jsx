@@ -11,6 +11,7 @@ import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresarios/PersonaOrganizaciones';
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import UnificarModal from '@/Components/UnificarModal';
+import ReferenteFields from '@/Components/ReferenteFields';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
@@ -1147,20 +1148,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         </div>
                                         <div className="pt-2 border-t border-[var(--color-line)]">
                                             <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-3">Referente</p>
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                <div>
-                                                    <label className={labelCls}>Documento</label>
-                                                    <input className={fieldCls} value={f('referente_documento')} onChange={e => set('referente_documento', e.target.value)} />
-                                                </div>
-                                                <div>
-                                                    <label className={labelCls}>Nombre</label>
-                                                    <input className={fieldCls} value={f('referente_nombre')} onChange={e => set('referente_nombre', e.target.value)} />
-                                                </div>
-                                                <div>
-                                                    <label className={labelCls}>Apellido</label>
-                                                    <input className={fieldCls} value={f('referente_apellido')} onChange={e => set('referente_apellido', e.target.value)} />
-                                                </div>
-                                            </div>
+                                            <ReferenteFields values={form} onChange={set} excludeId={targetId} inputClassName={fieldCls} labelClassName={labelCls} className="grid grid-cols-1 sm:grid-cols-3 gap-3" />
                                         </div>
                                     </div>
                                 ) : (

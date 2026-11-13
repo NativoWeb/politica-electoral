@@ -3,6 +3,7 @@ import { router } from '@inertiajs/react';
 import { offlineCreateLider } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
 import SearchableDropdown from '@/Components/SearchableDropdown';
+import ReferenteFields from '@/Components/ReferenteFields';
 import {
     TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, GENERO_OPTIONS,
     TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
@@ -391,20 +392,7 @@ export default function CrearLiderModal({ open, onClose, municipios, provincias 
 
                         {/* ── Collapsible: Referente ── */}
                         <CollapsibleSection title="Referente">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div>
-                                    <label className={labelCls}>Documento</label>
-                                    <input className={fieldCls} value={form.referente_documento} onChange={e => set('referente_documento', e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className={labelCls}>Nombre</label>
-                                    <input className={fieldCls} value={form.referente_nombre} onChange={e => set('referente_nombre', e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className={labelCls}>Apellido</label>
-                                    <input className={fieldCls} value={form.referente_apellido} onChange={e => set('referente_apellido', e.target.value)} />
-                                </div>
-                            </div>
+                            <ReferenteFields values={form} onChange={set} inputClassName={fieldCls} labelClassName={labelCls} className="grid grid-cols-1 sm:grid-cols-3 gap-3" />
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className={labelCls}>Partido</label>
