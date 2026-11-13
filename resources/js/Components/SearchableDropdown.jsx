@@ -1,11 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+// On a phone or tablet the search box does not take the focus by itself: the keyboard would cover the list.
+const finePointer = () => typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
 
 export default function SearchableDropdown({ label, options, selected, onChange, placeholder = 'Todos', multi = true, highlightedOptions = [] }) {
     const highlightedSet = new Set(highlightedOptions);
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
+    const panelRef = useRef(null);
     const selectedArr = multi ? (selected ? selected.split(',') : []) : [];
     const filtered = options.filter(o => !search || o.toLowerCase().includes(search.toLowerCase()));
+
+    // The open list is brought into view (inside a modal it may open below the visible area).
+    useEffect(() => {
+        if (open) panelRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [open]);
 
     function toggle(val) {
         if (multi) {
@@ -39,7 +48,7 @@ export default function SearchableDropdown({ label, options, selected, onChange,
             {open && (
                 <>
                     <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-                    <div className="absolute top-full left-0 right-0 lg:right-auto mt-1 w-auto lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] flex flex-col" role="listbox" aria-label={label}>
+                    <div ref={panelRef} className="absolute top-full left-0 right-0 lg:right-auto mt-1 w-auto lg:w-[300px] bg-white rounded-xl shadow-2xl border border-[var(--color-line)] z-40 max-h-[350px] flex flex-col" role="listbox" aria-label={label}>
                         <div className="px-3 pt-3 pb-2 border-b border-[var(--color-line)]">
                             <input
                                 type="text"
@@ -47,7 +56,7 @@ export default function SearchableDropdown({ label, options, selected, onChange,
                                 onChange={e => setSearch(e.target.value)}
                                 placeholder="Buscar..."
                                 className="w-full px-3 py-2 md:py-2.5 border border-[var(--color-line)] rounded-lg text-[13px] md:text-[15px] focus:outline-none focus:border-[var(--color-primary)]"
-                                autoFocus
+                                autoFocus={finePointer()}
                             />
                         </div>
                         <button onClick={clear} className="w-full text-left px-4 py-2 md:py-2.5 text-[13px] md:text-[15px] text-[var(--color-primary)] font-semibold border-b border-[var(--color-line)] hover:bg-blue-50">

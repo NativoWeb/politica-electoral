@@ -574,7 +574,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                     <h1 className="text-[16px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
                     <p className="hidden lg:block text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Nuevos Líderes, Senado, Cámara y Asamblea</p>
                 </div>
-                <button onClick={() => setShowCrearLider(true)} className="px-3 lg:px-5 py-1.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => setShowCrearLider(true)} aria-label="Crear Líder" className="px-3 lg:px-5 py-1.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                     <span className="hidden sm:inline">Crear Líder</span>
                 </button>
