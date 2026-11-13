@@ -12,9 +12,13 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('geographic_units', function (Blueprint $table) {
-            $table->jsonb('metadata')->nullable();
-        });
+        // In production geographic_units belongs to postgres: its owner adds the column beforehand
+        // (ALTER TABLE geographic_units ADD COLUMN metadata jsonb), so it is only added here when missing.
+        if (! Schema::hasColumn('geographic_units', 'metadata')) {
+            Schema::table('geographic_units', function (Blueprint $table) {
+                $table->jsonb('metadata')->nullable();
+            });
+        }
 
         Schema::create('barrios', function (Blueprint $table) {
             $table->uuid('id')->primary();
