@@ -15,6 +15,8 @@ class WhatsAppSendRecipient extends Model
         'phone',
         'status',
         'error_reason',
+        'message_text',
+        'image_url',
     ];
 
     public function send(): BelongsTo

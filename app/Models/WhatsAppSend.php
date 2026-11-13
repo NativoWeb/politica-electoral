@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -14,6 +13,7 @@ class WhatsAppSend extends Model
         'template_id',
         'campaign_type',
         'campaign_date',
+        'image_url',
     ];
 
     protected function casts(): array

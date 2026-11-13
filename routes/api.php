@@ -13,6 +13,8 @@ Route::prefix('whatsapp')->name('api.whatsapp.')->group(function () {
 
     Route::post('/recipients/status-by-phone', [WhatsAppController::class, 'updateRecipientStatusByPhone'])->name('recipients.status-by-phone');
 
+    Route::post('/recipients/message-data', [WhatsAppController::class, 'saveRecipientMessageData'])->name('recipients.message-data');
+
     Route::get('/birthdays/today', [WhatsAppController::class, 'birthdayRecipients'])->name('birthdays.today');
 
     Route::post('/birthdays/recipients/{recipient}/status', [WhatsAppController::class, 'updateBirthdayRecipientStatus'])->name('birthdays.recipients.status');

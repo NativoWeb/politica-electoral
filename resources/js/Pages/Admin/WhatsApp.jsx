@@ -873,7 +873,40 @@ export default function WhatsApp({
         }
     };
 
+    const openRecipientWhatsApp = (recipient) => {
+        const rawPhone = String(recipient.phone ?? '').replace(/\D/g, '');
 
+        if (!rawPhone || !recipient.message_text) return;
+
+        let phone = rawPhone;
+
+        // Agregar el indicativo de Colombia cuando el número tiene 10 dígitos.
+        if (phone.length === 10) {
+            phone = `57${phone}`;
+        } else if (phone.startsWith('0057')) {
+            phone = phone.slice(2);
+        }
+
+        const url = `https://wa.me/${phone}?text=${encodeURIComponent(
+            recipient.message_text
+        )}`;
+
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    const openRecipientImage = (imageUrl) => {
+        if (!imageUrl) return;
+
+        try {
+            const url = new URL(imageUrl);
+
+            if (!['https:', 'http:'].includes(url.protocol)) return;
+
+            window.open(url.href, '_blank', 'noopener,noreferrer');
+        } catch {
+            console.error('La URL de la imagen no es válida.');
+        }
+    };
 
     const filterHistoryRecipients = (recipients, statusFilter) => {
         const rows = recipients ?? [];
@@ -1674,6 +1707,9 @@ export default function WhatsApp({
                                                         </th>
                                                         <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                                             Estado
+                                                            </th>
+                                                         <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Acciones
                                                         </th>
                                                     </tr>
                                                 </thead>
@@ -1710,12 +1746,44 @@ export default function WhatsApp({
                                                                         )}
                                                                     </div>
                                                                 </td>
+
+                                                                <td className="px-4 py-3">
+                                                                    {normalizeStatus(recipient.status) === 'error' && (
+                                                                        <div className="flex flex-col items-start gap-2">
+                                                                            {recipient.phone && recipient.message_text && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openRecipientWhatsApp(recipient)}
+                                                                                    className="text-[11px] font-semibold text-green-700 hover:underline"
+                                                                                >
+                                                                                    Abrir WhatsApp
+                                                                                </button>
+                                                                            )}
+
+                                                                            {recipient.image_url && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openRecipientImage(recipient.image_url)}
+                                                                                    className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline"
+                                                                                >
+                                                                                    Ver imagen
+                                                                                </button>
+                                                                            )}
+
+                                                                            {(!recipient.message_text || !recipient.image_url) && (
+                                                                                <span className="text-[10px] text-gray-400">
+                                                                                    Datos no disponibles
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
                                                             </tr>
                                                         ))
                                                     ) : (
                                                         <tr>
                                                             <td
-                                                                colSpan={4}
+                                                                colSpan={5}
                                                                 className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]"
                                                             >
                                                                 No hay destinatarios registrados para esta fecha.
@@ -1874,6 +1942,9 @@ export default function WhatsApp({
                                                         <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                                             Estado
                                                         </th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                            Acciones
+                                                        </th>
                                                     </tr>
                                                 </thead>
 
@@ -1894,6 +1965,8 @@ export default function WhatsApp({
                                                                     {recipient.phone || 'Sin celular'}
                                                                 </td>
 
+
+                                                                {/* Estado */}
                                                                 <td className="px-4 py-3">
                                                                     <div className="space-y-1">
                                                                         <span
@@ -1909,12 +1982,45 @@ export default function WhatsApp({
                                                                         )}
                                                                     </div>
                                                                 </td>
+
+                                                                {/* Acciones */}
+                                                                <td className="px-4 py-3">
+                                                                    {normalizeStatus(recipient.status) === 'error' && (
+                                                                        <div className="flex flex-col items-start gap-2">
+                                                                            {recipient.phone && recipient.message_text && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openRecipientWhatsApp(recipient)}
+                                                                                    className="text-[11px] font-semibold text-green-700 hover:underline"
+                                                                                >
+                                                                                    Abrir WhatsApp
+                                                                                </button>
+                                                                            )}
+
+                                                                            {recipient.image_url && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openRecipientImage(recipient.image_url)}
+                                                                                    className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline"
+                                                                                >
+                                                                                    Ver imagen
+                                                                                </button>
+                                                                            )}
+
+                                                                            {(!recipient.message_text || !recipient.image_url) && (
+                                                                                <span className="text-[10px] text-gray-400">
+                                                                                    Datos no disponibles
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
                                                             </tr>
                                                         ))
                                                     ) : (
                                                         <tr>
                                                             <td
-                                                                colSpan={3}
+                                                                colSpan={4}
                                                                 className="px-4 py-8 text-center text-[11px] text-[var(--color-ink-faint)]"
                                                             >
                                                                 No hay destinatarios registrados para esta fecha.
