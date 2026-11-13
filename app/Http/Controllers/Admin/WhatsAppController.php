@@ -493,7 +493,7 @@ class WhatsAppController extends Controller
                 $query->whereIn('persons.id', $validated['contact_ids'] ?? []);
             }
 
-            if ($search = trim((string) ($validated['search'] ?? ''))) {
+            if ($selectAllMatching && ($search = trim((string) ($validated['search'] ?? '')))) {
                 $query->where(function ($q) use ($search) {
                     $q->where('persons.full_name', 'ilike', "%{$search}%")
                         ->orWhereHas('contactPoints', function ($cq) use ($search) {
@@ -507,7 +507,7 @@ class WhatsAppController extends Controller
                 });
             }
 
-            if ($template->meta_name === 'oscarfc') {
+            if ($selectAllMatching && $template->meta_name === 'oscarfc') {
                 if (!empty($validated['birth_month'])) {
                     $query->whereMonth('birth_date', $validated['birth_month']);
                 }
@@ -518,7 +518,8 @@ class WhatsAppController extends Controller
             }
 
             if (
-                $template->meta_name !== 'oscarfc'
+                $selectAllMatching
+                && $template->meta_name !== 'oscarfc'
                 && in_array('cumpleanos', $configuredFilters, true)
                 && !empty($validated['filter_cumpleanos'])
             ) {
@@ -619,7 +620,7 @@ class WhatsAppController extends Controller
                 $query->whereIn('lideres.id', $validated['contact_ids'] ?? []);
             }
 
-            if ($search = trim((string) ($validated['search'] ?? ''))) {
+            if ($selectAllMatching && ($search = trim((string) ($validated['search'] ?? '')))) {
                 $query->where(function ($q) use ($search) {
                     $q->where('nombre', 'ilike', "%{$search}%")
                         ->orWhere('telefono', 'ilike', "%{$search}%")
@@ -629,7 +630,7 @@ class WhatsAppController extends Controller
                 });
             }
 
-            if ($template->meta_name === 'oscarfc') {
+            if ($selectAllMatching && $template->meta_name === 'oscarfc') {
                 if (!empty($validated['birth_month'])) {
                     $query->whereMonth('fecha_nacimiento', $validated['birth_month']);
                 }
@@ -640,7 +641,8 @@ class WhatsAppController extends Controller
             }
 
             if (
-                $template->meta_name !== 'oscarfc'
+                $selectAllMatching
+                && $template->meta_name !== 'oscarfc'
                 && in_array('cumpleanos', $configuredFilters, true)
                 && !empty($validated['filter_cumpleanos'])
             ) {
@@ -698,33 +700,36 @@ class WhatsAppController extends Controller
             ->values();
 
         /*
-        * Aplicar exclusivamente los filtros habilitados para esta plantilla.
+        * Aplicar filtros de plantilla únicamente cuando se seleccionan
+        * todos los destinatarios que coinciden con los criterios.
         */
-        foreach ([
-            'provincia',
-            'municipio',
-            'tipo',
-            'cargo',
-            'partido',
-            'profesion',
-            'barrio',
-            'estado',
-        ] as $field) {
-            $value = trim((string) ($validated["filter_{$field}"] ?? ''));
+        if ($selectAllMatching) {
+            foreach ([
+                'provincia',
+                'municipio',
+                'tipo',
+                'cargo',
+                'partido',
+                'profesion',
+                'barrio',
+                'estado',
+            ] as $field) {
+                $value = trim((string) ($validated["filter_{$field}"] ?? ''));
 
-            if (
-                $value !== ''
-                && in_array($field, $configuredFilters, true)
-            ) {
-                $recipients = $recipients->filter(function ($recipient) use ($field, $value) {
-                    $contactValue = (string) ($recipient[$field] ?? '');
+                if (
+                    $value !== ''
+                    && in_array($field, $configuredFilters, true)
+                ) {
+                    $recipients = $recipients->filter(function ($recipient) use ($field, $value) {
+                        $contactValue = (string) ($recipient[$field] ?? '');
 
-                    return $contactValue !== ''
-                        && str_contains(
-                            mb_strtolower($contactValue),
-                            mb_strtolower($value)
-                        );
-                });
+                        return $contactValue !== ''
+                            && str_contains(
+                                mb_strtolower($contactValue),
+                                mb_strtolower($value)
+                            );
+                    });
+                }
             }
         }
 
