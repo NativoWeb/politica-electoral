@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\WhatsAppLinkCode;
 use App\Services\Agent\AgentIdentityService;
 use App\Support\CurrentCampaign;
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -66,15 +67,26 @@ class AdminController extends Controller
             'requiresWhatsapp' => true],
     ];
 
+    // Offered only while the Campañas electorales module is on (config/features.php).
+    private const CAMPANAS_PERMISSIONS = [
+        ['key' => 'view.campanas', 'label' => 'Ver campañas electorales', 'group' => 'Campañas electorales'],
+        ['key' => 'manage.campanas', 'label' => 'Gestionar campañas electorales', 'group' => 'Campañas electorales'],
+    ];
+
+    private static function permissionCatalog(): array
+    {
+        return Features::enabled('campanas') ? [...self::PERMISSIONS, ...self::CAMPANAS_PERMISSIONS] : self::PERMISSIONS;
+    }
+
     // The form only offers what the actor may hand out: a superadmin everything, anyone else the permissions they hold.
     private function grantablePermissions(): array
     {
         $held = request()->user()->resolvedPermissions();
         if ($this->campaign()->isSuperadmin() || in_array('*', $held, true)) {
-            return self::PERMISSIONS;
+            return self::permissionCatalog();
         }
 
-        return array_values(array_filter(self::PERMISSIONS, fn ($p) => in_array($p['key'], $held, true)));
+        return array_values(array_filter(self::permissionCatalog(), fn ($p) => in_array($p['key'], $held, true)));
     }
 
     private function assignableRoles()
@@ -176,7 +188,7 @@ class AdminController extends Controller
             'municipios' => $municipios,
             'provincias' => $provincias,
             'availablePermissions' => $this->grantablePermissions(),
-            'permissionLabels' => array_column(self::PERMISSIONS, 'label', 'key'),
+            'permissionLabels' => array_column(self::permissionCatalog(), 'label', 'key'),
         ]);
     }
 
@@ -188,6 +200,11 @@ class AdminController extends Controller
     private function authorizeUserWrite(?User $target = null, ?string $roleId = null, ?array $permissions = null): void
     {
         $actor = request()->user();
+        // While the module is off its permissions cannot be granted, not even by the superadmin.
+        $hidden = Features::enabled('campanas') ? [] : array_column(self::CAMPANAS_PERMISSIONS, 'key');
+        if (array_intersect(array_diff($permissions ?? [], $target?->permissions ?? []), $hidden) !== []) {
+            throw ValidationException::withMessages(['permissions' => 'Ese permiso no está disponible.']);
+        }
         if ($this->campaign()->isSuperadmin()) {
             return;
         }
@@ -225,7 +242,7 @@ class AdminController extends Controller
 
         if (! DB::table('campaigns')->where('id', $campaignId)->value('whatsapp_enabled')) {
             throw ValidationException::withMessages([
-                'permissions' => 'La campaña de este usuario no tiene WhatsApp activo; no se le puede dar el Asistente de WhatsApp.',
+                'permissions' => 'El grupo político de este usuario no tiene WhatsApp activo; no se le puede dar el Asistente de WhatsApp.',
             ]);
         }
     }

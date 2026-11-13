@@ -194,7 +194,7 @@ class EventOcrHardeningTest extends TestCase
         $this->process($id, ['reintentar' => true])->assertJsonPath('success', false);
 
         $this->process($id, ['reintentar' => true])->assertJsonPath('success', false)
-            ->assertJsonPath('message', 'La campaña ya hizo 2 lecturas con IA hoy, el máximo diario. Continúe mañana.');
+            ->assertJsonPath('message', 'El grupo político ya hizo 2 lecturas con IA hoy, el máximo diario. Continúe mañana.');
         $this->assertCount(2, $this->fake->calls);
     }
 

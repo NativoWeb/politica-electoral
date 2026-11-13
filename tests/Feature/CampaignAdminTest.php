@@ -966,7 +966,7 @@ class CampaignAdminTest extends TestCase
         $this->actingAs($this->adminX)->putJson("/admin/usuarios/{$this->campoX->id}", ['name' => 'X', 'email' => 'x@test.local', 'role_id' => "1' OR 1=1"])
             ->assertStatus(422)->assertJsonPath('errors.role_id', ['El campo rol debe ser un UUID válido.']);
         $this->actingAs($this->superadmin)->postJson('/admin/usuarios', $this->newUserPayload(['campaign_id' => 'no-uuid']))
-            ->assertStatus(422)->assertJsonPath('errors.campaign_id', ['El campo campaña debe ser un UUID válido.']);
+            ->assertStatus(422)->assertJsonPath('errors.campaign_id', ['El campo grupo político debe ser un UUID válido.']);
         $this->actingAs($this->adminX)->putJson('/admin/usuarios/no-uuid', ['name' => 'X', 'email' => 'x@test.local'])->assertNotFound();
 
         $this->assertSame(0, User::where('email', 'nuevo@test.local')->count());

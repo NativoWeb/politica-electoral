@@ -279,7 +279,7 @@ describe('Admin Users page', () => {
             const box = screen.getByLabelText(/Asistente de WhatsApp/);
 
             expect(box).toBeDisabled();
-            expect(screen.getByText('Su campaña no tiene WhatsApp activo.')).toBeInTheDocument();
+            expect(screen.getByText('Su grupo político no tiene WhatsApp activo.')).toBeInTheDocument();
             fireEvent.click(screen.getByRole('button', { name: 'Todos' }));
             expect(box).not.toBeChecked();
             expect(screen.getByLabelText('Gestionar usuarios')).toBeChecked();

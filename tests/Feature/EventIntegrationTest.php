@@ -373,7 +373,7 @@ class EventIntegrationTest extends TestCase
         $this->assertContains('\'=HYPERLINK("http://x","clic")', array_column($lideres, 0));
         $this->assertSame(array_column($screen['eventos'], 'nombre'), array_column($eventos, 0));
         $this->assertSame(array_column($screen['asistentes']['data'], 'cedula'), array_map('strval', array_column($asistentes, 2)));
-        $this->assertContains('CAMPAÑA', $sheets[0]->headings(), 'CD sees two campaigns: the sheet says whose each lider is');
+        $this->assertContains('GRUPO POLÍTICO', $sheets[0]->headings(), 'CD sees two campaigns: the sheet says whose each lider is');
         $this->assertSame(1, DB::table('audit_logs')->where('action', 'EVENTOS_TERRITORIO_EXPORTADO')->count());
     }
 
@@ -517,7 +517,7 @@ class EventIntegrationTest extends TestCase
         $this->actingAs($this->cd)->get("/eventos/territorio/excel?municipio={$this->giron}")->assertOk();
         Excel::assertDownloaded('territorio-giron.xlsx', function (SheetsExport $export) {
             $asistentes = $export->sheets()[2];
-            $this->assertContains('CAMPAÑA', $asistentes->headings());
+            $this->assertContains('GRUPO POLÍTICO', $asistentes->headings());
             $campana = collect($asistentes->array())->mapWithKeys(fn ($r) => [(string) $r[2] => $r[array_key_last($r)]]);
             $this->assertSame('Alejandro', $campana['222']);
             $this->assertSame('Centro Democrático', $campana['111']);

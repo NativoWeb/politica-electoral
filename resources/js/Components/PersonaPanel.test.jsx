@@ -19,7 +19,7 @@ import PersonaPanel from './PersonaPanel';
 
 const CD = { id: 'cd', name: 'Centro Democrático', whatsapp_enabled: true, is_subcampaign: false };
 const VISIBLE = [{ id: 'cd', name: 'Centro Democrático' }, { id: 'x', name: 'Alejandro' }];
-const READ_ONLY_X = 'Este registro es de la campaña Alejandro. Puedes verlo, pero solo su equipo puede modificarlo.';
+const READ_ONLY_X = 'Este registro es del grupo político Alejandro. Puedes verlo, pero solo su equipo puede modificarlo.';
 
 function persona(campaignId) {
     return {
@@ -60,7 +60,7 @@ describe('PersonaPanel campaign read-only', () => {
         render(<PersonaPanel personId="l1" onClose={vi.fn()} />);
 
         expect(await screen.findByRole('note')).toHaveTextContent(READ_ONLY_X);
-        expect(screen.getByText('Campaña Alejandro')).toBeInTheDocument();
+        expect(screen.getByText('Grupo político Alejandro')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
         expect(screen.queryByTitle('Desactivar persona')).not.toBeInTheDocument();
 
@@ -92,7 +92,7 @@ describe('PersonaPanel campaign read-only', () => {
 
         expect(await screen.findByRole('button', { name: 'Editar' })).toBeInTheDocument();
         expect(screen.queryByRole('note')).not.toBeInTheDocument();
-        expect(screen.queryByText(/^Campaña /)).not.toBeInTheDocument();
+        expect(screen.queryByText(/^Grupo político /)).not.toBeInTheDocument();
     });
 
     it('shows the read-only notice instead of a generic error when a save answers 403', async () => {
@@ -102,7 +102,7 @@ describe('PersonaPanel campaign read-only', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
-        await waitFor(() => expect(screen.getAllByText('Este registro es de otra campaña. Puedes verlo, pero solo su equipo puede modificarlo.').length).toBeGreaterThan(0));
+        await waitFor(() => expect(screen.getAllByText('Este registro es de otro grupo político. Puedes verlo, pero solo su equipo puede modificarlo.').length).toBeGreaterThan(0));
         expect(screen.queryByText(/Error al guardar/)).not.toBeInTheDocument();
     });
 

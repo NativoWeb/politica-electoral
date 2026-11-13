@@ -64,7 +64,7 @@ class MergeLideres
             $this->authorizeCampaign($other->campaign_id);
             // A cédula identifies a person only inside one campaign: records of two campaigns are never one.
             if ($other->campaign_id !== $edited->campaign_id) {
-                throw new BusinessRuleException('No se pueden unificar registros de campañas distintas.');
+                throw new BusinessRuleException('No se pueden unificar registros de grupos políticos distintos.');
             }
             $this->authorizeGeo($other->geographic_unit_id);
 

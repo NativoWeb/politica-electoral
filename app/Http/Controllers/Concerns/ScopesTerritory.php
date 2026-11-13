@@ -48,7 +48,7 @@ trait ScopesTerritory
     {
         abort_unless($this->campaign()->isVisible($campaignId), 404);
         if ($write && ! $this->campaign()->isOwn($campaignId)) {
-            abort(403, 'Este registro pertenece a otra campaña: solo se puede consultar.');
+            abort(403, 'Este registro pertenece a otro grupo político: solo se puede consultar.');
         }
     }
 

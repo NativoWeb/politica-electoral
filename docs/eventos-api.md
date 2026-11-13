@@ -15,7 +15,7 @@ Convenciones:
   `evento` (borrar con asistentes), `ids` (asistentes ajenos al evento), `organizadores` (líder no válido),
   `ends_at`/`registration_closes_at` (fechas). En Inertia llegan como `errors.<clave>`. (Las claves `consent`,
   `consent_text_id`, `autoriza_datos` y `declaracion` ya no se usan desde 2026-11-07, §4.)
-- **404** JSON genérico e idéntico para "no existe", "id no UUID" y "es de otra campaña no visible":
+- **404** JSON genérico e idéntico para "no existe", "id no UUID" y "es de otro grupo político no visible":
   `{ "message": "No se encontró lo que busca." }` (nunca nombra el modelo); en HTML, la página `errors/404`.
   **429** JSON por límite (`throttle`): `{ "success": false, "message": "Demasiadas solicitudes. Espere un momento e intente de nuevo." }`
   con `Retry-After`; en HTML, la página `errors/429`. El 429 del QR público por tope de evento conserva su propio mensaje.
@@ -34,22 +34,22 @@ Convenciones:
 | `delete.actas` | **Eliminar actas confirmadas** (§14), por ejemplo una confirmada por error, deshaciendo lo que creó. Solo sirve junto con `manage.eventos`. Se otorga como los demás (solo quien lo tiene; el superadmin lo tiene implícito). |
 
 **Regla única:** gestionar eventos (crear, editar, borrar, abrir, cerrar, cancelar, regenerar QR, aprobar y descartar)
-exige **solo `manage.eventos`** (más campaña propia y territorio); **no** exige `write.data` ni un rol de escritura.
+exige **solo `manage.eventos`** (más grupo político propio y territorio); **no** exige `write.data` ni un rol de escritura.
 Ninguna ruta de eventos lleva `can.write`. El frontend debe usar la prop compartida **`auth.user.canManageEventos`**
 (o `can.manage` de cada página, que vale lo mismo) para mostrar esas acciones; nunca `canWrite`.
 
 Superadmin (R01) tiene todo. Un usuario cuyo único permiso de vista es de eventos aterriza en `/eventos` al entrar a `/`.
 
-Aislamiento por campaña (igual que Votantes):
+Aislamiento por grupo político (igual que Votantes):
 
-- Se ven los eventos de la campaña propia **y de sus subcampañas**; un evento de otra campaña no visible → **404**.
-- Solo se escriben eventos de la campaña **propia**; un evento de una subcampaña visible → **403**
-  (`"Este registro pertenece a otra campaña: solo se puede consultar."`). Incluye abrir la página del operador y
-  registrar asistentes (el operador trabaja solo en eventos de su propia campaña).
+- Se ven los eventos del grupo político propio **y de sus subgrupos**; un evento de otro grupo político no visible → **404**.
+- Solo se escriben eventos del grupo político **propio**; un evento de un subgrupo visible → **403**
+  (`"Este registro pertenece a otro grupo político: solo se puede consultar."`). Incluye abrir la página del operador y
+  registrar asistentes (el operador trabaja solo en eventos de su propio grupo político).
 - Usuario con territorio (`territory_scope`): solo eventos cuyo `municipio_id` está en su territorio
   (listado filtrado; detalle/escritura fuera de territorio → **403** `"Este registro está fuera de tu territorio."`).
-- `campaign_id` nunca viene del request: el evento nace en la campaña del usuario; asistentes, consentimientos y
-  fichas aprobadas usan **la campaña del evento**.
+- `campaign_id` nunca viene del request: el evento nace en el grupo político del usuario; asistentes, consentimientos y
+  fichas aprobadas usan **el grupo político del evento**.
 
 ---
 
@@ -62,8 +62,8 @@ Aislamiento por campaña (igual que Votantes):
 | GET | `/eventos` | `eventos.index` | `view.eventos\|manage.eventos\|register.asistentes` | Inertia `Eventos/Index` |
 | GET | `/eventos/buscar/organizadores?q=` | `eventos.buscar.organizadores` | `manage.eventos` | JSON |
 | GET | `/eventos/buscar/figuras?q=` | `eventos.buscar.figuras` | `manage.eventos` | JSON |
-| POST | `/eventos/tipos` | `eventos.tipos.store` | `manage.eventos` | JSON 201 creado / 200 si ya existía uno global o de la campaña propia con el mismo nombre (sin mayúsculas ni tildes) |
-| PUT | `/eventos/tipos/{id}` | `eventos.tipos.update` | `manage.eventos` | JSON 200; solo tipos de la campaña propia (globales: solo R01); 422 "Ya existe un tipo con ese nombre" si repite otro tipo usable activo; 403 / 404 |
+| POST | `/eventos/tipos` | `eventos.tipos.store` | `manage.eventos` | JSON 201 creado / 200 si ya existía uno global o del grupo político propio con el mismo nombre (sin mayúsculas ni tildes) |
+| PUT | `/eventos/tipos/{id}` | `eventos.tipos.update` | `manage.eventos` | JSON 200; solo tipos del grupo político propio (globales: solo R01); 422 "Ya existe un tipo con ese nombre" si repite otro tipo usable activo; 403 / 404 |
 | DELETE | `/eventos/tipos/{id}` | `eventos.tipos.destroy` | `manage.eventos` | JSON 200 `deleted: true` si ningún evento (ni borrado) lo usa; si no, lo desactiva (`deactivated: true`) y los eventos lo conservan |
 | GET | `/eventos/{id}` | `eventos.show` | `view.eventos\|manage.eventos` | Inertia `Eventos/Show` |
 | GET | `/eventos/{id}/operador` | `eventos.operador` | `register.asistentes\|manage.eventos` | Inertia `Eventos/Operador` |
@@ -141,9 +141,9 @@ vencimiento (puede pasar registros tarde).
 
 ---
 
-## 4. Autorización de datos — RETIRADA el 2026-11-07 por decisión de la campaña
+## 4. Autorización de datos — RETIRADA el 2026-11-07 por decisión de Marly
 
-Marly, informada del riesgo frente a la Ley 1581 (la responsabilidad queda en la campaña), decidió el **2026-11-07**
+Marly, informada del riesgo frente a la Ley 1581 (la responsabilidad queda en el grupo político), decidió el **2026-11-07**
 quitar la autorización de datos de **todo** el módulo Eventos:
 
 - **QR público**: sin casilla de autorización y sin exigir texto aprobado; el QR abre desde ya. Se mantienen honeypot,
@@ -170,7 +170,7 @@ con el SQL de despliegue de §11 ("Paso de despliegue 2026-11-07").
 
 Query (todos opcionales): `provincia` (uuid), `municipio` (uuid), `barrio` (texto, contiene, sin tildes),
 `tipo` (uuid event_type), `status`, `desde` (YYYY-MM-DD, starts_at ≥), `hasta` (YYYY-MM-DD, starts_at ≤ fin del día),
-`q` (nombre del evento; sin distinguir mayúsculas ni tildes), `campana` (uuid, solo si hay más de una campaña visible), `page`.
+`q` (nombre del evento; sin distinguir mayúsculas ni tildes), `campana` (uuid, solo si hay más de un grupo político visible), `page`.
 
 ```jsonc
 {
@@ -201,7 +201,7 @@ Las `provincias` vienen filtradas por el territorio del usuario (solo municipios
   "provincia": { "id": "uuid", "nombre": "Soto" }, "municipio": { "id": "uuid", "nombre": "Girón" },
   "barrios": ["El Poblado", "Centro"],
   "campaign": { "id": "uuid", "nombre": "Centro Democrático" },
-  "editable": true,                 // campaña propia (y manage.eventos)
+  "editable": true,                 // grupo político propio (y manage.eventos)
   "asistentes_total": 120           // null si el usuario solo tiene register.asistentes
 }
 ```
@@ -225,7 +225,7 @@ puede ser `excel` (en pantalla: "Por Excel: <quien confirmó>").
   "cargas": [                                                      // cargas confirmadas con asistentes; [] si !can.edit
     { "id": "uuid", "kind": "excel|ocr", "nombre": "lista.xlsx", "created_by": "Sandra", "confirmed_at": "...", "asistentes": 269 }
   ],
-  "can": { "manage": true, "register": true, "edit": true }        // edit = manage && campaña propia
+  "can": { "manage": true, "register": true, "edit": true }        // edit = manage && grupo político propio
 }
 ```
 
@@ -302,7 +302,7 @@ Token desconocido o evento borrado → **404** (página 404 estándar).
 {
   "nombre": "Del Senado al barrio — Girón",         // requerido, ≤ 200
   "descripcion": "texto",                            // opcional, ≤ 5000
-  "event_type_id": "uuid",                           // requerido: tipo global o de la campaña propia
+  "event_type_id": "uuid",                           // requerido: tipo global o del grupo político propio
   "starts_at": "2026-11-05 18:00",                   // requerido
   "ends_at": "2026-11-05 21:00",                     // opcional, ≥ starts_at
   "registration_closes_at": "2026-11-05 22:00",      // opcional, ≥ starts_at
@@ -318,7 +318,7 @@ Token desconocido o evento borrado → **404** (página 404 estándar).
 }
 ```
 
-- `lider_id` debe ser un líder **activo de la campaña propia** (y del territorio del usuario); si no → 422.
+- `lider_id` debe ser un líder **activo del grupo político propio** (y del territorio del usuario); si no → 422.
 - `person_id` debe existir en `persons`; si no → 422.
 - En `PUT` todo es opcional, pero un campo obligatorio que **viene** vacío (`""`, espacios o `null`) → 422 con el
   mismo mensaje que al crear (p. ej. `errors.nombre: ["Escriba el nombre del evento."]`); `descripcion`, `ends_at` y
@@ -397,8 +397,8 @@ Mismo body que el operador **más**:
 
 Aprobar (solo `pendiente`; los demás se omiten):
 
-- Si la cédula ya existe en Votantes de la campaña del evento → se vincula (`vinculado`, `lider_id`), **sin tocar la ficha**.
-- Si no → crea la ficha en `lideres` en la **campaña del evento** con `tipo = "asistente_evento"`, municipio del
+- Si la cédula ya existe en Votantes del grupo político del evento → se vincula (`vinculado`, `lider_id`), **sin tocar la ficha**.
+- Si no → crea la ficha en `lideres` en el **grupo político del evento** con `tipo = "asistente_evento"`, municipio del
   evento, barrio/dirección/fecha de nacimiento del asistente, `telefono = celular`, `autoriza_datos = true` **solo si
   el consentimiento fue sobre un texto aprobado** (registros anteriores a 2026-11-07; desde entonces queda `false`), `observacion` vacía (nunca el
   nombre del evento: la ficha la leen usuarios sin `view.eventos`; el vínculo queda en `event_attendees.lider_id`) y el fijo como contacto; el asistente
@@ -413,7 +413,7 @@ Ids que no son del evento → 422 (`errors.ids`). Sin `manage.eventos` → 403.
 
 ### 6.1 Acciones por asistente (2026-11-10)
 
-Todas exigen `manage.eventos`, evento de la **campaña propia** (de una subcampaña visible → 403; invisible → 404) y
+Todas exigen `manage.eventos`, evento de el **grupo político propio** (de un subgrupo visible → 403; invisible → 404) y
 dentro del territorio del usuario (fuera → 403). En pantalla: botón «Acciones» en cada asistente y, con casillas,
 selección de pendientes y descartados (Eliminar / Recuperar / Descartar / Pasar a Votantes según lo elegido).
 
@@ -442,8 +442,8 @@ selección de pendientes y descartados (Eliminar / Recuperar / Descartar / Pasar
 (`UndoEventImport`). Solo cargas `confirmado` de este evento (otra → 404). Mismos permisos que §6.1.
 
 - Borra los asistentes con `event_attendees.import_id = {import}` (salvo los que tengan `data_consents`).
-- Fichas **creadas** al aprobar asistentes de esa carga (asistente `aprobado`, ficha `tipo = asistente_evento` de la
-  campaña del evento): se borran **solo si no tienen otra actividad**: ninguna otra asistencia (otro evento u otro
+- Fichas **creadas** al aprobar asistentes de esa carga (asistente `aprobado`, ficha `tipo = asistente_evento` del
+  grupo político del evento): se borran **solo si no tienen otra actividad**: ninguna otra asistencia (otro evento u otro
   asistente), organizador de evento, contactos aparte del fijo que copió la aprobación, información política,
   seguimientos, municipios de influencia, nexos, referidos (otra ficha con `referente_documento` = su cédula),
   etiquetas, favoritos, envíos de WhatsApp, `data_consents`, participante o responsable de un acta (desde 2026-11-11), ni edición posterior (`updated_at` ≠ `created_at`). Las
@@ -456,7 +456,7 @@ devuelve lo mismo con el mensaje («Se conservaron X fichas que ya tienen otra i
 
 ### Búsquedas
 
-`GET /eventos/buscar/organizadores?q=gom` (≥ 2 caracteres; líderes activos de la campaña propia y del territorio, por
+`GET /eventos/buscar/organizadores?q=gom` (≥ 2 caracteres; líderes activos del grupo político propio y del territorio, por
 nombre o cédula, máx. 10):
 
 ```jsonc
@@ -537,8 +537,8 @@ comando, migrar y volver a ejecutar `data_consents_owner.sql`. El resto de migra
 Hoja para registrar asistentes a mano cuando no hay señal ni celular, y que luego se transcribe (operador) o se
 fotografía para lectura automática (Fase 5).
 
-- **Permiso:** `manage.eventos` o `register.asistentes`. Aislamiento **como el detalle** (lectura): campaña propia
-  y subcampañas visibles → 200; otra campaña no visible, evento borrado o id no UUID → **404**; fuera del territorio →
+- **Permiso:** `manage.eventos` o `register.asistentes`. Aislamiento **como el detalle** (lectura): grupo político propio
+  y subgrupos visibles → 200; otro grupo político no visible, evento borrado o id no UUID → **404**; fuera del territorio →
   **403**. Sin el permiso: con `Accept: application/json` → 403; visita normal → redirect a `/` (regla general del
   middleware `permission`). Sin sesión → `/login`. Cualquier estado del evento (también cerrado/cancelado).
 - **HEAD** (la app instalada sondea antes de navegar): mismas comprobaciones de acceso (404/403; sin permiso → 403),
@@ -583,7 +583,7 @@ Rutas con el middleware `offline.owner` (`App\Http\Middleware\EnsureOfflineOwner
 - **Con la cabecera y coincide** con la cuenta de la sesión (se compara en minúsculas): sigue a los chequeos normales.
 - **Con la cabecera y no coincide** (otra cuenta, vacía o basura): **409** sin procesar nada (no guarda, no audita):
   `{ "success": false, "code": "owner_mismatch", "message": "Estos cambios se guardaron sin conexión con otra cuenta. Inicie sesión con esa cuenta para enviarlos." }`
-- El chequeo corre **justo después de `auth`** y **antes** de `permission`, `can.write`, el aislamiento por campaña y la
+- El chequeo corre **justo después de `auth`** y **antes** de `permission`, `can.write`, el aislamiento por grupo político y la
   validación: la cola de otra cuenta recibe siempre 409, nunca un 403/404/422 que la haga descartar. Sin sesión → 401
   (JSON) primero.
 - **Frontend:** hoy `isDefinitiveRejection()` trata **todo 409** como rechazo definitivo (marca rechazado y borra el
@@ -594,12 +594,12 @@ Rutas con el middleware `offline.owner` (`App\Http\Middleware\EnsureOfflineOwner
 
 ## 11. Cargue de asistentes desde Excel (Fase 3)
 
-Solo `manage.eventos`, en eventos de la **campaña propia** y del territorio (igual que editar: otra campaña no visible →
-404, subcampaña visible → 403, fuera de territorio → 403). Evento `cancelado` → 422 `errors.evento`
+Solo `manage.eventos`, en eventos de el **grupo político propio** y del territorio (igual que editar: otro grupo político no visible →
+404, subgrupo visible → 403, fuera de territorio → 403). Evento `cancelado` → 422 `errors.evento`
 (`"El evento está cancelado: no se pueden cargar asistentes."`); se puede cargar en `borrador`, `abierto` y `cerrado`
 (las planillas suelen llegar después del evento). Sin cola: todo corre en la petición (límites abajo).
 
-**Sin autorización desde 2026-11-07 (decisión de la campaña, §4):** todo archivo de Excel es una **lista** (ver
+**Sin autorización desde 2026-11-07 (decisión del grupo político, §4):** todo archivo de Excel es una **lista** (ver
 "Listas" más abajo): no hay columna «Autorizó» obligatoria (si el archivo la trae, se ignora), no hay declaración
 de planillas firmadas ni se exige texto aprobado, y **todas las filas válidas se importan**. Quien tiene cédula
 registrada (o se confirma por teléfono + nombre) se vincula al historial de su ficha; el resto queda `pendiente` de
@@ -669,7 +669,7 @@ Nombre: `plantilla-asistentes-<evento>.xlsx`.
      revisa el tamaño antes de enviar, así que normalmente no se llega a este caso.
    - Éxito: **201** `{ success: true, message: "Archivo recibido: N filas. Revise las columnas.", data: { id, status: "subido", repetido: false, filas } }`
      ("1 fila" en singular).
-   - Columnas adivinadas: primero el **último mapeo revisado de la campaña** (por nombre de encabezado), después
+   - Columnas adivinadas: primero el **último mapeo revisado del grupo político** (por nombre de encabezado), después
      sinónimos (`CC`, `C.C.`, `Documento`, `No. cédula`, `Cédula de ciudadanía`, `No. documento identidad (cédula)` →
      cédula; `Nombre completo`, `Nombres y apellidos` → nombre completo; `Tel`, `Teléfono`, `Móvil`, `Celular`,
      `Celular /fijo`, `WhatsApp` → celular; un segundo teléfono → fijo; `Fecha de cumpleaños` → fecha de nacimiento;
@@ -682,7 +682,7 @@ Nombre: `plantilla-asistentes-<evento>.xlsx`.
    `celular`; **sin** `autoriza` (lista sin autorización), `cedula` o `celular` (`"Elija la columna de la cédula o la del
    teléfono: sin ninguna no se puede saber si la persona ya está en la plataforma."`); una columna no puede usarse dos
    veces (422 `errors.columnas`). Aplica el mapeo a **todas** las filas (borra correcciones previas), valida y clasifica
-   → `revisado`; este mapeo queda guardado para la próxima carga de la campaña. **200** `{ success, message, data: { counts } }`.
+   → `revisado`; este mapeo queda guardado para la próxima carga del grupo político. **200** `{ success, message, data: { counts } }`.
 3. `PATCH .../filas/{fila}` (solo en `revisado`): cualquiera de `nombres`, `apellidos`, `cedula`, `celular`, `fijo`,
    `fecha_nacimiento`, `direccion`, `barrio`, `municipio`, `liderazgo` y/o `decision: "importar" | "omitir"`, o
    `sugerencia: "confirmar" | "rechazar"` (lista sin autorización, ver abajo). **`autoriza` no es editable** (se
@@ -702,7 +702,7 @@ Nombre: `plantilla-asistentes-<evento>.xlsx`.
    `registered_by` = quien confirma, `client_uuid` = UUID v5 de (`import_id`, `fila-<n>`). Confirmar otra vez no crea
    nada (`nuevos: 0`). **200** `{ success, message, data: { nuevos, ya_estaban } }` (mensaje `"Se registraron N
    asistentes nuevos, con autorización de datos."`, en singular con 1). Los nuevos quedan `pendiente`
-   (o `vinculado` si la cédula ya existe en Votantes de la campaña): pasar a Votantes sigue siendo manual (§6, aprobar).
+   (o `vinculado` si la cédula ya existe en Votantes del grupo político): pasar a Votantes sigue siendo manual (§6, aprobar).
    - `event_imports.status/consent_text_id/consent_declared/confirmed_by/confirmed_at` se fijan en la **primera**
      confirmación y no cambian después.
    - Cada fila importada guarda los suyos: `event_import_rows.declared`, `confirmed_by`, `confirmed_at`.
@@ -729,7 +729,7 @@ Nombre: `plantilla-asistentes-<evento>.xlsx`.
 Estados de fila (`event_import_rows.status`), en este orden de prioridad: `no_autorizo` (no dice SÍ: nunca importable,
 no se puede seleccionar ni corregir), `error`, `duplicada` (misma cédula que una fila importable anterior del archivo;
 una fila `no_autorizo` o con error no "ocupa" la cédula), `en_evento` (la cédula ya está registrada en el evento),
-`valida` y `pendiente` (sin revisar). `match_lider_id` = líder de la **campaña del evento** con esa cédula ("Ya estaba en
+`valida` y `pendiente` (sin revisar). `match_lider_id` = líder del **grupo político del evento** con esa cédula ("Ya estaba en
 la plataforma"). Decisión: `crear` (válida nueva), `vincular` (válida en la plataforma) u `omitir` (el resto, o elegida
 por el operador).
 
@@ -749,7 +749,7 @@ a_importar, omitidas, importadas }` (`validas = nuevas + en_plataforma`; `autori
   `confirmed_at`, número de fila).
 - `data_consents.accepted_at`, `ip` y `user_agent` son los de la **confirmación** en la plataforma (quién declaró tener
   las planillas, desde qué navegador y cuándo), **no** el día ni el lugar en que la persona firmó la planilla de papel.
-  El texto guardado es el vigente **aprobado** de la campaña al confirmar (con el provisional no se puede confirmar), así
+  El texto guardado es el vigente **aprobado** del grupo político al confirmar (con el provisional no se puede confirmar), así
   que al pasarlos a Votantes quedan con `autoriza_datos = true`.
 
 ### Retención del staging — `php artisan eventos:limpiar-importaciones`
@@ -812,18 +812,18 @@ autorización. Se aceptan **solo como asistencia**: nunca crean ni modifican fic
   se descarta. `liderazgo`/actividad se guarda como `event_attendees.nota` (máx. 255), **no** cambia el cargo de la ficha.
 - **Estados** (además de `error`, `duplicada` —misma cédula, misma ficha o mismo nombre+teléfono en el archivo— y
   `en_evento` —cédula, ficha o nombre+teléfono ya en el evento—):
-  - `valida` + `vincular`: la cédula existe en la campaña del evento, o el operador confirmó la sugerencia → al
+  - `valida` + `vincular`: la cédula existe en el grupo político del evento, o el operador confirmó la sugerencia → al
     confirmar, asistente `link_status = vinculado` con `lider_id` (aparece en la sección Eventos de la ficha).
   - `sugerida` (decisión `omitir`, **no importable**): sin cédula que coincida, mismo teléfono (solo dígitos, últimos 10,
     en `lideres.telefono` o `lider_contactos.valor`) **y** al menos una palabra del nombre en común (sin tildes; se ignoran
-    palabras de 1–2 letras y `del/las/los/san…`), entre los líderes activos de la campaña del evento en el municipio del
+    palabras de 1–2 letras y `del/las/los/san…`), entre los líderes activos del grupo político del evento en el municipio del
     evento o en el de la fila (columna `Municipio`, solo si está en el territorio del usuario). Un líder con **otra**
     cédula nunca se sugiere. `suggested_lider_id` guarda el candidato; la fila trae
     `sugerencia: { id, nombre, municipio, cargo, estado: null|"confirmada"|"rechazada" }` (solo si el líder está en el
     territorio de quien mira). **Nunca se vincula sin el clic del operador.** Solo para usuarios con `view.votantes` o
     `view.mapa` (muestra datos de la ficha): sin esos permisos no se sugiere a nadie y la fila queda `sin_ficha`. Si dos
-    fichas empatan (mismo número de palabras en común) no se sugiere ninguna. Confirmar exige que el líder siga en la
-    campaña del evento y en el territorio del usuario (si no, 422 `errors.sugerencia`).
+    fichas empatan (mismo número de palabras en común) no se sugiere ninguna. Confirmar exige que el líder siga en el
+    grupo político del evento y en el territorio del usuario (si no, 422 `errors.sugerencia`).
   - `PATCH .../filas/{fila}` `{ "sugerencia": "confirmar" }` → `valida` (vincular); `{ "sugerencia": "rechazar" }` →
     `sin_ficha`. Fila sin sugerencia → 422 `errors.sugerencia`. Corregir nombre o teléfono borra la respuesta (se
     vuelve a sugerir). Auditoría `EVENTO_IMPORTACION_SUGERENCIA` `{ event_id, fila, resultado }` (sin datos personales).
@@ -882,15 +882,15 @@ pestaña/sección "Eventos" de la ficha, ni el filtro ni la columna "N eventos" 
 (tampoco el conteo). `register.asistentes` solo no basta. En el frontend: `canSeeEventAttendees(auth.user)`
 (`resources/js/lib/eventosIntegracion.js`).
 
-Alcance de todo lo de esta sección (`App\Services\Eventos\EventScope`): eventos **no borrados** de las campañas
-**visibles** (propia + subcampañas) y, si el usuario tiene `territory_scope`, cuyo `municipio_id` está en su territorio.
-Nada de campañas no visibles llega a la pantalla ni al Excel.
+Alcance de todo lo de esta sección (`App\Services\Eventos\EventScope`): eventos **no borrados** de los grupos políticos
+**visibles** (propia + subgrupos) y, si el usuario tiene `territory_scope`, cuyo `municipio_id` está en su territorio.
+Nada de grupos políticos no visibles llega a la pantalla ni al Excel.
 
 ### Ficha de la persona — `GET /eventos/persona/{liderId}`
 
 Eventos a los que la ficha (líder) **asistió** (`event_attendees.lider_id`) o que **organizó**
 (`event_organizers.lider_id`). Permisos: `view.eventos|manage.eventos` **y** `view.mapa|view.votantes`.
-Líder inexistente, id no UUID o de una campaña no visible → **404**; líder fuera del territorio → **403**; sin permiso →
+Líder inexistente, id no UUID o de un grupo político no visible → **404**; líder fuera del territorio → **403**; sin permiso →
 **403** (JSON). Un evento fuera del territorio del usuario no se lista aunque la ficha sí esté en él.
 
 ```jsonc
@@ -913,7 +913,7 @@ Frontend: pestaña **Eventos** en `PersonaPanel` (Mapa Político; solo fichas `s
 ### Votantes — filtros, columna y contadores
 
 - `?evento=<uuid>` → "Asistió al evento…": fichas con una fila en `event_attendees` de ese evento. Un evento no visible
-  (otra campaña, borrado, fuera del territorio) o un valor que no es UUID **se ignora** (como `campana`).
+  (otro grupo político, borrado, fuera del territorio) o un valor que no es UUID **se ignora** (como `campana`).
 - `?asistentes_eventos=1` → "Asistentes a eventos (cualquiera)": asistió a algún evento visible. Con `evento` manda
   `evento`. Organizar un evento **no** cuenta como asistir.
 - Los contadores (`counters.total`, `gran_elector`, `con_referidos`) y el export (`/exportar/excel|pdf?source=votantes`,
@@ -977,7 +977,7 @@ toman las grafías del municipio que dan esa clave.
 }
 ```
 
-- **Líderes:** fichas activas del municipio (con barrio: las de ese barrio), de campañas visibles, **sin** las de tipo
+- **Líderes:** fichas activas del municipio (con barrio: las de ese barrio), de grupos políticos visibles, **sin** las de tipo
   `asistente_evento` (esas personas salen en Asistentes).
 - **Eventos:** del municipio; con barrio, los que tienen ese barrio en sus barrios (`event_barrios`).
   `asistentes` = total del evento; `asistentes_barrio` = los que viven en ese barrio (null sin barrio).
@@ -994,22 +994,22 @@ auditoría (el middleware `audit` no registra GET), sin datos personales en la m
 el export de Votantes ahora trae `cedula` disponible para `?columns=`).
 
 - **Asistentes del evento** — `GET /eventos/{id}/asistentes.xlsx` (botón "Descargar Excel" en el detalle). Mismo
-  acceso que el detalle (404/403 de campaña y territorio; sin permiso: JSON 403, visita → `/`) y **mismos filtros**
+  acceso que el detalle (404/403 de grupo político y territorio; sin permiso: JSON 403, visita → `/`) y **mismos filtros**
   (`link_status`, `source`, `q`), sin paginar. Columnas: Nombres, Apellidos, Cédula, Celular, Teléfono fijo, Fecha de
   nacimiento, Dirección, Barrio, Autorizó datos, Texto de autorización (Aprobado/Provisional), Origen (QR/Operador/Excel),
   Registrado por, Estado de vínculo, En Votantes, Fecha de registro. Nombre `asistentes-<evento>.xlsx`. Auditoría
   `EVENTO_ASISTENTES_EXPORTADOS` `{ route, filas, filtros }`.
 - **Territorio** — `GET /eventos/territorio/excel?municipio=&barrio=` (sin municipio → 404). Libro con 3 hojas,
   **Líderes**, **Eventos** y **Asistentes**, con las mismas consultas que la pantalla sin paginar (eventos sin el tope
-  de 200). Columna Campaña en las tres hojas, solo si el usuario ve más de una campaña. Nombre `territorio-<municipio>[-<barrio>].xlsx`. Auditoría
+  de 200). Columna Grupo político en las tres hojas, solo si el usuario ve más de un grupo político. Nombre `territorio-<municipio>[-<barrio>].xlsx`. Auditoría
   `EVENTOS_TERRITORIO_EXPORTADO` `{ route, municipio_id, barrio (bool), lideres, eventos, asistentes }`.
 - El botón "Exportar" del encabezado (que exporta el Mapa Político) ya no aparece en las páginas `/eventos/*`.
 
 ### Importación desde Excel: aislamiento antes de validar (OBS-07)
 
 `ImportUploadRequest`, `ImportMappingRequest`, `ImportRowRequest` e `ImportConfirmRequest` comprueban en `authorize()`
-(`AuthorizesEventImport`) el evento (campaña propia, territorio) y que la carga sea de ese evento **antes** de validar
-el cuerpo: otra campaña → **404** y subcampaña visible → **403** aunque el cuerpo sea inválido (antes respondía 422).
+(`AuthorizesEventImport`) el evento (grupo político propio, territorio) y que la carga sea de ese evento **antes** de validar
+el cuerpo: otro grupo político → **404** y subgrupo visible → **403** aunque el cuerpo sea inválido (antes respondía 422).
 
 ### Índices
 
@@ -1025,7 +1025,7 @@ Migración `2026_11_02_000001_add_lider_indexes_to_event_tables`: `event_attende
 - Mapa Político sin `view.eventos`: `?tipo=asistentes_evento` se quita como si no viniera (si era el único tipo, queda
   `todos`); `filters.tipo` devuelve el tipo efectivo (`MapaPoliticoController::effectiveTipos`).
 - `/votantes`: los contadores cuentan las mismas filas que el listado, con **todos** los filtros activos (búsqueda,
-  municipio, partido, confianza, etiquetas, estado, campaña, eventos).
+  municipio, partido, confianza, etiquetas, estado, grupo político, eventos).
 - Búsquedas con `LIKE` (Votantes, Mapa Político, Auditoría y el filtro de barrio del Mapa): `_` y `%` se buscan como
   caracteres (se escapa primero la barra invertida).
 - `/votantes`: los paneles de filtros de escritorio y móvil usan ids distintos; el filtro de evento activo se ve como
@@ -1045,10 +1045,10 @@ confirmación. Está apagada por defecto y así debe quedar hasta cumplir los pa
 | Interruptor | Dónde | Apagado → |
 |-------------|-------|-----------|
 | Global `EVENTOS_OCR_ENABLED` (por defecto `false`) | `.env` → `config/eventos.php` (`eventos.ocr.enabled`) | Todas las rutas de §13 → **404** (middleware `eventos.ocr`, antes de permisos), y las rutas de §11 sobre una carga de tipo `ocr` → 404. El botón no aparece. |
-| Por campaña `campaigns.ocr_enabled` (por defecto `false`) | `php artisan eventos:ocr-campana {campaña} --activar` o `--desactivar` (solo consola, R01/devops; deja `EVENTO_OCR_CAMPANA_ACTIVADA/DESACTIVADA` en la auditoría; sin opciones muestra el estado) | Rutas de §13 → **403** `"La lectura de planillas con IA no está activada para esta campaña."`. El botón no aparece. |
+| Por grupo político `campaigns.ocr_enabled` (por defecto `false`) | `php artisan eventos:ocr-campana {campaña} --activar` o `--desactivar` (solo consola, R01/devops; deja `EVENTO_OCR_CAMPANA_ACTIVADA/DESACTIVADA` en la auditoría; sin opciones muestra el estado) | Rutas de §13 → **403** `"La lectura de planillas con IA no está activada para este grupo político."`. El botón no aparece. |
 
-La campaña es la **del evento** (una subcampaña necesita su propio interruptor). `Eventos/Show` recibe `can.ocr`
-(= `manage.eventos` + campaña propia + los dos interruptores) y solo entonces muestra **"Leer planillas con IA"**.
+El grupo político es la **del evento** (un subgrupo necesita su propio interruptor). `Eventos/Show` recibe `can.ocr`
+(= `manage.eventos` + grupo político propio + los dos interruptores) y solo entonces muestra **"Leer planillas con IA"**.
 
 **Sin clave** (`ANTHROPIC_API_KEY` vacía) con los interruptores encendidos: la pantalla abre y dice
 `"La lectura con IA no está lista: falta configurar la clave del proveedor (ANTHROPIC_API_KEY). Avise al administrador de la plataforma."`;
@@ -1073,16 +1073,16 @@ subir y leer responden **422** `errors.ocr` con ese texto (nunca 500) y no se gu
   IA no es válida. Avise al administrador de la plataforma."` (no reintentable).
 - Precios también para `claude-opus-4-8`, el respaldo por defecto de Opus 5.5. Un modelo sin precio en la tabla se
   registra con costo 0 y deja un warning en el log (`Eventos OCR: el modelo no tiene precio…`).
-- Tope de costo: `EVENTOS_OCR_MAX_PAGINAS_DIA` (300) **llamadas a la IA** por campaña y día (hora de Bogotá), cuenten o
+- Tope de costo: `EVENTOS_OCR_MAX_PAGINAS_DIA` (300) **llamadas a la IA** por grupo político y día (hora de Bogotá), cuenten o
   no como página leída (fallidas, rechazadas por la IA o incompletas incluidas; `event_import_pages.api_calls` y
-  `last_call_at`). Al pasarlo: `"La campaña ya hizo N lecturas con IA hoy, el máximo diario. Continúe mañana."`.
+  `last_call_at`). Al pasarlo: `"El grupo político ya hizo N lecturas con IA hoy, el máximo diario. Continúe mañana."`.
 - Máximo **3 llamadas por página** (`OcrImportService::MAX_CALLS_PER_PAGE`): a la tercera falla la página queda
   `rechazada` con `"… Esta página ya se intentó leer 3 veces: tome otra foto y súbala en una carga nueva, o registre a
   las personas en el modo operador."` y "Intentar de nuevo" ya no la lee.
 - Una respuesta que se cobró pero no sirve (cortada por `max_tokens`, rechazada, JSON ilegible) suma sus tokens y su
   costo a la página y a la auditoría de esa llamada.
 
-### Rutas (`manage.eventos`, middleware `eventos.ocr`; campaña propia, territorio y `campaigns.ocr_enabled`)
+### Rutas (`manage.eventos`, middleware `eventos.ocr`; grupo político propio, territorio y `campaigns.ocr_enabled`)
 
 | Método | URI | Nombre | Respuesta |
 |--------|-----|--------|-----------|
@@ -1095,9 +1095,9 @@ subir y leer responden **422** `errors.ocr` con ese texto (nunca 500) y no se gu
 Corregir filas, confirmar y descartar usan las rutas de §11 (`PATCH .../importar/{import}/filas/{fila}`,
 `POST .../confirmar`, `DELETE .../importar/{import}`), que aplican los mismos interruptores a una carga `ocr`.
 `GET /eventos/{id}/importar/{import}` de una carga `ocr` redirige a su URL de §13; `PUT .../columnas` → 404.
-Otra campaña no visible → 404; subcampaña visible → 403; fuera del territorio → 403; sin `manage.eventos` → 403 (JSON)
+Otro grupo político no visible → 404; subgrupo visible → 403; fuera del territorio → 403; sin `manage.eventos` → 403 (JSON)
 o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto de autorización **aprobado** → 422
-`errors.consent` `"Falta el texto de autorización aprobado por la campaña; no se pueden leer planillas hasta tenerlo."`.
+`errors.consent` `"Falta el texto de autorización aprobado por el grupo político; no se pueden leer planillas hasta tenerlo."`.
 
 ### Flujo
 
@@ -1151,12 +1151,12 @@ o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto 
      "Intentar de nuevo" (`reintentar`) o "Seguir sin las páginas que fallaron" (`continuar`).
    - Respuesta: `{ success, message, data: { status, total, pendientes, procesadas, rechazadas, errores, filas, costo_usd, listo, ocupado } }`.
      Cuando no queda ninguna página pendiente (ni con error, salvo `continuar`) se clasifican las filas (cruce con
-     líderes de la campaña por cédula, repetidas, ya en el evento) y la carga pasa a `revisado` (`listo = true`).
+     líderes del grupo político por cédula, repetidas, ya en el evento) y la carga pasa a `revisado` (`listo = true`).
 3. **Revisión humana obligatoria** (`Eventos/Planillas`): pestañas por página (filas leídas y cuántas tienen celdas
    dudosas), a un lado la foto (o el PDF en esa página) servida por la ruta autenticada y al otro las filas de esa
    página. Celdas con confianza `< EVENTOS_OCR_UMBRAL` (0,85) en **amarillo** ("Dudoso: compárelo con la foto"),
    inválidas en **rojo** (mismas reglas que §11: cédula 5–10 dígitos, celular obligatorio, fecha DD/MM/AAAA, mayor de
-   edad…). "Ya estaba en la plataforma" si la cédula es de un líder de la campaña del evento. Corregir una celda la
+   edad…). "Ya estaba en la plataforma" si la cédula es de un líder del grupo político del evento. Corregir una celda la
    revalida y pone su confianza en 1 (ya no es dudosa). Una fila válida cuya **cédula** tiene confianza bajo el umbral
    arranca en **"No importar"** hasta que alguien la corrija (vuelve a "Importar") o marque "Importar" a mano (se respeta
    aunque se corrijan otras filas). Filtros de §11.
@@ -1205,9 +1205,9 @@ o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto 
   autorizaron) se envía a **Anthropic** (EE. UU.) para leerla. Asistir a un evento político es dato **sensible**
   (opinión política, art. 5). Por eso está apagada por defecto. Antes de encenderla hace falta: contrato de
   transmisión de datos con Anthropic como encargado (DPA), **Zero Data Retention (ZDR)** habilitado en la organización de
-  la API, y que el texto de autorización de la campaña mencione el envío a un proveedor tecnológico en el exterior.
+  la API, y que el texto de autorización del grupo político mencione el envío a un proveedor tecnológico en el exterior.
 - Fotos en disco **privado**, nunca por URL pública: solo por `eventos.importar.ocr.archivo` con las mismas comprobaciones
-  (sesión, `manage.eventos`, campaña propia, territorio, interruptores), `Cache-Control: private, no-store`,
+  (sesión, `manage.eventos`, grupo político propio, territorio, interruptores), `Cache-Control: private, no-store`,
   `X-Content-Type-Options: nosniff` y, en las fotos, `Content-Security-Policy: sandbox`. Los PDF van sin `sandbox`
   porque Chrome no muestra un PDF bajo CSP sandbox (su contenido se comprobó como PDF al subirlo). Sin sesión → `/login`
   (401 en JSON).
@@ -1218,8 +1218,8 @@ o redirect a `/` (página). Evento cancelado → 422 `errors.evento`. Sin texto 
   - **decisión**: las fotos de una carga confirmada **se conservan** como respaldo de las autorizaciones firmadas
     (art. 9: el responsable debe conservar prueba de la autorización); al confirmar se borran las fotos que no
     respaldan a nadie (páginas de otro evento, no planillas o fallidas). Esas fotos también muestran filas de personas
-    que no autorizaron: el acceso queda restringido como arriba y la planilla en papel sigue siendo el original. Si la
-    campaña fija un plazo de retención, se agrega al comando.
+    que no autorizaron: el acceso queda restringido como arriba y la planilla en papel sigue siendo el original. Si el
+    grupo político fija un plazo de retención, se agrega al comando.
 - Ni el log ni la auditoría guardan la respuesta de la IA ni las imágenes; el log solo registra la clase del error y el
   código HTTP cuando la API falla.
 
@@ -1250,7 +1250,7 @@ verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca ta
 2. Cargar con `php artisan eventos:consent-text {campaña} {archivo} --text-version=… --approve` un texto de autorización
    que diga, además de lo actual, algo como: *"Autorizo que la fotografía de esta planilla sea procesada por un proveedor
    tecnológico ubicado fuera de Colombia (Anthropic, Estados Unidos), como encargado, únicamente para transcribir mis
-   datos a la plataforma de la campaña."* Reimprimir las planillas (el pie muestra la versión).
+   datos a la plataforma del grupo político."* Reimprimir las planillas (el pie muestra la versión).
 3. Piloto: `php artisan eventos:ocr-piloto {carpeta} {verdad.csv} --model=…` con 20 planillas reales (ver arriba).
    Elegir modelo, effort y umbral.
 4. Servidor (PHP-FPM): hoy `upload_max_filesize = 2M` y `post_max_size = 8M`; con eso una foto de más de 2 MB se rechaza
@@ -1261,9 +1261,9 @@ verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca ta
    no leer varias cargas a la vez.
 5. `.env`: `ANTHROPIC_API_KEY=…`, `EVENTOS_OCR_MODEL=…`, `EVENTOS_OCR_ENABLED=true` (y si se quiere `EVENTOS_OCR_EFFORT`,
    `EVENTOS_OCR_UMBRAL`, `EVENTOS_OCR_MAX_PAGINAS_DIA`); `php artisan optimize:clear && php artisan optimize`.
-6. `php artisan eventos:ocr-campana {campaña} --activar` solo para las campañas que cumplieron lo anterior.
+6. `php artisan eventos:ocr-campana {campaña} --activar` solo para los grupos políticos que cumplieron lo anterior.
 7. Primera carga real acompañada: revisar en la auditoría `EVENTO_OCR_LECTURA_TERMINADA` el costo por página.
-   Para apagar: `EVENTOS_OCR_ENABLED=false` (todo 404 tras `optimize`) o `--desactivar` por campaña.
+   Para apagar: `EVENTOS_OCR_ENABLED=false` (todo 404 tras `optimize`) o `--desactivar` por grupo político.
 
 ---
 
@@ -1273,7 +1273,7 @@ verdad escrito por una persona. **No** necesita `EVENTOS_OCR_ENABLED` ni toca ta
 > `docs/empresarios.md` §5. Las actas de eventos y estas rutas no cambian; `/eventos/compromisos` lista además los
 > compromisos de organizaciones a quien tiene `view.empresarios` (filtro `origen`).
 
-Un evento tiene una o varias **actas de reunión** con el formato de las actas de la campaña: título, fecha, Municipio,
+Un evento tiene una o varias **actas de reunión** con el formato de las actas del grupo político: título, fecha, Municipio,
 Sitio, Hora; **PARTICIPANTES** (tabla NOMBRE | PERFIL | MUNICIPIO | TELEFONO); **PUNTOS DEL ORDEN DEL DÍA** (lista, con
 introducción opcional); **DESARROLLO DE LA REUNIÓN** (un texto por punto); **COMPROMISOS** (tabla NOMBRE | RESPONSABLE |
 TELEFONO, uno o varios responsables por compromiso) y el cierre ("Siendo las 12:00 m., se dio por terminada la reunión.").
@@ -1294,8 +1294,8 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 ### Permisos y aislamiento
 
 - Ver actas, descargarlas, ver compromisos y su historial: `view.eventos` o `manage.eventos`.
-- Crear/editar actas, cambiar estados y registrar avances: `manage.eventos` en la **campaña propia** del evento
-  (subcampaña visible = solo lectura → 403; campaña no visible → 404) y dentro del **territorio** del usuario (403).
+- Crear/editar actas, cambiar estados y registrar avances: `manage.eventos` en el **grupo político propio** del evento
+  (subgrupo visible = solo lectura → 403; grupo político no visible → 404) y dentro del **territorio** del usuario (403).
   Un evento **cancelado** no recibe ni cambia actas (422 `evento`).
 - `register.asistentes` solo no ve actas (403). La ficha de la persona (`/eventos/persona/{liderId}/compromisos`)
   exige además `view.mapa` o `view.votantes`, como `/eventos/persona/{liderId}`.
@@ -1312,7 +1312,7 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 |---|---|---|
 | `GET /eventos/{id}/actas` | view | JSON `[{id, titulo, fecha, compromisos, abiertos, archivo, created_by}]` (sección "Actas de reunión" del detalle) |
 | `GET /eventos/{id}/actas/nueva` | manage | Inertia `Eventos/Acta` con `defaults` del evento y `asistentes` (máx. 3000) |
-| `GET /eventos/{id}/actas/{acta}` | view | Inertia `Eventos/Acta` con `acta` (`can.edit` solo campaña propia y evento no cancelado) |
+| `GET /eventos/{id}/actas/{acta}` | view | Inertia `Eventos/Acta` con `acta` (`can.edit` solo grupo político propio y evento no cancelado) |
 | `GET /eventos/{id}/actas/plantilla.xlsx` | manage | plantilla Excel del acta (hojas Acta, Participantes, Compromisos e Instrucciones; ver "Lectura del Excel") |
 | `POST /eventos/{id}/actas/leer` | manage | multipart `archivo` (≤ 10 MB, o el límite de PHP si es menor). `.docx` → `{tipo: 'docx', acta: {…, avisos[]}}` para prellenar; `.xlsx`/`.xls` → `{tipo: 'excel', acta: {…, avisos[]}}` (misma forma); PDF/JPG/PNG → `{tipo: 'adjunto', acta: null}`. No guarda nada. 422 `archivo` si no es ninguno de esos (por contenido, no por nombre) o si el Excel no tiene ninguna de las hojas |
 | `POST /eventos/{id}/actas/sugerencias` | manage | `{participantes: [{nombre, telefono, cedula}], responsables: [{nombre, telefono}]}` → `{participantes: {i: lider}, responsables: {i: lider}}`, `lider = {id, nombre, municipio, cargo, por: 'cedula'\|'telefono'}` |
@@ -1343,12 +1343,12 @@ Cuerpo de `POST/PUT` actas: `titulo` (obligatorio), `fecha` (`YYYY-MM-DD`), `mun
 
 Al **confirmar**, para cada participante, en este orden:
 
-1. `lider_id` confirmado por el usuario en "¿Es esta persona?" (debe ser líder activo de la campaña del evento dentro del
+1. `lider_id` confirmado por el usuario en "¿Es esta persona?" (debe ser líder activo del grupo político del evento dentro del
    territorio; si no, 422 `participantes.N.lider_id` y no se guarda nada).
 2. La ficha del asistente elegido de la lista (`attendee_id`, debe ser asistente de este evento).
-3. La misma cédula en la campaña del evento (se vincula sin preguntar; se busca en toda la campaña, no solo en el
-   territorio del usuario: la cédula es única por campaña y vincular solo guarda el id).
-4. Si no: **se crea la ficha** en la campaña del EVENTO: `tipo = directorio`, `cargo` = perfil normalizado
+3. La misma cédula en el grupo político del evento (se vincula sin preguntar; se busca en todo el grupo político, no solo en el
+   territorio del usuario: la cédula es única por grupo político y vincular solo guarda el id).
+4. Si no: **se crea la ficha** en el grupo político del EVENTO: `tipo = directorio`, `cargo` = perfil normalizado
    ("SENADOR DE LA REPUBLICA" → "Senador de la Republica"; vacío o "LÍDER …" → "Líder"), municipio del participante si es
    un municipio conocido dentro del territorio del usuario (si no, el del evento), primer celular en `telefono` y los
    demás en `lider_contactos`, `autoriza_datos = false`.
@@ -1357,13 +1357,13 @@ Todos quedan como **asistentes** del evento (`event_attendees.source = 'acta'`, 
 ficha o `aprobado` si se creó, `nota` = perfil). No se duplica: si ya hay un asistente del evento con esa ficha o esa
 cédula, se usa ese (y si no tenía ficha, se le vincula). Sugerencia por teléfono: `AttendeeMatcher` (solo dígitos,
 últimos 10, en `lideres.telefono` y `lider_contactos.valor`, + al menos una palabra del nombre; empate = sin sugerencia),
-entre los líderes activos de la campaña del evento en el territorio del usuario (todos los municipios si no tiene).
+entre los líderes activos del grupo político del evento en el territorio del usuario (todos los municipios si no tiene).
 Quitar un participante del acta **no** borra su ficha ni su asistencia.
 
 ### Eliminar un acta confirmada (permiso `delete.actas`, 2026-11-11)
 
 Para un acta confirmada por error. Botón "Eliminar acta" en el encabezado del acta confirmada, solo con `can.delete_confirmed`
-(`manage.eventos` + `delete.actas`, campaña propia del evento y territorio). La confirmación muestra antes los conteos reales
+(`manage.eventos` + `delete.actas`, grupo político propio del evento y territorio). La confirmación muestra antes los conteos reales
 de `GET …/eliminar`. `DELETE /eventos/{id}/actas/{acta}` (`DeleteConfirmedActa`), en una transacción con bloqueo del acta, de
 los asistentes y de las fichas (el plan se recalcula bajo el bloqueo):
 
@@ -1424,7 +1424,7 @@ teléfono; fecha, municipio, sitio, horas 10:45–12:00 y cierre leídos.
 
 Tercera forma de llenar el acta, junto a "Cargar Word o Excel" está "Descargar plantilla Excel" (en el acta de evento y en
 la de organización; mismos permisos que la lectura del Word: `manage.eventos` / `manage.empresarios` con los chequeos de
-campaña y territorio). La plantilla (generada con PhpSpreadsheet) trae:
+grupo político y territorio). La plantilla (generada con PhpSpreadsheet) trae:
 
 - **Acta**: `Campo | Valor` con Título, Fecha, Hora de inicio, Hora de fin, Municipio, Lugar, Objetivo / tema
   (→ `introduccion`), Orden del día (un punto por línea de la celda, o la fila repetida), Desarrollo (una fila por punto del
@@ -1461,7 +1461,7 @@ propósito en PostgreSQL mientras existan asistentes con `source = 'acta'`.
 
 ### Alertas: campanita y resumen diario por correo
 
-`CompromisoAlertas` calcula, para el usuario actual (campañas visibles y territorio), los compromisos **abiertos**
+`CompromisoAlertas` calcula, para el usuario actual (grupos políticos visibles y territorio), los compromisos **abiertos**
 (`pendiente`, `en_curso`) de actas **confirmadas**: **vencidos** (fecha límite antes de hoy), **por vencer** (fecha límite
 de hoy a 3 días) y **recordatorios** (`recordar_el` hoy o antes). Cada uno cuenta una vez, en ese orden de prioridad.
 
@@ -1470,7 +1470,7 @@ de hoy a 3 días) y **recordatorios** (`recordar_el` hoy o antes). Cada uno cuen
   Una petición cada 5 minutos para toda la app (caché en el navegador + 5 min por usuario en el servidor).
 - **`php artisan compromisos:resumen-diario [--dry-run]`**, programado a las 7:00 a. m. (America/Bogota) en
   `routes/console.php` (necesita el cron `schedule:run`, que ya existe en producción para www-data). Envía a cada usuario
-  activo con `manage.eventos`, correo válido y campaña activa un correo (`emails/compromisos-resumen`) con sus vencidos,
+  activo con `manage.eventos`, correo válido y grupo político activo un correo (`emails/compromisos-resumen`) con sus vencidos,
   por vencer y recordatorios (hasta 50) y el enlace a la pantalla; si no tiene ninguno, no se envía. Si `MAIL_MAILER` es
   `log`/`array` o SMTP sin host, registra "correo no configurado" y termina sin error. `--dry-run` muestra por usuario
   (solo id y conteos) a quién se enviaría. El log solo lleva conteos e ids. Un envío fallido se registra y el comando

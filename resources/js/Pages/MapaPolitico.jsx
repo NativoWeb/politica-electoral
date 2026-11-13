@@ -164,7 +164,7 @@ function StarToggle({ id, initial, campaignId }) {
                 className="flex-shrink-0"
                 role="img"
                 aria-label={starred ? 'Destacado (solo lectura)' : 'No destacado'}
-                title="Solo su campaña puede cambiar el destacado"
+                title="Solo su grupo político puede cambiar el destacado"
             >
                 <svg className={`w-5 h-5 ${starred ? 'text-amber-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
             </span>
@@ -560,7 +560,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     if (filters.profesion) activeChips.push({ key: 'profesion', label: filters.profesion, onRemove: () => applyFilters({ profesion: undefined }) });
     if (filters.barrio) filters.barrio.split(',').forEach(b => activeChips.push({ key: `barrio-${b}`, label: b, onRemove: () => applyFilters({ barrio: removeFromList(filters.barrio, b) }) }));
     if (isOnline && filters.estado && filters.estado !== 'activos') activeChips.push({ key: 'estado', label: filters.estado === 'inactivos' ? 'Inactivos' : 'Activos e inactivos', onRemove: () => applyFilters({ estado: undefined }) });
-    if (campaign.hasMultiple && filters.campana) activeChips.push({ key: 'campana', label: `Campaña ${campaign.nameOf(filters.campana) || ''}`.trim(), onRemove: () => applyFilters({ campana: undefined }) });
+    if (campaign.hasMultiple && filters.campana) activeChips.push({ key: 'campana', label: `Grupo político ${campaign.nameOf(filters.campana) || ''}`.trim(), onRemove: () => applyFilters({ campana: undefined }) });
     if (filters.destacado) activeChips.push({ key: 'destacado', label: 'Destacados', onRemove: () => applyFilters({ destacado: undefined }) });
     if (filters.search) activeChips.push({ key: 'search', label: `"${filters.search}"`, onRemove: () => { setLocalSearch(''); applyFilters({ search: undefined }); } });
 
@@ -744,7 +744,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         </div>
                         {campaign.hasMultiple && (
                             <div className="col-span-1">
-                                <label htmlFor="mapa-filtro-campana" className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Campaña</label>
+                                <label htmlFor="mapa-filtro-campana" className="block text-[12px] font-extrabold uppercase tracking-wider text-[var(--color-ink)] mb-1">Grupo político</label>
                                 <select
                                     id="mapa-filtro-campana"
                                     value={filters.campana || ''}

@@ -29,7 +29,7 @@ class AddReferido
         }
         $this->authorizeLiderRow($referido, true);
         if ($referido->campaign_id !== $referente->campaign_id) {
-            throw new BusinessRuleException('El referente y el referido deben ser de la misma campaña.');
+            throw new BusinessRuleException('El referente y el referido deben ser del mismo grupo político.');
         }
 
         $nameParts = explode(' ', $referente->nombre, 2);

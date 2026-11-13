@@ -233,6 +233,8 @@ const SIDEBAR_ITEMS = [
     { name: 'EVENTOS', href: '/eventos', label: 'Eventos', permission: ['view.eventos', 'manage.eventos', 'register.asistentes'] },
     // tabLabel: the shorter label of the mobile tab bar (up to 7 tabs at 360px).
     { name: 'EMPRESARIOS', href: '/empresarios', label: 'Empresarios', tabLabel: 'Empresas', permission: ['view.empresarios', 'manage.empresarios'] },
+    // Hidden until the backend turns the module on with features.campanas; desktop only, the tab bar is already full.
+    { name: 'CAMPANAS_ELECTORALES', href: '/campanas-electorales', label: 'Campañas electorales', permission: ['view.campanas', 'manage.campanas'], feature: 'campanas', desktopOnly: true },
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
     { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
@@ -240,9 +242,10 @@ const SIDEBAR_ITEMS = [
 
 // Platform administration (territory, parties, catalogs, elections...) is only for whoever edits the shared
 // electoral data; any other campaign's admin reaches its users from the same menu entry.
-function menuItems(items, auth, hasPerm) {
+function menuItems(items, auth, hasPerm, features) {
     const allowed = (permission) => [].concat(permission).some(hasPerm);
-    return items.filter(item => allowed(item.permission)).flatMap(item => {
+    const enabled = (feature) => !feature || features?.[feature] === true;
+    return items.filter(item => enabled(item.feature) && allowed(item.permission)).flatMap(item => {
         if (item.name !== 'ADMIN' || auth?.canEditElectoral !== false) return [item];
         return hasPerm('manage.users') ? [{ ...item, href: '/admin/usuarios', label: 'Usuarios', icon: 'USUARIOS' }] : [];
     });
@@ -253,9 +256,9 @@ function CampaignBadge({ campaign, className = '' }) {
     return (
         <span
             className={`inline-flex items-center gap-1.5 min-w-0 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] leading-tight ${className}`}
-            title={`Campaña: ${campaign.name}`}
+            title={`Grupo político: ${campaign.name}`}
         >
-            <span className="text-white/80 flex-shrink-0">Campaña:</span>
+            <span className="text-white/80 flex-shrink-0">Grupo político:</span>
             <span className="font-semibold text-white/90 truncate">{campaign.name}</span>
         </span>
     );
@@ -291,6 +294,11 @@ const ICONS_EXTRA = {
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" />
             <circle cx="9" cy="7" r="4" />
             <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" />
+        </svg>
+    ),
+    CAMPANAS_ELECTORALES: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5" aria-hidden="true">
+            <path d="M5 21V4m0 0h11l-2 4 2 4H5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
     AUDITORIA: (
@@ -434,7 +442,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const auth = props.auth?.user;
     const perms = auth?.permissions || [];
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
-    const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm);
+    const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm, props.features);
     const canExport = canExportFrom(url.split('?')[0], hasPerm);
     const canSeeCompromisos = hasPerm('view.eventos') || hasPerm('manage.eventos') || hasPerm('view.empresarios') || hasPerm('manage.empresarios');
     const tabItems = visibleItems.filter(item => !item.desktopOnly);
@@ -559,7 +567,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                             <p className="text-[16px] font-bold text-[var(--color-ink)]">{auth?.name}</p>
                             <p className="text-[13px] text-[var(--color-ink-faint)]">{auth?.email}</p>
                             {auth?.campaign?.name && (
-                                <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Campaña: <span className="font-semibold text-[var(--color-ink)]">{auth.campaign.name}</span></p>
+                                <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Grupo político: <span className="font-semibold text-[var(--color-ink)]">{auth.campaign.name}</span></p>
                             )}
                         </div>
                         <div className="px-4 pb-6 space-y-2">

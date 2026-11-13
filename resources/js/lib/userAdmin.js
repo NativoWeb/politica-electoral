@@ -16,7 +16,7 @@ export function campaignHasWhatsapp({ isSuperadmin, campaignId, campaigns, ownCa
 
 // Permissions that cannot be granted to this user, with the reason shown next to them. Only a new grant is
 // blocked: a permission the user already holds can still be removed.
-export const WHATSAPP_OFF_REASON = 'Su campaña no tiene WhatsApp activo.';
+export const WHATSAPP_OFF_REASON = 'Su grupo político no tiene WhatsApp activo.';
 
 export function blockedPermissions(availablePermissions, whatsappEnabled, selected = []) {
     if (whatsappEnabled) return {};

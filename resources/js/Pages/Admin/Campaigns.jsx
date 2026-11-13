@@ -15,14 +15,14 @@ const labelCls = 'block text-[14px] font-bold text-[var(--color-ink-soft)] mb-1'
 const iconBtnCls = 'w-11 h-11 lg:w-9 lg:h-9 rounded-lg flex items-center justify-center flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]';
 
 function failedMessage(response) {
-    return response?.status === 404 ? 'Esta campaña ya no existe. Recarga la página.' : saveErrorMessage(response);
+    return response?.status === 404 ? 'Este grupo político ya no existe. Recarga la página.' : saveErrorMessage(response);
 }
 
 function deactivateMessage(count) {
     const who = count === 1
         ? 'Su único usuario no podrá'
         : `Sus ${count > 1 ? `${new Intl.NumberFormat('es-CO').format(count)} ` : ''}usuarios no podrán`;
-    return `${who} entrar al sistema hasta que la actives de nuevo. No se borra ningún dato.`;
+    return `${who} entrar al sistema hasta que lo actives de nuevo. No se borra ningún dato.`;
 }
 
 function CandidatePicker({ value, onChange, error }) {
@@ -169,7 +169,7 @@ function CampaignModal({ tree, campaigns, defaultId, campaign, isEdit, onClose }
                     className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-[520px] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
                 >
                     <div className="bg-[var(--color-primary)] text-white px-5 py-4 flex items-center justify-between gap-3 flex-shrink-0">
-                        <h2 id="campaign-modal-title" className="text-[18px] font-extrabold">{isEdit ? 'EDITAR CAMPAÑA' : 'NUEVA CAMPAÑA'}</h2>
+                        <h2 id="campaign-modal-title" className="text-[18px] font-extrabold">{isEdit ? 'EDITAR GRUPO POLÍTICO' : 'NUEVO GRUPO POLÍTICO'}</h2>
                         <button type="button" onClick={onClose} aria-label="Cerrar" title="Cerrar" className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0 active:bg-white/30">
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -184,7 +184,7 @@ function CampaignModal({ tree, campaigns, defaultId, campaign, isEdit, onClose }
                             </div>
 
                             <div>
-                                <label htmlFor="campaign-parent" className={labelCls}>Campaña madre</label>
+                                <label htmlFor="campaign-parent" className={labelCls}>Grupo principal</label>
                                 <select
                                     id="campaign-parent"
                                     className={inputCls}
@@ -192,17 +192,17 @@ function CampaignModal({ tree, campaigns, defaultId, campaign, isEdit, onClose }
                                     onChange={e => form.setData('parent_id', e.target.value)}
                                     disabled={isDefault}
                                 >
-                                    <option value="">Ninguna (independiente)</option>
+                                    <option value="">Ninguno (independiente)</option>
                                     {parentOptions.map(({ campaign: c, depth }) => (
                                         <option key={c.id} value={c.id}>
-                                            {`${'   '.repeat(depth)}${depth ? '└ ' : ''}${c.name}${c.isActive ? '' : ' (inactiva)'}`}
+                                            {`${'   '.repeat(depth)}${depth ? '└ ' : ''}${c.name}${c.isActive ? '' : ' (inactivo)'}`}
                                         </option>
                                     ))}
                                 </select>
                                 <p className="text-[13px] text-[var(--color-ink-faint)] mt-1">
                                     {isDefault
-                                        ? 'La campaña principal no tiene campaña madre.'
-                                        : 'El equipo de la campaña madre ve los líderes de esta campaña. Independiente: nadie más los ve.'}
+                                        ? 'El grupo político principal no tiene grupo principal.'
+                                        : 'El equipo del grupo principal ve los líderes de este subgrupo. Independiente: nadie más los ve.'}
                                 </p>
                                 {form.errors.parent_id && <p className="text-[13px] text-red-600 mt-1">{form.errors.parent_id}</p>}
                             </div>
@@ -262,7 +262,7 @@ function CampaignModal({ tree, campaigns, defaultId, campaign, isEdit, onClose }
 
                         <div className="flex-shrink-0 border-t border-[var(--color-line)] px-5 py-4 flex gap-3">
                             <button type="submit" disabled={form.processing} className="flex-1 px-4 py-3.5 bg-[var(--color-primary)] text-white text-[16px] font-bold rounded-xl disabled:opacity-50">
-                                {form.processing ? 'Guardando...' : (isEdit ? 'Guardar cambios' : 'Crear campaña')}
+                                {form.processing ? 'Guardando...' : (isEdit ? 'Guardar cambios' : 'Crear grupo político')}
                             </button>
                             <button type="button" onClick={onClose} className="px-4 py-3.5 border-2 border-gray-200 text-[16px] font-bold text-[var(--color-ink-soft)] rounded-xl">
                                 Cancelar
@@ -293,7 +293,7 @@ function CampaignRow({ node, depth = 0, onEdit, onToggle }) {
                             <div className="flex items-center gap-2 min-w-0">
                                 <p className="text-[15px] font-bold text-[var(--color-ink)] truncate" title={node.name}>{node.name}</p>
                                 {!node.isActive && (
-                                    <span className="flex-shrink-0 px-2 py-0.5 rounded-md bg-red-50 border border-red-200 text-red-700 text-[11px] font-bold">Inactiva</span>
+                                    <span className="flex-shrink-0 px-2 py-0.5 rounded-md bg-red-50 border border-red-200 text-red-700 text-[11px] font-bold">Inactivo</span>
                                 )}
                             </div>
                             <p className="text-[13px] text-[var(--color-ink-faint)]">{campaignSummary(node)}</p>
@@ -314,7 +314,7 @@ function CampaignRow({ node, depth = 0, onEdit, onToggle }) {
                         <button type="button" onClick={() => onEdit(node)} className={`${iconBtnCls} bg-blue-50 text-blue-600 active:bg-blue-100`} title="Editar" aria-label={`Editar ${node.name}`}>
                             <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                         </button>
-                        <Link href={usersUrlFor(node.id)} className={`${iconBtnCls} bg-indigo-50 text-indigo-600 active:bg-indigo-100`} title="Crear usuario para esta campaña" aria-label={`Crear usuario para ${node.name}`}>
+                        <Link href={usersUrlFor(node.id)} className={`${iconBtnCls} bg-indigo-50 text-indigo-600 active:bg-indigo-100`} title="Crear usuario para este grupo político" aria-label={`Crear usuario para ${node.name}`}>
                             <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
                         </Link>
                         {!node.isDefault && (
@@ -363,14 +363,14 @@ export default function Campaigns({ campaigns, defaultId }) {
     }
 
     return (
-        <AppLayout title="Campañas" breadcrumb={[{ label: 'ADMIN', href: '/admin/territorio' }, { label: 'CAMPAÑAS' }]}>
-            <Head title="Campañas — Administración" />
+        <AppLayout title="Grupos políticos" breadcrumb={[{ label: 'ADMIN', href: '/admin/territorio' }, { label: 'GRUPOS POLÍTICOS' }]}>
+            <Head title="Grupos políticos — Administración" />
 
             <div className="bg-[var(--color-primary)] text-white px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <h1 className="text-[18px] lg:text-[22px] font-extrabold">CAMPAÑAS</h1>
+                    <h1 className="text-[18px] lg:text-[22px] font-extrabold">GRUPOS POLÍTICOS</h1>
                     <p className="text-[12px] text-white/60 mt-0.5">
-                        {campaigns.length} {campaigns.length === 1 ? 'campaña registrada' : 'campañas registradas'}
+                        {campaigns.length} {campaigns.length === 1 ? 'grupo político registrado' : 'grupos políticos registrados'}
                     </p>
                 </div>
                 <button
@@ -378,7 +378,7 @@ export default function Campaigns({ campaigns, defaultId }) {
                     onClick={() => setModal({ id: null })}
                     className="min-h-[44px] px-4 py-2.5 bg-white/15 text-white text-[15px] font-bold rounded-xl active:bg-white/25 border border-white/20 flex-shrink-0"
                 >
-                    + Nueva campaña
+                    + Nuevo grupo político
                 </button>
             </div>
 
@@ -391,19 +391,19 @@ export default function Campaigns({ campaigns, defaultId }) {
                 )}
 
                 {tree.length > 0 ? (
-                    <ul className="space-y-2" aria-label="Campañas y subcampañas">
+                    <ul className="space-y-2" aria-label="Grupos políticos y subgrupos">
                         {tree.map(node => (
                             <CampaignRow key={node.id} node={node} onEdit={c => setModal({ id: c.id })} onToggle={setToggleTarget} />
                         ))}
                     </ul>
                 ) : (
-                    <p className="text-center py-8 text-[15px] text-[var(--color-ink-faint)]">Todavía no hay campañas.</p>
+                    <p className="text-center py-8 text-[15px] text-[var(--color-ink-faint)]">Todavía no hay grupos políticos.</p>
                 )}
 
                 <p className="flex items-start gap-2 text-[12px] leading-relaxed text-[var(--color-ink-faint)] px-1 pt-3">
                     <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     <span>
-                        Las campañas no se borran: se desactivan. Mientras una campaña esté inactiva, sus usuarios no pueden entrar
+                        Los grupos políticos no se borran: se desactivan. Mientras un grupo político esté inactivo, sus usuarios no pueden entrar
                         y quienes estén dentro salen en su siguiente acción. Los superadministradores siempre pueden entrar.
                     </span>
                 </p>
@@ -423,7 +423,7 @@ export default function Campaigns({ campaigns, defaultId }) {
 
             {toggleTarget && (
                 <ConfirmDialog
-                    title={toggleTarget.isActive ? `¿Desactivar la campaña ${toggleTarget.name}?` : `¿Activar la campaña ${toggleTarget.name}?`}
+                    title={toggleTarget.isActive ? `¿Desactivar el grupo político ${toggleTarget.name}?` : `¿Activar el grupo político ${toggleTarget.name}?`}
                     message={toggleTarget.isActive
                         ? deactivateMessage(toggleTarget.usersCount)
                         : 'Sus usuarios podrán volver a entrar con su correo y su contraseña.'}

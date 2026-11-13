@@ -198,7 +198,7 @@ export function pruneSelection(selected, attendees) {
     return kept.length === selected.size ? selected : new Set(kept);
 }
 
-export const APPROVE_MESSAGE = 'Se crea su ficha en Votantes. Si la cédula ya existe en la campaña, se vincula a esa ficha sin cambiarla.';
+export const APPROVE_MESSAGE = 'Se crea su ficha en Votantes. Si la cédula ya existe en el grupo político, se vincula a esa ficha sin cambiarla.';
 
 export function sourceLabel(attendee) {
     if (attendee?.source === 'qr') return 'Por QR';

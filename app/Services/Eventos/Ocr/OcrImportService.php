@@ -230,7 +230,7 @@ class OcrImportService
     {
         $limit = (int) config('eventos.ocr.max_pages_per_day');
         if ($this->callsToday($event->campaign_id) >= $limit) {
-            return $this->failed($page, $import, $user, new OcrException("La campaña ya hizo {$limit} lecturas con IA hoy, el máximo diario. Continúe mañana."));
+            return $this->failed($page, $import, $user, new OcrException("El grupo político ya hizo {$limit} lecturas con IA hoy, el máximo diario. Continúe mañana."));
         }
 
         $content = Storage::disk(self::DISK)->get($page->file_path);

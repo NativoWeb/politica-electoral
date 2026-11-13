@@ -136,7 +136,7 @@ class EventoController extends Controller
     {
         $event = $this->findEvent($id);
         $filters = $this->attendeeFilters($request);
-        ini_set('memory_limit', '256M');
+        EventoImportController::raiseMemoryLimit();
 
         $attendees = $this->attendeesQuery($event, $filters)->get();
         $rows = $attendees->map(fn (EventAttendee $a) => [
@@ -307,7 +307,7 @@ class EventoController extends Controller
         }
 
         $paginas = self::planillaPages($request->query('paginas'));
-        ini_set('memory_limit', '256M');
+        EventoImportController::raiseMemoryLimit();
 
         $pages = array_map(fn (int $page) => [
             'numero' => $page,
@@ -535,7 +535,7 @@ class EventoController extends Controller
     {
         $own = $this->campaign()->ownId();
         if ($own === null) {
-            throw ValidationException::withMessages(['nombre' => 'Su usuario no tiene una campaña asignada.']);
+            throw ValidationException::withMessages(['nombre' => 'Su usuario no tiene un grupo político asignado.']);
         }
         $nombre = $request->validated('nombre');
         $key = $this->typeKey($nombre);
@@ -742,7 +742,7 @@ class EventoController extends Controller
             if ($liderIds->isNotEmpty()) {
                 $found = $this->scopeToTerritory($this->ownLideres())->where('is_active', true)->whereIn('id', $liderIds)->count();
                 if ($found !== $liderIds->count()) {
-                    throw ValidationException::withMessages(['organizadores' => 'Un organizador elegido no es un líder activo de su campaña y territorio.']);
+                    throw ValidationException::withMessages(['organizadores' => 'Un organizador elegido no es un líder activo de su grupo político y territorio.']);
                 }
             }
             $event->organizers()->delete();

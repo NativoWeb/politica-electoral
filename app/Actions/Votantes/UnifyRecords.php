@@ -127,7 +127,7 @@ class UnifyRecords
             default => 'vinculo',
         };
         if ($caso !== 'lideres' && ! $this->campaign()->canEditElectoral()) {
-            throw new BusinessRuleException('Solo la campaña principal puede unificar candidatos: sus datos son compartidos por todas las campañas.', 403);
+            throw new BusinessRuleException('Solo el grupo político principal puede unificar candidatos: sus datos son compartidos por todos los grupos políticos.', 403);
         }
 
         $cedulas = null;

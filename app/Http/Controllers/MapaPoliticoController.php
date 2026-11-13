@@ -1742,7 +1742,7 @@ class MapaPoliticoController extends Controller
     private function linkCandidateToLider(string $personId, string $liderId)
     {
         // Renaming a person changes shared electoral data: only who may edit it.
-        abort_unless($this->campaign()->canEditElectoral(), 403, 'Solo la campaña principal puede modificar datos electorales.');
+        abort_unless($this->campaign()->canEditElectoral(), 403, 'Solo el grupo político principal puede modificar datos electorales.');
         $person = DB::table('persons')->where('id', $personId)->whereNull('deleted_at')->first();
         $lider = $this->ownLideres()->where('id', $liderId)->first();
         if (! $person || ! $lider) {

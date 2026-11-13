@@ -121,7 +121,7 @@ export default function OrganizacionForm({ form, setForm, errors = {}, catalogos
             {form.tipo === 'empresa' && (
                 <fieldset className="space-y-2">
                     <legend className={labelCls}>Gremios a los que pertenece</legend>
-                    {gremios.length === 0 && <p className="text-[14px] text-[var(--color-ink-faint)]">Todavía no hay gremios en su campaña.</p>}
+                    {gremios.length === 0 && <p className="text-[14px] text-[var(--color-ink-faint)]">Todavía no hay gremios en su grupo político.</p>}
                     <div className="flex flex-wrap gap-2">
                         {gremios.map(g => (
                             <label key={g.id} className={`min-h-[44px] px-3 inline-flex items-center gap-2 rounded-full border-2 text-[14px] font-semibold cursor-pointer ${form.gremio_ids.includes(g.id) ? 'border-[var(--color-primary)] bg-blue-50 text-[var(--color-primary)]' : 'border-gray-200 text-[var(--color-ink-soft)]'}`}>

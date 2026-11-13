@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use App\Support\CurrentCampaign;
+use App\Support\Features;
 use App\Support\PartyLogos;
 use Closure;
 use Illuminate\Http\Request;
@@ -83,6 +84,11 @@ class HandleInertiaRequests extends Middleware
                     'campaign' => $campaign->info(),
                     'canEditElectoral' => $campaign->canEditElectoral(),
                 ] : null,
+            ],
+            // true only when the module is on for this user and the user may open it: the menu shows it then.
+            'features' => [
+                'campanas' => Features::enabledFor('campanas', $user)
+                    && ($user->hasPermission('view.campanas') || $user->hasPermission('manage.campanas')),
             ],
             'visibleCampaigns' => fn () => $user ? $campaign->visibleCampaigns() : [],
             'partyLogos' => fn () => $user ? PartyLogos::map() : [],

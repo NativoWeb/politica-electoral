@@ -15,7 +15,7 @@ class WhatsAppLinkController extends Controller
     {
         $user = $request->user();
         if (! $user->campaignHasWhatsapp()) {
-            return response()->json(['success' => false, 'message' => 'Tu campaña no tiene habilitado el agente de WhatsApp.'], 403);
+            return response()->json(['success' => false, 'message' => 'Tu grupo político no tiene habilitado el agente de WhatsApp.'], 403);
         }
         if (! $user->canUseWhatsappAssistant()) {
             return response()->json(['success' => false, 'message' => 'No tienes habilitado el Asistente de WhatsApp. Pídeselo al administrador.'], 403);

@@ -66,7 +66,7 @@ describe('Admin Campaigns page', () => {
 
     it('lists the CD first with its subcampaigns nested by name, then the independent campaign', () => {
         renderPage();
-        const list = screen.getByRole('list', { name: 'Campañas y subcampañas' });
+        const list = screen.getByRole('list', { name: 'Grupos políticos y subgrupos' });
         const roots = [...list.children].map(li => li.querySelector('p').textContent);
         expect(roots).toEqual(['Centro Democrático', 'Independiente Prueba']);
 
@@ -79,10 +79,10 @@ describe('Admin Campaigns page', () => {
         renderPage();
         expect(screen.getByText('1.234 usuarios · 931 líderes · WhatsApp sí')).toBeInTheDocument();
         expect(rowOf('Sub Alfa')).toHaveTextContent('Candidato: Alejandro Cárdenas');
-        expect(within(rowOf('Sub Beta')).getByText('Inactiva')).toBeInTheDocument();
-        expect(screen.getAllByText('Inactiva')).toHaveLength(1);
+        expect(within(rowOf('Sub Beta')).getByText('Inactivo')).toBeInTheDocument();
+        expect(screen.getAllByText('Inactivo')).toHaveLength(1);
         expect(screen.queryByText('centro-democratico')).not.toBeInTheDocument();
-        expect(screen.getByText('4 campañas registradas')).toBeInTheDocument();
+        expect(screen.getByText('4 grupos políticos registrados')).toBeInTheDocument();
     });
 
     it('has no on/off button for the CD and asks before deactivating', () => {
@@ -91,7 +91,7 @@ describe('Admin Campaigns page', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Desactivar Sub Alfa' }));
         const dialog = screen.getByRole('alertdialog');
-        expect(dialog).toHaveTextContent('¿Desactivar la campaña Sub Alfa?');
+        expect(dialog).toHaveTextContent('¿Desactivar el grupo político Sub Alfa?');
         expect(dialog).toHaveTextContent('Sus 3 usuarios no podrán entrar');
 
         fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
@@ -109,25 +109,25 @@ describe('Admin Campaigns page', () => {
 
     it('opens create in a modal with the slug folded under advanced options', () => {
         renderPage();
-        fireEvent.click(screen.getByRole('button', { name: '+ Nueva campaña' }));
-        const dialog = screen.getByRole('dialog', { name: 'NUEVA CAMPAÑA' });
+        fireEvent.click(screen.getByRole('button', { name: '+ Nuevo grupo político' }));
+        const dialog = screen.getByRole('dialog', { name: 'NUEVO GRUPO POLÍTICO' });
 
         expect(within(dialog).queryByLabelText('Identificador (slug)')).not.toBeInTheDocument();
         fireEvent.change(within(dialog).getByLabelText('Nombre *'), { target: { value: 'Campaña Año 2027' } });
         fireEvent.click(within(dialog).getByRole('button', { name: 'Opciones avanzadas' }));
         expect(within(dialog).getByLabelText('Identificador (slug)')).toHaveValue('campana-ano-2027');
 
-        const options = [...within(dialog).getByLabelText('Campaña madre').options].map(o => o.textContent.replace(/ /g, ' '));
-        expect(options).toEqual(['Ninguna (independiente)', 'Centro Democrático', '   └ Sub Alfa', '   └ Sub Beta (inactiva)', 'Independiente Prueba']);
+        const options = [...within(dialog).getByLabelText('Grupo principal').options].map(o => o.textContent.replace(/ /g, ' '));
+        expect(options).toEqual(['Ninguno (independiente)', 'Centro Democrático', '   └ Sub Alfa', '   └ Sub Beta (inactivo)', 'Independiente Prueba']);
     });
 
     it('edits in a modal that cannot pick the campaign itself as its parent', () => {
         renderPage();
         fireEvent.click(screen.getByRole('button', { name: 'Editar Sub Alfa' }));
-        const dialog = screen.getByRole('dialog', { name: 'EDITAR CAMPAÑA' });
+        const dialog = screen.getByRole('dialog', { name: 'EDITAR GRUPO POLÍTICO' });
 
         expect(within(dialog).getByLabelText('Nombre *')).toHaveValue('Sub Alfa');
-        const parent = within(dialog).getByLabelText('Campaña madre');
+        const parent = within(dialog).getByLabelText('Grupo principal');
         expect(parent).toHaveValue('cd');
         expect([...parent.options].map(o => o.value)).not.toContain('sub-a');
 
@@ -174,7 +174,7 @@ describe('Admin Campaigns page details', () => {
         opener.focus();
         fireEvent.click(opener);
 
-        const dialog = screen.getByRole('dialog', { name: 'EDITAR CAMPAÑA' });
+        const dialog = screen.getByRole('dialog', { name: 'EDITAR GRUPO POLÍTICO' });
         const close = within(dialog).getByRole('button', { name: 'Cerrar' });
         const cancel = within(dialog).getByRole('button', { name: 'Cancelar' });
 
@@ -201,14 +201,14 @@ describe('Admin Campaigns page details', () => {
     it('closes the edit modal instead of turning it into a create form when the campaign goes away', () => {
         const { rerender } = renderPage();
         fireEvent.click(screen.getByRole('button', { name: 'Editar Sub Alfa' }));
-        expect(screen.getByRole('dialog', { name: 'EDITAR CAMPAÑA' })).toBeInTheDocument();
+        expect(screen.getByRole('dialog', { name: 'EDITAR GRUPO POLÍTICO' })).toBeInTheDocument();
 
         rerender(<Campaigns campaigns={CAMPAIGNS.filter(c => c.id !== 'sub-a')} defaultId="cd" />);
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 });
 
-describe('Reaching Campañas', () => {
+describe('Reaching Grupos políticos', () => {
     beforeEach(() => {
         mockPage.url = '/admin';
     });
@@ -223,17 +223,17 @@ describe('Reaching Campañas', () => {
         const hrefs = screen.getAllByRole('link').map(a => a.getAttribute('href'));
         expect(hrefs).toContain('/admin/territorio');
         expect(hrefs).not.toContain('/admin/campanas');
-        expect(screen.queryByText('Campañas')).not.toBeInTheDocument();
+        expect(screen.queryByText('Grupos políticos')).not.toBeInTheDocument();
     });
 
     it('is offered on the Admin home only to a superadmin', () => {
         mockPage.props = { auth: { user: SUPERADMIN } };
         const { unmount } = render(<AdminIndex stats={{}} />);
-        expect(screen.getByRole('link', { name: /CAMPAÑAS/ })).toHaveAttribute('href', '/admin/campanas');
+        expect(screen.getByRole('link', { name: /GRUPOS POLÍTICOS/ })).toHaveAttribute('href', '/admin/campanas');
         unmount();
 
         mockPage.props = { auth: { user: { ...SUPERADMIN, isSuperadmin: false, permissions: ['view.admin'] } } };
         render(<AdminIndex stats={{}} />);
-        expect(screen.queryByRole('link', { name: /CAMPAÑAS/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: /GRUPOS POLÍTICOS/ })).not.toBeInTheDocument();
     });
 });

@@ -84,7 +84,7 @@ class OrganizacionService
                 return [$org, $changed];
             });
         } catch (UniqueConstraintViolationException) {
-            throw ValidationException::withMessages(['nit' => 'Ya existe una organización con ese NIT en la campaña.']);
+            throw ValidationException::withMessages(['nit' => 'Ya existe una organización con ese NIT en el grupo político.']);
         }
     }
 
@@ -97,7 +97,7 @@ class OrganizacionService
         if (! empty($data['lider_id'])) {
             $liderId = $this->allowedLider($org->campaign_id, $data['lider_id']);
             if (! $liderId) {
-                throw ValidationException::withMessages(['lider_id' => 'Esa persona no es un líder activo de la campaña en su territorio.']);
+                throw ValidationException::withMessages(['lider_id' => 'Esa persona no es un líder activo del grupo político en su territorio.']);
             }
         } else {
             $municipio = $data['municipio'] ?? null;
@@ -148,8 +148,8 @@ class OrganizacionService
         }
         $allowed = $this->allowedGeoIds();
         $message = $allowed !== null && ! in_array($other->municipio_id, $allowed, true)
-            ? 'Ya existe una organización con ese NIT en otro territorio de la campaña.'
-            : "Ya existe una organización con ese NIT en la campaña: {$other->nombre}.";
+            ? 'Ya existe una organización con ese NIT en otro territorio del grupo político.'
+            : "Ya existe una organización con ese NIT en el grupo político: {$other->nombre}.";
 
         throw ValidationException::withMessages(['nit' => $message]);
     }
@@ -196,7 +196,7 @@ class OrganizacionService
         $found = DB::table('organizaciones')->where('campaign_id', $campaignId)->where('tipo', 'gremio')->whereNull('deleted_at')
             ->whereIn('id', $ids)->pluck('id')->all();
         if (count($found) !== count($ids)) {
-            throw ValidationException::withMessages(['gremio_ids' => 'Uno de los gremios elegidos ya no existe en la campaña.']);
+            throw ValidationException::withMessages(['gremio_ids' => 'Uno de los gremios elegidos ya no existe en el grupo político.']);
         }
 
         return $found;
@@ -209,7 +209,7 @@ class OrganizacionService
         }
         $id = $this->allowedLider($campaignId, $liderId);
         if (! $id) {
-            throw ValidationException::withMessages(['representante_lider_id' => 'Esa persona no es un líder activo de la campaña en su territorio.']);
+            throw ValidationException::withMessages(['representante_lider_id' => 'Esa persona no es un líder activo del grupo político en su territorio.']);
         }
 
         return $id;

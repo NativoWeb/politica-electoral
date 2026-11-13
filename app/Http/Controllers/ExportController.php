@@ -50,7 +50,7 @@ class ExportController extends Controller
 
     public function pdf(Request $request)
     {
-        ini_set('memory_limit', '256M');
+        EventoImportController::raiseMemoryLimit();
         set_time_limit(120);
 
         if ($request->input('source') === 'gobernador') {

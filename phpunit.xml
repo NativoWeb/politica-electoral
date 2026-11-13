@@ -34,5 +34,7 @@
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="ANTHROPIC_API_KEY" value=""/>
         <env name="EVENTOS_OCR_ENABLED" value="false"/>
+        <env name="CAMPANAS_ELECTORALES_ENABLED" value="false"/>
+        <env name="CAMPANAS_ELECTORALES_BETA_USERS" value=""/>
     </php>
 </phpunit>

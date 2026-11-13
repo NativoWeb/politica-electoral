@@ -105,8 +105,8 @@ const NAV_LINKS = [
 
 const CAMPAIGNS_LINK = {
     href: '/admin/campanas',
-    label: 'CAMPAÑAS',
-    description: 'Campañas, subcampañas y su equipo',
+    label: 'GRUPOS POLÍTICOS',
+    description: 'Grupos políticos, subgrupos y su equipo',
     icon: (
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 21V4m0 0h11l-1.5 4L15 12H4" />

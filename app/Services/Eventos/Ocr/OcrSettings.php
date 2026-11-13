@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 // campaigns.ocr_enabled (per campaign, off → 403), plus the key, the model and the price table.
 class OcrSettings
 {
-    public const DISABLED_FOR_CAMPAIGN = 'La lectura de planillas con IA no está activada para esta campaña.';
+    public const DISABLED_FOR_CAMPAIGN = 'La lectura de planillas con IA no está activada para este grupo político.';
 
     public const MISSING_KEY = 'La lectura con IA no está lista: falta configurar la clave del proveedor (ANTHROPIC_API_KEY). Avise al administrador de la plataforma.';
 

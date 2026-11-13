@@ -5,14 +5,14 @@ export default function CampaignChip({ campaignId, className = '' }) {
     const { isOther, nameOf } = useCampaign();
     if (!isOther(campaignId)) return null;
 
-    const name = nameOf(campaignId) || 'otra';
+    const name = nameOf(campaignId) || 'otro';
 
     return (
         <span
             className={`inline-flex items-center max-w-[180px] px-2 py-0.5 rounded-full border border-[var(--color-line-strong)] bg-[var(--color-bg)] text-[var(--color-ink-soft)] text-[11px] font-semibold leading-tight flex-shrink-0 ${className}`}
-            title={`Registro de la campaña ${name}`}
+            title={`Registro del grupo político ${name}`}
         >
-            <span className="truncate">Campaña {name}</span>
+            <span className="truncate">Grupo político {name}</span>
         </span>
     );
 }

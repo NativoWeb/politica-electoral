@@ -1561,7 +1561,7 @@ export default function WhatsApp({
                                         Historial de envíos de cumpleaños
                                     </h3>
                                     <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">
-                                        Consulta las campañas registradas para una fecha.
+                                        Consulta los envíos registrados para una fecha.
                                     </p>
                                 </div>
 
@@ -1652,7 +1652,7 @@ export default function WhatsApp({
                                                 Fecha: <strong>{formatBirthDate(birthdayHistory.date)}</strong>
                                             </span>
                                             <span>
-                                                Campañas: <strong>{birthdayHistory.campaigns_count}</strong>
+                                                Envíos: <strong>{birthdayHistory.campaigns_count}</strong>
                                             </span>
                                             <span>
                                                 Destinatarios: <strong>{filteredBirthdayRecipients.length}</strong>
@@ -1737,7 +1737,7 @@ export default function WhatsApp({
                                         Historial de envíos de eventos
                                     </h3>
                                     <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">
-                                        Consulta las campañas registradas para una fecha.
+                                        Consulta los envíos registrados para una fecha.
                                     </p>
                                 </div>
 
@@ -1853,7 +1853,7 @@ export default function WhatsApp({
                                                 Fecha: <strong>{formatBirthDate(eventHistory.date)}</strong>
                                             </span>
                                             <span>
-                                                Campañas: <strong>{eventHistory.campaigns_count}</strong>
+                                                Envíos: <strong>{eventHistory.campaigns_count}</strong>
                                             </span>
                                             <span>
                                                 Destinatarios: <strong>{filteredEventRecipients.length}</strong>

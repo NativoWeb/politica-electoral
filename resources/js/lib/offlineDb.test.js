@@ -351,7 +351,7 @@ describe('offlineDb', () => {
         const createNexo = { id: 2, type: 'nexo', action: 'create', data: { nombre: 'Hija', personId: 'lid-new', client_id: 'nex-new' }, owner: 'owner-test', synced: 0 };
         const deleteNexo = { id: 3, type: 'nexo', action: 'delete', data: { id: 'nex-new' }, owner: 'owner-test', synced: 0 };
         const respond = (status, body = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-        const READ_ONLY = 'Este registro es de otra campaña. Puedes verlo, pero solo su equipo puede modificarlo.';
+        const READ_ONLY = 'Este registro es de otro grupo político. Puedes verlo, pero solo su equipo puede modificarlo.';
 
         beforeEach(() => {
             document.getElementById('global-offline-toast')?.remove();

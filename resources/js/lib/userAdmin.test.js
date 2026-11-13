@@ -55,7 +55,7 @@ describe('blockedPermissions', () => {
 
     it('blocks only new grants of WhatsApp permissions in a campaign without WhatsApp', () => {
         expect(blockedPermissions(available, true, [])).toEqual({});
-        expect(blockedPermissions(available, false, [])).toEqual({ 'use.whatsapp': 'Su campaña no tiene WhatsApp activo.' });
+        expect(blockedPermissions(available, false, [])).toEqual({ 'use.whatsapp': 'Su grupo político no tiene WhatsApp activo.' });
         expect(blockedPermissions(available, false, ['use.whatsapp'])).toEqual({});
     });
 });

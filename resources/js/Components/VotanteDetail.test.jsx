@@ -42,8 +42,8 @@ describe('VotanteDetail campaign read-only', () => {
     it('shows a subcampaign record read-only, labelled with its campaign', () => {
         renderDetail(votante('x'));
 
-        expect(screen.getByText('Campaña Alejandro')).toBeInTheDocument();
-        expect(screen.getByRole('note')).toHaveTextContent('Este registro es de la campaña Alejandro. Puedes verlo, pero solo su equipo puede modificarlo.');
+        expect(screen.getByText('Grupo político Alejandro')).toBeInTheDocument();
+        expect(screen.getByRole('note')).toHaveTextContent('Este registro es del grupo político Alejandro. Puedes verlo, pero solo su equipo puede modificarlo.');
         expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: '+ Agregar' })).not.toBeInTheDocument();
     });
@@ -53,7 +53,7 @@ describe('VotanteDetail campaign read-only', () => {
 
         expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument();
         expect(screen.queryByRole('note')).not.toBeInTheDocument();
-        expect(screen.queryByText(/^Campaña /)).not.toBeInTheDocument();
+        expect(screen.queryByText(/^Grupo político /)).not.toBeInTheDocument();
     });
 
     it('shows the read-only notice when a save is rejected with 403 for another campaign', async () => {
@@ -64,7 +64,7 @@ describe('VotanteDetail campaign read-only', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Guardar Cambios' }));
 
         await waitFor(() => expect(showToast).toHaveBeenCalledWith(
-            'Este registro es de otra campaña. Puedes verlo, pero solo su equipo puede modificarlo.', 'error',
+            'Este registro es de otro grupo político. Puedes verlo, pero solo su equipo puede modificarlo.', 'error',
         ));
     });
 

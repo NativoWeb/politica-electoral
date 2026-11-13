@@ -30,13 +30,15 @@ describe('campaignContext', () => {
 
 describe('messages', () => {
     it('names the owning campaign in the read-only notice', () => {
-        expect(readOnlyMessage('Alejandro')).toBe('Este registro es de la campaña Alejandro. Puedes verlo, pero solo su equipo puede modificarlo.');
-        expect(readOnlyMessage(null)).toBe('Este registro es de otra campaña. Puedes verlo, pero solo su equipo puede modificarlo.');
+        expect(readOnlyMessage('Alejandro')).toBe('Este registro es del grupo político Alejandro. Puedes verlo, pero solo su equipo puede modificarlo.');
+        expect(readOnlyMessage(null)).toBe('Este registro es de otro grupo político. Puedes verlo, pero solo su equipo puede modificarlo.');
     });
 
     it('turns the server 403 of another campaign into the read-only notice', () => {
         expect(forbiddenMessage('Este registro pertenece a otra campaña: solo se puede consultar.', 'Alejandro'))
             .toBe(readOnlyMessage('Alejandro'));
+        expect(forbiddenMessage('Este registro pertenece a otro grupo político: solo se puede consultar.', null))
+            .toBe(readOnlyMessage(null));
         expect(forbiddenMessage(undefined, null)).toBe(readOnlyMessage(null));
     });
 

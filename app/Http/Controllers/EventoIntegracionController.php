@@ -104,7 +104,7 @@ class EventoIntegracionController extends Controller
     {
         [$municipio, $barrio, $key] = $this->territoryFilters($request);
         abort_unless($municipio, 404);
-        ini_set('memory_limit', '256M');
+        EventoImportController::raiseMemoryLimit();
 
         $lideres = $this->territory->lideres($municipio->id, $key)->get()->map(fn ($l) => [
             'nombre' => $l->nombre, 'cedula' => $l->cedula, 'telefono' => $l->telefono, 'barrio' => $l->barrio,
@@ -126,7 +126,7 @@ class EventoIntegracionController extends Controller
         $eventoColumns = ['nombre', 'tipo', 'fecha', 'estado', 'asistentes', ...($key ? ['asistentes_barrio'] : []), 'campana'];
         $labels = [
             'nombre' => 'NOMBRE', 'cedula' => 'CÉDULA', 'telefono' => 'TELÉFONO', 'barrio' => 'BARRIO', 'cargo' => 'CARGO',
-            'partido' => 'PARTIDO', 'campana' => 'CAMPAÑA', 'tipo' => 'TIPO', 'fecha' => 'FECHA', 'estado' => 'ESTADO',
+            'partido' => 'PARTIDO', 'campana' => 'GRUPO POLÍTICO', 'tipo' => 'TIPO', 'fecha' => 'FECHA', 'estado' => 'ESTADO',
             'asistentes' => 'ASISTENTES', 'asistentes_barrio' => 'ASISTENTES DEL BARRIO', 'nombres' => 'NOMBRES',
             'apellidos' => 'APELLIDOS', 'celular' => 'CELULAR', 'evento' => 'EVENTO', 'origen' => 'ORIGEN',
         ];

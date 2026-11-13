@@ -150,7 +150,7 @@ class AgentIdentityController extends Controller
 
     private function campaignWithoutWhatsapp(): JsonResponse
     {
-        return response()->json(['success' => false, 'message' => 'Tu campaña no tiene habilitado el agente de WhatsApp.'], 403);
+        return response()->json(['success' => false, 'message' => 'Tu grupo político no tiene habilitado el agente de WhatsApp.'], 403);
     }
 
     private function assistantNotGranted(): JsonResponse

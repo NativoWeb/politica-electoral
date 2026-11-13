@@ -1228,7 +1228,7 @@ class WhatsAppController extends Controller
 
         if ($recipient->send?->campaign_type !== 'birthday') {
             return response()->json([
-                'message' => 'El destinatario no pertenece a una campaña de cumpleaños.',
+                'message' => 'El destinatario no pertenece a un envío de cumpleaños.',
             ], 422);
         }
 

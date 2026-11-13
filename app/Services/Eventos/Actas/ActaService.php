@@ -137,7 +137,7 @@ class ActaService
                     throw ValidationException::withMessages(["participantes.{$i}.attendee_id" => "«{$row->nombre}» ya no es asistente de este evento: quítelo de la lista o escríbalo de nuevo."]);
                 }
                 if ($row->lider_id && ! isset($confirmed[$row->lider_id])) {
-                    throw ValidationException::withMessages(["participantes.{$i}.lider_id" => "La ficha elegida para «{$row->nombre}» ya no es un líder activo de la campaña {$of} en su territorio."]);
+                    throw ValidationException::withMessages(["participantes.{$i}.lider_id" => "La ficha elegida para «{$row->nombre}» ya no es un líder activo del grupo político {$of} en su territorio."]);
                 }
 
                 $liderId = $row->lider_id ?: $attendee?->lider_id;
@@ -180,7 +180,7 @@ class ActaService
                 $counts['compromisos']++;
                 foreach ($c->responsables as $r => $responsable) {
                     if ($responsable->lider_id && ! isset($valid[$responsable->lider_id])) {
-                        throw ValidationException::withMessages(["compromisos.{$i}.responsables.{$r}.lider_id" => "La ficha elegida para «{$responsable->nombre}» ya no es un líder activo de la campaña {$of} en su territorio."]);
+                        throw ValidationException::withMessages(["compromisos.{$i}.responsables.{$r}.lider_id" => "La ficha elegida para «{$responsable->nombre}» ya no es un líder activo del grupo político {$of} en su territorio."]);
                     }
                     $counts['responsables_vinculados'] += $responsable->lider_id ? 1 : 0;
                 }
@@ -232,7 +232,7 @@ class ActaService
                 throw ValidationException::withMessages(["participantes.{$i}.attendee_id" => 'Un participante elegido ya no es asistente de este evento.']);
             }
             if (! empty($item['lider_id']) && ! isset($chosen[$item['lider_id']])) {
-                throw ValidationException::withMessages(["participantes.{$i}.lider_id" => 'La ficha elegida para «'.$nombre.'» no es un líder activo de la campaña '.self::ownerLabel($owner).' en su territorio.']);
+                throw ValidationException::withMessages(["participantes.{$i}.lider_id" => 'La ficha elegida para «'.$nombre.'» no es un líder activo del grupo político '.self::ownerLabel($owner).' en su territorio.']);
             }
             (new EventActaParticipante)->forceFill([
                 'acta_id' => $acta->id,
@@ -270,7 +270,7 @@ class ActaService
                 $liderId = $responsable['lider_id'] ?? null;
                 if ($liderId && ! isset($chosen[$liderId])) {
                     throw ValidationException::withMessages([
-                        "compromisos.{$i}.responsables.{$r}.lider_id" => 'La ficha elegida para «'.$nombre.'» no es un líder activo de la campaña '.self::ownerLabel($owner).' en su territorio.',
+                        "compromisos.{$i}.responsables.{$r}.lider_id" => 'La ficha elegida para «'.$nombre.'» no es un líder activo del grupo político '.self::ownerLabel($owner).' en su territorio.',
                     ]);
                 }
                 $compromiso->responsables()->create([

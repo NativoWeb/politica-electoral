@@ -185,6 +185,6 @@ return [
         'permissions.*' => 'permiso',
         'territory_scope' => 'territorio',
         'territory_scope.*' => 'municipio del territorio',
-        'campaign_id' => 'campaña',
+        'campaign_id' => 'grupo político',
     ],
 ];

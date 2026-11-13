@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureCampaignWhatsApp;
 use App\Http\Middleware\EnsureCanWrite;
 use App\Http\Middleware\EnsureElectoralPlatform;
 use App\Http\Middleware\EnsureEventosOcrEnabled;
+use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsureOfflineOwner;
 use App\Http\Middleware\EnsurePasswordChanged;
@@ -64,6 +65,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'offline.owner' => EnsureOfflineOwner::class,
             'person.resolve' => ResolveMergedPerson::class,
             'eventos.ocr' => EnsureEventosOcrEnabled::class,
+            'feature' => EnsureFeatureEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -1,0 +1,223 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "DPTO_CCDGO": "68",
+    "MPIO_CCDGO": "001",
+    "MPIO_CDPMP": "68001",
+    "MPIO_CNMBRE": "BUCARAMANGA"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.2,
+       7.0
+      ],
+      [
+       -73.10000000000001,
+       7.0
+      ],
+      [
+       -73.10000000000001,
+       7.1
+      ],
+      [
+       -73.2,
+       7.1
+      ],
+      [
+       -73.2,
+       7.0
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "DPTO_CCDGO": "68",
+    "MPIO_CCDGO": "235",
+    "MPIO_CDPMP": "68235",
+    "MPIO_CNMBRE": "EL CARMEN DE CHUCURÍ"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.1,
+       7.0
+      ],
+      [
+       -73.0,
+       7.0
+      ],
+      [
+       -73.0,
+       7.1
+      ],
+      [
+       -73.1,
+       7.1
+      ],
+      [
+       -73.1,
+       7.0
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "DPTO_CCDGO": "68",
+    "MPIO_CCDGO": "684",
+    "MPIO_CDPMP": "68684",
+    "MPIO_CNMBRE": "SAN JOSÉ DE MIRANDA"
+   },
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        -73.2,
+        7.1
+       ],
+       [
+        -73.10000000000001,
+        7.1
+       ],
+       [
+        -73.10000000000001,
+        7.199999999999999
+       ],
+       [
+        -73.2,
+        7.199999999999999
+       ],
+       [
+        -73.2,
+        7.1
+       ]
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "DPTO_CCDGO": "68",
+    "MPIO_CCDGO": "298",
+    "MPIO_CDPMP": "68298",
+    "MPIO_CNMBRE": "GÁMBITA"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.0,
+       7.0
+      ],
+      [
+       -72.9,
+       7.1
+      ],
+      [
+       -72.9,
+       7.0
+      ],
+      [
+       -73.0,
+       7.1
+      ],
+      [
+       -73.0,
+       7.0
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "DPTO_CCDGO": "68",
+    "MPIO_CCDGO": "999",
+    "MPIO_CDPMP": "68999",
+    "MPIO_CNMBRE": "INVENTADO"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.1,
+       7.1
+      ],
+      [
+       -73.0,
+       7.1
+      ],
+      [
+       -73.0,
+       7.199999999999999
+      ],
+      [
+       -73.1,
+       7.199999999999999
+      ],
+      [
+       -73.1,
+       7.1
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "DPTO_CCDGO": "05",
+    "MPIO_CCDGO": "001",
+    "MPIO_CDPMP": "05001",
+    "MPIO_CNMBRE": "MEDELLÍN"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -75.6,
+       6.2
+      ],
+      [
+       -75.5,
+       6.2
+      ],
+      [
+       -75.5,
+       6.3
+      ],
+      [
+       -75.6,
+       6.3
+      ],
+      [
+       -75.6,
+       6.2
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}

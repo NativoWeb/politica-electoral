@@ -146,11 +146,11 @@ function CampaignField({ isSuperadmin, campaigns, value, onChange, ownCampaign, 
         const names = Object.fromEntries(campaigns.map(c => [c.id, c.name]));
         return (
             <div>
-                <label htmlFor={id} className={labelCls}>Campaña</label>
+                <label htmlFor={id} className={labelCls}>Grupo político</label>
                 <select id={id} className={inputCls} value={value} onChange={e => onChange(e.target.value)}>
                     {campaigns.map(c => (
                         <option key={c.id} value={c.id}>
-                            {c.parent_id && names[c.parent_id] ? `${c.name} (subcampaña de ${names[c.parent_id]})` : c.name}
+                            {c.parent_id && names[c.parent_id] ? `${c.name} (subgrupo de ${names[c.parent_id]})` : c.name}
                         </option>
                     ))}
                 </select>
@@ -161,7 +161,7 @@ function CampaignField({ isSuperadmin, campaigns, value, onChange, ownCampaign, 
     if (!ownCampaign?.name) return null;
     return (
         <div>
-            <span className={labelCls}>Campaña</span>
+            <span className={labelCls}>Grupo político</span>
             <p className="px-3 py-3 bg-[var(--color-bg)] border border-[var(--color-line)] rounded-lg text-[15px] text-[var(--color-ink)]">{ownCampaign.name}</p>
         </div>
     );
@@ -532,7 +532,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                         {user.role && <RoleChip code={user.roleCode} name={user.role} />}
                                         {isSuperadmin && user.campaignName && (
                                             <span className="inline-block px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--color-bg)] border border-[var(--color-line)] text-[var(--color-ink-soft)]">
-                                                Campaña: {user.campaignName}
+                                                Grupo político: {user.campaignName}
                                             </span>
                                         )}
                                         <span className={`text-[10px] font-bold ${user.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -625,8 +625,8 @@ export default function Users({ users, roles, municipios, provincias, availableP
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 21V4m0 0h11l-1.5 4L15 12H4" /></svg>
                         </div>
                         <div className="flex-1">
-                            <p className="text-[14px] font-bold text-[var(--color-ink)]">Campañas</p>
-                            <p className="text-[12px] text-[var(--color-ink-faint)]">Crear, editar y desactivar campañas</p>
+                            <p className="text-[14px] font-bold text-[var(--color-ink)]">Grupos políticos</p>
+                            <p className="text-[12px] text-[var(--color-ink-faint)]">Crear, editar y desactivar grupos políticos</p>
                         </div>
                         <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                     </Link>

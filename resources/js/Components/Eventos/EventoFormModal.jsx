@@ -186,7 +186,7 @@ function OrganizersField({ value, onChange, errors }) {
                 <input id="evento-org-search" className={inputCls} value={search.query} onChange={e => search.search(e.target.value)} placeholder="Escriba al menos 2 letras o números" autoComplete="off" />
                 <SearchResults
                     search={search}
-                    emptyText="No hay líderes de su campaña con ese nombre o cédula."
+                    emptyText="No hay líderes de su grupo político con ese nombre o cédula."
                     onPick={pick}
                     renderItem={l => (
                         <>

@@ -121,12 +121,12 @@ describe('UnificarModal', () => {
     it('shows the server reason when the user may not unite candidates', async () => {
         fetchMock
             .mockImplementationOnce(() => json({ success: true, data: RESULTS }))
-            .mockImplementationOnce(() => json({ success: false, message: 'Solo la campaña principal puede unificar candidatos: sus datos son compartidos por todas las campañas.' }, 403));
+            .mockImplementationOnce(() => json({ success: false, message: 'Solo el grupo político principal puede unificar candidatos: sus datos son compartidos por todos los grupos políticos.' }, 403));
         renderModal();
 
         fireEvent.change(screen.getByLabelText('Buscar por nombre, cédula o teléfono'), { target: { value: 'ana' } });
         fireEvent.click(await screen.findByText('ANA DIAZ'));
 
-        expect(await screen.findByRole('alert')).toHaveTextContent('Solo la campaña principal puede unificar candidatos');
+        expect(await screen.findByRole('alert')).toHaveTextContent('Solo el grupo político principal puede unificar candidatos');
     });
 });

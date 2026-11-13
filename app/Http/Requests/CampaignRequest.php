@@ -56,10 +56,10 @@ class CampaignRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.required' => 'Escribe el nombre de la campaña.',
+            'name.required' => 'Escribe el nombre del grupo político.',
             'slug.required' => 'El identificador no puede quedar vacío.',
-            'slug.unique' => 'Ya existe una campaña con ese identificador. Escribe otro.',
-            'parent_id.exists' => 'Campaña madre no encontrada.',
+            'slug.unique' => 'Ya existe un grupo político con ese identificador. Escribe otro.',
+            'parent_id.exists' => 'Grupo principal no encontrado.',
             'candidate_person_id.exists' => 'El candidato elegido no existe.',
         ];
     }

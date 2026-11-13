@@ -141,7 +141,7 @@ describe('PersonaEventos', () => {
         expect(within(items[0]).getByText('Girón — Barrios: San Martín')).toBeTruthy();
         expect(within(items[0]).getByRole('link', { name: 'Ver el evento' }).getAttribute('href')).toBe('/eventos/e1');
         expect(within(items[1]).getByText('Organizador (Coordinadora)')).toBeTruthy();
-        expect(within(items[1]).getByText('Campaña Alejandro')).toBeTruthy();
+        expect(within(items[1]).getByText('Grupo político Alejandro')).toBeTruthy();
     });
 
     it('says when there are no events and when it cannot load them', async () => {
@@ -309,7 +309,7 @@ describe('Territory view', () => {
         expect(screen.getAllByRole('link', { name: 'Gira Girón' }).map(a => a.getAttribute('href'))).toEqual(['/eventos/e1', '/eventos/e1']);
         expect(screen.getByText('C.C. 666 · 3001234567 · Barrio San Martin · Por operador')).toBeTruthy();
         expect(screen.getByText('Pendiente de aprobar')).toBeTruthy();
-        expect(screen.getByText('Campaña Alejandro')).toBeTruthy();
+        expect(screen.getByText('Grupo político Alejandro')).toBeTruthy();
         expect(screen.getByRole('heading', { name: 'Líderes (2)' })).toBeTruthy();
     });
 

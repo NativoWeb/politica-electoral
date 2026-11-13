@@ -206,9 +206,9 @@ export default function Index({ eventos, filters = {}, provincias = [], tipos = 
                     </div>
                     {hasMultiple && (
                         <div>
-                            <label htmlFor="f-campana" className={labelCls}>Campaña</label>
+                            <label htmlFor="f-campana" className={labelCls}>Grupo político</label>
                             <select id="f-campana" className={selectCls} value={filters.campana ?? ''} onChange={e => apply({ campana: e.target.value || null })}>
-                                <option value="">Todas</option>
+                                <option value="">Todos</option>
                                 {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
                         </div>

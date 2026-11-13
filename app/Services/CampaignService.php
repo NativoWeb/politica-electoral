@@ -26,20 +26,20 @@ class CampaignService
     public function parentError(?string $campaignId, ?string $parentId): ?string
     {
         if ($campaignId === Campaign::DEFAULT_ID) {
-            return $parentId === null ? null : 'La campaña principal no puede tener campaña madre.';
+            return $parentId === null ? null : 'El grupo político principal no puede tener grupo principal.';
         }
         if ($parentId === null) {
             return null;
         }
         if (! DB::table('campaigns')->where('id', $parentId)->exists()) {
-            return 'Campaña madre no encontrada.';
+            return 'Grupo principal no encontrado.';
         }
 
         // Walking up from the new parent must never reach the campaign itself.
         $seen = [];
         for ($current = $parentId; $current !== null && ! isset($seen[$current]); $current = DB::table('campaigns')->where('id', $current)->value('parent_id')) {
             if ($current === $campaignId) {
-                return 'Una campaña no puede ser madre de sí misma ni de una campaña que está por encima de ella.';
+                return 'Un grupo político no puede ser grupo principal de sí mismo ni de un grupo que está por encima de él.';
             }
             $seen[$current] = true;
         }

@@ -113,7 +113,7 @@ export default function EmpresariosIndex({ data = [], truncated, filters = {}, m
                         {dropdown('Gremio', gremios, filters.gremio, 'gremio', gremios)}
                         <SearchableDropdown label="Estado" options={['Inactivas', 'Activas e inactivas']} selected={filters.estado === 'inactivos' ? 'Inactivas' : filters.estado === 'todos' ? 'Activas e inactivas' : undefined} onChange={val => apply({ estado: val === 'Inactivas' ? 'inactivos' : val ? 'todos' : null })} multi={false} placeholder="Activas" />
                         {campaign.hasMultiple && (
-                            <SearchableDropdown label="Campaña" options={campaign.list.map(c => c.name)} selected={filters.campana ? campaign.nameOf(filters.campana) : undefined} onChange={val => apply({ campana: campaign.list.find(c => c.name === val)?.id ?? null })} multi={false} placeholder="Todas" />
+                            <SearchableDropdown label="Grupo político" options={campaign.list.map(c => c.name)} selected={filters.campana ? campaign.nameOf(filters.campana) : undefined} onChange={val => apply({ campana: campaign.list.find(c => c.name === val)?.id ?? null })} multi={false} placeholder="Todos" />
                         )}
                         {activeCount > 0 && (
                             <button type="button" onClick={() => { setSearch(''); router.get('/empresarios', {}, { preserveState: false }); }} className="min-h-[44px] px-3 text-[14px] font-semibold text-red-700 underline">Quitar filtros</button>

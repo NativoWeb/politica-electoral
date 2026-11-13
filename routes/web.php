@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ElectoralCampaignController;
 use App\Http\Controllers\EventoActaController;
 use App\Http\Controllers\EventoCompromisoController;
 use App\Http\Controllers\EventoController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\EventoIntegracionController;
 use App\Http\Controllers\EventoOcrController;
 use App\Http\Controllers\EventoPublicoController;
 use App\Http\Controllers\ExportController;
+use App\Http\Controllers\GeoController;
 use App\Http\Controllers\LegislativoController;
 use App\Http\Controllers\LiderController;
 use App\Http\Controllers\MapaPoliticoController;
@@ -102,6 +104,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
         Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona')->middleware('person.resolve');
         Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados')->middleware('person.resolve');
+        Route::get('/api/geo/municipios.geojson', [GeoController::class, 'municipios'])->name('geo.municipios');
     });
 
     // Votantes
@@ -152,6 +155,11 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::put('/votantes/{id}', [VotanteController::class, 'update'])->name('votantes.update');
             Route::delete('/votantes/{id}', [VotanteController::class, 'destroy'])->name('votantes.destroy');
         });
+    });
+
+    // Campañas electorales: hidden (404) until CAMPANAS_ELECTORALES_ENABLED, also for the superadmin.
+    Route::middleware(['feature:campanas', 'permission:view.campanas|manage.campanas'])->group(function () {
+        Route::get('/campanas-electorales', [ElectoralCampaignController::class, 'index'])->name('campanas-electorales.index');
     });
 
     // Empresarios y gremios (docs/empresarios.md): seen with view.empresarios, written with manage.empresarios;

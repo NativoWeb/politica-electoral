@@ -105,7 +105,7 @@ class User extends Authenticatable
 
         if ($this->role?->code !== 'R01_SUPERADMIN'
             && DB::table('campaigns')->where('id', $this->campaignId())->where('is_active', false)->exists()) {
-            return 'Tu campaña está desactivada. Comunícate con el administrador de la plataforma.';
+            return 'Tu grupo político está desactivado. Comunícate con el administrador de la plataforma.';
         }
 
         return null;

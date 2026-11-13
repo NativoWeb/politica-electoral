@@ -223,7 +223,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
 
             {campaign.hasMultiple && (
                 <div>
-                    <label htmlFor={campanaId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Campaña</label>
+                    <label htmlFor={campanaId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Grupo político</label>
                     <select id={campanaId} value={campana} onChange={e => setCampana(e.target.value)} className={inputCls}>
                         <option value="">Todas</option>
                         {campaign.list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}

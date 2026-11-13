@@ -56,7 +56,7 @@ class CampaignController extends Controller
     {
         $campaign = $this->campaigns->create($request->validated());
 
-        return back()->with('success', "Campaña \"{$campaign->name}\" creada.");
+        return back()->with('success', "Grupo político \"{$campaign->name}\" creado.");
     }
 
     public function update(CampaignRequest $request, string $id): RedirectResponse
@@ -64,21 +64,21 @@ class CampaignController extends Controller
         $campaign = Campaign::findOrFail($id);
         $campaign->update($request->validated());
 
-        return back()->with('success', "Campaña \"{$campaign->name}\" actualizada.");
+        return back()->with('success', "Grupo político \"{$campaign->name}\" actualizado.");
     }
 
     public function toggle(string $id): RedirectResponse
     {
         $campaign = Campaign::findOrFail($id);
         if ($campaign->id === Campaign::DEFAULT_ID) {
-            return back()->withErrors(['toggle' => 'La campaña principal no se puede desactivar.']);
+            return back()->withErrors(['toggle' => 'El grupo político principal no se puede desactivar.']);
         }
 
         $campaign->update(['is_active' => ! $campaign->is_active]);
 
         return back()->with('success', $campaign->is_active
-            ? "Campaña \"{$campaign->name}\" activada: sus usuarios ya pueden entrar."
-            : "Campaña \"{$campaign->name}\" desactivada: sus usuarios ya no pueden entrar.");
+            ? "Grupo político \"{$campaign->name}\" activado: sus usuarios ya pueden entrar."
+            : "Grupo político \"{$campaign->name}\" desactivado: sus usuarios ya no pueden entrar.");
     }
 
     // Electoral persons by name, to pick a campaign's candidate.

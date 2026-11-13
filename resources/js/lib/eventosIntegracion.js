@@ -26,7 +26,7 @@ export function participationLine(item) {
 
 export function personEventsSummary(data) {
     const total = data?.total ?? 0;
-    if (total === 0) return 'No ha asistido ni organizado eventos de las campañas que usted puede ver.';
+    if (total === 0) return 'No ha asistido ni organizado eventos de los grupos políticos que usted puede ver.';
     const parts = [];
     if (data.asistio) parts.push(`asistió a ${eventCountLabel(data.asistio)}`);
     if (data.organizo) parts.push(`organizó ${eventCountLabel(data.organizo)}`);

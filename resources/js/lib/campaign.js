@@ -24,14 +24,14 @@ export function useCampaign() {
 }
 
 export function readOnlyMessage(campaignName) {
-    const owner = campaignName ? `de la campaña ${campaignName}` : 'de otra campaña';
+    const owner = campaignName ? `del grupo político ${campaignName}` : 'de otro grupo político';
 
     return `Este registro es ${owner}. Puedes verlo, pero solo su equipo puede modificarlo.`;
 }
 
 // A 403 for a record of another campaign reads as the read-only notice; any other 403 keeps the server's reason.
 export function forbiddenMessage(serverMessage, campaignName) {
-    if (!serverMessage || /otra campa/i.test(serverMessage)) {
+    if (!serverMessage || /otra campa|otro grupo pol/i.test(serverMessage)) {
         return readOnlyMessage(campaignName);
     }
 

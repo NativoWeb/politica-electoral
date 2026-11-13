@@ -351,7 +351,7 @@ class CampaignScreenTest extends TestCase
 
         // Login refused with a clear reason, without counting as a failed attempt.
         $this->login($this->campoX)->assertRedirect('/login')
-            ->assertSessionHasErrors(['email' => 'Tu campaña está desactivada. Comunícate con el administrador de la plataforma.']);
+            ->assertSessionHasErrors(['email' => 'Tu grupo político está desactivado. Comunícate con el administrador de la plataforma.']);
         $this->assertGuest();
 
         // A wrong password still gets the generic message: the campaign state is not revealed.
@@ -360,7 +360,7 @@ class CampaignScreenTest extends TestCase
 
         // An open session ends on the next request: pages go to the login, JSON calls get a 401, and the login
         // page shows the reason once, even when the request that closed the session was a background one.
-        $reason = 'Tu campaña está desactivada. Comunícate con el administrador de la plataforma.';
+        $reason = 'Tu grupo político está desactivado. Comunícate con el administrador de la plataforma.';
         $this->actingAs($this->adminX)->get('/admin/usuarios')->assertRedirect('/login')
             ->assertHeader('Clear-Site-Data', '"cache"');
         $this->assertGuest();

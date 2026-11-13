@@ -360,7 +360,7 @@ class EventOcrTest extends TestCase
         config(['eventos.ocr.max_pages_per_day' => 1]);
         $next = $this->upload($this->photo('otra.png', null, 9))->json('data.id');
         $this->process($next)->assertOk()->assertJsonPath('success', false)
-            ->assertJsonPath('message', 'La campaña ya hizo 1 lecturas con IA hoy, el máximo diario. Continúe mañana.');
+            ->assertJsonPath('message', 'El grupo político ya hizo 1 lecturas con IA hoy, el máximo diario. Continúe mañana.');
     }
 
     public function test_the_photos_are_private(): void

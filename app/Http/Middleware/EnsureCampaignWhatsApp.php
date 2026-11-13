@@ -11,7 +11,7 @@ class EnsureCampaignWhatsApp
 {
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless($request->user()?->campaignHasWhatsapp(), 403, 'Tu campaña no tiene habilitado WhatsApp.');
+        abort_unless($request->user()?->campaignHasWhatsapp(), 403, 'Tu grupo político no tiene habilitado WhatsApp.');
 
         return $next($request);
     }
