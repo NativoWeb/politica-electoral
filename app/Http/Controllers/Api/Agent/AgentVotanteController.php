@@ -88,11 +88,7 @@ class AgentVotanteController extends Controller
     {
         $action->authorizeFor($id, false);
 
-        $items = LiderSeguimiento::with('user:id,name')
-            ->where('lider_id', $id)
-            ->orderByDesc('fecha')
-            ->orderByDesc('created_at')
-            ->limit(20)
+        $items = LiderSeguimiento::recientes($id, 20)
             ->get()
             ->map(fn (LiderSeguimiento $s) => $this->seguimiento($s))
             ->all();

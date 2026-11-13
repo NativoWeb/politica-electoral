@@ -262,7 +262,7 @@ class OrganizacionActaController extends Controller
         ]);
     }
 
-    private function findActa(Organizacion $org, string $acta): EventActa
+    public function findActa(Organizacion $org, string $acta): EventActa
     {
         abort_unless(Str::isUuid($acta), 404);
 

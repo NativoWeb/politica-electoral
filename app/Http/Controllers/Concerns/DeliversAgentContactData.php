@@ -14,13 +14,13 @@ trait DeliversAgentContactData
     abstract protected function auditEntityType(): string;
 
     // 429 (and an audit row of the refusal) when this delivery would pass the user's daily contact quota.
-    private function overQuota(Request $request, string $action, array $filters, array $counts): ?JsonResponse
+    private function overQuota(Request $request, string $action, array $filters, array $counts, ?string $entityId = null): ?JsonResponse
     {
         if ($this->quota->consume($request->user()->id, $counts['con_datos'])) {
             return null;
         }
 
-        $this->audit($request, $action, $filters, $counts + ['bloqueado' => 'limite_diario']);
+        $this->audit($request, $action, $filters, $counts + ['bloqueado' => 'limite_diario'], $entityId);
 
         return response()->json([
             'success' => false,
@@ -30,10 +30,10 @@ trait DeliversAgentContactData
     }
 
     // The quota was already reserved: if the audit row cannot be written, nothing is delivered and the quota is given back.
-    private function deliver(Request $request, string $action, array $filters, array $counts): void
+    private function deliver(Request $request, string $action, array $filters, array $counts, ?string $entityId = null): void
     {
         try {
-            $this->audit($request, $action, $filters, $counts);
+            $this->audit($request, $action, $filters, $counts, $entityId);
         } catch (Throwable $e) {
             $this->quota->release($request->user()->id, $counts['con_datos']);
 
@@ -42,13 +42,13 @@ trait DeliversAgentContactData
     }
 
     // Counts and the (masked, see config/audit.php) filters only: never the personal data delivered.
-    private function audit(Request $request, string $action, array $filters, array $counts): void
+    private function audit(Request $request, string $action, array $filters, array $counts, ?string $entityId = null): void
     {
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => $action,
             'entity_type' => $this->auditEntityType(),
-            'entity_id' => null,
+            'entity_id' => $entityId,
             'metadata' => ['filtros' => $filters, ...$counts, 'ruta' => $request->route()?->getName()],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),

@@ -13,6 +13,7 @@ use App\Services\Empresarios\OrganizacionScope;
 use App\Services\Eventos\Actas\ActaFileException;
 use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\Actas\CompromisoAlertas;
+use App\Services\Eventos\Actas\CompromisoListing;
 use App\Services\Eventos\EventScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,25 +38,25 @@ class EventoCompromisoController extends Controller
 {
     use ScopesTerritory;
 
-    public function __construct(private EventScope $events, private OrganizacionScope $orgs) {}
+    public function __construct(private EventScope $events, private OrganizacionScope $orgs, private CompromisoListing $listing) {}
 
     // GET /eventos/compromisos
     public function index(Request $request): Response
     {
         $filters = $this->filters($request);
-        $page = $this->query($filters)->paginate(20)->withQueryString();
-        $responsables = $this->responsables($page->getCollection()->pluck('id')->all());
-        $page->through(fn ($c) => $this->row($c, $responsables[$c->id] ?? []));
+        $page = $this->listing->query($filters)->paginate(20)->withQueryString();
+        $responsables = $this->listing->responsables($page->getCollection()->pluck('id')->all());
+        $page->through(fn ($c) => $this->listing->row($c, $responsables[$c->id] ?? []));
 
         return Inertia::render('Eventos/Compromisos', [
             'compromisos' => $page,
             'filters' => $filters,
-            'eventos' => $this->seesEvents() ? $this->events->options() : [],
-            'organizaciones' => $this->seesOrgs() ? $this->orgs->query('o')->orderBy('o.nombre')->limit(1000)->get(['o.id', 'o.nombre'])->map(fn ($o) => (array) $o)->all() : [],
-            'origenes' => ['evento' => $this->seesEvents(), 'organizacion' => $this->seesOrgs()],
+            'eventos' => $this->listing->seesEvents() ? $this->events->options() : [],
+            'organizaciones' => $this->listing->seesOrgs() ? $this->orgs->query('o')->orderBy('o.nombre')->limit(1000)->get(['o.id', 'o.nombre'])->map(fn ($o) => (array) $o)->all() : [],
+            'origenes' => ['evento' => $this->listing->seesEvents(), 'organizacion' => $this->listing->seesOrgs()],
             'municipios' => $this->municipios(),
             'estados' => EventCompromiso::LABELS,
-            'can' => ['manage' => $this->canManage('evento') || $this->canManage('organizacion')],
+            'can' => ['manage' => $this->listing->canManage('evento') || $this->listing->canManage('organizacion')],
         ]);
     }
 
@@ -64,8 +65,8 @@ class EventoCompromisoController extends Controller
     {
         $filters = $this->filters($request);
         EventoImportController::raiseMemoryLimit();
-        $items = $this->query($filters)->get();
-        $responsables = $this->responsables($items->pluck('id')->all());
+        $items = $this->listing->query($filters)->get();
+        $responsables = $this->listing->responsables($items->pluck('id')->all());
 
         $rows = $items->map(function ($c) use ($responsables) {
             $r = collect($responsables[$c->id] ?? []);
@@ -81,7 +82,7 @@ class EventoCompromisoController extends Controller
                 'telefono' => $r->pluck('telefono')->filter()->implode(' / '),
                 'fecha_limite' => $c->fecha_limite ? Carbon::parse($c->fecha_limite)->format('d/m/Y') : null,
                 'estado' => EventCompromiso::LABELS[$c->estado] ?? $c->estado,
-                'vencido' => self::isVencido($c) ? 'Sí' : 'No',
+                'vencido' => CompromisoListing::isVencido($c) ? 'Sí' : 'No',
                 'avances' => (int) $c->avances,
             ];
         })->all();
@@ -237,60 +238,11 @@ class EventoCompromisoController extends Controller
         abort_unless($lider, 404);
         $this->authorizeLiderRow($lider);
 
-        $items = $this->query(['lider' => $liderId] + array_fill_keys(self::FILTER_KEYS, null))
+        $items = $this->listing->query(['lider' => $liderId] + array_fill_keys(CompromisoListing::FILTER_KEYS, null))
             ->limit(200)->get();
-        $responsables = $this->responsables($items->pluck('id')->all());
+        $responsables = $this->listing->responsables($items->pluck('id')->all());
 
-        return response()->json(['success' => true, 'data' => $items->map(fn ($c) => $this->row($c, $responsables[$c->id] ?? []))->values()]);
-    }
-
-    private const FILTER_KEYS = ['estado', 'vencidos', 'responsable', 'municipio', 'evento', 'organizacion', 'origen', 'desde', 'hasta', 'q'];
-
-    private function query(array $f)
-    {
-        $today = EventCompromiso::today();
-        $events = $this->seesEvents() && $f['origen'] !== 'organizacion';
-        $orgs = $this->seesOrgs() && $f['origen'] !== 'evento';
-        $query = DB::table('event_compromisos as c')
-            ->join('event_actas as a', 'a.id', '=', 'c.acta_id')
-            ->where('a.estado', EventActa::CONFIRMADA)
-            ->leftJoin('events as ev', 'ev.id', '=', 'c.event_id')
-            ->leftJoin('organizaciones as o', 'o.id', '=', 'c.organizacion_id')
-            ->leftJoin('geographic_units as m', fn ($j) => $j->on('m.id', '=', 'ev.municipio_id')->orOn('m.id', '=', 'o.municipio_id'))
-            ->where(function ($w) use ($events, $orgs) {
-                if ($events) {
-                    $w->orWhere(fn ($e) => $this->events->scopeEvents($e->whereNotNull('c.event_id')));
-                }
-                if ($orgs) {
-                    $w->orWhere(fn ($o) => $this->orgs->scope($o->whereNotNull('c.organizacion_id'), 'o'));
-                }
-                if (! $events && ! $orgs) {
-                    $w->whereRaw('1 = 0');
-                }
-            })
-            ->select(['c.id', 'c.descripcion', 'c.estado', 'c.fecha_limite', 'c.campaign_id', 'c.created_at', 'a.id as acta_id', 'a.titulo as acta_titulo',
-                'a.fecha as acta_fecha', 'ev.id as event_id', 'ev.nombre as evento', 'o.id as organizacion_id', 'o.nombre as organizacion',
-                'm.id as municipio_id', 'm.canonical_name as municipio'])
-            ->selectSub(DB::table('event_compromiso_avances as av')->whereColumn('av.compromiso_id', 'c.id')->selectRaw('count(*)'), 'avances')
-            ->when($f['estado'], fn ($q, $v) => $q->where('c.estado', $v))
-            ->when($f['vencidos'], fn ($q) => $q->whereNotNull('c.fecha_limite')->where('c.fecha_limite', '<', $today)->whereIn('c.estado', EventCompromiso::ABIERTOS))
-            ->when($f['municipio'], fn ($q, $v) => $q->where('m.id', $v))
-            ->when($f['evento'], fn ($q, $v) => $q->where('ev.id', $v))
-            ->when($f['organizacion'], fn ($q, $v) => $q->where('o.id', $v))
-            ->when($f['desde'], fn ($q, $v) => $q->where('a.fecha', '>=', $v))
-            ->when($f['hasta'], fn ($q, $v) => $q->where('a.fecha', '<', Carbon::parse($v)->addDay()->toDateString()))
-            ->when($f['responsable'], fn ($q, $v) => $q->whereExists(fn ($r) => $this->whereContains(
-                $r->select(DB::raw(1))->from('event_compromiso_responsables as r')->whereColumn('r.compromiso_id', 'c.id'), 'r.nombre', $v)))
-            ->when($f['q'], fn ($q, $v) => $this->whereContains($q, 'c.descripcion', $v))
-            ->when($f['lider'] ?? null, fn ($q, $v) => $q->whereExists(fn ($r) => $r->select(DB::raw(1))
-                ->from('event_compromiso_responsables as r')->whereColumn('r.compromiso_id', 'c.id')->where('r.lider_id', $v)));
-
-        // Open and overdue first, then by deadline (no deadline last) and newest acta.
-        return $query
-            ->orderByRaw("CASE WHEN c.estado IN ('pendiente', 'en_curso') THEN 0 ELSE 1 END")
-            ->orderByRaw('CASE WHEN c.fecha_limite IS NULL THEN 1 ELSE 0 END')
-            ->orderBy('c.fecha_limite')
-            ->orderByDesc('a.fecha')->orderBy('c.id');
+        return response()->json(['success' => true, 'data' => $items->map(fn ($c) => $this->listing->row($c, $responsables[$c->id] ?? []))->values()]);
     }
 
     private function filters(Request $request): array
@@ -313,39 +265,6 @@ class EventoCompromisoController extends Controller
         ];
     }
 
-    // [compromiso id => [{nombre, telefono, lider_id}]]
-    private function responsables(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-
-        return DB::table('event_compromiso_responsables')->whereIn('compromiso_id', $ids)->orderBy('orden')
-            ->get(['compromiso_id', 'nombre', 'telefono', 'lider_id'])
-            ->groupBy('compromiso_id')
-            ->map(fn ($g) => $g->map(fn ($r) => ['nombre' => $r->nombre, 'telefono' => $r->telefono, 'lider_id' => $r->lider_id])->values()->all())
-            ->all();
-    }
-
-    private function row(object $c, array $responsables): array
-    {
-        return [
-            'id' => $c->id,
-            'descripcion' => $c->descripcion,
-            'estado' => $c->estado,
-            'fecha_limite' => $c->fecha_limite ? substr((string) $c->fecha_limite, 0, 10) : null,
-            'vencido' => self::isVencido($c),
-            'avances' => (int) $c->avances,
-            'responsables' => $responsables,
-            'acta' => ['id' => $c->acta_id, 'titulo' => $c->acta_titulo, 'fecha' => $c->acta_fecha ? substr((string) $c->acta_fecha, 0, 10) : null],
-            'origen' => $c->event_id ? 'evento' : 'organizacion',
-            'evento' => $c->event_id ? ['id' => $c->event_id, 'nombre' => $c->evento, 'municipio' => $c->municipio] : null,
-            'organizacion' => $c->organizacion_id ? ['id' => $c->organizacion_id, 'nombre' => $c->organizacion, 'municipio' => $c->municipio] : null,
-            'campaign_id' => $c->campaign_id,
-            'editable' => $this->canManage($c->event_id ? 'evento' : 'organizacion') && $this->campaign()->isOwn($c->campaign_id),
-        ];
-    }
-
     private function detail(EventCompromiso $c): array
     {
         $c->load(['responsables', 'avances.user:id,name', 'acta:id,titulo,fecha', 'event:id,nombre', 'organizacion:id,nombre']);
@@ -362,7 +281,7 @@ class EventoCompromisoController extends Controller
             'origen' => $c->event_id ? 'evento' : 'organizacion',
             'evento' => $c->event_id ? ['id' => $c->event?->id, 'nombre' => $c->event?->nombre] : null,
             'organizacion' => $c->organizacion_id ? ['id' => $c->organizacion?->id, 'nombre' => $c->organizacion?->nombre] : null,
-            'editable' => $this->canManage($c->event_id ? 'evento' : 'organizacion') && $this->campaign()->isOwn($c->campaign_id),
+            'editable' => $this->listing->canManage($c->event_id ? 'evento' : 'organizacion') && $this->campaign()->isOwn($c->campaign_id),
             'avances' => $c->avances->map(fn (EventCompromisoAvance $a) => [
                 'id' => $a->id,
                 'nota' => $a->nota,
@@ -381,55 +300,24 @@ class EventoCompromisoController extends Controller
         abort_unless(Str::isUuid($id), 404);
         $c = EventCompromiso::find($id);
         $visible = $c && ($c->event_id
-            ? $this->seesEvents() && $this->events->visibleEventId($c->event_id)
-            : $this->seesOrgs() && $this->orgs->query('o')->where('o.id', $c->organizacion_id)->exists());
+            ? $this->listing->seesEvents() && $this->events->visibleEventId($c->event_id)
+            : $this->listing->seesOrgs() && $this->orgs->query('o')->where('o.id', $c->organizacion_id)->exists());
         abort_unless($visible, 404);
         abort_unless(EventActa::whereKey($c->acta_id)->where('estado', EventActa::CONFIRMADA)->exists(), 404);
         if ($write) {
-            abort_unless($this->canManage($c->event_id ? 'evento' : 'organizacion'), 403);
+            abort_unless($this->listing->canManage($c->event_id ? 'evento' : 'organizacion'), 403);
             $this->authorizeCampaign($c->campaign_id, true);
         }
 
         return $c;
     }
 
-    private static function isVencido(object $c): bool
-    {
-        return $c->fecha_limite !== null && in_array($c->estado, EventCompromiso::ABIERTOS, true)
-            && substr((string) $c->fecha_limite, 0, 10) < EventCompromiso::today();
-    }
-
     private function municipios(): array
     {
-        $rows = DB::query()->fromSub($this->query(array_fill_keys(self::FILTER_KEYS, null))->reorder(), 'x')
+        $rows = DB::query()->fromSub($this->listing->query(array_fill_keys(CompromisoListing::FILTER_KEYS, null))->reorder(), 'x')
             ->whereNotNull('x.municipio_id')->distinct()->get(['x.municipio_id', 'x.municipio']);
 
         return $rows->sortBy('municipio')->map(fn ($m) => ['id' => $m->municipio_id, 'nombre' => $m->municipio])->values()->all();
-    }
-
-    private function canManage(string $origen = 'evento'): bool
-    {
-        return (bool) request()->user()?->hasPermission($origen === 'evento' ? 'manage.eventos' : 'manage.empresarios');
-    }
-
-    private function seesEvents(): bool
-    {
-        return EventScope::canSeeAttendees(request()->user());
-    }
-
-    private function seesOrgs(): bool
-    {
-        return OrganizacionScope::canView(request()->user());
-    }
-
-    private function whereContains($query, string $column, string $value)
-    {
-        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], Str::lower($value)).'%';
-        if (DB::connection()->getDriverName() === 'pgsql') {
-            return $query->whereRaw("unaccent(LOWER({$column})) LIKE unaccent(?)", [$like]);
-        }
-
-        return $query->whereRaw("LOWER({$column}) LIKE ?", [$like]);
     }
 
     private function audit(Request $request, string $action, EventCompromiso $c, array $metadata): void

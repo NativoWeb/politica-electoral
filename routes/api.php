@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Admin\WhatsAppController;
+use App\Http\Controllers\Api\Agent\AgentActaController;
 use App\Http\Controllers\Api\Agent\AgentIdentityController;
 use App\Http\Controllers\Api\Agent\AgentMapaQueryController;
+use App\Http\Controllers\Api\Agent\AgentPersonaController;
 use App\Http\Controllers\Api\Agent\AgentVotanteController;
 use App\Http\Controllers\Api\Agent\AgentVotanteQueryController;
 use App\Http\Controllers\ReportController;
@@ -39,6 +41,20 @@ Route::prefix('agent/v1')->name('api.agent.')->middleware(['throttle:agent', 'ag
             Route::middleware(['permission:view.mapa', 'throttle:agent-votantes-read'])->group(function () {
                 Route::get('/mapa', [AgentMapaQueryController::class, 'index'])->name('mapa.index');
                 Route::get('/mapa/export', [AgentMapaQueryController::class, 'export'])->name('mapa.export');
+            });
+            // The ficha of one person, with its contact data even without autoriza_datos: audited and counted by the controller.
+            Route::middleware(['permission:view.mapa|view.votantes', 'person.resolve'])->group(function () {
+                Route::get('/personas/{id}/ficha', [AgentPersonaController::class, 'ficha'])->middleware('throttle:agent-votantes-read')->name('personas.ficha');
+                Route::get('/personas/{id}/ficha/pdf', [AgentPersonaController::class, 'fichaPdf'])->middleware('throttle:agent-reports')->name('personas.ficha.pdf');
+            });
+            // Actas de reunión and compromisos, read-only: each origin needs its own permission (checked by the controller).
+            Route::middleware('permission:view.eventos|manage.eventos|view.empresarios|manage.empresarios')->group(function () {
+                Route::middleware('throttle:agent-votantes-read')->group(function () {
+                    Route::get('/actas', [AgentActaController::class, 'index'])->name('actas.index');
+                    Route::get('/actas/{acta}', [AgentActaController::class, 'show'])->whereUuid('acta')->name('actas.show');
+                    Route::get('/compromisos', [AgentActaController::class, 'compromisos'])->name('compromisos.index');
+                });
+                Route::get('/actas/{acta}/pdf', [AgentActaController::class, 'pdf'])->whereUuid('acta')->middleware('throttle:agent-reports')->name('actas.pdf');
             });
             Route::get('/votantes/{id}/seguimientos', [AgentVotanteController::class, 'seguimientos'])->name('votantes.seguimientos.index');
             Route::middleware('throttle:agent-reports')->group(function () {

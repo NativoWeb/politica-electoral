@@ -320,7 +320,7 @@ class EventoActaController extends Controller
             ])->all();
     }
 
-    private function findEvent(string $id, bool $write = false): CampaignEvent
+    public function findEvent(string $id, bool $write = false): CampaignEvent
     {
         abort_unless(Str::isUuid($id), 404);
         $event = CampaignEvent::with(['municipio', 'campaign'])->findOrFail($id);
@@ -340,7 +340,7 @@ class EventoActaController extends Controller
         return $event;
     }
 
-    private function findActa(CampaignEvent $event, string $acta): EventActa
+    public function findActa(CampaignEvent $event, string $acta): EventActa
     {
         abort_unless(Str::isUuid($acta), 404);
 
