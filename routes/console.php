@@ -35,3 +35,7 @@ Schedule::command('eventos:limpiar-importaciones')->dailyAt('03:30');
 
 // Daily e-mail with each manager's overdue, due-soon and reminded compromisos (docs/eventos-api.md section 14).
 Schedule::command('compromisos:resumen-diario')->dailyAt('07:00')->timezone('America/Bogota');
+
+// Comunas of the records that arrived by bulk loads that skip the model hooks (docs/geografia.md); never overwrites a
+// manual comuna.
+Schedule::command('geo:asignar-comunas --municipio=68001')->dailyAt('02:30')->timezone('America/Bogota')->withoutOverlapping();

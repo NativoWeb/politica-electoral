@@ -4,6 +4,7 @@ namespace App\Actions\Votantes;
 
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Services\Geo\ComunaAssigner;
 use App\Support\Cedula;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -105,6 +106,7 @@ class MergeLideres
             DB::table('lideres')->where('id', $drop->id)->delete();
             if ($upd) {
                 DB::table('lideres')->where('id', $keep->id)->update($upd + ['updated_at' => now()]);
+                app(ComunaAssigner::class)->refreshRow('lideres', $keep->id);
             }
 
             return DB::table('lideres')->where('id', $keep->id)->first();

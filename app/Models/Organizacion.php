@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Geo\ComunaAssigner;
 use App\Support\Nit;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -23,6 +24,11 @@ class Organizacion extends Model
     protected $guarded = ['*'];
 
     protected $casts = ['is_active' => 'boolean', 'empleados' => 'integer'];
+
+    protected static function booted(): void
+    {
+        static::saving(fn (Organizacion $org) => app(ComunaAssigner::class)->applyToModel($org, $org->municipio_id, ['barrio', 'municipio_id']));
+    }
 
     public function miembros(): HasMany
     {

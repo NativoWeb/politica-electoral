@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\Geo\ComunaAssigner;
+use App\Services\Geo\ComunaCatalog;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +23,18 @@ class EventAttendee extends Model
         'fecha_nacimiento' => 'date',
         'autoriza_datos' => 'boolean',
     ];
+
+    // The attendee's comuna is looked up in its event's municipio.
+    protected static function booted(): void
+    {
+        static::saving(function (EventAttendee $attendee) {
+            if ($attendee->exists && ! $attendee->isDirty(['barrio', 'event_id']) && $attendee->comuna_id === null) {
+                return;
+            }
+            $municipioId = app(ComunaCatalog::class)->municipioOfEvent($attendee->event_id) ?: null;
+            app(ComunaAssigner::class)->applyToModel($attendee, $municipioId, ['barrio', 'event_id']);
+        });
+    }
 
     public function event(): BelongsTo
     {

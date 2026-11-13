@@ -12,6 +12,7 @@ use App\Models\LiderContacto;
 use App\Models\LiderInfoPolitica;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
+use App\Services\Geo\ComunaCatalog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -224,7 +225,7 @@ class VotanteController extends Controller
                 'nexos' => $nexos,
                 'referidos' => $referidos,
                 'referidos_count' => $referidosCount,
-            ]),
+            ], app(ComunaCatalog::class)->fichaPayload($lider->geographic_unit_id, $lider->comuna_id, $lider->comuna_source)),
         ]);
     }
 

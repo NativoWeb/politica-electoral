@@ -17,6 +17,8 @@ use App\Models\Lider;
 use App\Models\PoliticalOrganization;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
+use App\Services\Geo\ComunaAssigner;
+use App\Services\Geo\ComunaCatalog;
 use App\Support\Cedula;
 use App\Support\GeoTerritory;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -1014,6 +1016,7 @@ class MapaPoliticoController extends Controller
 
         try {
             DB::table('lideres')->insert($insertData);
+            app(ComunaAssigner::class)->refreshRow('lideres', $insertData['id']);
         } catch (UniqueConstraintViolationException $e) {
             // Two tabs sent the same offline create at once: the other request already stored it.
             if ($alreadyCreated()) {
@@ -1204,6 +1207,7 @@ class MapaPoliticoController extends Controller
             $response['instagram'] = $liderModel->instagram;
             $response['contactos'] = $liderModel->contactos;
             $response['info_politica'] = $liderModel->infoPolitica;
+            $response += app(ComunaCatalog::class)->fichaPayload($liderModel->geographic_unit_id, $liderModel->comuna_id, $liderModel->comuna_source);
 
             if ($liderModel->cedula) {
                 $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $liderModel->cedula))
@@ -1393,8 +1397,9 @@ class MapaPoliticoController extends Controller
                             ->join('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
                             ->where('g.id', $geoId)->value('prov.canonical_name') : '';
 
+                        $newLiderId = (string) Str::uuid();
                         DB::table('lideres')->insert([
-                            'id' => Str::uuid(),
+                            'id' => $newLiderId,
                             'campaign_id' => $this->campaign()->ownId() ?? Campaign::DEFAULT_ID,
                             'nombre' => $nuevoNombre ?? $person->full_name,
                             'municipio' => $munName,
@@ -1417,6 +1422,7 @@ class MapaPoliticoController extends Controller
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
+                        app(ComunaAssigner::class)->refreshRow('lideres', $newLiderId);
                         // Don't return — continue to update candidacy endorsement below
                     }
                 }
@@ -1489,6 +1495,7 @@ class MapaPoliticoController extends Controller
 
                 $this->authorizeGeo($lider->geographic_unit_id);
                 DB::table('lideres')->where('id', $lider->id)->update($updateData);
+                app(ComunaAssigner::class)->refreshRow('lideres', $lider->id);
             }
 
             if ($nuevoNombre && $personaARenombrar) {

@@ -1,6 +1,21 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm, usePage, router } from '@inertiajs/react';
 import { useState, useMemo } from 'react';
+import TabBar from '@/Components/TabBar';
+import BarriosComunasPanel from '@/Components/Territorio/BarriosComunasPanel';
+
+const TABS = [
+    { key: 'divisiones', label: 'Divisiones' },
+    { key: 'barrios', label: 'Barrios y comunas' },
+];
+
+function initialTab() {
+    try {
+        return new URLSearchParams(window.location.search).get('tab') === 'barrios' ? 'barrios' : 'divisiones';
+    } catch {
+        return 'divisiones';
+    }
+}
 
 function EditModal({ item, type, provincias, onClose }) {
     const form = useForm({
@@ -116,6 +131,15 @@ export default function Territory({ departamentos }) {
     const [expandedProv, setExpandedProv] = useState(null);
     const [editing, setEditing] = useState(null); // { item, type }
     const [search, setSearch] = useState('');
+    const [tab, setTabState] = useState(initialTab);
+    function setTab(key) {
+        setTabState(key);
+        try {
+            const url = new URL(window.location.href);
+            if (key === 'barrios') url.searchParams.set('tab', 'barrios'); else url.searchParams.delete('tab');
+            window.history.replaceState(window.history.state, '', url);
+        } catch { /* the tab still changes */ }
+    }
 
     const deptForm = useForm({ name: '', code: '' });
     const provForm = useForm({ name: '', departamento_id: '' });
@@ -178,6 +202,15 @@ export default function Territory({ departamentos }) {
                 <p className="text-[11px] text-white/40 mt-0.5">{departamentos.length} departamento{departamentos.length !== 1 ? 's' : ''} · {totalProv} provincias · {totalMun} municipios</p>
             </div>
 
+            <TabBar tabs={TABS} active={tab} onChange={setTab} />
+
+            {tab === 'barrios' && (
+                <div className="p-4">
+                    <BarriosComunasPanel />
+                </div>
+            )}
+
+            {tab === 'divisiones' && (
             <div className="p-4 space-y-3">
                 {/* Buscador */}
                 <div className="relative">
@@ -445,6 +478,7 @@ export default function Territory({ departamentos }) {
                     </Link>
                 )}
             </div>
+            )}
 
             {/* Modal de edición */}
             {editing && (

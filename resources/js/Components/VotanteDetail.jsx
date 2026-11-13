@@ -7,6 +7,7 @@ import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresarios/PersonaOrganizaciones';
 import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
+import ComunaSelector from '@/Components/ComunaSelector';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
@@ -427,6 +428,17 @@ export default function VotanteDetail({
                                 </select>
                             ) : <p className={readCls}>{form.zona || '-'}</p>}
                         </Field>
+                        {!creating && data?.id && (data.comunas || []).length > 0 && (
+                            <div className="col-span-2">
+                                <ComunaSelector
+                                    liderId={data.id}
+                                    comunas={data.comunas}
+                                    comunaId={data.comuna_id}
+                                    source={data.comuna_source}
+                                    editable={!editing && !campaignReadOnly && !!authUser?.canWrite}
+                                />
+                            </div>
+                        )}
                     </div>
                 </Accordion>
 

@@ -12,6 +12,7 @@ import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresari
 import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
+import ComunaSelector from '@/Components/ComunaSelector';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
@@ -889,6 +890,16 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <option value="urbana">Urbana</option>
                                         </select>
                                     </div>
+                                    {isLider && !data._offline && (
+                                        <ComunaSelector
+                                            liderId={data.id}
+                                            comunas={data.comunas || []}
+                                            comunaId={data.comuna_id}
+                                            source={data.comuna_source}
+                                            editable={false}
+                                            onSaved={res => setData(d => ({ ...d, comuna_id: res.comuna_id, comuna_source: res.comuna_source, comuna_nombre: res.comuna_nombre }))}
+                                        />
+                                    )}
                                     <div className="pt-2 border-t border-[var(--color-line)]">
                                         <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-3">Puesto de votacion</p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -962,6 +973,16 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                     <DataRow label="Municipio" value={data.municipio} />
                                     <DataRow label="Direccion" value={data.direccion} />
                                     <DataRow label="Barrio / Vereda" value={data.barrio} />
+                                    {isLider && (
+                                        <ComunaSelector
+                                            liderId={data.id}
+                                            comunas={data.comunas || []}
+                                            comunaId={data.comuna_id}
+                                            source={data.comuna_source}
+                                            editable={!campaignReadOnly && !data._offline && !!authUser?.canWrite}
+                                            onSaved={res => setData(d => ({ ...d, comuna_id: res.comuna_id, comuna_source: res.comuna_source, comuna_nombre: res.comuna_nombre }))}
+                                        />
+                                    )}
                                     <DataRow label="Zona" value={data.zona} />
                                     {(data.puesto_votacion || data.departamento_votacion || data.municipio_votacion) && (
                                         <>

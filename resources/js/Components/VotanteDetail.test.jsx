@@ -105,3 +105,28 @@ describe('VotanteDetail "Unificar con otra persona"', () => {
         expect(screen.queryByRole('button', { name: 'Unificar con otra persona' })).not.toBeInTheDocument();
     });
 });
+
+describe('VotanteDetail comuna', () => {
+    beforeEach(() => {
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
+    });
+
+    const COMUNAS = [{ id: 'c8', nombre: 'Comuna 8 - Suroccidente', tipo: 'comuna' }];
+
+    it('lets the comuna be chosen outside edit mode and shows it read-only while editing', () => {
+        renderDetail({ ...votante('cd'), comunas: COMUNAS, comuna_id: 'c8', comuna_source: 'auto' });
+        fireEvent.click(screen.getByRole('button', { name: /Ubicacion/i }));
+
+        expect(screen.getByLabelText(/Comuna \/ corregimiento/)).toHaveValue('c8');
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        expect(screen.queryByLabelText(/Comuna \/ corregimiento/)).not.toBeInTheDocument();
+        expect(screen.getByTestId('comuna-readonly')).toHaveTextContent('Comuna 8 - Suroccidente');
+    });
+
+    it('hides the comuna for a municipio without comunas', () => {
+        renderDetail({ ...votante('cd'), comunas: [] });
+        fireEvent.click(screen.getByRole('button', { name: /Ubicacion/i }));
+
+        expect(screen.queryByText(/Comuna/)).not.toBeInTheDocument();
+    });
+});

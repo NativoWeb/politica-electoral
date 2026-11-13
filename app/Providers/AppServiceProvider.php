@@ -4,6 +4,9 @@ namespace App\Providers;
 
 use App\Services\Eventos\Ocr\AnthropicOcrClient;
 use App\Services\Eventos\Ocr\OcrClient;
+use App\Services\Geo\BarrioMatcher;
+use App\Services\Geo\ComunaAssigner;
+use App\Services\Geo\ComunaCatalog;
 use App\Support\CurrentCampaign;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -16,6 +19,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(CurrentCampaign::class);
+        // Per request: they memoize the comunas, barrios and matches they read.
+        $this->app->scoped(ComunaCatalog::class);
+        $this->app->scoped(BarrioMatcher::class);
+        $this->app->scoped(ComunaAssigner::class);
         // Tests bind a fake here: they never call the real API.
         $this->app->bind(OcrClient::class, AnthropicOcrClient::class);
     }

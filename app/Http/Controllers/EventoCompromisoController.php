@@ -63,7 +63,7 @@ class EventoCompromisoController extends Controller
     public function export(Request $request): BinaryFileResponse
     {
         $filters = $this->filters($request);
-        ini_set('memory_limit', '256M');
+        EventoImportController::raiseMemoryLimit();
         $items = $this->query($filters)->get();
         $responsables = $this->responsables($items->pluck('id')->all());
 

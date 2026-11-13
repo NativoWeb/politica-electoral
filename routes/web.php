@@ -11,6 +11,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
+use App\Http\Controllers\ComunaController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ElectoralCampaignController;
 use App\Http\Controllers\EventoActaController;
@@ -105,6 +106,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona')->middleware('person.resolve');
         Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados')->middleware('person.resolve');
         Route::get('/api/geo/municipios.geojson', [GeoController::class, 'municipios'])->name('geo.municipios');
+        Route::get('/api/geo/comunas.geojson', [GeoController::class, 'comunas'])->name('geo.comunas');
     });
 
     // Votantes
@@ -148,6 +150,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/votantes/{id}/info-politica', [VotanteController::class, 'storeInfoPolitica'])->name('votantes.info-politica.store');
             Route::put('/votantes/info-politica/{id}', [VotanteController::class, 'updateInfoPolitica'])->name('votantes.info-politica.update');
             Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica'])->name('votantes.info-politica.destroy');
+            // The comuna chosen by hand in the ficha (persona panel of the map and VotanteDetail): never overwritten.
+            Route::patch('/votantes/{id}/comuna', [ComunaController::class, 'updateFicha'])->name('votantes.comuna.update')->whereUuid('id');
         });
 
         Route::middleware('permission:view.votantes')->group(function () {
@@ -392,6 +396,11 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/usuarios/{id}/toggle', [AdminController::class, 'toggleUser'])->name('users.toggle')->whereUuid('id');
             Route::delete('/usuarios/{id}', [AdminController::class, 'destroyUser'])->name('users.destroy')->whereUuid('id');
         });
+
+        // Barrio → comuna of the user's own grupo político and territory (not a platform screen: each group settles its
+        // own barrio texts; docs/geografia.md).
+        Route::get('/territorio/barrios-sin-comuna', [ComunaController::class, 'pendientes'])->name('territory.barrios.pendientes');
+        Route::post('/territorio/barrios/alias', [ComunaController::class, 'storeAlias'])->name('territory.barrios.alias')->middleware('can.write');
 
         // Platform screens (shared electoral data): read and write only for whoever edits it, the rest get a 403.
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory')->middleware('electoral.platform');

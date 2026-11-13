@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Geo\ComunaAssigner;
 use App\Support\CurrentCampaign;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -81,6 +82,11 @@ class Lider extends Model
                 }
             }
         });
+
+        // After campaign_id is set: the comuna comes from the barrio, and the grupo politico's aliases count.
+        $comuna = fn (Lider $lider) => app(ComunaAssigner::class)->applyToModel($lider, $lider->geographic_unit_id, ['barrio', 'geographic_unit_id']);
+        static::creating($comuna);
+        static::updating($comuna);
     }
 
     // Party names are stored in capitals, like political_organizations.canonical_name.

@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"tipo":"comuna","numero":1,"codigo":"C01","nombre":"Comuna fuera del municipio","poblacion_fuente":10},"geometry":{"type":"Polygon","coordinates":[[[-74.10,4.60],[-74.09,4.60],[-74.09,4.61],[-74.10,4.61],[-74.10,4.60]]]}}]}

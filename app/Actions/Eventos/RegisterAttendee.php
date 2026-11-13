@@ -7,6 +7,8 @@ use App\Models\AuditLog;
 use App\Models\CampaignEvent;
 use App\Models\EventAttendee;
 use App\Models\User;
+use App\Services\Geo\ComunaAssigner;
+use App\Services\Geo\ComunaCatalog;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -128,6 +130,10 @@ class RegisterAttendee
         $now = now();
         $attendees = [];
         $results = [];
+        // The comuna of each row, as the model would set it one by one (matches are memoized per text).
+        $municipioId = $event->municipio_id;
+        $withComuna = app(ComunaCatalog::class)->hasComunas($municipioId);
+        $assigner = app(ComunaAssigner::class);
         foreach ($items as $key => $data) {
             $id = (string) Str::uuid();
             $liderId = $lideres[$data['cedula']] ?? null;
@@ -156,6 +162,10 @@ class RegisterAttendee
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
+            if ($withComuna) {
+                $attendees[array_key_last($attendees)] += $assigner->changesFor($municipioId, $event->campaign_id, $data['barrio'] ?? null, null, null)
+                    ?? ['comuna_id' => null, 'comuna_source' => null];
+            }
             $results[$key] = ['attendee_id' => $id, 'created' => true, 'conflict' => false];
         }
 
