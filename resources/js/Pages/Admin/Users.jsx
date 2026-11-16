@@ -64,7 +64,7 @@ function MunicipioSelector({ selected, provincias, onChange }) {
         <div>
             <div className="flex items-center justify-between mb-1">
                 <label className="block text-[12px] font-bold text-[var(--color-ink-faint)]">
-                    Municipios permitidos
+                    Municipios permitidos <span className="font-normal">(sin ninguno: todo el territorio)</span>
                 </label>
                 {selected.length > 0 && (
                     <button type="button" onClick={() => onChange([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">
@@ -436,7 +436,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                 onChange={val => setData('permissions', val)}
                             />
                         )}
-                        {selectedRoleCode === 'R09_CAMPO' && (
+                        {selectedRoleCode !== 'R01_SUPERADMIN' && (
                             <MunicipioSelector
                                 selected={data.territory_scope}
                                 provincias={provincias}
@@ -502,7 +502,7 @@ export default function Users({ users, roles, municipios, provincias, availableP
                                         onChange={val => editForm.setData('permissions', val)}
                                     />
                                 )}
-                                {editRoleCode === 'R09_CAMPO' && (
+                                {editRoleCode !== 'R01_SUPERADMIN' && (
                                     <MunicipioSelector
                                         selected={editForm.data.territory_scope}
                                         provincias={provincias}
