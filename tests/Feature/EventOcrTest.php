@@ -18,12 +18,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tests\Concerns\BuildsEventosScenario;
 use Tests\Support\FakeOcrClient;
 use Tests\TestCase;
 
 // Eventos especiales phase 5: printed sheets read with AI (docs/eventos-api.md §13). The API is never called: a
 // FakeOcrClient answers. SQLite.
+// Each test in its own process: rendering and decoding the planilla QR needs ~80 MB, more than the suite's shared
+// process has left by the time it gets here.
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class EventOcrTest extends TestCase
 {
     use BuildsEventosScenario;

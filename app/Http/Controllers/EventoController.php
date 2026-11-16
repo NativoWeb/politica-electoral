@@ -24,6 +24,7 @@ use App\Support\Cedula;
 use App\Support\PlanillaQr;
 use App\Support\Provincias;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -51,6 +52,13 @@ class EventoController extends Controller
 
     public const PLANILLA_MAX_PAGES = 20;
 
+    public const ATTENDEE_EXPORT_LABELS = [
+        'nombres' => 'NOMBRES', 'apellidos' => 'APELLIDOS', 'cedula' => 'CÉDULA', 'celular' => 'CELULAR', 'fijo' => 'TELÉFONO FIJO',
+        'fecha_nacimiento' => 'FECHA DE NACIMIENTO', 'direccion' => 'DIRECCIÓN', 'barrio' => 'BARRIO',
+        'origen' => 'ORIGEN', 'registrado_por' => 'REGISTRADO POR',
+        'estado' => 'ESTADO DE VÍNCULO', 'en_votantes' => 'EN VOTANTES', 'fecha_registro' => 'FECHA DE REGISTRO',
+    ];
+
     public function index(Request $request): Response
     {
         $filters = [
@@ -66,27 +74,7 @@ class EventoController extends Controller
         ];
         $canSeeAttendees = $this->canView();
 
-        $query = CampaignEvent::query()->with(['type', 'municipio', 'provincia', 'campaign', 'barrios']);
-        $this->campaign()->scope($query, 'events.campaign_id');
-        $this->scopeToTerritory($query, 'events.municipio_id');
-        if ($canSeeAttendees) {
-            $query->withCount('attendees');
-        }
-
-        $query
-            ->when($filters['campana'], fn ($q, $v) => $q->where('campaign_id', $v))
-            ->when($filters['provincia'], fn ($q, $v) => $q->where('provincia_id', $v))
-            ->when($filters['municipio'], fn ($q, $v) => $q->where('municipio_id', $v))
-            ->when($filters['tipo'], fn ($q, $v) => $q->where('event_type_id', $v))
-            ->when($filters['status'], fn ($q, $v) => $q->where('status', $v))
-            ->when($filters['desde'], fn ($q, $v) => $q->where('starts_at', '>=', Carbon::parse($v, self::TZ)->startOfDay()->utc()))
-            ->when($filters['hasta'], fn ($q, $v) => $q->where('starts_at', '<=', Carbon::parse($v, self::TZ)->endOfDay()->utc()))
-            ->when($filters['q'], fn ($q, $v) => $this->whereContains($q, 'nombre', $v))
-            ->when($filters['barrio'], fn ($q, $v) => $q->whereHas('barrios', fn ($b) => $b->where(
-                'nombre_normalizado', 'like', '%'.$this->escapeLike(AttendeeInput::barrioKey($v)).'%'
-            )));
-
-        $eventos = $query->orderByDesc('starts_at')->paginate(20)->withQueryString()
+        $eventos = $this->eventsQuery($filters, $canSeeAttendees)->paginate(20)->withQueryString()
             ->through(fn (CampaignEvent $e) => $this->summary($e) + [
                 'asistentes_total' => $canSeeAttendees ? (int) $e->attendees_count : null,
             ]);
@@ -99,6 +87,32 @@ class EventoController extends Controller
             'statuses' => CampaignEvent::STATUSES,
             'can' => ['manage' => $this->canManage(), 'view' => $canSeeAttendees, 'register' => $this->canRegister()],
         ]);
+    }
+
+    // The events of Eventos/Index with its filters (tipo: one id, or several), newest first: also read by the agent API.
+    public function eventsQuery(array $filters, bool $withAttendeeCount): Builder
+    {
+        $query = CampaignEvent::query()->with(['type', 'municipio', 'provincia', 'campaign', 'barrios']);
+        $this->campaign()->scope($query, 'events.campaign_id');
+        $this->scopeToTerritory($query, 'events.municipio_id');
+        if ($withAttendeeCount) {
+            $query->withCount('attendees');
+        }
+
+        $query
+            ->when($filters['campana'], fn ($q, $v) => $q->where('campaign_id', $v))
+            ->when($filters['provincia'], fn ($q, $v) => $q->where('provincia_id', $v))
+            ->when($filters['municipio'], fn ($q, $v) => $q->where('municipio_id', $v))
+            ->when($filters['tipo'], fn ($q, $v) => is_array($v) ? $q->whereIn('event_type_id', $v) : $q->where('event_type_id', $v))
+            ->when($filters['status'], fn ($q, $v) => $q->where('status', $v))
+            ->when($filters['desde'], fn ($q, $v) => $q->where('starts_at', '>=', Carbon::parse($v, self::TZ)->startOfDay()->utc()))
+            ->when($filters['hasta'], fn ($q, $v) => $q->where('starts_at', '<=', Carbon::parse($v, self::TZ)->endOfDay()->utc()))
+            ->when($filters['q'], fn ($q, $v) => $this->whereContains($q, 'nombre', $v))
+            ->when($filters['barrio'], fn ($q, $v) => $q->whereHas('barrios', fn ($b) => $b->where(
+                'nombre_normalizado', 'like', '%'.$this->escapeLike(AttendeeInput::barrioKey($v)).'%'
+            )));
+
+        return $query->orderByDesc('starts_at');
     }
 
     public function show(Request $request, string $id): Response
@@ -139,7 +153,27 @@ class EventoController extends Controller
         EventoImportController::raiseMemoryLimit();
 
         $attendees = $this->attendeesQuery($event, $filters)->get();
-        $rows = $attendees->map(fn (EventAttendee $a) => [
+        $rows = $attendees->map(fn (EventAttendee $a) => $this->attendeeExportRow($a))->all();
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'EVENTO_ASISTENTES_EXPORTADOS',
+            'entity_type' => 'evento',
+            'entity_id' => $event->id,
+            'metadata' => ['route' => 'eventos.asistentes.excel', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $filename = 'asistentes-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento').'.xlsx';
+
+        return Excel::download(new GenericExport($rows, array_keys(self::ATTENDEE_EXPORT_LABELS), 'Asistentes', self::ATTENDEE_EXPORT_LABELS), $filename);
+    }
+
+    // One row of the attendees' Excel (the agent's export uses the same columns).
+    public function attendeeExportRow(EventAttendee $a): array
+    {
+        return [
             'nombres' => $a->nombres,
             'apellidos' => $a->apellidos,
             'cedula' => $a->cedula,
@@ -153,29 +187,7 @@ class EventoController extends Controller
             'estado' => EventoIntegracionController::LINK_STATUSES[$a->link_status] ?? $a->link_status,
             'en_votantes' => $a->lider_id ? 'Sí' : 'No',
             'fecha_registro' => $a->created_at?->copy()->setTimezone(self::TZ)->format('d/m/Y g:i a'),
-        ])->all();
-
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'EVENTO_ASISTENTES_EXPORTADOS',
-            'entity_type' => 'evento',
-            'entity_id' => $event->id,
-            'metadata' => ['route' => 'eventos.asistentes.excel', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
-
-        $columns = ['nombres', 'apellidos', 'cedula', 'celular', 'fijo', 'fecha_nacimiento', 'direccion', 'barrio',
-            'origen', 'registrado_por', 'estado', 'en_votantes', 'fecha_registro'];
-        $labels = [
-            'nombres' => 'NOMBRES', 'apellidos' => 'APELLIDOS', 'cedula' => 'CÉDULA', 'celular' => 'CELULAR', 'fijo' => 'TELÉFONO FIJO',
-            'fecha_nacimiento' => 'FECHA DE NACIMIENTO', 'direccion' => 'DIRECCIÓN', 'barrio' => 'BARRIO',
-            'origen' => 'ORIGEN', 'registrado_por' => 'REGISTRADO POR',
-            'estado' => 'ESTADO DE VÍNCULO', 'en_votantes' => 'EN VOTANTES', 'fecha_registro' => 'FECHA DE REGISTRO',
         ];
-        $filename = 'asistentes-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento').'.xlsx';
-
-        return Excel::download(new GenericExport($rows, $columns, 'Asistentes', $labels), $filename);
     }
 
     public function store(EventRequest $request): JsonResponse|RedirectResponse
@@ -687,7 +699,7 @@ class EventoController extends Controller
         return response()->json(['success' => true, 'data' => $rows]);
     }
 
-    private function findEvent(string $id, bool $write = false): CampaignEvent
+    public function findEvent(string $id, bool $write = false): CampaignEvent
     {
         abort_unless(Str::isUuid($id), 404);
         $event = CampaignEvent::with(['type', 'municipio', 'provincia', 'campaign', 'barrios'])->findOrFail($id);
@@ -801,7 +813,7 @@ class EventoController extends Controller
         ]);
     }
 
-    private function summary(CampaignEvent $e): array
+    public function summary(CampaignEvent $e): array
     {
         return [
             'id' => $e->id,
@@ -820,7 +832,7 @@ class EventoController extends Controller
         ];
     }
 
-    private function detail(CampaignEvent $e): array
+    public function detail(CampaignEvent $e): array
     {
         $e->loadMissing(['type', 'municipio', 'provincia', 'campaign', 'barrios', 'organizers', 'figures', 'creator:id,name']);
 
@@ -884,7 +896,7 @@ class EventoController extends Controller
         ];
     }
 
-    private function attendeesQuery(CampaignEvent $event, array $filters)
+    public function attendeesQuery(CampaignEvent $event, array $filters)
     {
         return EventAttendee::where('event_id', $event->id)->with('registeredBy:id,name')
             ->when($filters['link_status'], fn ($q, $v) => $q->where('link_status', $v))
@@ -910,7 +922,7 @@ class EventoController extends Controller
             ->mapWithKeys(fn ($l) => [$l->id => ['cargo' => $l->cargo, 'lider' => $l->tipo !== ApproveAttendees::TIPO]])->all();
     }
 
-    private function kpis(CampaignEvent $event): array
+    public function kpis(CampaignEvent $event): array
     {
         $byStatus = EventAttendee::where('event_id', $event->id)->groupBy('link_status')
             ->select('link_status', DB::raw('count(*) as total'))->pluck('total', 'link_status');

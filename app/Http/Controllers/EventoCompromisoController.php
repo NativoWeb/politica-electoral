@@ -265,7 +265,7 @@ class EventoCompromisoController extends Controller
         ];
     }
 
-    private function detail(EventCompromiso $c): array
+    public function detail(EventCompromiso $c): array
     {
         $c->load(['responsables', 'avances.user:id,name', 'acta:id,titulo,fecha', 'event:id,nombre', 'organizacion:id,nombre']);
 
@@ -295,7 +295,7 @@ class EventoCompromisoController extends Controller
     }
 
     // A compromiso of a visible event (campaign, territory, not deleted): 404 otherwise; writes need the own campaign.
-    private function find(string $id, bool $write = false): EventCompromiso
+    public function find(string $id, bool $write = false): EventCompromiso
     {
         abort_unless(Str::isUuid($id), 404);
         $c = EventCompromiso::find($id);

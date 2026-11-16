@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Api\Agent\AgentActaController;
+use App\Http\Controllers\Api\Agent\AgentEventoController;
 use App\Http\Controllers\Api\Agent\AgentIdentityController;
 use App\Http\Controllers\Api\Agent\AgentMapaQueryController;
 use App\Http\Controllers\Api\Agent\AgentPersonaController;
@@ -53,8 +54,21 @@ Route::prefix('agent/v1')->name('api.agent.')->middleware(['throttle:agent', 'ag
                     Route::get('/actas', [AgentActaController::class, 'index'])->name('actas.index');
                     Route::get('/actas/{acta}', [AgentActaController::class, 'show'])->whereUuid('acta')->name('actas.show');
                     Route::get('/compromisos', [AgentActaController::class, 'compromisos'])->name('compromisos.index');
+                    Route::get('/compromisos/{compromiso}', [AgentActaController::class, 'compromiso'])->whereUuid('compromiso')->name('compromisos.show');
                 });
                 Route::get('/actas/{acta}/pdf', [AgentActaController::class, 'pdf'])->whereUuid('acta')->middleware('throttle:agent-reports')->name('actas.pdf');
+            });
+            // Eventos especiales, read-only (consulta): the list as the web's, which register.asistentes also opens;
+            // the rest needs view.eventos. Contact data only of authorized lideres, audited and counted by the controller.
+            Route::middleware('throttle:agent-votantes-read')->group(function () {
+                Route::get('/eventos', [AgentEventoController::class, 'index'])
+                    ->middleware('permission:view.eventos|manage.eventos|register.asistentes')->name('eventos.index');
+                Route::middleware('permission:view.eventos|manage.eventos')->group(function () {
+                    Route::get('/eventos/territorio', [AgentEventoController::class, 'territorio'])->name('eventos.territorio');
+                    Route::get('/eventos/{id}', [AgentEventoController::class, 'show'])->name('eventos.show');
+                    Route::get('/eventos/{id}/asistentes', [AgentEventoController::class, 'asistentes'])->name('eventos.asistentes.index');
+                    Route::get('/eventos/{id}/asistentes/export', [AgentEventoController::class, 'exportAsistentes'])->name('eventos.asistentes.export');
+                });
             });
             Route::get('/votantes/{id}/seguimientos', [AgentVotanteController::class, 'seguimientos'])->name('votantes.seguimientos.index');
             Route::middleware('throttle:agent-reports')->group(function () {

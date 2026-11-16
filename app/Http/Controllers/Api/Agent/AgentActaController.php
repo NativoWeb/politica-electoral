@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Agent;
 use App\Http\Controllers\Concerns\DeliversAgentContactData;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\EventoActaController;
+use App\Http\Controllers\EventoCompromisoController;
 use App\Http\Controllers\OrganizacionActaController;
 use App\Http\Requests\Agent\AgentListActasRequest;
 use App\Http\Requests\Agent\AgentListCompromisosRequest;
@@ -31,6 +32,9 @@ use Throwable;
 class AgentActaController extends Controller
 {
     use DeliversAgentContactData;
+
+    // What the audit rows of this request are about: an acta, or one compromiso (its id as entity_id).
+    private string $entityType = 'acta';
 
     public function __construct(
         private readonly AgentContactQuota $quota,
@@ -184,9 +188,48 @@ class AgentActaController extends Controller
         ]);
     }
 
+    // The web's detail of one compromiso (404 when its origin is not visible to the user): a responsable's phone only
+    // if that person is a lider who authorized it; an avance's file only by name, it is downloaded on the web.
+    public function compromiso(Request $request, string $compromiso): JsonResponse
+    {
+        $this->entityType = 'compromiso';
+        $web = app(EventoCompromisoController::class);
+        $data = $web->detail($web->find($compromiso));
+        unset($data['editable']);
+
+        $authorized = AuthorizedContacts::of(array_column($data['responsables'], 'lider_id'));
+        $conContacto = [];
+        $data['responsables'] = array_map(function (array $r) use ($authorized, &$conContacto) {
+            $r = AuthorizedContacts::filter($r, $authorized, ['telefono'], 'lider_id', $delivered);
+            if ($delivered) {
+                $conContacto[$r['lider_id']] = true;
+            }
+
+            return $r;
+        }, $data['responsables']);
+        $data['avances'] = array_map(function (array $a) {
+            $a['archivo'] = $a['archivo'] ? ['nombre' => $a['archivo']['nombre']] : null;
+
+            return $a;
+        }, $data['avances']);
+
+        $conDatos = count($conContacto);
+        $counts = ['origen' => $data['origen'], 'responsables' => count($data['responsables']), 'avances' => count($data['avances']), 'con_datos' => $conDatos];
+        if ($blocked = $this->overQuota($request, 'agent.compromiso.show', [], $counts, $data['id'])) {
+            return $blocked;
+        }
+        $this->deliver($request, 'agent.compromiso.show', [], $counts, $data['id']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'meta' => ['con_datos' => $conDatos, 'cupo_restante' => $this->quota->remaining($request->user()->id)],
+        ]);
+    }
+
     protected function auditEntityType(): string
     {
-        return 'acta';
+        return $this->entityType;
     }
 
     // The acta by its id alone: its origin decides the permission (403 without it), then the web's own lookup of that

@@ -158,7 +158,7 @@ class EventoIntegracionController extends Controller
     }
 
     // [municipio row | null, barrio as typed | null, barrio key | null]. A municipio outside the territory is a 403.
-    private function territoryFilters(Request $request): array
+    public function territoryFilters(Request $request): array
     {
         $id = $request->query('municipio');
         $municipio = is_string($id) && Str::isUuid($id)
@@ -192,7 +192,7 @@ class EventoIntegracionController extends Controller
         ];
     }
 
-    private function territoryEvent(object $e): array
+    public function territoryEvent(object $e): array
     {
         return [
             'id' => $e->id,
