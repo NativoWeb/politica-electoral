@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { router } from '@inertiajs/react';
 import { offlineCreateLider } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
@@ -9,7 +9,6 @@ import { isSantanderMunicipio } from '@/lib/mapaPoliticoConstants';
 import {
     TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, GENERO_OPTIONS,
     TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
-    NIVEL_CONFIANZA_OPTIONS,
 } from '@/lib/mapaPoliticoConstants';
 
 function VoiceButton({ onResult, label }) {
@@ -50,8 +49,13 @@ function VoiceButton({ onResult, label }) {
     );
 }
 
-function CollapsibleSection({ title, open: defaultOpen = false, children }) {
+// Closed by default; it opens by itself when a save fails on one of its fields, so the error is not hidden.
+function CollapsibleSection({ title, open: defaultOpen = false, fields = [], errors = {}, children }) {
     const [open, setOpen] = useState(defaultOpen);
+    const hasError = fields.some(f => errors[f]);
+    useEffect(() => {
+        if (hasError) setOpen(true);
+    }, [errors, hasError]);
     return (
         <div className="border border-[var(--color-line)] rounded-xl overflow-hidden">
             <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
@@ -61,6 +65,22 @@ function CollapsibleSection({ title, open: defaultOpen = false, children }) {
             {open && <div className="px-4 py-4 space-y-3">{children}</div>}
         </div>
     );
+}
+
+const SECTION_FIELDS = {
+    personal: ['telefono', 'email', 'cedula', 'profesion', 'direccion', 'barrio', 'observacion', 'convenio',
+        'tipo_documento', 'fecha_expedicion_doc', 'genero', 'fecha_nacimiento', 'estado_civil', 'escolaridad'],
+    ubicacion: ['zona', 'departamento_votacion', 'municipio_votacion', 'puesto_votacion', 'direccion_puesto', 'mesa_votacion'],
+    referente: ['referente_documento', 'referente_nombre', 'referente_apellido'],
+    redes: ['facebook', 'twitter', 'instagram'],
+};
+
+const errorId = field => `crear-lider-error-${field}`;
+const errorProps = (errors, field) => (errors[field] ? { 'aria-invalid': true, 'aria-describedby': errorId(field) } : {});
+
+function FieldError({ field, error }) {
+    if (!error) return null;
+    return <p id={errorId(field)} className="mt-1 text-[12px] font-semibold text-red-600">{Array.isArray(error) ? error[0] : error}</p>;
 }
 
 const optionLabel = (m) => `${m.name} (${m.provincia})`;
@@ -266,61 +286,63 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className={labelCls}>Telefono</label>
-                                <div className="flex gap-2">
-                                    <input className={fieldCls} value={form.telefono} onChange={e => set('telefono', e.target.value)} placeholder="3XX XXX XXXX" />
-                                    <VoiceButton label="telefono" onResult={t => set('telefono', t.replace(/\s/g, ''))} />
+                        {/* ── Collapsible: Informacion Personal (contact and identity data, closed by default) ── */}
+                        <CollapsibleSection title="Informacion Personal" fields={SECTION_FIELDS.personal} errors={errors}>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={labelCls}>Telefono</label>
+                                    <div className="flex gap-2">
+                                        <input className={fieldCls} value={form.telefono} {...errorProps(errors, 'telefono')} onChange={e => set('telefono', e.target.value)} placeholder="3XX XXX XXXX" />
+                                        <VoiceButton label="telefono" onResult={t => set('telefono', t.replace(/\s/g, ''))} />
+                                    </div>
+                                    <FieldError field="telefono" error={errors.telefono} />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Email</label>
+                                    <div className="flex gap-2">
+                                        <input className={fieldCls} value={form.email} {...errorProps(errors, 'email')} onChange={e => set('email', e.target.value)} placeholder="correo@ejemplo.com" />
+                                        <VoiceButton label="email" onResult={t => set('email', t.replace(/\s/g, '').toLowerCase())} />
+                                    </div>
+                                    <FieldError field="email" error={errors.email} />
                                 </div>
                             </div>
-                            <div>
-                                <label className={labelCls}>Email</label>
-                                <div className="flex gap-2">
-                                    <input className={fieldCls} value={form.email} onChange={e => set('email', e.target.value)} placeholder="correo@ejemplo.com" />
-                                    <VoiceButton label="email" onResult={t => set('email', t.replace(/\s/g, '').toLowerCase())} />
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className={labelCls}>Cedula</label>
+                                    <input className={fieldCls} value={form.cedula} {...errorProps(errors, 'cedula')} onChange={e => set('cedula', e.target.value)} placeholder="Numero de cedula" />
+                                    <FieldError field="cedula" error={errors.cedula} />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Profesion</label>
+                                    <input className={fieldCls} value={form.profesion} onChange={e => set('profesion', e.target.value)} placeholder="Ej: Abogado, Ingeniero..." />
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelCls}>Cedula</label>
-                                <input className={fieldCls} value={form.cedula} onChange={e => set('cedula', e.target.value)} placeholder="Numero de cedula" />
-                            </div>
-                            <div>
-                                <label className={labelCls}>Profesion</label>
-                                <input className={fieldCls} value={form.profesion} onChange={e => set('profesion', e.target.value)} placeholder="Ej: Abogado, Ingeniero..." />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelCls}>Direccion</label>
-                                <div className="flex gap-2">
-                                    <input className={fieldCls} value={form.direccion} onChange={e => set('direccion', e.target.value)} placeholder="Calle / Carrera" />
-                                    <VoiceButton label="direccion" onResult={t => set('direccion', t)} />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className={labelCls}>Direccion</label>
+                                    <div className="flex gap-2">
+                                        <input className={fieldCls} value={form.direccion} onChange={e => set('direccion', e.target.value)} placeholder="Calle / Carrera" />
+                                        <VoiceButton label="direccion" onResult={t => set('direccion', t)} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Barrio / Vereda / Corregimiento</label>
+                                    <div className="flex gap-2">
+                                        <input className={fieldCls} value={form.barrio} onChange={e => set('barrio', e.target.value)} placeholder="Barrio, vereda o corregimiento" />
+                                        <VoiceButton label="barrio" onResult={t => set('barrio', t)} />
+                                    </div>
                                 </div>
                             </div>
+
                             <div>
-                                <label className={labelCls}>Barrio / Vereda / Corregimiento</label>
+                                <label className={labelCls}>Observaciones</label>
                                 <div className="flex gap-2">
-                                    <input className={fieldCls} value={form.barrio} onChange={e => set('barrio', e.target.value)} placeholder="Barrio, vereda o corregimiento" />
-                                    <VoiceButton label="barrio" onResult={t => set('barrio', t)} />
+                                    <textarea className={fieldCls} rows={3} value={form.observacion} onChange={e => set('observacion', e.target.value)} placeholder="Notas adicionales..." />
+                                    <VoiceButton label="observaciones" onResult={t => set('observacion', (form.observacion ? form.observacion + ' ' : '') + t)} />
                                 </div>
                             </div>
-                        </div>
-
-                        <div>
-                            <label className={labelCls}>Observaciones</label>
-                            <div className="flex gap-2">
-                                <textarea className={fieldCls} rows={3} value={form.observacion} onChange={e => set('observacion', e.target.value)} placeholder="Notas adicionales..." />
-                                <VoiceButton label="observaciones" onResult={t => set('observacion', (form.observacion ? form.observacion + ' ' : '') + t)} />
-                            </div>
-                        </div>
-
-                        {/* ── Collapsible: Informacion Basica ── */}
-                        <CollapsibleSection title="Informacion Personal">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className={labelCls}>Tipo documento</label>
@@ -357,10 +379,14 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                                     {ESCOLARIDAD_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                                 </select>
                             </div>
+                            <div>
+                                <label className={labelCls}>Convenio</label>
+                                <input className={fieldCls} value={form.convenio} onChange={e => set('convenio', e.target.value)} />
+                            </div>
                         </CollapsibleSection>
 
                         {/* ── Collapsible: Ubicacion y Votacion ── */}
-                        <CollapsibleSection title="Ubicacion y Votacion">
+                        <CollapsibleSection title="Ubicacion y Votacion" fields={SECTION_FIELDS.ubicacion} errors={errors}>
                             <div>
                                 <label className={labelCls}>Zona</label>
                                 <select className={fieldCls} value={form.zona} onChange={e => set('zona', e.target.value)}>
@@ -397,28 +423,13 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                         </CollapsibleSection>
 
                         {/* ── Collapsible: Referente ── */}
-                        <CollapsibleSection title="Referente">
-                            <ReferenteFields values={form} onChange={set} inputClassName={fieldCls} labelClassName={labelCls} className="grid grid-cols-1 sm:grid-cols-3 gap-3" />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <label className={labelCls}>Partido</label>
-                                    <input className={fieldCls} value={form.partido} onChange={e => set('partido', e.target.value)} placeholder="Nombre del partido" />
-                                </div>
-                                <div>
-                                    <label className={labelCls}>Nivel de confianza</label>
-                                    <select className={fieldCls} value={form.nivel_confianza} onChange={e => set('nivel_confianza', e.target.value)}>
-                                        {NIVEL_CONFIANZA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className={labelCls}>Convenio</label>
-                                <input className={fieldCls} value={form.convenio} onChange={e => set('convenio', e.target.value)} />
-                            </div>
+                        <CollapsibleSection title="Referente" fields={SECTION_FIELDS.referente} errors={errors}>
+                            <ReferenteFields values={form} onChange={set} inputProps={errorProps(errors, 'referente_documento')} inputClassName={fieldCls} labelClassName={labelCls} className="grid grid-cols-1 sm:grid-cols-3 gap-3" />
+                            <FieldError field="referente_documento" error={errors.referente_documento} />
                         </CollapsibleSection>
 
                         {/* ── Collapsible: Redes Sociales ── */}
-                        <CollapsibleSection title="Redes sociales">
+                        <CollapsibleSection title="Redes sociales" fields={SECTION_FIELDS.redes} errors={errors}>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <label className={labelCls}>Facebook</label>

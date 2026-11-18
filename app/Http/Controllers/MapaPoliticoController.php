@@ -1044,16 +1044,16 @@ class MapaPoliticoController extends Controller
         if ($alreadyCreated()) {
             return $respond('Este líder ya estaba registrado.');
         }
+        $this->ensureReferenteRegistered($data['referente_documento'] ?? null);
 
         // The lider goes to the user's own campaign, where its cédula has to be unique.
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
             $existente = $this->ownLideres()->where('cedula', $cedula)->first();
             if ($existente) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $this->duplicateCedulaMessage($cedula, $existente),
-                ], 422);
+                $message = $this->duplicateCedulaMessage($cedula, $existente);
+
+                return response()->json(['success' => false, 'message' => $message, 'errors' => ['cedula' => [$message]]], 422);
             }
         }
 
@@ -1435,6 +1435,16 @@ class MapaPoliticoController extends Controller
                     return response()->json($response, 422);
                 }
             }
+        }
+
+        if (! empty($data['referente_documento'])) {
+            $actual = DB::table('lideres')->where('id', $id)->value('referente_documento');
+            if ($actual === null && ($fullName = DB::table('persons')->where('id', $id)->value('full_name'))) {
+                $actual = $this->scopeToTerritory($this->ownLideres())
+                    ->whereRaw('LOWER(nombre) = LOWER(?)', [$fullName])
+                    ->value('referente_documento');
+            }
+            $this->ensureReferenteRegistered($data['referente_documento'], $actual);
         }
 
         // #15: Wrap in transaction to prevent race conditions

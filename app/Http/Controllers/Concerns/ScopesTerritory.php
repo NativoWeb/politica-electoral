@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Support\Cedula;
 use App\Support\CurrentCampaign;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 // Enforces the user's territory_scope (allowed municipio ids) on single records, not only on listings,
 // and the campaign isolation of lideres and nexos: a record of a campaign the user cannot see is a 404,
@@ -136,6 +138,18 @@ trait ScopesTerritory
         }
 
         return "Ya existe un líder con cédula {$cedula}: {$existente->nombre}";
+    }
+
+    // The referente of a ficha has to be an active lider of the own campaign, in any of its municipios. An unchanged document is kept as is: old
+    // fichas and the Electo import carry referentes that may not be registered.
+    protected function ensureReferenteRegistered(?string $documento, ?string $actual = null): void
+    {
+        if ($documento === null || $documento === '' || $documento === Cedula::normalize($actual ?? '')) {
+            return;
+        }
+        if (! $this->ownLideres()->where('cedula', $documento)->where('is_active', true)->exists()) {
+            throw ValidationException::withMessages(['referente_documento' => 'Esta persona no está registrada en el sistema.']);
+        }
     }
 
     protected function scopeToTerritory($query, string $column = 'geographic_unit_id')

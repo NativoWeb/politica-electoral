@@ -9,15 +9,15 @@ function json(body, status = 200) {
 
 const EMPTY = { referente_documento: '', referente_nombre: '', referente_apellido: '' };
 
-function Harness({ excludeId }) {
-    const [form, setForm] = useState(EMPTY);
+let lastForm;
+function Harness({ excludeId, initial = EMPTY }) {
+    const [form, setForm] = useState(initial);
+    lastForm = form;
     const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
     return <ReferenteFields values={form} onChange={set} excludeId={excludeId} />;
 }
 
-const documento = () => screen.getByLabelText('Documento');
-const nombre = () => screen.getByLabelText('Nombre');
-const apellido = () => screen.getByLabelText('Apellido');
+const buscar = () => screen.getByLabelText(/Buscar referente/);
 
 describe('splitNombre', () => {
     it('takes two words as nombre from four up, one from two or three', () => {
@@ -41,91 +41,112 @@ describe('ReferenteFields', () => {
         vi.unstubAllGlobals();
     });
 
-    it('searches by name from two characters and picking a result fills the three fields', async () => {
+    it('an exact cédula applies the registered person and shows the name read-only', async () => {
         fetchMock.mockImplementation(() => json({ data: [
             { id: 'l2', nombre: 'Maria Fernanda Rueda Gomez', cedula: '1098765432', municipio: 'Girón', cargo: 'Concejal' },
         ] }));
         render(<Harness excludeId="l1" />);
 
-        fireEvent.change(nombre(), { target: { value: 'm' } });
-        await new Promise(r => setTimeout(r, 350));
-        expect(fetchMock).not.toHaveBeenCalled();
+        fireEvent.change(buscar(), { target: { value: '1.098.765.432' } });
 
-        fireEvent.change(nombre(), { target: { value: 'mari' } });
-        const option = await screen.findByRole('option');
-        expect(option).toHaveTextContent('CC 1098765432 · Girón · Concejal');
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(fetchMock.mock.calls[0][0]).toBe('/mapa-politico/search-lideres?q=mari&exclude_id=l1');
-
-        fireEvent.click(screen.getByRole('button', { name: /Maria Fernanda Rueda Gomez/ }));
-        expect(documento()).toHaveValue('1098765432');
-        expect(nombre()).toHaveValue('Maria Fernanda');
-        expect(apellido()).toHaveValue('Rueda Gomez');
-        expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-        expect(screen.queryByText(/Sin cédula/)).not.toBeInTheDocument();
+        expect(await screen.findByTestId('referente-nombre')).toHaveTextContent('Maria Fernanda Rueda Gomez');
+        expect(screen.getByTestId('referente-documento')).toHaveTextContent('1098765432');
+        expect(fetchMock.mock.calls[0][0]).toBe('/mapa-politico/search-lideres?q=1.098.765.432&exclude_id=l1');
+        expect(lastForm).toEqual({ referente_documento: '1098765432', referente_nombre: 'Maria Fernanda', referente_apellido: 'Rueda Gomez' });
+        // Nombre and Apellido are no longer editable fields.
+        expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Apellido')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText(/Buscar referente/)).not.toBeInTheDocument();
     });
 
-    it('searches by document and shows at most eight matches', async () => {
-        fetchMock.mockImplementation(() => json({ data: Array.from({ length: 10 }, (_, i) => ({ id: `l${i}`, nombre: `Persona ${i}`, cedula: `10${i}`, municipio: 'Girón', cargo: 'Líder' })) }));
+    it('an exact cédula that starts another one is listed first and not applied by itself', async () => {
+        fetchMock.mockImplementation(() => json({ data: [
+            { id: 'l10', nombre: 'Diez Digitos', cedula: '1098765432', municipio: 'Girón', cargo: 'Líder' },
+            { id: 'l8', nombre: 'Ocho Digitos', cedula: '10987654', municipio: 'Girón', cargo: 'Líder' },
+        ] }));
         render(<Harness />);
 
-        fireEvent.change(documento(), { target: { value: '10' } });
-        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(8));
-        expect(fetchMock.mock.calls[0][0]).toBe('/mapa-politico/search-lideres?q=10');
+        fireEvent.change(buscar(), { target: { value: '10987654' } });
+
+        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+        expect(screen.getAllByRole('option')[0]).toHaveTextContent('Ocho Digitos');
+        expect(lastForm).toEqual(EMPTY);
+
+        fireEvent.click(screen.getByRole('button', { name: /Ocho Digitos/ }));
+        expect(lastForm).toEqual({ referente_documento: '10987654', referente_nombre: 'Ocho', referente_apellido: 'Digitos' });
     });
 
-    it('lets the user keep typing by hand when nobody matches, and warns without a cédula', async () => {
+    it('a cédula of nobody in the system warns and applies nothing', async () => {
         fetchMock.mockImplementation(() => json({ data: [] }));
         render(<Harness />);
 
-        fireEvent.change(nombre(), { target: { value: 'Nadie Conocido' } });
-        expect(await screen.findByText(/No está en el sistema/)).toBeInTheDocument();
-        fireEvent.change(apellido(), { target: { value: 'Perez' } });
+        fireEvent.change(buscar(), { target: { value: '5555555' } });
 
-        expect(nombre()).toHaveValue('Nadie Conocido');
-        expect(apellido()).toHaveValue('Perez');
-        expect(screen.getByText(/Sin cédula, esta persona no queda vinculada/)).toBeInTheDocument();
-
-        fireEvent.change(documento(), { target: { value: '5' } });
-        expect(screen.queryByText(/Sin cédula/)).not.toBeInTheDocument();
+        expect(await screen.findByRole('alert')).toHaveTextContent('Esta persona no está registrada en el sistema');
+        expect(lastForm).toEqual(EMPTY);
+        expect(screen.queryByTestId('referente-nombre')).not.toBeInTheDocument();
     });
 
-    it('a referente without cédula fills the name and keeps the warning', async () => {
-        fetchMock.mockImplementation(() => json({ data: [{ id: 'l3', nombre: 'Luis Sin Documento', cedula: null, municipio: 'Girón', cargo: null }] }));
+    it('searches by name and picking a result applies it; one without cédula cannot be picked', async () => {
+        fetchMock.mockImplementation(() => json({ data: [
+            { id: 'l2', nombre: 'Pedro Rueda Gomez', cedula: '123', municipio: 'Girón', cargo: 'Líder' },
+            { id: 'l3', nombre: 'Pedro Sin Documento', cedula: null, municipio: 'Girón', cargo: null },
+        ] }));
         render(<Harness />);
 
-        fireEvent.change(nombre(), { target: { value: 'luis' } });
-        fireEvent.click(await screen.findByRole('button', { name: /Luis Sin Documento/ }));
+        fireEvent.change(buscar(), { target: { value: 'pedro' } });
+        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+        expect(screen.getByRole('button', { name: /Pedro Sin Documento/ })).toBeDisabled();
 
-        expect(documento()).toHaveValue('');
-        expect(nombre()).toHaveValue('Luis');
-        expect(apellido()).toHaveValue('Sin Documento');
-        expect(screen.getByText(/Sin cédula, esta persona no queda vinculada/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /Pedro Rueda Gomez/ }));
+        expect(screen.getByTestId('referente-nombre')).toHaveTextContent('Pedro Rueda Gomez');
+        expect(lastForm).toEqual({ referente_documento: '123', referente_nombre: 'Pedro', referente_apellido: 'Rueda Gomez' });
     });
 
-    it('offline it does not search and the fields stay editable', async () => {
+    it('a referente written by hand in an old ficha is shown as is and can be removed', () => {
+        render(<Harness initial={{ referente_documento: '', referente_nombre: 'Juan', referente_apellido: 'Manual' }} />);
+
+        expect(screen.getByTestId('referente-nombre')).toHaveTextContent('Juan Manual');
+        expect(screen.getByTestId('referente-documento')).toHaveTextContent('-');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quitar referente' }));
+        expect(lastForm).toEqual(EMPTY);
+        expect(screen.queryByTestId('referente-nombre')).not.toBeInTheDocument();
+        expect(buscar()).toHaveValue('');
+    });
+
+    it('an existing referente can be replaced by someone of the system', async () => {
+        fetchMock.mockImplementation(() => json({ data: [{ id: 'l9', nombre: 'Ana Diaz', cedula: '999', municipio: 'Girón', cargo: 'Líder' }] }));
+        render(<Harness initial={{ referente_documento: '111', referente_nombre: 'Viejo', referente_apellido: 'Referente' }} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cambiar referente' }));
+        fireEvent.change(buscar(), { target: { value: '999' } });
+
+        await waitFor(() => expect(screen.getByTestId('referente-nombre')).toHaveTextContent('Ana Diaz'));
+        expect(lastForm).toEqual({ referente_documento: '999', referente_nombre: 'Ana', referente_apellido: 'Diaz' });
+    });
+
+    it('offline it does not search and says so', async () => {
         const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
         render(<Harness />);
 
-        fireEvent.change(nombre(), { target: { value: 'Ana Diaz' } });
+        fireEvent.change(buscar(), { target: { value: 'Ana Diaz' } });
         await new Promise(r => setTimeout(r, 350));
 
         expect(fetchMock).not.toHaveBeenCalled();
-        expect(nombre()).toHaveValue('Ana Diaz');
-        expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent(/Sin conexión/);
+        expect(lastForm).toEqual(EMPTY);
         onLine.mockRestore();
     });
 
-    it('a failed request leaves the fields as plain inputs', async () => {
+    it('a failed request applies nothing and does not claim the person is unregistered', async () => {
         fetchMock.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
         render(<Harness />);
 
-        fireEvent.change(documento(), { target: { value: '1098' } });
-        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-        await new Promise(r => setTimeout(r, 20));
+        fireEvent.change(buscar(), { target: { value: '1098' } });
 
-        expect(documento()).toHaveValue('1098');
-        expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-        expect(screen.queryByText(/No está en el sistema/)).not.toBeInTheDocument();
+        expect(await screen.findByRole('status')).toHaveTextContent(/No se pudo buscar/);
+        expect(screen.queryByText(/no está registrada/)).not.toBeInTheDocument();
+        expect(lastForm).toEqual(EMPTY);
     });
 });

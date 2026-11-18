@@ -65,6 +65,7 @@ class UpdateVotante
             throw new BusinessRuleException('No encontrado.', 404);
         }
         $this->authorizeLiderRow($lider, true);
+        $this->ensureReferenteRegistered($data['referente_documento'] ?? null, $lider->referente_documento);
 
         $cedula = $data['cedula'] ?? null;
         // The form resends the cédula on every save; an unchanged one (even if stored with dots) is left as is.

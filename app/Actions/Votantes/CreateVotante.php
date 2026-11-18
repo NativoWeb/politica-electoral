@@ -22,6 +22,7 @@ class CreateVotante
         $data = Cedula::normalizeFields($data);
 
         $campaignId = $this->campaign()->ownId() ?? Campaign::DEFAULT_ID;
+        $this->ensureReferenteRegistered($data['referente_documento'] ?? null);
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {

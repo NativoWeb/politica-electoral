@@ -741,6 +741,9 @@ class AgentWriteApiTest extends TestCase
 
     public function test_web_votante_update_masks_personal_data_including_nested_lists(): void
     {
+        // The referente has to be registered in the campaign.
+        $this->lider($this->munA, 'Referente Registrado', '1091112222');
+
         $this->actingAs($this->campo)->putJson("/votantes/{$this->liderA}", [
             'nombre' => 'Ana Territorio A', 'cedula' => '1098700001', 'telefono' => '3001112233',
             'email' => 'ana@correo.co', 'direccion' => 'Carrera 7 # 8-9', 'direccion_puesto' => 'Colegio Sur, Calle 3',
