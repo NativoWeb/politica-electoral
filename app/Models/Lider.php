@@ -18,6 +18,9 @@ class Lider extends Model
 
     protected $table = 'lideres';
 
+    // Voters (Electo migration): their own section in the Mapa Político, loaded by pages, never offline.
+    public const TIPO_VOTANTE = 'votante';
+
     protected $keyType = 'string';
 
     public $incrementing = false;

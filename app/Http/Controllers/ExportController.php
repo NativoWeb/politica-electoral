@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\GenericExport;
 use App\Exports\SheetsExport;
+use App\Exports\StreamedXlsx;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Services\GobernacionResultados;
 
@@ -17,6 +18,15 @@ class ExportController extends Controller
     use ScopesTerritory;
 
     public const PDF_MAX_ROWS = 500;
+
+    // Votantes Excel: written row by row; past this many rows the file says it was cut (Bucaramanga alone has ~39.000).
+    public const VOTANTES_EXCEL_MAX_ROWS = 50000;
+
+    // Up to this many rows an Excel is built as always (PhpSpreadsheet); bigger ones are streamed (openspout).
+    public static function streamAfterRows(): int
+    {
+        return (int) config('exports.stream_after_rows', 2000);
+    }
 
     // Mapa Politico rows (leaders, candidates 2027) carry key notes in observacion.
     private function defaultColumns(Request $request): string
@@ -38,14 +48,35 @@ class ExportController extends Controller
             ]), $report['filename'].'.xlsx');
         }
 
-        $data = $this->getData($request);
         $title = $request->input('title', 'Exportacion');
-        $columns = $request->input('columns', $this->defaultColumns($request));
+        $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
+        $filename = str_replace(' ', '_', $title).'.xlsx';
 
-        return Excel::download(
-            new GenericExport($data, explode(',', $columns), $title),
-            str_replace(' ', '_', $title) . '.xlsx'
-        );
+        if ($request->input('source') === 'votantes') {
+            abort_unless($request->user()->hasPermission('view.votantes'), 403);
+            $total = app(VotanteController::class)->listing($request)->count();
+            if ($total > self::streamAfterRows()) {
+                $max = self::VOTANTES_EXCEL_MAX_ROWS;
+                $rows = $this->votantesQuery($request)->limit($max)->cursor()->map(fn ($l) => $this->votanteRow($l));
+
+                return StreamedXlsx::download($rows, $columns, $title, $filename,
+                    notice: $total > $max ? self::cutNotice($max, $total) : null);
+            }
+        }
+
+        [$data, $total] = $this->getDataWithTotal($request);
+        if (count($data) > self::streamAfterRows() || $total > count($data)) {
+            return StreamedXlsx::download($data, $columns, $title, $filename,
+                notice: $total > count($data) ? self::cutNotice(count($data), $total) : null);
+        }
+
+        return Excel::download(new GenericExport($data, $columns, $title), $filename);
+    }
+
+    private static function cutNotice(int $shown, int $total): string
+    {
+        return 'Archivo recortado: '.number_format($shown, 0, ',', '.').' de '.number_format($total, 0, ',', '.')
+            .' registros. Filtra por municipio, tipo o barrio para exportar el resto.';
     }
 
     public function pdf(Request $request)
@@ -73,14 +104,14 @@ class ExportController extends Controller
                 ->download($report['filename'].'.pdf');
         }
 
-        // Votantes reads one row past the PDF cap instead of the whole listing, and counts the total apart.
-        $data = $this->getData($request, self::PDF_MAX_ROWS + 1);
+        // Votantes and the Mapa read one row past the PDF cap instead of the whole listing, and count the total apart.
+        [$data, $mapaTotal] = $this->getDataWithTotal($request, self::PDF_MAX_ROWS + 1);
         $title = $request->input('title', 'Exportacion');
         $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
 
         $totalCount = $request->input('source') === 'votantes' && count($data) > self::PDF_MAX_ROWS
             ? app(VotanteController::class)->listing($request)->count()
-            : count($data);
+            : max(count($data), $mapaTotal);
         $truncated = false;
         if ($totalCount > self::PDF_MAX_ROWS) {
             $data = array_slice($data, 0, self::PDF_MAX_ROWS);
@@ -101,7 +132,8 @@ class ExportController extends Controller
         return $pdf->download(str_replace(' ', '_', $title) . '.pdf');
     }
 
-    private function getData(Request $request, ?int $votantesLimit = null): array
+    // [rows, total]: the total counts the rows a cut Mapa section left out ($limit caps each person section).
+    private function getDataWithTotal(Request $request, ?int $limit = null): array
     {
         $source = $request->input('source', 'mapa-politico');
 
@@ -109,7 +141,9 @@ class ExportController extends Controller
         if ($source === 'votantes') {
             abort_unless($request->user()->hasPermission('view.votantes'), 403);
 
-            return $this->getVotantesData($request, $votantesLimit);
+            $data = $this->getVotantesData($request, $limit);
+
+            return [$data, count($data)];
         }
 
         $munId = $request->input('municipio');
@@ -121,22 +155,28 @@ class ExportController extends Controller
         if ($source === 'mapa-politico') {
             abort_unless($request->user()->hasPermission('view.mapa'), 403);
 
-            // The listing's rows for the same filters (municipio, campaign, tipos...), already unified, without its display caps.
-            $rows = app(MapaPoliticoController::class)->rows($request, forExport: true)['data'];
+            // The listing's rows for the same filters (municipio, campaign, tipos...), already unified, each person
+            // section up to MapaPoliticoController::EXPORT_MAX_ROWS (or $limit).
+            $result = app(MapaPoliticoController::class)->rows($request, forExport: true, sectionLimit: $limit);
+            $rows = $this->withLiderObservations(array_map(fn ($r) => $r + ['tipo' => $r['tipo_registro'] ?? null], $result['data']));
 
-            return $this->withLiderObservations(array_map(fn ($r) => $r + ['tipo' => $r['tipo_registro'] ?? null], $rows));
+            return [$rows, $result['approxTotal'] ?? count($rows)];
         }
 
         if ($source === 'senado' || $source === 'camara') {
             $corpName = $source === 'senado' ? 'Senado' : 'Cámara de Representantes';
-            return $this->getCorporacionData($corpName, $munId);
+            $data = $this->getCorporacionData($corpName, $munId);
+
+            return [$data, count($data)];
         }
 
         if ($source === 'asamblea') {
-            return $this->getCorporacionData('Asamblea', $munId);
+            $data = $this->getCorporacionData('Asamblea', $munId);
+
+            return [$data, count($data)];
         }
 
-        return [];
+        return [[], 0];
     }
 
     // Electoral candidates have no notes of their own: take them from their lider record (same name and municipio).
@@ -172,22 +212,33 @@ class ExportController extends Controller
     // Only the exported columns: select() drops the listing's referidos_count subquery.
     private function getVotantesData(Request $request, ?int $limit = null): array
     {
+        return $this->votantesQuery($request)
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get()
+            ->map(fn ($l) => $this->votanteRow($l))->all();
+    }
+
+    private function votantesQuery(Request $request)
+    {
         return app(VotanteController::class)->listing($request)
             ->select(['lideres.nombre', 'lideres.municipio', 'lideres.cargo', 'lideres.partido', 'lideres.telefono', 'lideres.votos', 'lideres.observacion', 'lideres.cedula'])
             ->orderBy('lideres.nombre')
-            ->when($limit, fn ($q) => $q->limit($limit))
-            ->get()
-            ->map(fn ($l) => [
-                'nombre' => $l->nombre,
-                'municipio' => $l->municipio,
-                'tipo' => 'Votante',
-                'cargo' => $l->cargo,
-                'partido' => $l->partido,
-                'telefono' => $l->telefono,
-                'votos' => $l->votos,
-                'observacion' => $l->observacion,
-                'cedula' => $l->cedula,
-            ])->all();
+            ->orderBy('lideres.id');
+    }
+
+    private function votanteRow(object $l): array
+    {
+        return [
+            'nombre' => $l->nombre,
+            'municipio' => $l->municipio,
+            'tipo' => 'Votante',
+            'cargo' => $l->cargo,
+            'partido' => $l->partido,
+            'telefono' => $l->telefono,
+            'votos' => $l->votos,
+            'observacion' => $l->observacion,
+            'cedula' => $l->cedula,
+        ];
     }
 
     private function getCorporacionData(string $corpName, ?string $munId): array

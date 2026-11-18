@@ -104,7 +104,7 @@ class LegislativoController extends Controller
             'resultados' => $resultados,
             'porPartido' => CachedQueries::partyTotals($corpName),
             'votosLista' => $votosLista,
-            'allMunicipios' => CachedQueries::allMunicipios(),
+            'allMunicipios' => CachedQueries::santanderMunicipios(),
         ]);
     }
 
@@ -209,7 +209,7 @@ class LegislativoController extends Controller
             'municipio' => $municipio,
             'candidatos' => $resultados->candidatos($officeId, conVotos: ! $munId),
             'resumen' => $munId ? null : $resultados->resumen($officeId),
-            'allMunicipios' => CachedQueries::allMunicipios(),
+            'allMunicipios' => CachedQueries::santanderMunicipios(),
         ]);
     }
 

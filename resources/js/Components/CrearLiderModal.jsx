@@ -4,6 +4,8 @@ import { offlineCreateLider } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
 import SearchableDropdown from '@/Components/SearchableDropdown';
 import ReferenteFields from '@/Components/ReferenteFields';
+import { useAllMunicipios } from '@/lib/useAllMunicipios';
+import { isSantanderMunicipio } from '@/lib/mapaPoliticoConstants';
 import {
     TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, GENERO_OPTIONS,
     TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
@@ -61,6 +63,8 @@ function CollapsibleSection({ title, open: defaultOpen = false, children }) {
     );
 }
 
+const optionLabel = (m) => `${m.name} (${m.provincia})`;
+
 const AREA_MET = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Giron', 'Rionegro', 'Lebrija'];
 const fieldCls = "w-full border border-[var(--color-line)] rounded-lg px-4 py-3 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]";
 const labelCls = "block text-[14px] font-bold text-[var(--color-ink-faint)] mb-1";
@@ -77,7 +81,9 @@ const EMPTY_FORM = {
     facebook: '', twitter: '', instagram: '',
 };
 
-export default function CrearLiderModal({ open, onClose, municipios, provincias = [], cargosPorTipo = {}, cargoCategorias = [] }) {
+export default function CrearLiderModal({ open, onClose, municipios: pageMunicipios = [], provincias = [], cargosPorTipo = {}, cargoCategorias = [] }) {
+    // A ficha may live in any municipio of Colombia; the page only lists Santander and the ones with fichas.
+    const municipios = useAllMunicipios(pageMunicipios, open);
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
@@ -191,14 +197,14 @@ export default function CrearLiderModal({ open, onClose, municipios, provincias 
                             <SearchableDropdown
                                 label="Municipio *"
                                 options={(() => {
-                                    const filtered = !form.provincia ? municipios : form.provincia === 'Área Metropolitana' ? municipios.filter(m => AREA_MET.includes(m.name)) : municipios.filter(m => m.provincia === form.provincia);
-                                    return filtered.map(m => `${m.name} (${m.provincia})`);
+                                    const filtered = !form.provincia ? municipios : form.provincia === 'Área Metropolitana' ? municipios.filter(m => isSantanderMunicipio(m) && AREA_MET.includes(m.name)) : municipios.filter(m => m.provincia === form.provincia || (form.provincia === 'Fuera de Santander' && m.santander === false));
+                                    return filtered.map(optionLabel);
                                 })()}
-                                selected={form.municipio_id ? (() => { const m = municipios.find(m => m.id === form.municipio_id); return m ? `${m.name} (${m.provincia})` : undefined; })() : undefined}
+                                selected={form.municipio_id ? (() => { const m = municipios.find(m => m.id === form.municipio_id); return m ? optionLabel(m) : undefined; })() : undefined}
                                 onChange={val => {
                                     if (!val) { set('municipio_id', ''); return; }
-                                    const name = val.split(' (')[0];
-                                    const mun = municipios.find(m => m.name === name);
+                                    // By the whole label: "Barbosa (Vélez)" and "Barbosa (Antioquia)" are two municipios.
+                                    const mun = municipios.find(m => optionLabel(m) === val);
                                     set('municipio_id', mun?.id || '');
                                 }}
                                 multi={false}

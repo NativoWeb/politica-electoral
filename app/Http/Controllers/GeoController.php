@@ -2,13 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\CachedQueries;
 use App\Services\Geo\ComunasGeoJson;
 use App\Services\Geo\MunicipiosGeoJson;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class GeoController extends Controller
 {
+    // GET /api/geo/municipios-todos: every municipio of the country for the ficha forms (a ficha may live anywhere),
+    // Santander's first. The filters only list Santander plus the municipios with fichas.
+    public function todosLosMunicipios(): JsonResponse
+    {
+        $all = collect(CachedQueries::allMunicipios())
+            ->sortBy(fn ($m) => [CachedQueries::isSantander($m) ? 0 : 1, $m['name']])
+            ->map(fn ($m) => ['id' => $m['id'], 'name' => $m['name'], 'provincia' => $m['provincia'], 'santander' => CachedQueries::isSantander($m)])
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $all]);
+    }
+
     // GET /api/geo/municipios.geojson?simplified=1 (default) | 0 for the full geometry.
     public function municipios(Request $request): Response
     {

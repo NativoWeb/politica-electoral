@@ -16,7 +16,7 @@ class AgentListMapaRequest extends AgentFormRequest
     public const DEFAULT_PER_PAGE = 20;
 
     public const TIPOS = ['alcaldia', 'concejo', 'lideres', 'nuevos_lideres', 'directorio', 'senado', 'camara', 'asamblea',
-        MapaPoliticoController::ASISTENTES_EVENTO, 'todos'];
+        MapaPoliticoController::ASISTENTES_EVENTO, MapaPoliticoController::VOTANTES, 'todos'];
 
     public function rules(): array
     {
@@ -104,7 +104,8 @@ class AgentListMapaRequest extends AgentFormRequest
     private function canonicalProvincia(string $name): ?string
     {
         $normalize = fn (string $v) => Str::lower(Str::ascii(trim($v)));
-        $known = collect(CachedQueries::allMunicipios())->pluck('provincia')->filter()->unique()->push(MapaPoliticoController::AREA_METROPOLITANA);
+        $known = collect(CachedQueries::santanderMunicipios())->pluck('provincia')->filter()->unique()
+            ->push(MapaPoliticoController::AREA_METROPOLITANA, CachedQueries::FUERA_DE_SANTANDER);
 
         return $known->first(fn (string $p) => $normalize($p) === $normalize($name));
     }

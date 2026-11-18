@@ -23,6 +23,9 @@ class VotanteController extends Controller
 {
     use ScopesTerritory;
 
+    // Referidos listed in a ficha: a referente from Electo has thousands; the count is always the real one.
+    public const REFERIDOS_LIMIT = 200;
+
     private array $eventFilters = [];
 
     private function escapeLike(string $value): string
@@ -123,7 +126,7 @@ class VotanteController extends Controller
                 ->where('r.is_active', true);
         })->count();
 
-        $municipios = CachedQueries::allMunicipios();
+        $municipios = CachedQueries::filterMunicipios($this->campaign()->visibleIds());
         $allowedGeoIds = $user?->allowedGeoIds();
         if ($allowedGeoIds) {
             $municipios = array_values(array_filter($municipios, fn ($m) => in_array($m['id'], $allowedGeoIds)));
@@ -208,14 +211,14 @@ class VotanteController extends Controller
         $referidos = [];
         $referidosCount = 0;
         if ($lider->cedula) {
-            $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $lider->cedula))
-                ->where('campaign_id', $lider->campaign_id)
-                ->where('is_active', true)
+            $referidosQuery = $this->referidosQuery($lider);
+            $referidos = (clone $referidosQuery)
                 ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
                 ->orderBy('nombre')
+                ->limit(self::REFERIDOS_LIMIT)
                 ->get()
                 ->toArray();
-            $referidosCount = count($referidos);
+            $referidosCount = count($referidos) < self::REFERIDOS_LIMIT ? count($referidos) : $referidosQuery->count();
         }
 
         return response()->json([
@@ -245,18 +248,28 @@ class VotanteController extends Controller
             return response()->json(['success' => true, 'data' => [], 'total' => 0]);
         }
 
-        $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $lider->cedula))
-            ->where('campaign_id', $lider->campaign_id)
-            ->where('is_active', true)
+        // ?offset= pages through a referente with thousands of referidos.
+        $offset = max(0, min((int) request()->query('offset', 0), 1000000));
+        $referidosQuery = $this->referidosQuery($lider);
+        $referidos = (clone $referidosQuery)
             ->select('id', 'nombre', 'cedula', 'municipio', 'telefono', 'nivel_confianza', 'partido')
-            ->orderBy('nombre')
+            ->orderBy('nombre')->orderBy('id')
+            ->offset($offset)
+            ->limit(self::REFERIDOS_LIMIT)
             ->get();
 
         return response()->json([
             'success' => true,
             'data' => $referidos,
-            'total' => $referidos->count(),
+            'total' => $offset === 0 && $referidos->count() < self::REFERIDOS_LIMIT ? $referidos->count() : $referidosQuery->count(),
         ]);
+    }
+
+    private function referidosQuery(Lider $lider): Builder
+    {
+        return $this->scopeToTerritory(Lider::where('referente_documento', $lider->cedula))
+            ->where('campaign_id', $lider->campaign_id)
+            ->where('is_active', true);
     }
 
     public function store(Request $request, CreateVotante $createVotante)

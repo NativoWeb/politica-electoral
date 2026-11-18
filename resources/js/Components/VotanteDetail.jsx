@@ -10,6 +10,7 @@ import ReferenteFields from '@/Components/ReferenteFields';
 import ComunaSelector from '@/Components/ComunaSelector';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
+import { useAllMunicipios } from '@/lib/useAllMunicipios';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
@@ -110,8 +111,10 @@ function buildInitialForm(data) {
 
 export default function VotanteDetail({
     data, loading, creating, onClose, onSaved, onDeleted,
-    apiFetch, municipios, showToast,
+    apiFetch, municipios: pageMunicipios = [], showToast,
 }) {
+    // A new ficha may live in any municipio of Colombia; the page only lists Santander and the ones with fichas.
+    const municipios = useAllMunicipios(pageMunicipios, creating);
     const [editing, setEditing] = useState(creating);
     const [form, setForm] = useState(() => buildInitialForm(creating ? null : data));
     const [saving, setSaving] = useState(false);
@@ -405,7 +408,7 @@ export default function VotanteDetail({
                                     <select value={form.municipio_id} onChange={e => setField('municipio_id', e.target.value)} className={inputCls}>
                                         <option value="">Seleccionar municipio</option>
                                         {municipios.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name} {m.provincia ? `(${m.provincia})` : ''}</option>
+                                            <option key={m.id} value={m.id}>{m.name.endsWith(`(${m.provincia})`) ? m.name : `${m.name} ${m.provincia ? `(${m.provincia})` : ''}`}</option>
                                         ))}
                                     </select>
                                 </Field>
@@ -480,7 +483,7 @@ export default function VotanteDetail({
                         <div className="border-t border-[var(--color-line)] pt-3 mt-3">
                             <div className="flex items-center justify-between mb-2">
                                 <p className="text-[11px] font-bold text-[var(--color-ink-faint)] uppercase tracking-wider">
-                                    Personas referidas ({localReferidos.length})
+                                    Personas referidas ({Math.max(localReferidos.length, data?.referidos_count || 0)})
                                 </p>
                                 {!campaignReadOnly && (
                                     <button

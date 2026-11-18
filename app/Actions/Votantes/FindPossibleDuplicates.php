@@ -38,7 +38,8 @@ class FindPossibleDuplicates
             ->where('campaign_id', $lider->campaign_id)
             ->where('geographic_unit_id', $lider->geographic_unit_id)
             ->where('id', '!=', $liderId)
-            ->where('is_active', true)
+            ->where('is_active', true);
+        $others = self::candidatesOnly($others, $cedula, $phone, $tokens)
             ->get(['id', 'nombre', 'cargo', 'telefono', 'cedula']);
         foreach ($others as $o) {
             $otherCedula = Cedula::normalize($o->cedula) ?: null;
@@ -65,6 +66,31 @@ class FindPossibleDuplicates
         }
 
         return $found;
+    }
+
+    // Every rule below needs the same cédula, the same phone or two words of the name in common: in PostgreSQL only
+    // those fichas are read, not the whole municipio (a city has tens of thousands).
+    private static function candidatesOnly($query, ?string $cedula, ?string $phone, array $tokens)
+    {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($cedula, $phone, $tokens) {
+            $q->whereRaw('1 = 0');
+            if ($cedula) {
+                $q->orWhereRaw("regexp_replace(coalesce(cedula, ''), '[\s.,''´’‘`-]', '', 'g') = ?", [$cedula])
+                    ->orWhereRaw('trim(cedula) = ?', [$cedula]);
+            }
+            if ($phone) {
+                $q->orWhereRaw("right(regexp_replace(coalesce(telefono, ''), '\D', '', 'g'), 10) = ?", [$phone]);
+            }
+            if (count($tokens) >= 2) {
+                $name = "translate(lower(nombre), 'áéíóúüñàèìòù', 'aeiouunaeiou')";
+                $score = implode(' + ', array_fill(0, count($tokens), "(CASE WHEN {$name} LIKE ? THEN 1 ELSE 0 END)"));
+                $q->orWhereRaw("({$score}) >= 2", array_map(fn ($t) => '%'.$t.'%', $tokens));
+            }
+        })->limit(1000);
     }
 
     // Same length and one digit changed, or two neighbouring digits swapped.

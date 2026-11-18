@@ -19,7 +19,7 @@ class MunicipioController extends Controller
 
         abort_if(! $municipio, 404);
 
-        $allMunicipios = CachedQueries::allMunicipios();
+        $allMunicipios = CachedQueries::santanderMunicipios();
 
         $alcaldia = $this->getAlcaldia($id);
         $alcaldeElecto = collect($alcaldia)->firstWhere('electo', true);

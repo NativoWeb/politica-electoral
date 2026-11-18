@@ -145,8 +145,9 @@ class OrganizacionListing
     // The metropolitan municipios plus the rest of the province stored under that name ("Soto", "Area Metropolitana").
     private static function inMetro(array $m): bool
     {
-        return in_array($m['name'], MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS, true)
-            || Provincias::display($m['provincia'] ?? null) === MapaPoliticoController::AREA_METROPOLITANA;
+        // Only Santander's: the national catalog also has a Rionegro (Antioquia).
+        return CachedQueries::isSantander($m) && (in_array($m['name'], MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS, true)
+            || Provincias::display($m['provincia'] ?? null) === MapaPoliticoController::AREA_METROPOLITANA);
     }
 
     private function provinciaIds(string $provincia): array

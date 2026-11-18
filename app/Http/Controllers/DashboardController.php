@@ -6,9 +6,9 @@ use App\Models\Candidacy;
 use App\Models\Contest;
 use App\Models\ElectoralEvent;
 use App\Models\ElectoralResult;
-use App\Models\GeographicUnit;
 use App\Models\Person;
 use App\Models\PoliticalOrganization;
+use App\Services\CachedQueries;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -49,7 +49,8 @@ class DashboardController extends Controller
 
         return [
             'personas' => Person::count(),
-            'municipios' => GeographicUnit::where('type', 'municipality')->count(),
+            // Santander's: the national catalog (DIVIPOLA) is only there to place fichas from elsewhere.
+            'municipios' => count(CachedQueries::santanderMunicipios()),
             'contiendas' => Contest::count(),
             'resultados' => ElectoralResult::count(),
             'partidos' => PoliticalOrganization::count(),

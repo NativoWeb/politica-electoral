@@ -21,12 +21,16 @@ use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
 use App\Support\Cedula;
 use App\Support\GeoTerritory;
+use Closure;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class MapaPoliticoController extends Controller
@@ -55,6 +59,28 @@ class MapaPoliticoController extends Controller
     public const ASISTENTES_EVENTO_LABEL = 'Asistentes a eventos';
 
     public const AREA_METROPOLITANA = 'Área Metropolitana';
+
+    // Voters (Electo migration, lideres.tipo = votante): their own section, counted by SQL and loaded by pages.
+    public const VOTANTES = 'votantes';
+
+    public const VOTANTES_LABEL = 'Votantes';
+
+    // Sections listed from the lideres table, in the order the listing merges them: key => label (tipo_registro).
+    public const PERSON_SECTIONS = [
+        'lideres' => 'Líderes',
+        'nuevos_lideres' => 'Nuevos Líderes',
+        'directorio' => 'Directorio Municipal',
+        self::ASISTENTES_EVENTO => self::ASISTENTES_EVENTO_LABEL,
+        self::VOTANTES => self::VOTANTES_LABEL,
+    ];
+
+    // Rows of each person section in the listing; the rest are counted and come by pages of PAGE_SIZE ("Ver más").
+    public const SECTION_LIMIT = 200;
+
+    public const PAGE_SIZE = 200;
+
+    // Rows of each person section in an export (Excel) or for the agent: a city has tens of thousands of voters.
+    public const EXPORT_MAX_ROWS = 10000;
 
     public const AREA_METROPOLITANA_MUNICIPIOS = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
 
@@ -130,6 +156,7 @@ class MapaPoliticoController extends Controller
             'lideres' => $liderCargos,
             'nuevos_lideres' => $liderCargos,
             'directorio' => $liderCargos,
+            self::VOTANTES => $liderCargos,
             ...($seesEventos ? [self::ASISTENTES_EVENTO => $liderCargos] : []),
             'senado' => ['Senador', 'Candidato Senado'],
             'camara' => ['Representante', 'Candidato Cámara'],
@@ -150,7 +177,7 @@ class MapaPoliticoController extends Controller
         [
             'data' => $data, 'municipios' => $municipios, 'provincias' => $provincias, 'municipioInfo' => $municipioInfo,
             'munId' => $munId, 'provinciaIds' => $provinciaIds, 'partido' => $partido, 'campana' => $campana,
-            'applyEstado' => $applyEstado,
+            'applyEstado' => $applyEstado, 'sectionPaging' => $sectionPaging,
         ] = $this->rows($request);
 
         $cargosDisponibles = collect($data)->pluck('cargo')->filter()->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->unique()->filter()->sort()->values()->toArray();
@@ -185,6 +212,7 @@ class MapaPoliticoController extends Controller
             'cargoCategorias' => CargoCategory::active()->get(['id', 'name', 'display_order', 'is_highlighted']),
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
+            'sectionPaging' => $sectionPaging,
             'partyTotals' => $partyTotals,
             'filters' => array_merge(
                 $request->only(['municipio', 'cargo', 'search', 'provincia', 'partido', 'barrio', 'destacado', 'profesion', 'estado']),
@@ -218,6 +246,7 @@ class MapaPoliticoController extends Controller
         return match (true) {
             $tipo === 'nuevo_lider' => 'Nuevos Líderes',
             $tipo === ApproveAttendees::TIPO && $seesEventos => self::ASISTENTES_EVENTO_LABEL,
+            $tipo === Lider::TIPO_VOTANTE => self::VOTANTES_LABEL,
             default => 'Líderes',
         };
     }
@@ -231,6 +260,9 @@ class MapaPoliticoController extends Controller
         if (in_array(self::ASISTENTES_EVENTO_LABEL, $labels, true) && ! in_array('Líderes', $labels, true)) {
             return ApproveAttendees::TIPO;
         }
+        if (in_array(self::VOTANTES_LABEL, $labels, true) && ! in_array('Líderes', $labels, true)) {
+            return Lider::TIPO_VOTANTE;
+        }
 
         return 'directorio';
     }
@@ -239,6 +271,33 @@ class MapaPoliticoController extends Controller
     public static function sectionCounts(array $rows): array
     {
         return collect($rows)->flatMap(fn ($row) => self::tipoLabels($row['tipo_registro'] ?? ''))->countBy()->toArray();
+    }
+
+    // sectionCounts() with the SQL total of each section the listing cut (rows() sectionPaging).
+    public static function sectionCountsWithPaging(array $rows, array $sectionPaging): array
+    {
+        $counts = self::sectionCounts($rows);
+        foreach ($sectionPaging as $label => $paging) {
+            $counts[$label] = max($counts[$label] ?? 0, $paging['total']);
+        }
+
+        return $counts;
+    }
+
+    // Lowercase spellings of names for a LOWER(TRIM(nombre)) IN (...) lookup: PostgreSQL lowers accents too, SQLite
+    // only ASCII. Always strings: a numeric key would be bound as an integer.
+    public static function nameVariants(array $names): array
+    {
+        $out = [];
+        foreach ($names as $name) {
+            $name = trim((string) $name);
+            if ($name !== '') {
+                $out[mb_strtolower($name)] = true;
+                $out[strtolower($name)] = true;
+            }
+        }
+
+        return array_map('strval', array_keys($out));
     }
 
     private static function tipoLabels(string $tipos): array
@@ -257,10 +316,23 @@ class MapaPoliticoController extends Controller
         $index = [];
         foreach (CachedQueries::allMunicipios() as $m) {
             $index[$m['id']] = true;
-            $index[Str::lower(Str::ascii(trim($m['name'])))] = $m['id'];
+            $name = Str::lower(Str::ascii(trim($m['name'])));
+            // A name repeated in another departamento resolves to Santander's municipio.
+            if (! isset($index[$name]) || CachedQueries::isSantander($m)) {
+                $index[$name] = $m['id'];
+            }
         }
 
         return $index;
+    }
+
+    // The municipio of an exact name, Santander's first when another departamento has one with the same name.
+    public static function municipioIdByName(string $name): ?string
+    {
+        $matches = array_filter(CachedQueries::allMunicipios(), fn ($m) => $m['name'] === $name);
+        $santander = array_filter($matches, fn ($m) => CachedQueries::isSantander($m));
+
+        return (reset($santander) ?: reset($matches) ?: [])['id'] ?? null;
     }
 
     // Same uppercase name in the same municipio: how an electoral row and a lider are taken for one person.
@@ -317,9 +389,11 @@ class MapaPoliticoController extends Controller
         return $data;
     }
 
-    // The unified rows of the Mapa Político listing. The Excel/PDF export uses the same rows with $forExport,
-    // which only drops the listing's presentation caps (200 lideres per section, elected-only without filters).
-    public function rows(Request $request, bool $forExport = false): array
+    // The unified rows of the Mapa Político listing. The Excel/PDF export uses the same rows with $forExport, which
+    // drops the elected-only default without filters and raises the cap of each person section from SECTION_LIMIT to
+    // EXPORT_MAX_ROWS ($sectionLimit overrides both). A cut section is in sectionPaging: label => [key, loaded, total].
+    // $page = ['section' => key, 'offset' => n] returns only that page of one person section ("Ver más").
+    public function rows(Request $request, bool $forExport = false, ?int $sectionLimit = null, ?array $page = null): array
     {
         $munId = $request->input('municipio');
         $tipos = self::effectiveTipos($request);
@@ -345,7 +419,8 @@ class MapaPoliticoController extends Controller
         $searchEscaped = $search ? $this->escapeLike($search) : null;
         $barrioEscaped = $barrio ? $this->escapeLike($barrio) : null;
 
-        $municipios = CachedQueries::allMunicipios();
+        // Santander plus the municipios of other departamentos with fichas of the visible campaigns.
+        $municipios = CachedQueries::filterMunicipios($this->campaign()->visibleIds());
 
         // Territory scope: restrict municipios for users with territory_scope
         $user = $request->user();
@@ -359,13 +434,14 @@ class MapaPoliticoController extends Controller
         }
 
         // Only the provinces of the municipios the user can see ("Area Metropolitana" is a real province now).
-        $provincias = collect($municipios)->pluck('provincia')->unique()->filter()->sort()->values()->toArray();
+        $provincias = collect($municipios)->pluck('provincia')->unique()->filter()
+            ->sortBy(fn ($p) => [$p === CachedQueries::FUERA_DE_SANTANDER ? 1 : 0, $p])->values()->toArray();
 
         $provincia = $request->input('provincia');
         $provinciaIds = null;
         if ($provincia && ! $munId) {
             if ($provincia === self::AREA_METROPOLITANA) {
-                $provinciaIds = collect($municipios)->filter(fn ($m) => in_array($m['name'], self::AREA_METROPOLITANA_MUNICIPIOS))->pluck('id')->toArray();
+                $provinciaIds = collect($municipios)->filter(fn ($m) => CachedQueries::isSantander($m) && in_array($m['name'], self::AREA_METROPOLITANA_MUNICIPIOS))->pluck('id')->toArray();
             } else {
                 $provinciaIds = collect($municipios)->filter(fn ($m) => ($m['provincia'] ?? '') === $provincia)->pluck('id')->toArray();
             }
@@ -387,6 +463,38 @@ class MapaPoliticoController extends Controller
 
         $data = [];
         $noGeoFilter = ! $munId && ! $provinciaIds && ! $searchEscaped && ! $barrioEscaped;
+
+        $applyEstado = function ($query) use ($estado) {
+            if ($estado === 'inactivos') {
+                $query->where('is_active', false);
+            } elseif ($estado !== 'todos') {
+                $query->where('is_active', true);
+            }
+
+            return $query;
+        };
+        $sectionFilters = compact('tipos', 'seesEventos', 'campana', 'munId', 'provinciaIds', 'searchEscaped', 'cargos',
+            'barrios_filter', 'partido', 'destacado', 'profesion', 'applyEstado');
+
+        if ($page !== null) {
+            $query = $this->personSectionQuery($page['section'], $sectionFilters);
+            $rows = $query
+                ? $query->orderBy('nombre')->orderBy('id')->offset($page['offset'])->limit(self::PAGE_SIZE + 1)->get()->map(fn ($r) => (array) $r)->toArray()
+                : [];
+
+            $hasMore = count($rows) > self::PAGE_SIZE;
+            $rows = array_slice($rows, 0, self::PAGE_SIZE);
+            // A ficha already shown merged into its Alcaldía/Concejo row on the page is not listed again.
+            if ($electoral && $rows !== []) {
+                $merged = $this->candidateKeys($rows, $tipoMatch, $cargos, $noGeoFilter, $searchEscaped);
+                $own = $this->campaign()->ownId() ?? '';
+                $index = self::municipioIndex();
+                $rows = array_values(array_filter($rows, fn ($row) => ($row['campaign_id'] ?? null) !== $own
+                    || ! isset($merged[self::personKey($row, $index)])));
+            }
+
+            return ['data' => $rows, 'hasMore' => $hasMore, 'available' => $query !== null];
+        }
 
         // === ALCALDIA ===
         if ($electoral && $tipoMatch('alcaldia')) {
@@ -468,186 +576,30 @@ class MapaPoliticoController extends Controller
             $data = array_merge($data, $query->orderByDesc('res.votos')->get()->map(fn ($r) => (array) $r)->toArray());
         }
 
-        $applyEstado = function ($query) use ($estado) {
-            if ($estado === 'inactivos') {
-                $query->where('is_active', false);
-            } elseif ($estado !== 'todos') {
-                $query->where('is_active', true);
+        // === PERSON SECTIONS (Líderes, Nuevos Líderes, Directorio, Asistentes, Votantes) ===
+        // Each one up to its cap; a cut section is counted in SQL and its next pages come from seccion().
+        // Voters are only counted until the page filters for them or their section is opened.
+        $limit = $sectionLimit ?? ($forExport ? self::EXPORT_MAX_ROWS : self::SECTION_LIMIT);
+        $votantesDeferred = ! $forExport && ! in_array(self::VOTANTES, $tipos, true) && ! $searchEscaped && empty($cargos)
+            && empty($barrios_filter) && ! $partido && ! $destacado && ! $profesion;
+        $sectionPaging = [];
+        foreach (self::PERSON_SECTIONS as $key => $label) {
+            $query = $this->personSectionQuery($key, $sectionFilters);
+            if (! $query) {
+                continue;
             }
-            return $query;
-        };
-
-        // === LIDERES ===
-        if ($tipoMatch('lideres')) {
-            $query = $this->visibleLideres();
-            $applyEstado($query);
-            if ($campana) {
-                $query->where('campaign_id', $campana);
+            $take = $key === self::VOTANTES && $votantesDeferred ? 0 : $limit;
+            $rows = $take > 0
+                ? (clone $query)->orderBy('nombre')->orderBy('id')->limit($take + 1)->get()->map(fn ($r) => (array) $r)->toArray()
+                : [];
+            if (count($rows) > $take || $take === 0) {
+                $rows = array_slice($rows, 0, $take);
+                $total = (clone $query)->count();
+                if ($total > count($rows)) {
+                    $sectionPaging[$label] = ['key' => $key, 'loaded' => count($rows), 'total' => $total];
+                }
             }
-            $query->where(function ($q) use ($seesEventos) {
-                    $q->whereNotIn('tipo', $seesEventos ? ['nuevo_lider', ApproveAttendees::TIPO] : ['nuevo_lider'])->orWhereNull('tipo');
-                })
-                ->select(
-                    'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
-                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
-                    'votos', DB::raw("'Líderes' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'campaign_id'
-                );
-
-            if ($munId) {
-                $query->where('geographic_unit_id', $munId);
-            } elseif ($provinciaIds) {
-                $query->whereIn('geographic_unit_id', $provinciaIds);
-            }
-            if ($searchEscaped) {
-                $query->where(function ($q) use ($searchEscaped) {
-                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
-                });
-            }
-            if (! empty($cargos)) {
-                $this->whereCargoIn($query, $cargos);
-            }
-            if (! empty($barrios_filter)) {
-                $query->where(function ($q) use ($barrios_filter) {
-                    foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
-                    }
-                });
-            }
-            if ($noGeoFilter && empty($cargos) && ! $forExport) {
-                $query->limit(200);
-            }
-
-            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // === NUEVOS LIDERES ===
-        if ($tipoMatch('nuevos_lideres')) {
-            $query = $this->visibleLideres();
-            $applyEstado($query);
-            if ($campana) {
-                $query->where('campaign_id', $campana);
-            }
-            $query->where('tipo', 'nuevo_lider')
-                ->select(
-                    'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
-                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
-                    'votos', DB::raw("'Nuevos Líderes' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'campaign_id'
-                );
-
-            if ($munId) {
-                $query->where('geographic_unit_id', $munId);
-            } elseif ($provinciaIds) {
-                $query->whereIn('geographic_unit_id', $provinciaIds);
-            }
-            if ($searchEscaped) {
-                $query->where(function ($q) use ($searchEscaped) {
-                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
-                });
-            }
-            if (! empty($cargos)) {
-                $this->whereCargoIn($query, $cargos);
-            }
-            if (! empty($barrios_filter)) {
-                $query->where(function ($q) use ($barrios_filter) {
-                    foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
-                    }
-                });
-            }
-            if ($noGeoFilter && empty($cargos) && ! $forExport) {
-                $query->limit(200);
-            }
-
-            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // === DIRECTORIO MUNICIPAL ===
-        if ($tipoMatch('directorio')) {
-            $query = $this->visibleLideres();
-            $applyEstado($query);
-            if ($campana) {
-                $query->where('campaign_id', $campana);
-            }
-            $this->whereCargoIn($query, ['Directorio Municipal']);
-            if ($seesEventos) {
-                $query->where(fn ($q) => $q->where('tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('tipo'));
-            }
-            $query->select(
-                    'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
-                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'),
-                    'votos', DB::raw("'Directorio Municipal' as tipo_registro"),
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'campaign_id'
-                );
-
-            if ($munId) {
-                $query->where('geographic_unit_id', $munId);
-            } elseif ($provinciaIds) {
-                $query->whereIn('geographic_unit_id', $provinciaIds);
-            }
-            if ($searchEscaped) {
-                $query->where(function ($q) use ($searchEscaped) {
-                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
-                });
-            }
-            if (! empty($cargos)) {
-                $this->whereCargoIn($query, $cargos);
-            }
-            if (! empty($barrios_filter)) {
-                $query->where(function ($q) use ($barrios_filter) {
-                    foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
-                    }
-                });
-            }
-            if ($noGeoFilter && empty($cargos) && ! $forExport) {
-                $query->limit(200);
-            }
-
-            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
-        }
-
-        // === ASISTENTES A EVENTOS (off unless asked for: 'todos' does not include it) ===
-        if ($seesEventos && in_array(self::ASISTENTES_EVENTO, $tipos, true)) {
-            $query = $this->visibleLideres();
-            $applyEstado($query);
-            if ($campana) {
-                $query->where('campaign_id', $campana);
-            }
-            $query->where('tipo', ApproveAttendees::TIPO)
-                ->select(
-                    'id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia',
-                    'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'), 'votos',
-                    'cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'campaign_id'
-                )
-                ->selectRaw('? as tipo_registro', [self::ASISTENTES_EVENTO_LABEL]);
-
-            if ($munId) {
-                $query->where('geographic_unit_id', $munId);
-            } elseif ($provinciaIds) {
-                $query->whereIn('geographic_unit_id', $provinciaIds);
-            }
-            if ($searchEscaped) {
-                $query->where(function ($q) use ($searchEscaped) {
-                    $q->where('nombre', 'ilike', "%{$searchEscaped}%")->orWhere('cedula', 'like', "%{$searchEscaped}%");
-                });
-            }
-            if (! empty($cargos)) {
-                $this->whereCargoIn($query, $cargos);
-            }
-            if (! empty($barrios_filter)) {
-                $query->where(function ($q) use ($barrios_filter) {
-                    foreach ($barrios_filter as $b) {
-                        $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
-                    }
-                });
-            }
-            if ($noGeoFilter && empty($cargos) && ! $forExport) {
-                $query->limit(200);
-            }
-
-            $data = array_merge($data, $query->orderBy('nombre')->get()->map(fn ($r) => (array) $r)->toArray());
+            $data = array_merge($data, $rows);
         }
 
         // === SENADO / CAMARA / ASAMBLEA ===
@@ -726,15 +678,20 @@ class MapaPoliticoController extends Controller
             array_column($data, '_lider_geo_id'),
         )));
         $lideresLookup = [];
-        if (! empty($relevantMunicipios)) {
-            $lideresAllQuery = $this->ownLideres();
-            $applyEstado($lideresAllQuery);
-            $lideresAll = $lideresAllQuery
-                ->select('nombre', 'municipio', 'geographic_unit_id', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo', 'campaign_id')
-                ->where(fn ($q) => $q->whereIn('municipio', $relevantMunicipios)->orWhereIn('geographic_unit_id', $relevantGeoIds))
-                ->get();
-            foreach ($lideresAll as $l) {
-                $lideresLookup[self::personKey((array) $l, $municipioIds)] ??= $l;
+        // Only the namesakes of the electoral rows: a whole city of fichas would not fit in memory.
+        $electoralNames = self::nameVariants(array_column(array_filter($data, fn ($row) => ! array_key_exists('campaign_id', $row)), 'nombre'));
+        if (! empty($relevantMunicipios) && $electoralNames !== []) {
+            foreach (array_chunk($electoralNames, 1000) as $names) {
+                $lideresAllQuery = $this->ownLideres();
+                $applyEstado($lideresAllQuery);
+                $lideresAll = $lideresAllQuery
+                    ->select('nombre', 'municipio', 'geographic_unit_id', 'telefono', 'email', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'cargo as lider_cargo', 'campaign_id')
+                    ->where(fn ($q) => $q->whereIn('municipio', $relevantMunicipios)->orWhereIn('geographic_unit_id', $relevantGeoIds))
+                    ->whereIn(DB::raw('LOWER(TRIM(nombre))'), $names)
+                    ->get();
+                foreach ($lideresAll as $l) {
+                    $lideresLookup[self::personKey((array) $l, $municipioIds)] ??= $l;
+                }
             }
         }
 
@@ -879,7 +836,133 @@ class MapaPoliticoController extends Controller
             }));
         }
 
-        return compact('data', 'municipios', 'provincias', 'municipioInfo', 'munId', 'provinciaIds', 'partido', 'campana', 'applyEstado', 'multiFicha');
+        $approxTotal = count($data) + array_sum(array_map(fn ($p) => $p['total'] - $p['loaded'], $sectionPaging));
+
+        return compact('data', 'municipios', 'provincias', 'municipioInfo', 'munId', 'provinciaIds', 'partido', 'campana', 'applyEstado', 'multiFicha', 'sectionPaging', 'approxTotal');
+    }
+
+    // personKey => true of the Alcaldía and Concejo candidates that the listing shows with the same filters and that
+    // share name and municipio with these fichas: rows() merges those fichas into the candidate's row.
+    private function candidateKeys(array $rows, Closure $tipoMatch, array $cargos, bool $noGeoFilter, ?string $searchEscaped): array
+    {
+        $offices = array_filter([
+            'alcaldia' => $tipoMatch('alcaldia') ? ['con.office_id', $this->officeId('Alcaldía'), 'Alcalde Electo', 'Candidato Alcaldía'] : null,
+            'concejo' => $tipoMatch('concejo') ? ['con.corporation_id', $this->corporationId('Concejo'), 'Concejal', 'Candidato Concejo'] : null,
+        ]);
+        $geoIds = array_values(array_unique(array_filter(array_column($rows, 'geographic_unit_id'))));
+        if ($offices === [] || $geoIds === []) {
+            return [];
+        }
+
+        $index = self::municipioIndex();
+        $keys = [];
+        foreach ($offices as [$column, $id, $electo, $candidato]) {
+            if (! $id || ($cargos !== [] && ! in_array($electo, $cargos, true) && ! in_array($candidato, $cargos, true))) {
+                continue;
+            }
+            $candidates = DB::table('candidacies as c')
+                ->join('contests as con', 'c.contest_id', '=', 'con.id')
+                ->join('persons as p', 'c.person_id', '=', 'p.id')
+                ->where($column, $id)
+                ->whereIn('con.geographic_unit_id', $geoIds)
+                ->whereIn(DB::raw('LOWER(TRIM(p.full_name))'), self::nameVariants(array_column($rows, 'nombre')))
+                ->when($searchEscaped, fn ($q) => $q->where('p.full_name', 'ilike', "%{$searchEscaped}%"))
+                ->get(['p.full_name', 'con.geographic_unit_id', 'c.outcome']);
+            foreach ($candidates as $c) {
+                $cargo = $c->outcome === 'elected' ? $electo : $candidato;
+                if (($noGeoFilter && $cargos === [] && $c->outcome !== 'elected') || ($cargos !== [] && ! in_array($cargo, $cargos, true))) {
+                    continue;
+                }
+                $keys[self::personKey(['nombre' => $c->full_name, 'geographic_unit_id' => $c->geographic_unit_id], $index)] = true;
+            }
+        }
+
+        return $keys;
+    }
+
+    // GET /mapa-politico/seccion?seccion=&offset=&<the page's filters>: the next page of one person section.
+    public function seccion(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'seccion' => ['required', 'string', Rule::in(array_keys(self::PERSON_SECTIONS))],
+            'offset' => ['required', 'integer', 'min:0', 'max:1000000'],
+        ]);
+
+        $result = $this->rows($request, page: ['section' => $data['seccion'], 'offset' => (int) $data['offset']]);
+        if (! $result['available']) {
+            return response()->json(['success' => false, 'message' => 'Esa sección no está en los filtros elegidos.'], 422);
+        }
+
+        return response()->json(['success' => true, 'data' => $result['data'], 'has_more' => $result['hasMore']]);
+    }
+
+    // One person section of the listing (lideres table) with every filter of the page, or null when the section is
+    // not among the chosen tipos. partido, destacado and profesion are filtered here too, so the cap counts only fichas
+    // that the page shows.
+    private function personSectionQuery(string $key, array $f): ?Builder
+    {
+        $label = self::PERSON_SECTIONS[$key] ?? null;
+        $chosen = in_array('todos', $f['tipos'], true) || in_array($key, $f['tipos'], true);
+        if ($label === null || ($key === self::ASISTENTES_EVENTO ? ! ($f['seesEventos'] && in_array($key, $f['tipos'], true)) : ! $chosen)) {
+            return null;
+        }
+
+        $query = $this->visibleLideres();
+        ($f['applyEstado'])($query);
+        if ($f['campana']) {
+            $query->where('campaign_id', $f['campana']);
+        }
+        $notVotante = fn ($q) => $q->where('tipo', '!=', Lider::TIPO_VOTANTE)->orWhereNull('tipo');
+        match ($key) {
+            'lideres' => $query->where(fn ($q) => $q
+                ->whereNotIn('tipo', $f['seesEventos'] ? ['nuevo_lider', ApproveAttendees::TIPO, Lider::TIPO_VOTANTE] : ['nuevo_lider', Lider::TIPO_VOTANTE])
+                ->orWhereNull('tipo')),
+            'nuevos_lideres' => $query->where('tipo', 'nuevo_lider'),
+            'directorio' => $this->whereCargoIn($query->where($notVotante)
+                ->when($f['seesEventos'], fn ($q) => $q->where(fn ($w) => $w->where('tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('tipo'))), ['Directorio Municipal']),
+            self::ASISTENTES_EVENTO => $query->where('tipo', ApproveAttendees::TIPO),
+            self::VOTANTES => $query->where('tipo', Lider::TIPO_VOTANTE),
+        };
+
+        $columns = ['cargo', 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona', 'destacado', 'profesion', 'cedula', 'campaign_id'];
+        $base = ['id', 'nombre', 'municipio', 'geographic_unit_id', 'provincia', 'partido', DB::raw('NULL as outcome'), DB::raw('NULL as tipo_aval'), 'votos'];
+        // The attendee label goes last, as it always did; the others right after votos.
+        if ($key === self::ASISTENTES_EVENTO) {
+            $query->select([...$base, ...$columns])->selectRaw('? as tipo_registro', [$label]);
+        } else {
+            $query->select([...$base, DB::raw("'{$label}' as tipo_registro"), ...$columns]);
+        }
+
+        if ($f['munId']) {
+            $query->where('geographic_unit_id', $f['munId']);
+        } elseif ($f['provinciaIds']) {
+            $query->whereIn('geographic_unit_id', $f['provinciaIds']);
+        }
+        if ($f['searchEscaped']) {
+            $search = $f['searchEscaped'];
+            $query->where(fn ($q) => $q->where('nombre', 'ilike', "%{$search}%")->orWhere('cedula', 'like', "%{$search}%"));
+        }
+        if (! empty($f['cargos'])) {
+            $this->whereCargoIn($query, $f['cargos']);
+        }
+        if (! empty($f['barrios_filter'])) {
+            $query->where(function ($q) use ($f) {
+                foreach ($f['barrios_filter'] as $b) {
+                    $q->orWhere('barrio', 'ilike', '%'.$this->escapeLike(trim($b)).'%');
+                }
+            });
+        }
+        if ($f['partido']) {
+            $query->where(fn ($q) => $q->whereRaw('UPPER(partido) = ?', [mb_strtoupper($f['partido'])])->orWhere('partido', $f['partido']));
+        }
+        if ($f['destacado']) {
+            $query->where('destacado', true);
+        }
+        if ($f['profesion']) {
+            $query->where('profesion', $f['profesion']);
+        }
+
+        return $query;
     }
 
     public function storeLider(Request $request)
@@ -1207,18 +1290,21 @@ class MapaPoliticoController extends Controller
             $response['instagram'] = $liderModel->instagram;
             $response['contactos'] = $liderModel->contactos;
             $response['info_politica'] = $liderModel->infoPolitica;
+            $response['municipio_id'] = $liderModel->geographic_unit_id;
             $response += app(ComunaCatalog::class)->fichaPayload($liderModel->geographic_unit_id, $liderModel->comuna_id, $liderModel->comuna_source);
 
             if ($liderModel->cedula) {
-                $referidos = $this->scopeToTerritory(Lider::where('referente_documento', $liderModel->cedula))
+                $referidosQuery = $this->scopeToTerritory(Lider::where('referente_documento', $liderModel->cedula))
                     ->where('campaign_id', $liderModel->campaign_id)
-                    ->where('is_active', true)
+                    ->where('is_active', true);
+                $referidos = (clone $referidosQuery)
                     ->select('id', 'nombre', 'cedula', 'municipio', 'telefono')
                     ->orderBy('nombre')
+                    ->limit(VotanteController::REFERIDOS_LIMIT)
                     ->get()
                     ->toArray();
                 $response['referidos'] = $referidos;
-                $response['referidos_count'] = count($referidos);
+                $response['referidos_count'] = count($referidos) < VotanteController::REFERIDOS_LIMIT ? count($referidos) : $referidosQuery->count();
             } else {
                 $response['referidos'] = [];
                 $response['referidos_count'] = 0;
@@ -1247,6 +1333,7 @@ class MapaPoliticoController extends Controller
             'partido' => 'nullable|string|max:255',
             'observacion' => 'nullable|string|max:1000',
             'municipio' => 'nullable|string|max:100',
+            'municipio_id' => 'nullable|uuid|exists:geographic_units,id',
             'direccion' => 'nullable|string|max:255',
             'barrio' => 'nullable|string|max:100',
             'zona' => 'nullable|in:rural,urbana',
@@ -1454,17 +1541,21 @@ class MapaPoliticoController extends Controller
                 if ($nuevoNombre && $liderVinculado) {
                     $updateData['nombre'] = $nuevoNombre;
                 }
-                if (array_key_exists('municipio', $data) && $data['municipio'] && $data['municipio'] !== ($lider->municipio ?? '')) {
-                    $geo = DB::table('geographic_units')
-                        ->where('type', 'municipality')
-                        ->where('canonical_name', $data['municipio'])
-                        ->first();
-                    if ($geo) {
-                        $this->authorizeGeo($geo->id);
-                        $updateData['geographic_unit_id'] = $geo->id;
-                        $provName = DB::table('geographic_units')->where('id', $geo->parent_id)->value('canonical_name');
-                        $updateData['provincia'] = $provName ?? '';
-                    }
+                // By id (the national catalog repeats names: Barbosa, Rionegro, La Paz...); a name alone (offline
+                // queue, older clients) is taken for Santander's municipio of that name first.
+                $geo = null;
+                if (! empty($data['municipio_id'])) {
+                    $geo = DB::table('geographic_units')->where('type', 'municipality')->where('id', $data['municipio_id'])->first();
+                } elseif (array_key_exists('municipio', $data) && $data['municipio'] && $data['municipio'] !== ($lider->municipio ?? '')) {
+                    $geoId = self::municipioIdByName($data['municipio']);
+                    $geo = $geoId ? DB::table('geographic_units')->where('id', $geoId)->first() : null;
+                }
+                if ($geo && $geo->id !== $lider->geographic_unit_id) {
+                    $this->authorizeGeo($geo->id);
+                    $updateData['geographic_unit_id'] = $geo->id;
+                    $updateData['municipio'] = $geo->canonical_name;
+                    $provName = DB::table('geographic_units')->where('id', $geo->parent_id)->value('canonical_name');
+                    $updateData['provincia'] = $provName ?? '';
                 }
                 if (array_key_exists('tipos', $data)) {
                     // Who cannot see events saw the attendee as a lider: saving keeps it an attendee (unless Nuevos Líderes).

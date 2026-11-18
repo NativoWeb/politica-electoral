@@ -16,12 +16,18 @@ class CargoCategoryController extends Controller
     {
         $cargos = CargoCategory::orderBy('display_order')->get();
 
-        $cargoCounts = app(CurrentCampaign::class)->scope(DB::table('lideres'))
-            ->pluck('cargo')
-            ->flatMap(fn ($c) => array_map('trim', explode(',', $c ?? '')))
-            ->filter()
-            ->countBy()
-            ->toArray();
+        // Grouped in SQL (one row per distinct cargo text, not one per ficha); "A, B" counts once for each.
+        $cargoCounts = [];
+        $grouped = app(CurrentCampaign::class)->scope(DB::table('lideres'))
+            ->whereNotNull('cargo')
+            ->groupBy('cargo')
+            ->select('cargo', DB::raw('COUNT(*) as total'))
+            ->get();
+        foreach ($grouped as $row) {
+            foreach (array_filter(array_map('trim', explode(',', $row->cargo))) as $cargo) {
+                $cargoCounts[$cargo] = ($cargoCounts[$cargo] ?? 0) + (int) $row->total;
+            }
+        }
 
         return Inertia::render('Admin/Cargos', [
             'cargos' => $cargos,

@@ -5,6 +5,7 @@ namespace App\Services\Eventos;
 use App\Actions\Eventos\ApproveAttendees;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Http\Requests\Eventos\AttendeeInput;
+use App\Models\Lider;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -23,13 +24,14 @@ class TerritoryView
         return AttendeeInput::barrioKey($barrio);
     }
 
-    // Active lideres of the municipio (not the event attendees turned into fichas: they are listed as attendees).
+    // Active lideres of the municipio (not the event attendees turned into fichas: they are listed as attendees; nor
+    // the voters migrated from Electo, tens of thousands per city).
     public function lideres(string $municipioId, ?string $key): Builder
     {
         $query = $this->visibleLideres('l')
             ->where('l.geographic_unit_id', $municipioId)
             ->where('l.is_active', true)
-            ->where(fn ($q) => $q->where('l.tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('l.tipo'));
+            ->where(fn ($q) => $q->whereNotIn('l.tipo', [ApproveAttendees::TIPO, Lider::TIPO_VOTANTE])->orWhereNull('l.tipo'));
 
         if ($key !== null) {
             $query->whereIn('l.barrio', $this->liderBarriosMatching($municipioId, $key));

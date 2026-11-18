@@ -11,14 +11,37 @@ use App\Models\WhatsAppSendRecipient;
 use App\Models\WhatsAppTemplate;
 use App\Support\CurrentCampaign;
 use Carbon\Carbon;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 
 class WhatsAppController extends Controller
 {
+    // The screen's template filters over the lideres, in SQL: field => expression of the contact value it shows.
+    private const CONTACT_FILTER_SQL = [
+        'provincia' => 'l.provincia',
+        'municipio' => 'COALESCE(g.canonical_name, l.municipio)',
+        'tipo' => 'l.tipo',
+        'cargo' => 'l.cargo',
+        'partido' => 'l.partido',
+        'profesion' => 'l.profesion',
+        'barrio' => 'l.barrio',
+        'estado' => "CASE WHEN l.is_active THEN 'Activo' ELSE 'Inactivo' END",
+    ];
+
+    // Values offered per filter of the screen.
+    private const FILTER_OPTIONS_LIMIT = 500;
+
+    // Recipients of one manual send: more is refused with a message to filter (n8n receives them in one payload).
+    public static function maxRecipients(): int
+    {
+        return (int) config('services.n8n.whatsapp_max_recipients', 5000);
+    }
+
     /**
      * Lista de contactos para la interfaz de WhatsApp.
      */
@@ -161,211 +184,47 @@ class WhatsAppController extends Controller
                 });
         }
 
-        $lideres = collect();
+        $lideres = in_array($source, ['todos', 'lideres'], true)
+            ? $this->lideresContacts($user, $selectedTemplate, $request->all())
+            : null;
 
-        if (in_array($source, ['todos', 'lideres'], true)) {
-            $query = Lider::query()->where('lideres.campaign_id', $this->ownCampaignId());
+        $filterOptions = $this->filterOptions($persons, $lideres);
 
-            if ($user?->hasTerritoryScopeRestriction()) {
-                $allowedGeoIds = $user->allowedGeoIds();
-
-                if (!empty($allowedGeoIds)) {
-                    $query->whereIn('geographic_unit_id', $allowedGeoIds);
-                }
-            }
-
-            if ($search = trim((string) $request->input('search'))) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('nombre', 'ilike', "%{$search}%")
-                        ->orWhere('telefono', 'ilike', "%{$search}%")
-                        ->orWhereHas('contactos', function ($cq) use ($search) {
-                            $cq->where('valor', 'ilike', "%{$search}%");
-                        });
-                });
-            }
-
-            if ($selectedTemplate?->meta_name === 'oscarfc') {
-                $birthMonth = $request->integer('birth_month');
-                $birthDay = $request->integer('birth_day');
-
-                if ($birthMonth >= 1 && $birthMonth <= 12) {
-                    $query->whereMonth('fecha_nacimiento', $birthMonth);
-                }
-
-                if ($birthDay >= 1 && $birthDay <= 31) {
-                    $query->whereDay('fecha_nacimiento', $birthDay);
-                }
-            }
-
-            $lideres = $query
-                ->with([
-                    'contactos' => function ($q) {
-                        $q->where(function ($cq) {
-                            $cq->where('estado', true)
-                                ->orWhereNull('estado');
-                        })->orderByDesc('principal');
-                    },
-                    'geographicUnit',
-                ])
-                ->select([
-                    'id',
-                    'nombre',
-                    'telefono',
-                    'fecha_nacimiento',
-                    'municipio',
-                    'partido',
-                    'cargo',
-                    'provincia',
-                    'tipo',
-                    'profesion',
-                    'barrio',
-                    'is_active',
-                    'geographic_unit_id',
-                ])
-                ->get()
-                ->map(function (Lider $lider) {
-                    $phone = $lider->telefono
-                        ?: $lider->contactos->first()?->valor;
-
-                    return [
-                        'id' => $lider->id,
-                        'name' => $lider->nombre,
-                        'phone' => $phone,
-                        'birth_date' => $this->dateValue(
-                            $lider->fecha_nacimiento
-                        ),
-                        'municipio' => $lider->geographicUnit?->canonical_name
-                            ?? $lider->municipio,
-                        'partido' => $lider->partido,
-                        'cargo' => $lider->cargo,
-                        'tipo_registro' => 'Líder',
-                        'tipo' => $lider->tipo,
-                        'provincia' => $lider->provincia,
-                        'profesion' => $lider->profesion,
-                        'barrio' => $lider->barrio,
-                        'estado' => $lider->is_active ? 'Activo' : 'Inactivo',
-                        'source' => 'lider',
-                    ];
-                });
-        }
-
-        $contacts = $persons
-            ->concat($lideres)
-            ->sortBy(fn ($contact) => mb_strtolower($contact['name'] ?? ''))
-            ->values();
-
-            $filterOptions = [];
-            foreach ([
-                'provincia',
-                'municipio',
-                'tipo',
-                'cargo',
-                'partido',
-                'profesion',
-                'barrio',
-                'estado',
-            ] as $field) {
-                $filterOptions[$field] = $contacts
-                    ->pluck($field)
-                    ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
-                    ->map(fn ($value) => trim((string) $value))
-                    ->unique()
-                    ->sort(fn ($a, $b) => strcasecmp($a, $b))
-                    ->values()
-                    ->all();
-            }
         /*
         * Solo aplicar filtros configurados en la plantilla seleccionada.
         * Los filtros se reciben como filter_provincia, filter_municipio, etc.
         */
-        $configuredFilters = $selectedTemplate?->filters ?? [];
-
-        $filterFields = [
-            'provincia',
-            'municipio',
-            'tipo',
-            'cargo',
-            'partido',
-            'profesion',
-            'barrio',
-            'estado',
-        ];
-
-        foreach ($filterFields as $field) {
-            $value = trim((string) $request->input("filter_{$field}", ''));
-
-            if (
-                $value !== ''
-                && in_array($field, $configuredFilters, true)
-            ) {
-                $contacts = $contacts->filter(function ($contact) use ($field, $value) {
-                    $contactValue = (string) ($contact[$field] ?? '');
-
-                    return $contactValue !== ''
-                        && str_contains(
-                            mb_strtolower($contactValue),
-                            mb_strtolower($value)
-                        );
-                });
-            }
+        $persons = $this->filterContacts($persons, $selectedTemplate, $request->all());
+        if ($lideres) {
+            $this->applyContactFilters($lideres, $selectedTemplate, $request->all());
         }
 
-        if (
-            in_array('cumpleanos', $configuredFilters, true)
-            && $selectedTemplate?->meta_name !== 'oscarfc'
-        ) {
-            $birthdayValue = trim(
-                (string) $request->input('filter_cumpleanos', '')
-            );
-
-            if ($birthdayValue !== '') {
-                try {
-                    $birthday = Carbon::createFromFormat(
-                        '!Y-m-d',
-                        $birthdayValue
-                    );
-
-                    if ($birthday->format('Y-m-d') === $birthdayValue) {
-                        $month = $birthday->month;
-                        $day = $birthday->day;
-
-                        $contacts = $contacts->filter(
-                            function ($contact) use ($month, $day) {
-                                $birthDate = $contact['birth_date'] ?? null;
-
-                                if (!$birthDate) {
-                                    return false;
-                                }
-
-                                try {
-                                    $date = Carbon::parse($birthDate);
-
-                                    return $date->month === $month
-                                        && $date->day === $day;
-                                } catch (\Throwable $exception) {
-                                    return false;
-                                }
-                            }
-                        );
-                    }
-                } catch (\Throwable $exception) {
-                    // Si la fecha no es válida, no aplicar el filtro.
-                }
-            }
-        }
-
-        $contacts = $contacts->values();
-
+        // The page comes from SQL: a campaign has tens of thousands of lideres. The electoral persons (only for the
+        // platform) are few: they merge by name with the lideres up to this page.
         $perPage = 100;
         $currentPage = LengthAwarePaginator::resolveCurrentPage();
+        $lideresTotal = $lideres ? (clone $lideres)->count() : 0;
+        $lideresByName = fn () => (clone $lideres)->orderBy('l.nombre')->orderBy('l.id');
 
-        $currentItems = $contacts
-            ->slice(($currentPage - 1) * $perPage, $perPage)
-            ->values();
+        if ($persons->isEmpty()) {
+            $currentItems = $lideres
+                ? $this->contactRows($lideresByName()->offset(($currentPage - 1) * $perPage)->limit($perPage)->get())
+                : collect();
+        } else {
+            $firstLideres = $lideres
+                ? $this->contactRows($lideresByName()->limit($currentPage * $perPage)->get())
+                : collect();
+            $currentItems = $persons
+                ->concat($firstLideres)
+                ->sortBy(fn ($contact) => mb_strtolower($contact['name'] ?? ''))
+                ->values()
+                ->slice(($currentPage - 1) * $perPage, $perPage)
+                ->values();
+        }
 
         $paginatedContacts = new LengthAwarePaginator(
             $currentItems,
-            $contacts->count(),
+            $persons->count() + $lideresTotal,
             $perPage,
             $currentPage,
             [
@@ -600,98 +459,44 @@ class WhatsAppController extends Controller
         $lideres = collect();
 
         if (in_array($source, ['todos', 'lideres'], true)) {
-            $query = Lider::query()
-                ->where('lideres.campaign_id', $this->ownCampaignId())
+            $query = $this->lideresContacts($user, $template, $selectAllMatching ? $validated : [])
                 ->where(function ($q) {
                     $q->where(function ($a) {
-                        $a->whereNotNull('telefono')
-                            ->where('telefono', '!=', '');
-                    })->orWhereHas('contactos', function ($cq) {
-                        $cq->where(function ($active) {
-                            $active->where('estado', true)
-                                ->orWhereNull('estado');
-                        })
-                        ->whereNotNull('valor')
-                        ->where('valor', '!=', '');
+                        $a->whereNotNull('l.telefono')
+                            ->where('l.telefono', '!=', '');
+                    })->orWhereExists(function ($cq) {
+                        $cq->select(DB::raw(1))
+                            ->from('lider_contactos as cp')
+                            ->whereColumn('cp.lider_id', 'l.id')
+                            ->where(function ($active) {
+                                $active->where('cp.estado', true)
+                                    ->orWhereNull('cp.estado');
+                            })
+                            ->whereNotNull('cp.valor')
+                            ->where('cp.valor', '!=', '');
                     });
                 });
 
             if (!$selectAllMatching) {
-                $query->whereIn('lideres.id', $validated['contact_ids'] ?? []);
-            }
-
-            if ($selectAllMatching && ($search = trim((string) ($validated['search'] ?? '')))) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('nombre', 'ilike', "%{$search}%")
-                        ->orWhere('telefono', 'ilike', "%{$search}%")
-                        ->orWhereHas('contactos', function ($cq) use ($search) {
-                            $cq->where('valor', 'ilike', "%{$search}%");
-                        });
-                });
-            }
-
-            if ($selectAllMatching && $template->meta_name === 'oscarfc') {
-                if (!empty($validated['birth_month'])) {
-                    $query->whereMonth('fecha_nacimiento', $validated['birth_month']);
-                }
-
-                if (!empty($validated['birth_day'])) {
-                    $query->whereDay('fecha_nacimiento', $validated['birth_day']);
+                $query->whereIn('l.id', $validated['contact_ids'] ?? []);
+            } else {
+                $this->applyContactFilters($query, $template, $validated);
+                // The ones unchecked by hand do not count against the cap.
+                if (!empty($validated['excluded_contact_ids'])) {
+                    $query->whereNotIn('l.id', $validated['excluded_contact_ids']);
                 }
             }
 
-            if (
-                $selectAllMatching
-                && $template->meta_name !== 'oscarfc'
-                && in_array('cumpleanos', $configuredFilters, true)
-                && !empty($validated['filter_cumpleanos'])
-            ) {
-                $birthday = Carbon::createFromFormat(
-                    '!Y-m-d',
-                    $validated['filter_cumpleanos']
-                );
-
-                $query->whereMonth('fecha_nacimiento', $birthday->month)
-                    ->whereDay('fecha_nacimiento', $birthday->day);
+            // Counted before reading: "select all" over a whole city must not load tens of thousands of fichas.
+            $matching = (clone $query)->count();
+            if ($matching > self::maxRecipients()) {
+                return response()->json([
+                    'message' => 'Son '.number_format($matching, 0, ',', '.').' destinatarios y el máximo por envío es '
+                        .number_format(self::maxRecipients(), 0, ',', '.').'. Usa los filtros para dividir el envío.',
+                ], 422);
             }
 
-            if ($user?->hasTerritoryScopeRestriction()) {
-                $allowedGeoIds = $user->allowedGeoIds();
-
-                if (!empty($allowedGeoIds)) {
-                    $query->whereIn('geographic_unit_id', $allowedGeoIds);
-                }
-            }
-
-            $lideres = $query
-                ->with([
-                    'contactos' => function ($q) {
-                        $q->where(function ($cq) {
-                            $cq->where('estado', true)
-                                ->orWhereNull('estado');
-                        })->orderByDesc('principal');
-                    },
-                    'geographicUnit',
-                ])
-                ->get()
-                ->map(function (Lider $lider) {
-                    return [
-                        'id' => $lider->id,
-                        'name' => $lider->nombre,
-                        'phone' => $lider->telefono
-                            ?: $lider->contactos->first()?->valor,
-                        'municipio' => $lider->geographicUnit?->canonical_name
-                            ?? $lider->municipio,
-                        'partido' => $lider->partido,
-                        'cargo' => $lider->cargo,
-                        'tipo' => $lider->tipo,
-                        'provincia' => $lider->provincia,
-                        'profesion' => $lider->profesion,
-                        'barrio' => $lider->barrio,
-                        'estado' => $lider->is_active ? 'Activo' : 'Inactivo',
-                        'source' => 'lider',
-                    ];
-                });
+            $lideres = $this->contactRows($query->orderBy('l.id')->get());
         }
 
         $recipients = $persons
@@ -764,6 +569,13 @@ class WhatsAppController extends Controller
             ], 422);
         }
 
+        if ($recipients->count() > self::maxRecipients()) {
+            return response()->json([
+                'message' => 'Son '.number_format($recipients->count(), 0, ',', '.').' destinatarios y el máximo por envío es '
+                    .number_format(self::maxRecipients(), 0, ',', '.').'. Usa los filtros para dividir el envío.',
+            ], 422);
+        }
+
         $campaignType = match ($template->meta_name) {
             'oscarfc' => 'birthday',
             'invitacion_evento' => 'event',
@@ -782,14 +594,17 @@ class WhatsAppController extends Controller
                     : null,
             ]);
 
-            foreach ($recipients as $recipient) {
-                WhatsAppSendRecipient::create([
+            $now = now();
+            foreach ($recipients->chunk(500) as $chunk) {
+                WhatsAppSendRecipient::insert($chunk->map(fn ($recipient) => [
                     'whatsapp_send_id' => $send->id,
                     'person_id' => $recipient['id'],
                     'name' => $recipient['name'],
                     'phone' => $recipient['phone'],
                     'status' => 'pendiente',
-                ]);
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])->values()->all());
             }
 
             return $send;
@@ -1547,6 +1362,213 @@ class WhatsAppController extends Controller
 
     // Bulk WhatsApp works on the user's OWN campaign only: its templates, its sends and its lideres, never a
     // subcampaign's (the root campaign does not message the lideres of its subcampaigns).
+    // The own campaign's lideres as WhatsApp contacts, as a query (a campaign has tens of thousands): territory,
+    // search and the oscarfc birthday month/day from $input. The phone is the ficha's or its first active contact.
+    private function lideresContacts($user, ?WhatsAppTemplate $template, array $input): QueryBuilder
+    {
+        $firstContact = DB::table('lider_contactos as c')
+            ->select('c.valor')
+            ->whereColumn('c.lider_id', 'l.id')
+            ->where(function ($cq) {
+                $cq->where('c.estado', true)
+                    ->orWhereNull('c.estado');
+            })
+            ->orderByDesc('c.principal')
+            ->limit(1);
+
+        $query = DB::table('lideres as l')
+            ->leftJoin('geographic_units as g', 'g.id', '=', 'l.geographic_unit_id')
+            ->where('l.campaign_id', $this->ownCampaignId())
+            ->select([
+                'l.id', 'l.nombre', 'l.telefono', 'l.fecha_nacimiento', 'l.municipio as lider_municipio',
+                'g.canonical_name as geo_municipio', 'l.partido', 'l.cargo', 'l.provincia', 'l.tipo', 'l.profesion',
+                'l.barrio', 'l.is_active',
+            ])
+            ->selectSub($firstContact, 'contacto');
+
+        if ($user?->hasTerritoryScopeRestriction()) {
+            $allowedGeoIds = $user->allowedGeoIds();
+
+            if (!empty($allowedGeoIds)) {
+                $query->whereIn('l.geographic_unit_id', $allowedGeoIds);
+            }
+        }
+
+        if ($search = trim((string) ($input['search'] ?? ''))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('l.nombre', 'ilike', "%{$search}%")
+                    ->orWhere('l.telefono', 'ilike', "%{$search}%")
+                    ->orWhereExists(function ($cq) use ($search) {
+                        $cq->select(DB::raw(1))
+                            ->from('lider_contactos as cs')
+                            ->whereColumn('cs.lider_id', 'l.id')
+                            ->where('cs.valor', 'ilike', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($template?->meta_name === 'oscarfc') {
+            $birthMonth = (int) ($input['birth_month'] ?? 0);
+            $birthDay = (int) ($input['birth_day'] ?? 0);
+
+            if ($birthMonth >= 1 && $birthMonth <= 12) {
+                $query->whereMonth('l.fecha_nacimiento', $birthMonth);
+            }
+
+            if ($birthDay >= 1 && $birthDay <= 31) {
+                $query->whereDay('l.fecha_nacimiento', $birthDay);
+            }
+        }
+
+        return $query;
+    }
+
+    // The template's filters (filter_provincia...: the value contains the text, ignoring case) and its birthday,
+    // over the lideres query.
+    private function applyContactFilters(QueryBuilder $query, ?WhatsAppTemplate $template, array $input): void
+    {
+        $configuredFilters = $template?->filters ?? [];
+
+        foreach (self::CONTACT_FILTER_SQL as $field => $expression) {
+            $value = trim((string) ($input["filter_{$field}"] ?? ''));
+
+            if ($value !== '' && in_array($field, $configuredFilters, true)) {
+                $query->where(DB::raw($expression), 'ilike', '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value).'%');
+            }
+        }
+
+        $birthday = $this->templateBirthday($template, $input);
+        if ($birthday) {
+            $query->whereMonth('l.fecha_nacimiento', $birthday->month)
+                ->whereDay('l.fecha_nacimiento', $birthday->day);
+        }
+    }
+
+    // The same template filters over contacts already in memory (the electoral persons).
+    private function filterContacts(Collection $contacts, ?WhatsAppTemplate $template, array $input): Collection
+    {
+        $configuredFilters = $template?->filters ?? [];
+
+        foreach (array_keys(self::CONTACT_FILTER_SQL) as $field) {
+            $value = trim((string) ($input["filter_{$field}"] ?? ''));
+
+            if (
+                $value !== ''
+                && in_array($field, $configuredFilters, true)
+            ) {
+                $contacts = $contacts->filter(function ($contact) use ($field, $value) {
+                    $contactValue = (string) ($contact[$field] ?? '');
+
+                    return $contactValue !== ''
+                        && str_contains(
+                            mb_strtolower($contactValue),
+                            mb_strtolower($value)
+                        );
+                });
+            }
+        }
+
+        $birthday = $this->templateBirthday($template, $input);
+        if ($birthday) {
+            $contacts = $contacts->filter(function ($contact) use ($birthday) {
+                $birthDate = $contact['birth_date'] ?? null;
+
+                if (!$birthDate) {
+                    return false;
+                }
+
+                try {
+                    $date = Carbon::parse($birthDate);
+
+                    return $date->month === $birthday->month
+                        && $date->day === $birthday->day;
+                } catch (\Throwable $exception) {
+                    return false;
+                }
+            });
+        }
+
+        return $contacts->values();
+    }
+
+    // The "cumpleaños" filter of a template that has it (not oscarfc, which has its own month/day); null when unset
+    // or not a valid date.
+    private function templateBirthday(?WhatsAppTemplate $template, array $input): ?Carbon
+    {
+        if (
+            !in_array('cumpleanos', $template?->filters ?? [], true)
+            || $template?->meta_name === 'oscarfc'
+        ) {
+            return null;
+        }
+
+        $value = trim((string) ($input['filter_cumpleanos'] ?? ''));
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            $birthday = Carbon::createFromFormat('!Y-m-d', $value);
+        } catch (\Throwable $exception) {
+            return null;
+        }
+
+        return $birthday && $birthday->format('Y-m-d') === $value ? $birthday : null;
+    }
+
+    // Filter values of the screen: the persons' plus the distinct values of the lideres (before the template filters).
+    private function filterOptions(Collection $persons, ?QueryBuilder $lideres): array
+    {
+        $filterOptions = [];
+
+        foreach (self::CONTACT_FILTER_SQL as $field => $expression) {
+            $values = $persons->pluck($field);
+
+            if ($lideres) {
+                $values = $values->concat(
+                    $lideres->cloneWithout(['columns', 'orders', 'limit', 'offset'])
+                        ->cloneWithoutBindings(['select'])
+                        ->selectRaw("{$expression} as valor")
+                        ->distinct()
+                        ->orderBy('valor')
+                        ->limit(self::FILTER_OPTIONS_LIMIT)
+                        ->pluck('valor')
+                );
+            }
+
+            $filterOptions[$field] = $values
+                ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
+                ->map(fn ($value) => trim((string) $value))
+                ->unique()
+                ->sort(fn ($a, $b) => strcasecmp($a, $b))
+                ->values()
+                ->all();
+        }
+
+        return $filterOptions;
+    }
+
+    // Rows of lideresContacts() in the shape the screen and the send use.
+    private function contactRows(Collection $rows): Collection
+    {
+        return $rows->map(fn ($lider) => [
+            'id' => $lider->id,
+            'name' => $lider->nombre,
+            'phone' => $lider->telefono ?: $lider->contacto,
+            'birth_date' => $this->dateValue($lider->fecha_nacimiento),
+            'municipio' => $lider->geo_municipio ?? $lider->lider_municipio,
+            'partido' => $lider->partido,
+            'cargo' => $lider->cargo,
+            'tipo_registro' => 'Líder',
+            'tipo' => $lider->tipo,
+            'provincia' => $lider->provincia,
+            'profesion' => $lider->profesion,
+            'barrio' => $lider->barrio,
+            'estado' => $lider->is_active ? 'Activo' : 'Inactivo',
+            'source' => 'lider',
+        ]);
+    }
+
     private function ownCampaignId(): string
     {
         return app(CurrentCampaign::class)->ownId();

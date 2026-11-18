@@ -7,18 +7,79 @@ use Illuminate\Support\Facades\DB;
 
 class CachedQueries
 {
+    // The Provincia option that groups the municipios of other departamentos (only those with fichas).
+    public const FUERA_DE_SANTANDER = 'Fuera de Santander';
+
+    // Every municipio of the country (DIVIPOLA). Santander's hang from a provincia; the rest from their departamento,
+    // which is their 'provincia' here. 'santander' tells them apart.
     public static function allMunicipios(): array
     {
         return Cache::remember('all_municipios', 3600, function () {
             return DB::table('geographic_units as g')
                 ->leftJoin('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
+                ->leftJoin('geographic_units as dep', 'prov.parent_id', '=', 'dep.id')
                 ->where('g.type', 'municipality')
-                ->select('g.id', 'g.canonical_name as name', 'prov.canonical_name as provincia')
+                ->select('g.id', 'g.canonical_name as name', 'prov.canonical_name as provincia', 'prov.type as parent_type',
+                    'dep.canonical_name as departamento', 'dep.type as dep_type')
                 ->orderBy('g.canonical_name')
                 ->get()
-                ->map(fn ($r) => ['id' => $r->id, 'name' => $r->name, 'provincia' => $r->provincia])
+                ->map(fn ($r) => ['id' => $r->id, 'name' => $r->name, 'provincia' => $r->provincia,
+                    'santander' => ! self::otherDepartamento($r)])
                 ->toArray();
         });
+    }
+
+    // Under a departamento other than Santander, directly (DIVIPOLA) or through a provincia.
+    private static function otherDepartamento(object $r): bool
+    {
+        $departamento = match (true) {
+            $r->parent_type === 'department' => $r->provincia,
+            $r->dep_type === 'department' => $r->departamento,
+            default => null,
+        };
+
+        return $departamento !== null && $departamento !== 'Santander';
+    }
+
+    public static function isSantander(array $municipio): bool
+    {
+        // An entry cached before the flag existed was Santander's (the platform only had Santander).
+        return $municipio['santander'] ?? true;
+    }
+
+    public static function santanderMunicipios(): array
+    {
+        return array_values(array_filter(self::allMunicipios(), fn ($m) => self::isSantander($m)));
+    }
+
+    // Filters and selectors: Santander's municipios plus, under the provincia "Fuera de Santander", the municipios of
+    // other departamentos where these campaigns (null: all) have fichas. A national catalog of ~1.100 municipios would
+    // bury the 87 that matter.
+    public static function filterMunicipios(?array $campaignIds): array
+    {
+        $all = self::allMunicipios();
+        if (! collect($all)->contains(fn ($m) => ! self::isSantander($m))) {
+            return $all;
+        }
+
+        $withFichas = array_flip(DB::table('lideres')
+            ->when($campaignIds !== null, fn ($q) => $q->whereIn('campaign_id', $campaignIds))
+            ->whereNotNull('geographic_unit_id')
+            ->distinct()
+            ->pluck('geographic_unit_id')
+            ->all());
+
+        $santander = [];
+        $fuera = [];
+        foreach ($all as $m) {
+            if (self::isSantander($m)) {
+                $santander[] = $m;
+            } elseif (isset($withFichas[$m['id']])) {
+                $fuera[] = ['departamento' => $m['provincia']] + array_merge($m, ['provincia' => self::FUERA_DE_SANTANDER]);
+            }
+        }
+
+        return array_merge($santander, $fuera);
     }
 
     public static function partyTotals(string $corpName): array

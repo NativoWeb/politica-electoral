@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Eventos\ApproveAttendees;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Models\Lider;
 use App\Services\Eventos\EventScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,9 @@ use Illuminate\Support\Facades\DB;
 class OfflineController extends Controller
 {
     use ScopesTerritory;
+
+    // Fichas per municipio saved on the phone: the lideres closest to the user, never every voter of a city.
+    public const MAX_LIDERES = 2000;
 
     /**
      * Download all data for a municipio for offline use.
@@ -83,9 +87,10 @@ class OfflineController extends Controller
                 ->get()->map(fn ($r) => (array) $r)->toArray();
         }
 
-        // Líderes
-        $lideres = $this->visibleLideres()
+        // Líderes. Voters (Electo) stay online only: a city has tens of thousands, with cédula and phone (Ley 1581).
+        $lideresQuery = $this->visibleLideres()
             ->where('geographic_unit_id', $municipioId)
+            ->where(fn ($q) => $q->where('tipo', '!=', Lider::TIPO_VOTANTE)->orWhereNull('tipo'))
             ->where(function ($q) {
                 $q->where('cargo', 'not ilike', '%Directorio Municipal%')
                   ->orWhereNull('cargo');
@@ -96,19 +101,25 @@ class OfflineController extends Controller
                 ->where(fn ($q) => $q->where('tipo', '!=', ApproveAttendees::TIPO)->orWhereNull('tipo')))
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
                 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
-                'votos', 'destacado', 'profesion', 'cedula', 'campaign_id')
+                'votos', 'destacado', 'profesion', 'cedula', 'campaign_id');
+        $lideres = (clone $lideresQuery)
             ->orderBy('nombre')
+            ->limit(self::MAX_LIDERES + 1)
             ->get()->map(fn ($r) => (array) $r)->toArray();
+        $lideresTotal = count($lideres) > self::MAX_LIDERES ? (clone $lideresQuery)->count() : count($lideres);
+        $lideres = array_slice($lideres, 0, self::MAX_LIDERES);
 
         // Directorio Municipal (líderes with cargo "Directorio Municipal")
         $directorio = $this->visibleLideres()
             ->where('geographic_unit_id', $municipioId)
+            ->where(fn ($q) => $q->where('tipo', '!=', Lider::TIPO_VOTANTE)->orWhereNull('tipo'))
             ->where('cargo', 'ilike', '%Directorio Municipal%')
             ->select('id', 'nombre', 'municipio', 'provincia', 'cargo', 'partido',
                 'telefono', 'email', 'observacion', 'barrio', 'direccion', 'zona',
                 'votos', 'destacado', 'profesion', 'cedula', 'campaign_id',
                 DB::raw("'Directorio Municipal' as tipo_registro"))
             ->orderBy('nombre')
+            ->limit(self::MAX_LIDERES)
             ->get()->map(fn ($r) => (array) $r)->toArray();
 
         // Senado / Cámara / Asamblea (votes filtered by municipio)
@@ -203,6 +214,8 @@ class OfflineController extends Controller
             'downloadedAt' => now()->toISOString(),
             'personas' => $personas,
             'lideres' => $lideres,
+            'lideresTotal' => $lideresTotal,
+            'lideresTruncated' => $lideresTotal > count($lideres),
             'nexos' => $nexos,
             'gobernador' => $gobernador,
         ]);

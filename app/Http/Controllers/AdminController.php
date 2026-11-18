@@ -11,6 +11,7 @@ use App\Models\SourceFile;
 use App\Models\User;
 use App\Models\WhatsAppLinkCode;
 use App\Services\Agent\AgentIdentityService;
+use App\Services\CachedQueries;
 use App\Support\CurrentCampaign;
 use App\Support\Features;
 use Illuminate\Http\Request;
@@ -141,11 +142,11 @@ class AdminController extends Controller
             ->values()
             ->all();
 
-        $municipios = DB::table('geographic_units')
-            ->where('type', 'municipality')
-            ->orderBy('canonical_name')
-            ->get(['id', 'canonical_name as name'])
-            ->toArray();
+        // Santander and the municipios of other departamentos that have fichas, not the whole national catalog.
+        $municipios = array_map(
+            fn ($m) => (object) ['id' => $m['id'], 'name' => isset($m['departamento']) ? "{$m['name']} ({$m['departamento']})" : $m['name']],
+            CachedQueries::filterMunicipios(app(CurrentCampaign::class)->visibleIds()),
+        );
 
         $search = request('search', '');
         $query = $this->managedUsers()->with(['role', 'campaign:id,name'])->orderBy('name');

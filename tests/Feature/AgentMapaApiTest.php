@@ -51,6 +51,7 @@ class AgentMapaApiTest extends TestCase
 
     protected function setUp(): void
     {
+        $this->memoryLimit = (string) ini_get('memory_limit');
         parent::setUp();
         config(['agent.hmac_secret' => self::SECRET]);
         $this->createSchema();
@@ -69,10 +70,13 @@ class AgentMapaApiTest extends TestCase
         $this->campo = $this->linkedUser('+573001110000', [$this->munA], ['view.mapa']);
     }
 
-    // A PDF export raises the process limits, which in a test run would stay for every later test.
+    private string $memoryLimit;
+
+    // A PDF export raises the process limits, which in a test run would stay for every later test. Back to the run's
+    // own limit (phpunit.xml), not php.ini's: ini_restore() would leave the rest of the suite with 128M.
     protected function tearDown(): void
     {
-        ini_restore('memory_limit');
+        ini_set('memory_limit', $this->memoryLimit);
         parent::tearDown();
     }
 
@@ -661,7 +665,8 @@ class AgentMapaApiTest extends TestCase
             ->assertJsonPath('meta.total', 2)
             ->assertJsonPath('meta.secciones', ['Líderes' => 2])
             ->assertJsonPath('meta.cupo_restante', 5);
-        $this->assertEqualsCanonicalizing(['total', 'secciones', 'cupo_restante'], array_keys($response->json('meta')));
+        $this->assertEqualsCanonicalizing(['total', 'secciones', 'total_aproximado', 'cupo_restante'], array_keys($response->json('meta')));
+        $this->assertFalse($response->json('meta.total_aproximado'));
         $this->assertSame(0, app(AgentContactQuota::class)->used($this->campo->id));
 
         $log = DB::table('audit_logs')->sole();

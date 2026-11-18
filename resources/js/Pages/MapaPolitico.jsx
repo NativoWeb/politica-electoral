@@ -4,7 +4,9 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { downloadMunicipio, downloadProvincia, isDownloaded, getAllOfflineData } from '@/lib/offlineDb';
 import { fmt, partyLogo, partyColor, partyKey } from '@/lib/electoral';
 import { apiFetch } from '@/lib/api';
-import { CARGOS_DISPONIBLES, AREA_METROPOLITANA, ASISTENTES_EVENTO_LABEL, coversAllTipos, tipoOptionsFor } from '@/lib/mapaPoliticoConstants';
+import { CARGOS_DISPONIBLES, AREA_METROPOLITANA, ASISTENTES_EVENTO_LABEL, VOTANTES_LABEL, coversAllTipos, tipoOptionsFor, inAreaMetropolitana, municipioLabel } from '@/lib/mapaPoliticoConstants';
+import { mergeSectionRows, nextOffset, remainingInSection, sectionQuery } from '@/lib/mapaPoliticoPaging';
+import SectionLoadMore from '@/Components/SectionLoadMore';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 import PersonaPanel from '@/Components/PersonaPanel';
 import CrearLiderModal from '@/Components/CrearLiderModal';
@@ -17,6 +19,7 @@ const TIPO_COLORS = {
     'Concejo': 'bg-purple-100 text-purple-700',
     'Líderes': 'bg-amber-100 text-amber-700',
     'Nuevos Líderes': 'bg-green-100 text-green-700',
+    [VOTANTES_LABEL]: 'bg-sky-100 text-sky-800',
     'Directorio Municipal': 'bg-rose-100 text-rose-700',
     'Senado': 'bg-indigo-100 text-indigo-700',
     'Cámara': 'bg-cyan-100 text-cyan-700',
@@ -37,6 +40,9 @@ const TIPO_ICONS = {
     'Nuevos Líderes': (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
     ),
+    [VOTANTES_LABEL]: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+    ),
     'Directorio Municipal': (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
     ),
@@ -54,9 +60,9 @@ const TIPO_ICONS = {
     ),
 };
 
-const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', 'Senado', 'Cámara', 'Asamblea', ASISTENTES_EVENTO_LABEL];
+const SECTION_ORDER = ['Alcaldía', 'Concejo', 'Líderes', 'Nuevos Líderes', VOTANTES_LABEL, 'Senado', 'Cámara', 'Asamblea', ASISTENTES_EVENTO_LABEL];
 // People, not candidates: a flat list instead of party accordions.
-const FLAT_SECTIONS = ['Líderes', 'Nuevos Líderes', ASISTENTES_EVENTO_LABEL];
+const FLAT_SECTIONS = ['Líderes', 'Nuevos Líderes', VOTANTES_LABEL, ASISTENTES_EVENTO_LABEL];
 
 /* ── Acordeón por Partido (estilo Registraduría) ── */
 function PartyAccordion({ partyName, rows, index, onSelectPerson, partyTotal, defaultOpen = false }) {
@@ -223,8 +229,14 @@ function PersonRow({ row, onSelectPerson, color }) {
     );
 }
 
-function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals, defaultOpen = false }) {
+// paging: { total, remaining, loading, error, onLoad } when the server cut the section (or did not load it, like Votantes).
+function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals, defaultOpen = false, paging = null }) {
     const [open, setOpen] = useState(defaultOpen);
+    const total = paging ? Math.max(paging.total, rows.length) : rows.length;
+    // A section sent without rows (Votantes) loads its first page when opened.
+    useEffect(() => {
+        if (open && paging && rows.length === 0 && paging.remaining > 0 && !paging.loading && !paging.error) paging.onLoad();
+    }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
     const colorCls = TIPO_COLORS[tipo] ?? 'bg-gray-100 text-gray-600';
     const icon = TIPO_ICONS[tipo];
     const totalsByParty = useMemo(() => Object.fromEntries((partyTotals || []).map(pt => [pt.partido, pt])), [partyTotals]);
@@ -252,12 +264,12 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals, defaultOp
                 <div className="flex-1 text-left">
                     <h3 className="text-[16px] font-extrabold text-[var(--color-ink)] uppercase">{tipo}</h3>
                     <p className="text-[12px] text-[var(--color-ink-faint)]">
-                        {rows.length} {rows.length === 1 ? 'registro' : 'registros'}
+                        {total > rows.length ? `${fmt(rows.length)} de ${fmt(total)} registros` : `${rows.length} ${rows.length === 1 ? 'registro' : 'registros'}`}
                         {byParty.length > 0 && !FLAT_SECTIONS.includes(tipo) && ` · ${byParty.length} partido${byParty.length > 1 ? 's' : ''}`}
                         {totalVotos > 0 && ` · ${fmt(totalVotos)} votos`}
                     </p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-[13px] font-bold ${colorCls}`}>{rows.length}</span>
+                <span className={`px-3 py-1 rounded-full text-[13px] font-bold ${colorCls}`}>{fmt(total)}</span>
                 <svg className={`w-5 h-5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
             </button>
 
@@ -314,6 +326,11 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals, defaultOp
                             ))
                         )}
                     </div>
+                    {paging && (
+                        rows.length === 0 && paging.loading
+                            ? <p className="px-4 py-3 text-[13px] text-[var(--color-ink-faint)]">Cargando...</p>
+                            : <SectionLoadMore remaining={paging.remaining} shown={rows.length} loading={paging.loading} error={paging.error} onLoad={paging.onLoad} />
+                    )}
                 </div>
             )}
         </div>
@@ -321,7 +338,7 @@ function CollapsibleSection({ tipo, rows, onSelectPerson, partyTotals, defaultOp
 }
 
 /* ── MAIN ── */
-export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, cargoCategorias = [], barrios = [], sectionCounts = {}, partyTotals = {}, filters: serverFilters = {} }) {
+export default function MapaPolitico({ data: serverData = [], municipios = [], provincias = [], municipioInfo, cargosDisponibles = [], cargosPorTipo = {}, cargoCategorias = [], barrios = [], sectionCounts = {}, sectionPaging = {}, partyTotals = {}, filters: serverFilters = {} }) {
     const tipoOptions = tipoOptionsFor(canSeeEventAttendees(usePage().props.auth?.user));
     const [allData, setAllData] = useState(() => serverData);
     const [localFilters, setLocalFilters] = useState({});
@@ -336,6 +353,12 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const [offlineDataLoaded, setOfflineDataLoaded] = useState(false);
     const [offlineMunicipios, setOfflineMunicipios] = useState(null);
     const campaign = useCampaign();
+    // Extra pages of the sections the server cut, by section label; a new server response starts over.
+    const [extraRows, setExtraRows] = useState({});
+    const [loadingSection, setLoadingSection] = useState(null);
+    const [failedSection, setFailedSection] = useState(null);
+    useEffect(() => { setExtraRows(prev => (Object.keys(prev).length ? {} : prev)); setFailedSection(null); }, [serverData]);
+    const onlineData = useMemo(() => mergeSectionRows(serverData, extraRows), [serverData, extraRows]);
 
     // Load IndexedDB data when offline (replaces stale SW cache data)
     useEffect(() => {
@@ -361,8 +384,8 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const filters = isOfflineFiltering ? localFilters : serverFilters;
 
     const data = useMemo(() => {
-        const source = (!isOnline && offlineDataLoaded) ? allData : serverData;
-        if (!isOfflineFiltering && isOnline) return serverData;
+        const source = (!isOnline && offlineDataLoaded) ? allData : onlineData;
+        if (!isOfflineFiltering && isOnline) return onlineData;
         if (!isOfflineFiltering && !isOnline) return source;
         let result = allData;
         const f = localFilters;
@@ -415,7 +438,35 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             result = result.filter(r => r.campaign_id === f.campana);
         }
         return result;
-    }, [isOnline, isOfflineFiltering, offlineDataLoaded, serverData, allData, localFilters]);
+    }, [isOnline, isOfflineFiltering, offlineDataLoaded, onlineData, allData, localFilters]);
+
+    const remainingOf = (label) => (isOnline ? remainingInSection(sectionPaging[label], extraRows[label]) : 0);
+    const cutSections = Object.keys(sectionPaging).filter(label => remainingOf(label) > 0);
+
+    const loadMoreSection = useCallback(async (label) => {
+        const paging = sectionPaging[label];
+        if (!paging || loadingSection) return;
+        setLoadingSection(label);
+        setFailedSection(null);
+        try {
+            const res = await apiFetch(`/mapa-politico/seccion?${sectionQuery(serverFilters, paging.key, nextOffset(paging, extraRows[label]))}`);
+            const json = await res.json();
+            if (!res.ok || !json.success) throw new Error(json.message || 'error');
+            setExtraRows(prev => ({ ...prev, [label]: [...(prev[label] || []), ...json.data] }));
+        } catch {
+            setFailedSection(label);
+        } finally {
+            setLoadingSection(null);
+        }
+    }, [sectionPaging, serverFilters, extraRows, loadingSection]);
+
+    const pagingFor = (label) => (sectionPaging[label] && isOnline ? {
+        total: sectionPaging[label].total,
+        remaining: remainingOf(label),
+        loading: loadingSection === label,
+        error: failedSection === label,
+        onLoad: () => loadMoreSection(label),
+    } : null);
 
     useEffect(() => {
         const goOnline = () => { setIsOnline(true); setLocalFilters({}); };
@@ -452,7 +503,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
 
     const filteredMunicipios = useMemo(() => {
         if (!selectedProv) return municipios;
-        if (selectedProv === 'Área Metropolitana') return municipios.filter(m => AREA_METROPOLITANA.includes(m.name));
+        if (selectedProv === 'Área Metropolitana') return municipios.filter(m => inAreaMetropolitana(m));
         return municipios.filter(m => m.provincia === selectedProv);
     }, [municipios, selectedProv]);
 
@@ -654,10 +705,10 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         <div className="col-span-1">
                             <SearchableDropdown
                                 label="Municipio"
-                                options={filteredMunicipios.map(m => m.name)}
-                                selected={filters.municipio ? filteredMunicipios.find(m => m.id === filters.municipio)?.name : undefined}
+                                options={filteredMunicipios.map(municipioLabel)}
+                                selected={filters.municipio ? municipioLabel(filteredMunicipios.find(m => m.id === filters.municipio)) || undefined : undefined}
                                 onChange={val => {
-                                    const mun = filteredMunicipios.find(m => m.name === val);
+                                    const mun = filteredMunicipios.find(m => municipioLabel(m) === val);
                                     applyFilters({ municipio: mun?.id || undefined });
                                 }}
                                 multi={false}
@@ -770,7 +821,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                 </div>
 
                 <div className="flex items-center gap-3 text-[11px] text-[var(--color-ink-faint)] flex-wrap">
-                    <span className="font-bold text-[var(--color-ink)]">{data.length} {data.length === 1 ? 'registro' : 'registros'}</span>
+                    <span className="font-bold text-[var(--color-ink)]">{data.length} {data.length === 1 ? 'registro' : 'registros'}{cutSections.length > 0 ? ' cargados' : ''}</span>
                     {municipioInfo && <span>· {municipioInfo.name} ({municipioInfo.provincia})</span>}
 
                     {/* Destacados toggle */}
@@ -836,18 +887,20 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
             </div>
 
             {/* Contenido principal */}
-            {showSections && data.length > 0 ? (
+            {showSections && (data.length > 0 || cutSections.length > 0) ? (
                 /* ── Vista de secciones colapsables ── */
                 <div className="p-4 space-y-3">
                     {SECTION_ORDER.map(tipo => {
                         const rows = groupedData[tipo] || [];
-                        if (rows.length === 0 && tipo !== 'Nuevos Líderes') return null;
+                        const paging = pagingFor(tipo);
+                        if (rows.length === 0 && !paging && tipo !== 'Nuevos Líderes') return null;
                         return (
                             <CollapsibleSection
                                 key={tipo === 'Alcaldía' && openAlcaldia ? `${tipo}-${filters.municipio}` : tipo}
                                 tipo={tipo}
                                 defaultOpen={tipo === 'Alcaldía' && openAlcaldia}
                                 rows={rows}
+                                paging={paging}
                                 onSelectPerson={setSelectedPerson}
                                 partyTotals={
                                     tipo === 'Cámara' ? partyTotals['Cámara de Representantes'] :
@@ -859,7 +912,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                         );
                     })}
                 </div>
-            ) : data.length === 0 ? (
+            ) : data.length === 0 && cutSections.length === 0 ? (
                 /* ── Sin datos ── */
                 <div className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -926,6 +979,12 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                             })}
                         </tbody>
                     </table>
+                    {cutSections.map(label => (
+                        <div key={label}>
+                            <p className="px-4 pt-3 text-[12px] font-bold uppercase text-[var(--color-ink-faint)]">{label}</p>
+                            <SectionLoadMore remaining={remainingOf(label)} shown={0} loading={loadingSection === label} error={failedSection === label} onLoad={() => loadMoreSection(label)} />
+                        </div>
+                    ))}
                 </div>
             )}
 

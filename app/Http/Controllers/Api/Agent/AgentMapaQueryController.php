@@ -43,19 +43,27 @@ class AgentMapaQueryController extends Controller
 
     private const PDF_SECONDS = 120;
 
+    // Rows read per Mapa section to answer a page or a count: past it the totals are SQL counts and paging stops.
+    public const MAX_WINDOW = 2000;
+
     public function __construct(private readonly AgentContactQuota $quota) {}
 
     public function index(AgentListMapaRequest $request): JsonResponse
     {
         $filters = $this->guardedFilters($request);
-        ['rows' => $all, 'multiFicha' => $multiFicha] = $this->mapaRows($request, $filters);
+        $perPage = $request->perPage();
+        $window = $request->page() * $perPage;
+        if (! $request->soloConteo() && $window > self::MAX_WINDOW) {
+            return response()->json(['success' => false,
+                'message' => 'Son demasiados resultados para seguir paginando. Filtra por municipio, tipo, barrio o nombre.'], 422);
+        }
+        ['rows' => $all, 'multiFicha' => $multiFicha, 'total' => $total, 'secciones' => $secciones, 'aproximado' => $aproximado]
+            = $this->mapaRows($request, $filters, $request->soloConteo() ? self::MAX_WINDOW : $this->window($window));
 
-        $total = count($all);
         if ($request->soloConteo()) {
-            return $this->countResponse($request, $filters, $all);
+            return $this->countResponse($request, $filters, $total, $secciones, $aproximado);
         }
 
-        $perPage = $request->perPage();
         $slice = array_values(array_slice($all, ($request->page() - 1) * $perPage, $perPage));
         $resueltos = $this->resolvedLideres($slice, $filters, $multiFicha);
         $autorizados = $this->authorizedOnly($resueltos);
@@ -79,7 +87,8 @@ class AgentMapaQueryController extends Controller
                 'last_page' => max(1, (int) ceil($total / $perPage)),
                 'con_datos' => count($autorizados),
                 'cupo_restante' => $this->quota->remaining($request->user()->id),
-                'secciones' => MapaPoliticoController::sectionCounts($all),
+                'secciones' => $secciones,
+                'total_aproximado' => $aproximado,
             ],
         ]);
     }
@@ -94,8 +103,7 @@ class AgentMapaQueryController extends Controller
             $max = min($max, ExportController::PDF_MAX_ROWS);
         }
 
-        ['rows' => $all, 'municipioInfo' => $municipioInfo, 'multiFicha' => $multiFicha] = $this->mapaRows($request, $filters);
-        $total = count($all);
+        ['rows' => $all, 'municipioInfo' => $municipioInfo, 'multiFicha' => $multiFicha, 'total' => $total] = $this->mapaRows($request, $filters, $this->window($max));
         $rows = array_values(array_slice($all, 0, $max));
         $resueltos = $this->resolvedLideres($rows, $filters, $multiFicha);
         $autorizados = $this->authorizedOnly($resueltos);
@@ -137,6 +145,12 @@ class AgentMapaQueryController extends Controller
         return $response;
     }
 
+    // Rows read per section: never fewer than an export reads, so a list, its count and its export agree on the total.
+    private function window(int $needed): int
+    {
+        return min(self::MAX_WINDOW, max($needed, (int) config('agent.export_max_rows', 1000)));
+    }
+
     // Room for a 500-row PDF, as ExportController::pdf gives it. Only ever raises the limits this process already has.
     private function allowPdfRendering(): void
     {
@@ -170,16 +184,17 @@ class AgentMapaQueryController extends Controller
     }
 
     // How many rows match, without any row: costs no contact quota.
-    private function countResponse(Request $request, array $filters, array $all): JsonResponse
+    private function countResponse(Request $request, array $filters, int $total, array $secciones, bool $aproximado): JsonResponse
     {
-        $this->audit($request, 'agent.mapa.count', $filters, ['total' => count($all)]);
+        $this->audit($request, 'agent.mapa.count', $filters, ['total' => $total]);
 
         return response()->json([
             'success' => true,
             'data' => [],
             'meta' => [
-                'total' => count($all),
-                'secciones' => MapaPoliticoController::sectionCounts($all),
+                'total' => $total,
+                'secciones' => $secciones,
+                'total_aproximado' => $aproximado,
                 'cupo_restante' => $this->quota->remaining($request->user()->id),
             ],
         ]);
@@ -209,9 +224,10 @@ class AgentMapaQueryController extends Controller
         return $filters;
     }
 
-    // MapaPoliticoController::rows() with the agent's filter names and always its full result, plus what the web
-    // cannot express.
-    private function mapaRows(Request $request, array $filters): array
+    // MapaPoliticoController::rows() with the agent's filter names, each person section up to $limit rows, plus what
+    // the web cannot express. A cut section counts in SQL: the total (and the sections) are then approximate, since
+    // the rows not read are neither unified nor filtered by what only PHP knows.
+    private function mapaRows(Request $request, array $filters, int $limit): array
     {
         $web = Request::create('/mapa-politico', 'GET', array_filter([
             'municipio' => $filters['municipio_id'] ?? null,
@@ -228,9 +244,10 @@ class AgentMapaQueryController extends Controller
         ], fn ($v) => $v !== null && $v !== ''));
         $web->setUserResolver(fn () => $request->user());
 
-        $result = app(MapaPoliticoController::class)->rows($web, forExport: true);
+        $result = app(MapaPoliticoController::class)->rows($web, forExport: true, sectionLimit: $limit);
         $rows = $result['data'];
         $multiFicha = array_flip($result['multiFicha']);
+        $read = count($rows);
 
         // The web has no "only the non-featured" filter: destacado=0 would mean no filter there.
         if (($filters['destacado'] ?? null) === false) {
@@ -245,7 +262,14 @@ class AgentMapaQueryController extends Controller
             $rows = array_values(array_intersect_key($rows, $this->resolvedLideres($rows, $filters, $multiFicha)));
         }
 
-        return ['rows' => $rows, 'municipioInfo' => $result['municipioInfo'], 'multiFicha' => $multiFicha];
+        $aproximado = $result['sectionPaging'] !== [];
+
+        return [
+            'rows' => $rows, 'municipioInfo' => $result['municipioInfo'], 'multiFicha' => $multiFicha,
+            'total' => $aproximado ? max(count($rows), $result['approxTotal'] - ($read - count($rows))) : count($rows),
+            'secciones' => MapaPoliticoController::sectionCountsWithPaging($rows, $result['sectionPaging']),
+            'aproximado' => $aproximado,
+        ];
     }
 
     // rows() ignores a municipio or province out of the territory and answers with the whole territory instead.
@@ -262,9 +286,9 @@ class AgentMapaQueryController extends Controller
 
         $provincia = $filters['provincia'] ?? null;
         if ($provincia && ! $municipioId) {
-            $visible = collect(CachedQueries::allMunicipios())->filter(fn ($m) => in_array($m['id'], $allowed, true));
+            $visible = collect(CachedQueries::filterMunicipios($this->campaign()->visibleIds()))->filter(fn ($m) => in_array($m['id'], $allowed, true));
             $inProvincia = $provincia === MapaPoliticoController::AREA_METROPOLITANA
-                ? $visible->whereIn('name', MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS)
+                ? $visible->filter(fn ($m) => CachedQueries::isSantander($m))->whereIn('name', MapaPoliticoController::AREA_METROPOLITANA_MUNICIPIOS)
                 : $visible->where('provincia', $provincia);
             abort_if($inProvincia->isEmpty(), 403, 'Esa provincia está fuera de tu territorio.');
         }
@@ -336,17 +360,16 @@ class AgentMapaQueryController extends Controller
             return collect();
         }
 
-        $names = array_values(array_unique(array_map(fn (array $row) => mb_strtoupper(trim((string) ($row['nombre'] ?? ''))), $rows)));
-        $municipios = array_values(array_unique(array_filter(array_column($rows, 'municipio'))));
-        $geoIds = array_values(array_unique(array_filter(array_column($rows, 'geographic_unit_id'))));
+        // The person key starts with the name: only namesakes can match, never a whole city of fichas.
+        $names = MapaPoliticoController::nameVariants(array_column($rows, 'nombre'));
         $own = $this->campaign()->ownId();
 
-        return Lider::query()
-            ->when($own !== null, fn ($q) => $q->where('campaign_id', $own))
-            ->where(fn ($q) => $q->whereIn(DB::raw('UPPER(TRIM(nombre))'), $names)
-                ->orWhereIn('municipio', $municipios)
-                ->orWhereIn('geographic_unit_id', $geoIds))
-            ->get(self::LIDER_COLUMNS)
+        return collect(array_chunk($names, 1000))
+            ->flatMap(fn (array $chunk) => Lider::query()
+                ->when($own !== null, fn ($q) => $q->where('campaign_id', $own))
+                ->whereIn(DB::raw('LOWER(TRIM(nombre))'), $chunk)
+                ->get(self::LIDER_COLUMNS))
+            ->unique('id')
             ->groupBy(fn (Lider $l) => MapaPoliticoController::personKey($l->only(['nombre', 'municipio', 'geographic_unit_id']), $index));
     }
 

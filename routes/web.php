@@ -92,6 +92,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/asamblea', [LegislativoController::class, 'asamblea'])->name('asamblea');
     Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio')->whereUuid('id');
     Route::get('/consultas', [LegislativoController::class, 'consultas'])->name('consultas');
+    Route::get('/api/geo/municipios-todos', [GeoController::class, 'todosLosMunicipios'])->name('geo.municipios.todos');
     // Lideres are shown by the map and by Votantes: either view lets them in, nothing else does.
     Route::middleware('permission:view.mapa|view.votantes')->group(function () {
         Route::get('/lideres', [LiderController::class, 'index'])->name('lideres');
@@ -103,6 +104,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
     Route::middleware('permission:view.mapa')->group(function () {
         Route::get('/mapa-politico', [MapaPoliticoController::class, 'index'])->name('mapa-politico');
+        Route::get('/mapa-politico/seccion', [MapaPoliticoController::class, 'seccion'])->name('mapa-politico.seccion');
         Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona')->middleware('person.resolve');
         Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados')->middleware('person.resolve');
         Route::get('/api/geo/municipios.geojson', [GeoController::class, 'municipios'])->name('geo.municipios');

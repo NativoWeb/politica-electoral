@@ -25,6 +25,9 @@ class EventoIntegracionController extends Controller
 {
     use ScopesTerritory;
 
+    // Lideres in the territory Excel: an Excel of a whole city would not fit in memory.
+    public const TERRITORIO_EXCEL_MAX_LIDERES = 5000;
+
     public const SOURCES = ['qr' => 'QR', 'operador' => 'Operador', 'excel' => 'Excel', 'ocr' => 'Planilla leída con IA', 'acta' => 'Acta de reunión'];
 
     public const LINK_STATUSES = [
@@ -106,7 +109,7 @@ class EventoIntegracionController extends Controller
         abort_unless($municipio, 404);
         EventoImportController::raiseMemoryLimit();
 
-        $lideres = $this->territory->lideres($municipio->id, $key)->get()->map(fn ($l) => [
+        $lideres = $this->territory->lideres($municipio->id, $key)->limit(self::TERRITORIO_EXCEL_MAX_LIDERES)->get()->map(fn ($l) => [
             'nombre' => $l->nombre, 'cedula' => $l->cedula, 'telefono' => $l->telefono, 'barrio' => $l->barrio,
             'cargo' => $l->cargo, 'partido' => $l->partido, 'campana' => $this->campaignName($l->campaign_id),
         ])->all();

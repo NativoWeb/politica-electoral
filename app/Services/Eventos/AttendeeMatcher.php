@@ -58,8 +58,17 @@ class AttendeeMatcher
         $geoIds = array_values(array_unique(array_merge(...array_column($rows, 'geo'))));
 
         $lideres = DB::table('lideres')->where('campaign_id', $campaignId)->where('is_active', true)
-            ->whereIn('geographic_unit_id', $geoIds)
-            ->get(['id', 'nombre', 'telefono', 'cedula', 'geographic_unit_id'])->keyBy('id');
+            ->whereIn('geographic_unit_id', $geoIds);
+        // PostgreSQL reads only the fichas whose phone (or a contact's) holds one of the rows' numbers, not every
+        // ficha of the municipios (a city has tens of thousands); the PHP match below decides as before.
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            $patterns = '{'.implode(',', array_map(fn ($p) => '"%'.$p.'%"', array_unique(array_merge(...array_column($rows, 'phones'))))).'}';
+            $digits = fn (string $column) => "regexp_replace(coalesce({$column}, ''), '\D', '', 'g') LIKE ANY (?::text[])";
+            $lideres->where(fn ($q) => $q->whereRaw($digits('telefono'), [$patterns])
+                ->orWhereExists(fn ($c) => $c->select(DB::raw(1))->from('lider_contactos as lc')
+                    ->whereColumn('lc.lider_id', 'lideres.id')->whereRaw($digits('lc.valor'), [$patterns])));
+        }
+        $lideres = $lideres->get(['id', 'nombre', 'telefono', 'cedula', 'geographic_unit_id'])->keyBy('id');
         if ($lideres->isEmpty()) {
             return [];
         }

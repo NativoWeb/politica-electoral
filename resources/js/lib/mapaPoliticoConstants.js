@@ -1,6 +1,9 @@
 // Fichas created from event attendees: their own tipo, off by default ("Todos" does not include it).
 export const ASISTENTES_EVENTO = 'asistentes_evento';
 export const ASISTENTES_EVENTO_LABEL = 'Asistentes a eventos';
+// Voters (lideres.tipo = votante): counted by the server, their rows load by pages ("Ver más").
+export const VOTANTES = 'votantes';
+export const VOTANTES_LABEL = 'Votantes';
 
 export const TIPO_OPTIONS = [
     { value: 'todos', label: 'Todos' },
@@ -8,6 +11,7 @@ export const TIPO_OPTIONS = [
     { value: 'concejo', label: 'Concejo' },
     { value: 'lideres', label: 'Líderes' },
     { value: 'nuevos_lideres', label: 'Nuevos Líderes' },
+    { value: VOTANTES, label: VOTANTES_LABEL },
 
     { value: 'senado', label: 'Senado' },
     { value: 'camara', label: 'Cámara' },
@@ -51,6 +55,29 @@ export const CARGOS_DISPONIBLES = [
 export const PARENTESCOS = ['Esposa', 'Esposo', 'Hijo/a', 'Hermano/a', 'Padre', 'Madre', 'Sobrino/a', 'Tío/a', 'Primo/a', 'Cuñado/a', 'Suegro/a', 'Otro'];
 
 export const AREA_METROPOLITANA = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
+
+// The national catalog repeats names (Rionegro, Barbosa, La Paz...): a municipio of another departamento says which.
+export function isSantanderMunicipio(m) {
+    return m?.santander !== false;
+}
+
+export function municipioLabel(m) {
+    if (!m) return '';
+    const dep = m.departamento || (m.provincia !== 'Fuera de Santander' ? m.provincia : null);
+    if (isSantanderMunicipio(m) || !dep || m.name.endsWith(`(${dep})`)) return m.name;
+    return `${m.name} (${dep})`;
+}
+
+// Santander's municipio of the metropolitan area, never a namesake elsewhere.
+export function inAreaMetropolitana(m, names = AREA_METROPOLITANA) {
+    return isSantanderMunicipio(m) && names.includes(m.name);
+}
+
+// The municipio of a ficha whose form only has the name: Santander's first.
+export function municipioByName(municipios, name) {
+    const matches = (municipios || []).filter(m => m.name === name);
+    return matches.find(isSantanderMunicipio) || matches[0] || null;
+}
 
 export const NIVEL_CONFIANZA_OPTIONS = [
     { value: '', label: 'Sin asignar' },
