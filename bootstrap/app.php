@@ -28,8 +28,10 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -82,6 +84,27 @@ return Application::configure(basePath: dirname(__DIR__))
             ]);
 
             return false;
+        });
+
+        // An expired form (login left open, or a login in another tab) gets a blank "419 Page expired" page:
+        // go back to the form with a message instead, never to a page that only says 419.
+        // Laravel turns the TokenMismatchException into an HttpException 419 before calling render callbacks.
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if (! $e->getPrevious() instanceof TokenMismatchException) {
+                return null;
+            }
+            // Logging out with an expired form: the user wanted out anyway.
+            if ($request->routeIs('logout')) {
+                return redirect('/login', 303);
+            }
+            // Only the login and password forms: the other pages already turn a 419 into their own message.
+            if (! $request->routeIs('login.attempt', 'password.email', 'password.store', 'password.force-change.store')) {
+                return null;
+            }
+
+            return redirect()->back(303)
+                ->withInput($request->except('password', 'password_confirmation', 'current_password', '_token'))
+                ->withErrors(['email' => 'Su sesión expiró. Vuelva a intentarlo.']);
         });
 
         // Laravel's throttle text is English ("Too Many Attempts."); pages use errors/429.blade.php.
