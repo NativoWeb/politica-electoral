@@ -860,6 +860,10 @@ class WhatsAppController extends Controller
             ->whereNotNull('fecha_nacimiento')
             ->whereMonth('fecha_nacimiento', $month)
             ->whereDay('fecha_nacimiento', $day)
+            // Only active adults: inactive fichas include minors and deceased people (Electo import).
+            ->where('lideres.is_active', true)
+            ->where(fn ($q) => $q->where('lideres.fallecido', false)->orWhereNull('lideres.fallecido'))
+            ->whereDate('fecha_nacimiento', '<=', $today->copy()->subYears(18)->toDateString())
             ->where(function ($q) {
                 $q->where(function ($a) {
                     $a->whereNotNull('telefono')
@@ -1376,9 +1380,12 @@ class WhatsAppController extends Controller
             ->orderByDesc('c.principal')
             ->limit(1);
 
+        // Inactive fichas (minors, deceased, without municipio) never receive messages.
         $query = DB::table('lideres as l')
             ->leftJoin('geographic_units as g', 'g.id', '=', 'l.geographic_unit_id')
             ->where('l.campaign_id', $this->ownCampaignId())
+            ->where('l.is_active', true)
+            ->where(fn ($q) => $q->where('l.fallecido', false)->orWhereNull('l.fallecido'))
             ->select([
                 'l.id', 'l.nombre', 'l.telefono', 'l.fecha_nacimiento', 'l.municipio as lider_municipio',
                 'g.canonical_name as geo_municipio', 'l.partido', 'l.cargo', 'l.provincia', 'l.tipo', 'l.profesion',

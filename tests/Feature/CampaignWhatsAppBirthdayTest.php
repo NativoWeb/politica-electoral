@@ -45,6 +45,8 @@ class CampaignWhatsAppBirthdayTest extends TestCase
             $t->string('nombre');
             $t->string('telefono')->nullable();
             $t->date('fecha_nacimiento')->nullable();
+            $t->boolean('is_active')->default(true);
+            $t->boolean('fallecido')->default(false);
             $t->timestamps();
         });
         Schema::create('lider_contactos', function (Blueprint $t) {
