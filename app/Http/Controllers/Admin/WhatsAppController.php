@@ -1386,6 +1386,9 @@ class WhatsAppController extends Controller
             ->where('l.campaign_id', $this->ownCampaignId())
             ->where('l.is_active', true)
             ->where(fn ($q) => $q->where('l.fallecido', false)->orWhereNull('l.fallecido'))
+            // Nor minors (Ley 1581 art. 7): an active ficha created by hand may still be one.
+            ->where(fn ($q) => $q->whereNull('l.fecha_nacimiento')
+                ->orWhereDate('l.fecha_nacimiento', '<=', Carbon::now('America/Bogota')->subYears(18)->toDateString()))
             ->select([
                 'l.id', 'l.nombre', 'l.telefono', 'l.fecha_nacimiento', 'l.municipio as lider_municipio',
                 'g.canonical_name as geo_municipio', 'l.partido', 'l.cargo', 'l.provincia', 'l.tipo', 'l.profesion',

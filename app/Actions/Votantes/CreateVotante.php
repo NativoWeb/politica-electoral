@@ -44,7 +44,8 @@ class CreateVotante
                 'provincia' => $mun->provincia ?? '',
                 'geographic_unit_id' => $data['municipio_id'],
                 'cargo' => $data['cargo'] ?? '',
-                'tipo' => $data['tipo'] ?? 'directorio',
+                // "Nuevo Votante" (screen and agent) creates a voter, not a lider of the directorio.
+                'tipo' => $data['tipo'] ?? Lider::TIPO_VOTANTE,
                 'telefono' => $data['telefono'] ?? null,
                 'cedula' => $data['cedula'] ?? null,
                 'email' => $data['email'] ?? null,

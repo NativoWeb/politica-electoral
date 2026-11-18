@@ -12,6 +12,26 @@ const NIVEL_OPTIONS = [
     { value: 'no_responde', label: 'No responde' },
 ];
 
+// Electo import (lideres.migracion_flags).
+const POR_COMPLETAR_OPTIONS = [
+    { value: '', label: 'Sin filtro' },
+    { value: 'cualquiera', label: 'Cualquier dato' },
+    { value: 'barrio', label: 'Barrio' },
+    { value: 'nivel_confianza', label: 'Nivel de confianza' },
+    { value: 'convenio', label: 'Convenio' },
+    { value: 'tipo_hoja_vida', label: 'Tipo de hoja de vida' },
+    { value: 'municipio', label: 'Municipio' },
+    { value: 'fecha_nacimiento', label: 'Fecha de nacimiento' },
+];
+
+const IMPORTADOS_INACTIVOS_OPTIONS = [
+    { value: '', label: 'Sin filtro' },
+    { value: 'todos', label: 'Todos' },
+    { value: 'menor', label: 'Menores de edad' },
+    { value: 'fallecido', label: 'Fallecidos' },
+    { value: 'sin_municipio', label: 'Sin municipio' },
+];
+
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 
 // The active event filter as a chip, visible even with the (mobile) filters panel closed.
@@ -55,6 +75,11 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     const [campana, setCampana] = useState(filters.campana || '');
     const [evento, setEvento] = useState(filters.evento || '');
     const [asistentesEventos, setAsistentesEventos] = useState(filters.asistentes_eventos === '1' || filters.asistentes_eventos === true);
+    const [porCompletar, setPorCompletar] = useState(filters.por_completar || '');
+    const [diferencias, setDiferencias] = useState(filters.diferencias === '1' || filters.diferencias === true);
+    const [importadosInactivos, setImportadosInactivos] = useState(filters.importados_inactivos || '');
+    const porCompletarId = `${uid}-por-completar`;
+    const importadosId = `${uid}-importados-inactivos`;
     const campaign = useCampaign();
     const [munSearch, setMunSearch] = useState('');
     const [munOpen, setMunOpen] = useState(false);
@@ -93,6 +118,9 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
             ...(militante ? { militante: '1' } : {}),
             ...(canViewEventos && evento ? { evento } : {}),
             ...(canViewEventos && !evento && asistentesEventos ? { asistentes_eventos: '1' } : {}),
+            ...(porCompletar ? { por_completar: porCompletar } : {}),
+            ...(diferencias ? { diferencias: '1' } : {}),
+            ...(importadosInactivos ? { importados_inactivos: importadosInactivos } : {}),
             ...overrides,
         };
         onApply(vals);
@@ -110,6 +138,9 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
         setCampana('');
         setEvento('');
         setAsistentesEventos(false);
+        setPorCompletar('');
+        setDiferencias(false);
+        setImportadosInactivos('');
         onClear();
     }
 
@@ -247,8 +278,26 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
                 </div>
             )}
 
+            {/* Electo import */}
+            <div>
+                <label htmlFor={porCompletarId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Datos por completar</label>
+                <select id={porCompletarId} value={porCompletar} onChange={e => setPorCompletar(e.target.value)} className={inputCls}>
+                    {POR_COMPLETAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+            </div>
+            <div>
+                <label htmlFor={importadosId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Inactivos importados</label>
+                <select id={importadosId} value={importadosInactivos} onChange={e => setImportadosInactivos(e.target.value)} className={inputCls}>
+                    {IMPORTADOS_INACTIVOS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+            </div>
+
             {/* Checkboxes */}
             <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={diferencias} onChange={e => setDiferencias(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
+                    <span className="text-[13px] text-[var(--color-ink)]">Diferencias con Electo</span>
+                </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={verificado} onChange={e => setVerificado(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
                     <span className="text-[13px] text-[var(--color-ink)]">Verificado</span>

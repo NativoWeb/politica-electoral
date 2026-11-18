@@ -13,6 +13,7 @@ import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip'
 import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
 import ComunaSelector from '@/Components/ComunaSelector';
+import MigracionAviso from '@/Components/MigracionAviso';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
@@ -663,6 +664,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     </div>
 
                     {campaignReadOnly && <ReadOnlyCampaignNotice campaignName={campaignName} className="mx-4 lg:mx-8 mt-3" />}
+                    <MigracionAviso migracion={data?.migracion} className="mx-4 lg:mx-8 mt-3" />
 
                     {/* Status message */}
                     {message && (() => {

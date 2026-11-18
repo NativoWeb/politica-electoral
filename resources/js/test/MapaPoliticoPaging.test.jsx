@@ -86,6 +86,25 @@ describe('Mapa Político: secciones por páginas', () => {
         expect(screen.queryByText(/de 3 registros/)).not.toBeInTheDocument();
     });
 
+    it('la siguiente página empieza en next_offset y el botón se va con has_more=false', async () => {
+        // The server read 3 rows but returned 2 (one was already merged into a candidate's row).
+        globalThis.fetch
+            .mockReturnValueOnce(json({ success: true, has_more: true, next_offset: 4, data: [lider('l2', 'Lider Dos'), lider('l3', 'Lider Tres')] }))
+            .mockReturnValueOnce(json({ success: true, has_more: false, next_offset: 6, data: [lider('l3', 'Lider Tres'), lider('l5', 'Lider Cinco')] }));
+        renderPage({ data: [lider('l0', 'Lider Cero')], sectionPaging: { 'Líderes': { key: 'lideres', loaded: 1, total: 50 } } });
+
+        fireEvent.click(screen.getByRole('heading', { name: 'Líderes' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Ver más' }));
+        await waitFor(() => expect(screen.getByText('Lider Tres')).toBeInTheDocument());
+        fireEvent.click(screen.getByRole('button', { name: 'Ver más' }));
+        await waitFor(() => expect(screen.getByText('Lider Cinco')).toBeInTheDocument());
+
+        expect(globalThis.fetch.mock.calls[0][0]).toContain('offset=1');
+        expect(globalThis.fetch.mock.calls[1][0]).toContain('offset=4');
+        expect(screen.getAllByText('Lider Tres')).toHaveLength(1);
+        expect(screen.queryByRole('button', { name: 'Ver más' })).not.toBeInTheDocument();
+    });
+
     it('si la página falla lo dice y deja reintentar', async () => {
         globalThis.fetch.mockReturnValueOnce(json({ success: false, message: 'error' }, 500));
         renderPage({ data: [lider('l1', 'Ana Líder')], sectionPaging: { 'Líderes': { key: 'lideres', loaded: 1, total: 5 } } });

@@ -13,6 +13,7 @@ use App\Models\LiderInfoPolitica;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
 use App\Services\Geo\ComunaCatalog;
+use App\Support\MigracionFlags;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -52,8 +53,14 @@ class VotanteController extends Controller
         }
         $this->applyEventFilters($query, $request);
 
+        // Electo import: pending data, differences and the fichas imported inactive (these replace the estado filter).
+        $importadosInactivos = MigracionFlags::applyFilters($query, $request->only(['por_completar', 'diferencias', 'importados_inactivos']));
+
         // Estado filter (activos by default)
         $estado = $request->input('estado', 'activos');
+        if ($importadosInactivos) {
+            $estado = 'inactivos';
+        }
         if ($estado === 'activos' || $estado === null) {
             $query->where('is_active', true);
         } elseif ($estado === 'inactivos') {
@@ -108,7 +115,7 @@ class VotanteController extends Controller
     {
         $campana = $this->campaign()->filterId($request->input('campana'));
         $user = $request->user();
-        $paginated = $this->listing($request)->orderBy('nombre')->paginate(20)->withQueryString()
+        $paginated = $this->listing($request)->orderBy('nombre')->orderBy('lideres.id')->paginate(20)->withQueryString()
             ->through(fn (Lider $l) => $l->setAttribute('tipo', EventScope::visibleTipo($l->tipo, $user)));
 
         // Counters count the same rows as the listing: every active filter, territory and campaign.
@@ -144,7 +151,8 @@ class VotanteController extends Controller
             ],
             'municipios' => $municipios,
             'filters' => array_merge(
-                $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado']),
+                $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado',
+                    'por_completar', 'diferencias', 'importados_inactivos']),
                 $campana ? ['campana' => $campana] : [],
                 $evento ? ['evento' => $evento] : [],
                 $anyEvent ? ['asistentes_eventos' => '1'] : [],
@@ -224,6 +232,7 @@ class VotanteController extends Controller
         return response()->json([
             'success' => true,
             'data' => array_merge($lider->toArray(), [
+                'migracion' => MigracionFlags::forFicha($lider),
                 'tipo' => EventScope::visibleTipo($lider->tipo, request()->user()),
                 'nexos' => $nexos,
                 'referidos' => $referidos,

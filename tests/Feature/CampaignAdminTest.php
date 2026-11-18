@@ -123,6 +123,8 @@ class CampaignAdminTest extends TestCase
             }
             $t->date('fecha_nacimiento')->nullable();
             $t->boolean('is_active')->default(true);
+            // The WhatsApp lists leave deceased people out (hotfix 3635c72).
+            $t->boolean('fallecido')->default(false);
             $t->timestamps();
         });
         Schema::create('lider_contactos', function (Blueprint $t) {

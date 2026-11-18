@@ -8,6 +8,7 @@ use App\Models\Lider;
 use App\Services\Import\TextNormalizer;
 use App\Support\Cedula;
 use App\Support\GeoTerritory;
+use App\Support\MigracionFlags;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +112,7 @@ class UpdateVotante
         } catch (UniqueConstraintViolationException) {
             throw new BusinessRuleException("Ya existe un líder con cédula {$cedula}.");
         }
+        MigracionFlags::clearCompleted($lider->id);
 
         return $lider;
     }

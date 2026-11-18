@@ -11,6 +11,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\TestCase;
@@ -162,8 +163,11 @@ class MapaPoliticoPagingPostgresTest extends TestCase
         $candidata = collect($this->page()['data'])->firstWhere('nombre', 'Zzpag Zz Candidata 0000');
         $this->assertSame('Alcaldía, Líderes', $candidata['tipo_registro']);
 
-        $next = $this->seccion('lideres', 200)->assertOk()->json('data');
-        $this->assertSame([], $next);
+        $next = $this->seccion('lideres', 200)->assertOk();
+        $this->assertSame([], $next->json('data'));
+        // The next page starts after the row read and left out, not at the same offset again.
+        $this->assertSame(201, $next->json('next_offset'));
+        $this->assertFalse($next->json('has_more'));
         // Without Alcaldía among the tipos the page has no candidate row: the ficha is listed.
         $this->assertSame(['Zzpag Zz Candidata 0000'], array_column($this->seccion('lideres', 200, '&tipo=lideres')->json('data'), 'nombre'));
     }
@@ -218,6 +222,91 @@ class MapaPoliticoPagingPostgresTest extends TestCase
 
         $this->actingAs($this->user)->putJson("/mapa-politico/persona/{$lider}", ['municipio_id' => (string) Str::uuid()])->assertStatus(422);
         $this->assertSame($this->mun, MapaPoliticoController::municipioIndex()[mb_strtolower(Str::ascii(self::MUNICIPIO))]);
+    }
+
+    public function test_a_municipio_that_is_not_an_id_is_no_filter(): void
+    {
+        $this->actingAs($this->user)->get('/mapa-politico?municipio=no-es-un-uuid')->assertOk();
+        $this->actingAs($this->user)->getJson('/mapa-politico/seccion?municipio=123&seccion=lideres&offset=0')->assertOk();
+    }
+
+    public function test_nuevo_votante_creates_a_voter(): void
+    {
+        $id = $this->actingAs($this->user)->postJson('/votantes', ['nombre' => 'Zzpag Nuevo Votante', 'municipio_id' => $this->mun])
+            ->assertCreated()->json('id');
+
+        $this->assertSame(Lider::TIPO_VOTANTE, DB::table('lideres')->where('id', $id)->value('tipo'));
+    }
+
+    public function test_votantes_pages_never_repeat_a_namesake(): void
+    {
+        $this->fichas(25, Lider::TIPO_VOTANTE, 'Zzpag Mismo');
+        DB::table('lideres')->where('nombre', 'like', 'Zzpag Mismo%')->update(['nombre' => 'Zzpag Mismo Nombre']);
+        $municipio = rawurlencode(self::MUNICIPIO);
+
+        $ids = [];
+        foreach ([1, 2] as $page) {
+            $props = $this->actingAs($this->user)->get("/votantes?municipio={$municipio}&page={$page}")->assertOk()->viewData('page')['props'];
+            $ids = [...$ids, ...array_column($props['votantes']['data'], 'id')];
+        }
+
+        $this->assertCount(25, $ids);
+        $this->assertCount(25, array_unique($ids));
+    }
+
+    public function test_the_excel_and_the_pdf_of_the_mapa_give_the_same_total(): void
+    {
+        // Fichas of the Directorio are in two sections and merge into one row while reading: how many merge depends on
+        // how many rows are read, so the PDF reading fewer than the Excel gave another total (QA BUG-05).
+        $this->fichas(MapaPoliticoController::EXPORT_MAX_ROWS - 550);
+        $this->fichas(600, 'directorio', 'Zzpag Dir', ['cargo' => 'Directorio Municipal']);
+        $query = "source=mapa-politico&municipio={$this->mun}&tipo=lideres,directorio&columns=nombre";
+
+        $pdfTotal = null;
+        View::composer('exports.table', function ($view) use (&$pdfTotal) {
+            $pdfTotal = $view->getData()['totalCount'] ?? null;
+        });
+        $this->actingAs($this->user)->get("/exportar/pdf?{$query}")->assertOk();
+
+        $xlsx = tempnam(sys_get_temp_dir(), 'xlsx');
+        file_put_contents($xlsx, $this->actingAs($this->user)->get("/exportar/excel?{$query}")->streamedContent());
+        $zip = new \ZipArchive;
+        $zip->open($xlsx);
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+        unlink($xlsx);
+
+        $this->assertSame(MapaPoliticoController::EXPORT_MAX_ROWS + 50, $pdfTotal);
+        $this->assertStringContainsString('de 10.050 registros', $sheet);
+    }
+
+    public function test_electo_filters_the_notice_and_completing_a_field_clears_its_mark(): void
+    {
+        [$pendiente, $diferente, $menor] = $this->fichas(3, Lider::TIPO_VOTANTE, 'Zzpag Electo');
+        DB::table('lideres')->where('id', $pendiente)->update(['migracion_flags' => json_encode(['por_completar' => ['barrio', 'convenio'], 'electo_codigos' => ['barrio' => '77']])]);
+        DB::table('lideres')->where('id', $diferente)->update(['telefono' => '3001112222', 'migracion_flags' => json_encode(['contradicciones' => ['telefono' => '3109998888']])]);
+        DB::table('lideres')->where('id', $menor)->update(['is_active' => false, 'migracion_flags' => json_encode(['menor' => true])]);
+        $municipio = rawurlencode(self::MUNICIPIO);
+        $listed = fn (string $q) => array_column($this->actingAs($this->user)->get("/votantes?municipio={$municipio}{$q}")
+            ->assertOk()->viewData('page')['props']['votantes']['data'], 'id');
+
+        $this->assertSame([$pendiente], $listed('&por_completar=barrio'));
+        $this->assertSame([$pendiente], $listed('&por_completar=cualquiera'));
+        $this->assertSame([$diferente], $listed('&diferencias=1'));
+        $this->assertSame([$menor], $listed('&importados_inactivos=menor'));
+        $this->assertSame([$menor], $listed('&importados_inactivos=todos'));
+
+        $ficha = $this->actingAs($this->user)->getJson("/votantes/{$pendiente}")->assertOk()->json('data.migracion');
+        $this->assertSame(['barrio', 'convenio'], array_column($ficha['por_completar'], 'campo'));
+        $this->assertSame('77', $ficha['por_completar'][0]['codigo_electo']);
+        $diff = $this->actingAs($this->user)->getJson("/mapa-politico/persona/{$diferente}")->assertOk()->json('migracion.diferencias');
+        $this->assertSame([['campo' => 'telefono', 'label' => 'Telefono', 'electo' => '3109998888', 'actual' => '3001112222']], $diff);
+
+        $this->actingAs($this->user)->putJson("/mapa-politico/persona/{$pendiente}", ['barrio' => 'Centro'])->assertOk();
+        $flags = json_decode(DB::table('lideres')->where('id', $pendiente)->value('migracion_flags'), true);
+        $this->assertSame(['convenio'], $flags['por_completar']);
+        $this->assertSame(['barrio' => '77'], $flags['electo_codigos']);
+        $this->assertSame([], $listed('&por_completar=barrio'));
     }
 
     public function test_seccion_needs_a_session(): void

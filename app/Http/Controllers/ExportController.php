@@ -104,8 +104,10 @@ class ExportController extends Controller
                 ->download($report['filename'].'.pdf');
         }
 
-        // Votantes and the Mapa read one row past the PDF cap instead of the whole listing, and count the total apart.
-        [$data, $mapaTotal] = $this->getDataWithTotal($request, self::PDF_MAX_ROWS + 1);
+        // Votantes reads one row past the PDF cap and counts the total apart. The Mapa reads as its Excel does, so both
+        // files give the same total for the same filters (its total depends on the rows merged while reading).
+        $isVotantes = $request->input('source') === 'votantes';
+        [$data, $mapaTotal] = $this->getDataWithTotal($request, $isVotantes ? self::PDF_MAX_ROWS + 1 : null);
         $title = $request->input('title', 'Exportacion');
         $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
 

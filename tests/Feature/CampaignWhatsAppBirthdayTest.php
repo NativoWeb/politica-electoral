@@ -87,13 +87,28 @@ class CampaignWhatsAppBirthdayTest extends TestCase
         DB::table('whatsapp_templates')->insert(['name' => 'Cumpleaños', 'meta_name' => 'oscarfc', 'is_active' => true, 'language' => 'es']);
     }
 
-    private function cumpleanero(string $campaignId, string $nombre): void
+    private function cumpleanero(string $campaignId, string $nombre, int $years = 40, array $extra = []): void
     {
         $today = Carbon::now('America/Bogota');
         DB::table('lideres')->insert([
             'id' => (string) Str::uuid(), 'campaign_id' => $campaignId, 'nombre' => $nombre,
-            'telefono' => '3001112233', 'fecha_nacimiento' => $today->copy()->subYears(40)->toDateString(),
+            'telefono' => '3001112233', 'fecha_nacimiento' => $today->copy()->subYears($years)->toDateString(), ...$extra,
         ]);
+    }
+
+    // Electo brought minors, deceased people and fichas without municipio: imported inactive, never messaged.
+    public function test_birthdays_leave_out_minors_deceased_and_inactive_fichas(): void
+    {
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple Adulto');
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple Dieciocho', 18);
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple Menor', 17);
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple Fallecido', 60, ['fallecido' => true]);
+        $this->cumpleanero(Campaign::DEFAULT_ID, 'Cumple Inactivo', 50, ['is_active' => false]);
+
+        $names = collect($this->getJson('/api/whatsapp/birthdays/today', ['X-Birthday-Token' => self::TOKEN])
+            ->assertOk()->json('recipients'))->pluck('name')->sort()->values()->all();
+
+        $this->assertSame(['Cumple Adulto', 'Cumple Dieciocho'], $names);
     }
 
     public function test_birthdays_only_include_campaigns_with_whatsapp_enabled(): void

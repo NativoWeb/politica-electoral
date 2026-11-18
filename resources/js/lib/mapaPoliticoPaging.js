@@ -4,15 +4,23 @@
 
 const splitTipos = (tipos) => (tipos || '').split(',').map(t => t.trim()).filter(Boolean);
 
-// Rows still on the server for a section, after the extra pages already fetched.
-export function remainingInSection(paging, extraRows = []) {
-    if (!paging) return 0;
-    return Math.max(0, (paging.total || 0) - (paging.loaded || 0) - extraRows.length);
+// state: { offset, hasMore } after the extra pages already fetched (offset = rows the server READ, which may be more
+// than it returned: it leaves out fichas already shown merged into a candidate's row).
+// Rows still on the server for a section.
+export function remainingInSection(paging, state = null) {
+    if (!paging || state?.hasMore === false) return 0;
+    return Math.max(0, (paging.total || 0) - nextOffset(paging, state));
 }
 
 // The offset of the next page of a section.
-export function nextOffset(paging, extraRows = []) {
-    return (paging?.loaded || 0) + extraRows.length;
+export function nextOffset(paging, state = null) {
+    return state?.offset ?? (paging?.loaded || 0);
+}
+
+// The rows of a new page that the section does not have yet.
+export function appendNew(existing = [], incoming = []) {
+    const seen = new Set(existing.map(r => r.id));
+    return [...existing, ...incoming.filter(r => !r.id || !seen.has(r.id))];
 }
 
 // Server rows plus the extra pages: a ficha already listed (e.g. in Líderes and Directorio) gets the new section's

@@ -1,16 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { mergeSectionRows, nextOffset, remainingInSection, sectionQuery } from './mapaPoliticoPaging';
+import { appendNew, mergeSectionRows, nextOffset, remainingInSection, sectionQuery } from './mapaPoliticoPaging';
 
 describe('mapaPoliticoPaging', () => {
     const paging = { key: 'votantes', loaded: 200, total: 450 };
 
-    it('cuenta lo que falta y el siguiente offset con las páginas ya traídas', () => {
-        expect(remainingInSection(paging, [])).toBe(250);
-        expect(remainingInSection(paging, new Array(200).fill({}))).toBe(50);
-        expect(remainingInSection(paging, new Array(300).fill({}))).toBe(0);
-        expect(remainingInSection(undefined, [])).toBe(0);
-        expect(nextOffset(paging, new Array(200).fill({}))).toBe(400);
-        expect(nextOffset({ key: 'votantes', loaded: 0, total: 3 })).toBe(0);
+    it('cuenta lo que falta por filas LEÍDAS y para cuando el servidor dice que no hay más', () => {
+        expect(remainingInSection(paging, null)).toBe(250);
+        expect(remainingInSection(paging, { offset: 400, hasMore: true })).toBe(50);
+        expect(remainingInSection(paging, { offset: 400, hasMore: false })).toBe(0);
+        expect(remainingInSection(undefined, null)).toBe(0);
+        expect(nextOffset(paging, null)).toBe(200);
+        expect(nextOffset(paging, { offset: 400, hasMore: true })).toBe(400);
+    });
+
+    it('no agrega dos veces la misma ficha a una sección', () => {
+        const rows = appendNew([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }, { id: 'c' }]);
+        expect(rows.map(r => r.id)).toEqual(['a', 'b', 'c']);
     });
 
     it('sin páginas extra devuelve las filas del servidor tal cual', () => {

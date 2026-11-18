@@ -8,6 +8,7 @@ import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresari
 import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
 import ComunaSelector from '@/Components/ComunaSelector';
+import MigracionAviso from '@/Components/MigracionAviso';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
@@ -332,6 +333,7 @@ export default function VotanteDetail({
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto px-4">
                 {campaignReadOnly && <ReadOnlyCampaignNotice campaignName={campaignName} className="mt-3" />}
+                {!creating && <MigracionAviso migracion={data?.migracion} className="mt-3" />}
                 {!creating && !editing && !campaignReadOnly && authUser?.canWrite && (
                     <div className="pt-3">
                         <button type="button" onClick={() => setShowUnificar(true)} className="px-3 py-1.5 text-[12px] font-bold text-[var(--color-primary)] border border-[var(--color-primary)] rounded-lg hover:bg-blue-50 transition-colors">

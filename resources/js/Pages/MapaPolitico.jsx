@@ -5,7 +5,7 @@ import { downloadMunicipio, downloadProvincia, isDownloaded, getAllOfflineData }
 import { fmt, partyLogo, partyColor, partyKey } from '@/lib/electoral';
 import { apiFetch } from '@/lib/api';
 import { CARGOS_DISPONIBLES, AREA_METROPOLITANA, ASISTENTES_EVENTO_LABEL, VOTANTES_LABEL, coversAllTipos, tipoOptionsFor, inAreaMetropolitana, municipioLabel } from '@/lib/mapaPoliticoConstants';
-import { mergeSectionRows, nextOffset, remainingInSection, sectionQuery } from '@/lib/mapaPoliticoPaging';
+import { appendNew, mergeSectionRows, nextOffset, remainingInSection, sectionQuery } from '@/lib/mapaPoliticoPaging';
 import SectionLoadMore from '@/Components/SectionLoadMore';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 import PersonaPanel from '@/Components/PersonaPanel';
@@ -355,9 +355,15 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const campaign = useCampaign();
     // Extra pages of the sections the server cut, by section label; a new server response starts over.
     const [extraRows, setExtraRows] = useState({});
+    // Per section label: { offset, hasMore } of the pages fetched.
+    const [pageState, setPageState] = useState({});
     const [loadingSection, setLoadingSection] = useState(null);
     const [failedSection, setFailedSection] = useState(null);
-    useEffect(() => { setExtraRows(prev => (Object.keys(prev).length ? {} : prev)); setFailedSection(null); }, [serverData]);
+    useEffect(() => {
+        setExtraRows(prev => (Object.keys(prev).length ? {} : prev));
+        setPageState(prev => (Object.keys(prev).length ? {} : prev));
+        setFailedSection(null);
+    }, [serverData]);
     const onlineData = useMemo(() => mergeSectionRows(serverData, extraRows), [serverData, extraRows]);
 
     // Load IndexedDB data when offline (replaces stale SW cache data)
@@ -440,7 +446,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         return result;
     }, [isOnline, isOfflineFiltering, offlineDataLoaded, onlineData, allData, localFilters]);
 
-    const remainingOf = (label) => (isOnline ? remainingInSection(sectionPaging[label], extraRows[label]) : 0);
+    const remainingOf = (label) => (isOnline ? remainingInSection(sectionPaging[label], pageState[label]) : 0);
     const cutSections = Object.keys(sectionPaging).filter(label => remainingOf(label) > 0);
 
     const loadMoreSection = useCallback(async (label) => {
@@ -449,16 +455,18 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
         setLoadingSection(label);
         setFailedSection(null);
         try {
-            const res = await apiFetch(`/mapa-politico/seccion?${sectionQuery(serverFilters, paging.key, nextOffset(paging, extraRows[label]))}`);
+            const offset = nextOffset(paging, pageState[label]);
+            const res = await apiFetch(`/mapa-politico/seccion?${sectionQuery(serverFilters, paging.key, offset)}`);
             const json = await res.json();
             if (!res.ok || !json.success) throw new Error(json.message || 'error');
-            setExtraRows(prev => ({ ...prev, [label]: [...(prev[label] || []), ...json.data] }));
+            setExtraRows(prev => ({ ...prev, [label]: appendNew(prev[label], json.data) }));
+            setPageState(prev => ({ ...prev, [label]: { offset: json.next_offset ?? offset + json.data.length, hasMore: json.has_more !== false } }));
         } catch {
             setFailedSection(label);
         } finally {
             setLoadingSection(null);
         }
-    }, [sectionPaging, serverFilters, extraRows, loadingSection]);
+    }, [sectionPaging, serverFilters, pageState, loadingSection]);
 
     const pagingFor = (label) => (sectionPaging[label] && isOnline ? {
         total: sectionPaging[label].total,

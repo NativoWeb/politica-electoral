@@ -117,6 +117,28 @@ class WhatsAppRecipientsPostgresTest extends TestCase
         ])->assertOk()->assertJsonPath('recipients_count', 119);
     }
 
+    public function test_minors_deceased_and_inactive_are_not_sent_even_when_chosen_by_hand(): void
+    {
+        config(['services.n8n.whatsapp_webhook' => 'https://n8n.test/webhook']);
+        Http::fake(['*' => Http::response(['ok' => true])]);
+        $ficha = fn (string $nombre, array $extra) => tap((string) Str::uuid(), fn ($id) => DB::table('lideres')->insert([
+            'id' => $id, 'campaign_id' => Campaign::DEFAULT_ID, 'geographic_unit_id' => $this->mun, 'nombre' => $nombre,
+            'municipio' => self::MUNICIPIO, 'tipo' => 'votante', 'telefono' => '3011112233', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(), ...$extra,
+        ]));
+        $adulto = $ficha('Zzwa Adulto', ['fecha_nacimiento' => now()->subYears(30)->toDateString()]);
+        $menor = $ficha('Zzwa Menor', ['fecha_nacimiento' => now()->subYears(17)->toDateString()]);
+        $fallecido = $ficha('Zzwa Fallecido', ['fallecido' => true]);
+        $inactivo = $ficha('Zzwa Inactivo', ['is_active' => false]);
+
+        $this->actingAs($this->user)->postJson('/admin/whatsapp/prepare', [
+            'template_id' => $this->templateId, 'source' => 'lideres', 'contact_ids' => [$adulto, $menor, $fallecido, $inactivo],
+        ])->assertOk()->assertJsonPath('recipients_count', 1);
+
+        $sendId = DB::table('whatsapp_sends')->where('template_id', $this->templateId)->value('id');
+        $this->assertSame(['Zzwa Adulto'], DB::table('whatsapp_send_recipients')->where('whatsapp_send_id', $sendId)->pluck('name')->all());
+    }
+
     public function test_select_all_under_the_cap_creates_every_recipient(): void
     {
         config(['services.n8n.whatsapp_max_recipients' => 500, 'services.n8n.whatsapp_webhook' => 'https://n8n.test/webhook']);

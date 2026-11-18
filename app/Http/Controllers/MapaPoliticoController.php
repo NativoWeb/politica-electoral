@@ -21,6 +21,7 @@ use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
 use App\Support\Cedula;
 use App\Support\GeoTerritory;
+use App\Support\MigracionFlags;
 use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -396,6 +397,10 @@ class MapaPoliticoController extends Controller
     public function rows(Request $request, bool $forExport = false, ?int $sectionLimit = null, ?array $page = null): array
     {
         $munId = $request->input('municipio');
+        // A municipio that is not an id (old link, typo) is no filter, not a database error.
+        if (! is_string($munId) || ! Str::isUuid($munId)) {
+            $munId = null;
+        }
         $tipos = self::effectiveTipos($request);
         $tipoRaw = implode(',', $tipos);
         $tipo = $tipoRaw; // keep for backward compat
@@ -484,6 +489,9 @@ class MapaPoliticoController extends Controller
 
             $hasMore = count($rows) > self::PAGE_SIZE;
             $rows = array_slice($rows, 0, self::PAGE_SIZE);
+            // The next page starts after every row READ, also the ones left out below: counting only the returned
+            // ones would read some fichas twice.
+            $nextOffset = $page['offset'] + count($rows);
             // A ficha already shown merged into its Alcaldía/Concejo row on the page is not listed again.
             if ($electoral && $rows !== []) {
                 $merged = $this->candidateKeys($rows, $tipoMatch, $cargos, $noGeoFilter, $searchEscaped);
@@ -493,7 +501,7 @@ class MapaPoliticoController extends Controller
                     || ! isset($merged[self::personKey($row, $index)])));
             }
 
-            return ['data' => $rows, 'hasMore' => $hasMore, 'available' => $query !== null];
+            return ['data' => $rows, 'hasMore' => $hasMore, 'nextOffset' => $nextOffset, 'available' => $query !== null];
         }
 
         // === ALCALDIA ===
@@ -893,7 +901,7 @@ class MapaPoliticoController extends Controller
             return response()->json(['success' => false, 'message' => 'Esa sección no está en los filtros elegidos.'], 422);
         }
 
-        return response()->json(['success' => true, 'data' => $result['data'], 'has_more' => $result['hasMore']]);
+        return response()->json(['success' => true, 'data' => $result['data'], 'has_more' => $result['hasMore'], 'next_offset' => $result['nextOffset']]);
     }
 
     // One person section of the listing (lideres table) with every filter of the page, or null when the section is
@@ -1291,6 +1299,7 @@ class MapaPoliticoController extends Controller
             $response['contactos'] = $liderModel->contactos;
             $response['info_politica'] = $liderModel->infoPolitica;
             $response['municipio_id'] = $liderModel->geographic_unit_id;
+            $response['migracion'] = MigracionFlags::forFicha($liderModel);
             $response += app(ComunaCatalog::class)->fichaPayload($liderModel->geographic_unit_id, $liderModel->comuna_id, $liderModel->comuna_source);
 
             if ($liderModel->cedula) {
@@ -1653,6 +1662,7 @@ class MapaPoliticoController extends Controller
                 }
             }
         });
+        MigracionFlags::clearCompleted($id);
 
         if ($request->wantsJson() || $request->header('Accept') === 'application/json') {
             return response()->json(['success' => true, 'message' => 'Datos actualizados.']);
