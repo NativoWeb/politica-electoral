@@ -38,6 +38,7 @@ return [
     'n8n' => [
         'whatsapp_webhook' => env('N8N_WHATSAPP_WEBHOOK'),
         'birthday_token' => env('N8N_BIRTHDAY_TOKEN'),
+        'whatsapp_analytics_token' => env('N8N_WHATSAPP_ANALYTICS_TOKEN'),
         // Recipients of one manual send ("select all that match" over a city is refused above it).
         'whatsapp_max_recipients' => (int) env('N8N_WHATSAPP_MAX_RECIPIENTS', 5000),
     ],

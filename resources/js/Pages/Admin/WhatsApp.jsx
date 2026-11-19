@@ -26,6 +26,35 @@ const FILTER_ORDER = Object.keys(FILTER_LABELS);
 
 const normalizeStatus = (status) => String(status ?? '').toLowerCase();
 
+const getISOWeekInfo = (date = new Date()) => {
+    const target = new Date(Date.UTC(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
+    ));
+
+    target.setUTCDate(
+        target.getUTCDate() + 4 - (target.getUTCDay() || 7)
+    );
+
+    const year = target.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const week = Math.ceil(
+        (((target - yearStart) / 86400000) + 1) / 7
+    );
+
+    return { year, week };
+};
+
+const formatAnalyticsCurrency = (value, decimals = 2) => {
+    return new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    }).format(Number(value ?? 0));
+};
+
 const FILTER_VALUE_KEYS = {
     provincia: ['provincia', 'province'],
     municipio: ['municipio', 'municipality'],
@@ -132,6 +161,22 @@ export default function WhatsApp({
     filters = {},
     filter_options: serverFilterOptions = {},
 }) {
+
+       // Analíticas de WhatsApp
+    const initialAnalyticsPeriod = getISOWeekInfo();
+
+    const [analyticsOpen, setAnalyticsOpen] = useState(false);
+    const [analyticsYear, setAnalyticsYear] = useState(
+        initialAnalyticsPeriod.year
+    );
+    const [analyticsWeek, setAnalyticsWeek] = useState(
+        initialAnalyticsPeriod.week
+    );
+
+    const [analyticsData, setAnalyticsData] = useState(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState(false);
+    const [analyticsError, setAnalyticsError] = useState('');
+
     const [selectedTemplateId, setSelectedTemplateId] = useState(
         filters.template_id ? String(filters.template_id) : ''
     );
@@ -837,6 +882,67 @@ export default function WhatsApp({
         }
     };
 
+    // Consulta las analíticas semanales almacenadas en Laravel.
+    useEffect(() => {
+        if (!analyticsOpen) return;
+
+        let cancelled = false;
+
+        const loadAnalytics = async () => {
+            setAnalyticsLoading(true);
+            setAnalyticsError('');
+
+            try {
+                const params = new URLSearchParams({
+                    year: String(analyticsYear),
+                    week: String(analyticsWeek),
+                });
+
+                const response = await fetch(
+                    `/admin/whatsapp/analytics/weekly?${params.toString()}`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }
+                );
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data?.message ??
+                        'No fue posible consultar las analíticas.'
+                    );
+                }
+
+                if (!cancelled) {
+                    setAnalyticsData(data);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setAnalyticsData(null);
+                    setAnalyticsError(
+                        error?.message ??
+                        'Ocurrió un error consultando las analíticas.'
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setAnalyticsLoading(false);
+                }
+            }
+        };
+
+        loadAnalytics();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [analyticsOpen, analyticsYear, analyticsWeek]);
+
     const formatBirthDate = (birthDate) => {
         if (!birthDate) return 'Sin fecha';
 
@@ -956,15 +1062,27 @@ export default function WhatsApp({
             <Head title="Envíos de WhatsApp — Inteligencia Electoral" />
 
             <div className="bg-[var(--color-primary)] px-6 py-8 text-white">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                    Comunicaciones
-                </p>
-                <h1 className="font-[var(--font-heading)] text-[28px] font-extrabold tracking-tight">
-                    ENVÍOS DE WHATSAPP
-                </h1>
-                <p className="mt-1 text-[13px] text-white/60">
-                    Preparar envíos mediante plantillas aprobadas.
-                </p>
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                            Comunicaciones
+                        </p>
+                        <h1 className="font-[var(--font-heading)] text-[28px] font-extrabold tracking-tight">
+                            ENVÍOS DE WHATSAPP
+                        </h1>
+                        <p className="mt-1 text-[13px] text-white/60">
+                            Preparar envíos mediante plantillas aprobadas.
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setAnalyticsOpen(true)}
+                        className="self-start rounded-lg border border-white/30 bg-white/10 px-4 py-2.5 text-[11px] font-semibold text-white transition hover:bg-white/20 sm:self-center"
+                    >
+                        Analíticas
+                    </button>
+                </div>
             </div>
 
             <div className="p-4 lg:p-6">
@@ -2037,6 +2155,205 @@ export default function WhatsApp({
                     </div>
                 </div>
             </div>
+
+            {analyticsOpen && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/60 p-4"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                            setAnalyticsOpen(false);
+                        }
+                    }}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="whatsapp-analytics-title"
+                        className="my-auto w-full max-w-2xl rounded-xl bg-white shadow-2xl"
+                    >
+                        <div className="flex items-center justify-between border-b border-[var(--color-line)] px-6 py-5">
+                            <div>
+                                <h2
+                                    id="whatsapp-analytics-title"
+                                    className="text-lg font-bold text-[var(--color-ink)]"
+                                >
+                                    Analíticas de WhatsApp
+                                </h2>
+                                <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]">
+                                    Rendimiento general de la cuenta de WhatsApp.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setAnalyticsOpen(false)}
+                                aria-label="Cerrar analíticas"
+                                className="rounded-lg px-3 py-2 text-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="space-y-5 p-6">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label
+                                        htmlFor="analytics-year"
+                                        className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]"
+                                    >
+                                        Año
+                                    </label>
+                                    <select
+                                        id="analytics-year"
+                                        value={analyticsYear}
+                                        onChange={(event) => {
+                                            setAnalyticsYear(Number(event.target.value));
+                                            setAnalyticsData(null);
+                                        }}
+                                        className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)]"
+                                    >
+                                        {Array.from(
+                                            { length: 5 },
+                                            (_, index) => new Date().getFullYear() - 3 + index
+                                        ).map((year) => (
+                                            <option key={year} value={year}>
+                                                {year}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label
+                                        htmlFor="analytics-week"
+                                        className="mb-1 block text-[11px] font-semibold text-[var(--color-ink)]"
+                                    >
+                                        Semana
+                                    </label>
+                                    <select
+                                        id="analytics-week"
+                                        value={analyticsWeek}
+                                        onChange={(event) => {
+                                            setAnalyticsWeek(Number(event.target.value));
+                                            setAnalyticsData(null);
+                                        }}
+                                        className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)]"
+                                    >
+                                        {Array.from(
+                                            { length: 53 },
+                                            (_, index) => index + 1
+                                        ).map((week) => (
+                                            <option key={week} value={week}>
+                                                Semana {week}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {analyticsLoading && (
+                                <div className="py-10 text-center">
+                                    <p className="text-sm text-[var(--color-ink-faint)]">
+                                        Consultando analíticas...
+                                    </p>
+                                </div>
+                            )}
+
+                            {!analyticsLoading && analyticsError && (
+                                <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                                    <p className="text-sm font-semibold text-red-700">
+                                        No fue posible cargar las analíticas
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-red-600">
+                                        {analyticsError}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setAnalyticsData(null);
+                                            setAnalyticsWeek((current) => current);
+                                        }}
+                                        className="mt-3 text-[11px] font-semibold text-red-700 underline"
+                                    >
+                                        Reintentar
+                                    </button>
+                                </div>
+                            )}
+
+                            {!analyticsLoading && !analyticsError && analyticsData && (
+                                <>
+                                    <div className="rounded-lg bg-gray-50 px-4 py-3">
+                                        <p className="text-[11px] text-[var(--color-ink-faint)]">
+                                            Periodo consultado
+                                        </p>
+                                        <p className="mt-1 text-sm font-semibold text-[var(--color-ink)]">
+                                            {analyticsData.start_date} al {analyticsData.end_date}
+                                        </p>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <div className="rounded-lg border border-[var(--color-line)] p-4">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                Importe gastado
+                                            </p>
+                                            <p className="mt-2 text-2xl font-extrabold text-[var(--color-ink)]">
+                                                {formatAnalyticsCurrency(analyticsData.spend, 2)}
+                                            </p>
+                                            <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                Dólares estadounidenses
+                                            </p>
+                                        </div>
+
+                                        <div className="rounded-lg border border-[var(--color-line)] p-4">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                Costo por entregado
+                                            </p>
+                                            <p className="mt-2 text-2xl font-extrabold text-[var(--color-ink)]">
+                                                {formatAnalyticsCurrency(
+                                                    analyticsData.cost_per_delivered,
+                                                    6
+                                                )}
+                                            </p>
+                                            <p className="mt-1 text-[10px] text-[var(--color-ink-faint)]">
+                                                Costo promedio por mensaje entregado
+                                            </p>
+                                        </div>
+
+                                        <div className="rounded-lg border border-[var(--color-line)] p-4">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                Mensajes enviados
+                                            </p>
+                                            <p className="mt-2 text-2xl font-extrabold text-[var(--color-ink)]">
+                                                {Number(analyticsData.sent ?? 0).toLocaleString('es-CO')}
+                                            </p>
+                                        </div>
+
+                                        <div className="rounded-lg border border-[var(--color-line)] p-4">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
+                                                Mensajes entregados
+                                            </p>
+                                            <p className="mt-2 text-2xl font-extrabold text-[var(--color-ink)]">
+                                                {Number(analyticsData.delivered ?? 0).toLocaleString('es-CO')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            <div className="flex justify-end border-t border-[var(--color-line)] pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setAnalyticsOpen(false)}
+                                    className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 text-[11px] font-semibold text-white hover:opacity-90"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </AppLayout>
     );
 }

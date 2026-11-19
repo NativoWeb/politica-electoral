@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\WhatsAppController;
+use App\Http\Controllers\Admin\WhatsAppAnalyticsController;
 use App\Http\Controllers\Api\Agent\AgentActaController;
 use App\Http\Controllers\Api\Agent\AgentEventoController;
 use App\Http\Controllers\Api\Agent\AgentIdentityController;
@@ -19,6 +20,8 @@ Route::prefix('whatsapp')->name('api.whatsapp.')->group(function () {
     Route::post('/recipients/message-data', [WhatsAppController::class, 'saveRecipientMessageData'])->name('recipients.message-data');
 
     Route::get('/birthdays/today', [WhatsAppController::class, 'birthdayRecipients'])->name('birthdays.today');
+
+    Route::post('/analytics/daily', [WhatsAppAnalyticsController::class, 'storeDaily'])->name('analytics.daily');
 
     Route::post('/birthdays/recipients/{recipient}/status', [WhatsAppController::class, 'updateBirthdayRecipientStatus'])->name('birthdays.recipients.status');
 });

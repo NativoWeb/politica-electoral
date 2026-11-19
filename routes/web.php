@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\ConfiguracionController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
 use App\Http\Controllers\Admin\WhatsAppController;
+use App\Http\Controllers\Admin\WhatsAppAnalyticsController;
 use App\Http\Controllers\Admin\WhatsAppTemplateController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
@@ -458,6 +459,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         // WhatsApp: templates, recipients and sends of the user's own campaign, if it has WhatsApp enabled
         Route::middleware('campaign.whatsapp')->group(function () {
             Route::get('/whatsapp', [WhatsAppController::class, 'index'])->name('whatsapp');
+
+            Route::get('/whatsapp/analytics/weekly', [WhatsAppAnalyticsController::class, 'weekly'])->name('whatsapp.analytics.weekly');
 
             Route::get('/whatsapp/sends/{send}/status', [WhatsAppController::class, 'status'])
                 ->name('whatsapp.sends.status');
