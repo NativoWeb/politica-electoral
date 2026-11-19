@@ -82,3 +82,34 @@ describe('AppLayout campaign wording and the "Campañas electorales" entry', () 
         }
     });
 });
+
+describe('AppLayout "Auditoria" entry', () => {
+    const original = globalThis.fetch;
+    const auditLinks = () => [...document.querySelectorAll('a')].filter(a => a.getAttribute('href') === '/admin/auditoria');
+    const as = (permissions, canEditElectoral = true) => {
+        page.props = { auth: { user: { name: 'Ana', permissions, campaign: { id: 'cd', name: 'CD' }, canEditElectoral } }, visibleCampaigns: [] };
+    };
+    beforeEach(() => {
+        page.url = '/mapa-politico';
+        globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ data: {} }) }));
+    });
+    afterEach(() => { cleanup(); globalThis.fetch = original; });
+
+    it('is not in the menu for who opens the Admin page (it is a card there)', () => {
+        as(['view.admin', 'audit.view']);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(auditLinks()).toHaveLength(0);
+    });
+
+    it('stays in the menu for an auditor without the Admin page', () => {
+        as(['view.mapa', 'audit.view']);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(auditLinks().length).toBeGreaterThan(0);
+    });
+
+    it('stays for a grupo político admin whose Admin entry is only Usuarios', () => {
+        as(['view.admin', 'manage.users', 'audit.view'], false);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(auditLinks().length).toBeGreaterThan(0);
+    });
+});

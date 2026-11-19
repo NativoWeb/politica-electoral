@@ -385,7 +385,7 @@ export default function TerritoryDivisiones({ principal, departamentos, provinci
                 </p>
             </div>
 
-            <div className="p-4 space-y-4 max-w-4xl">
+            <div className="p-4 lg:p-6 space-y-4">
                 {/* Botones de acción */}
                 <div className="flex gap-2">
                     <button

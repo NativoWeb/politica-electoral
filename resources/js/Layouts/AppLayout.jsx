@@ -245,7 +245,9 @@ const SIDEBAR_ITEMS = [
 function menuItems(items, auth, hasPerm, features) {
     const allowed = (permission) => [].concat(permission).some(hasPerm);
     const enabled = (feature) => !feature || features?.[feature] === true;
-    return items.filter(item => enabled(item.feature) && allowed(item.permission)).flatMap(item => {
+    // Auditoría is a card of the Admin page: its own menu item only for who cannot open that page.
+    const adminHome = allowed('view.admin') && auth?.canEditElectoral !== false;
+    return items.filter(item => enabled(item.feature) && allowed(item.permission) && !(item.name === 'AUDITORIA' && adminHome)).flatMap(item => {
         if (item.name !== 'ADMIN' || auth?.canEditElectoral !== false) return [item];
         return hasPerm('manage.users') ? [{ ...item, href: '/admin/usuarios', label: 'Usuarios', icon: 'USUARIOS' }] : [];
     });
