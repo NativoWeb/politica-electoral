@@ -1015,7 +1015,7 @@ class WhatsAppController extends Controller
         }
     
         // Detectar automáticamente teléfonos incompletos.
-        $phoneIsInvalid = strlen($phoneDigits) < 10;
+        $phoneIsInvalid = strlen($phoneDigits) !== 10;
     
         if ($phoneIsInvalid) {
             $newStatus = 'error';
