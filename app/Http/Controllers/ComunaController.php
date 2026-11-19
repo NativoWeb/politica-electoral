@@ -10,6 +10,7 @@ use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -22,16 +23,19 @@ class ComunaController extends Controller
 
     private const LIMIT = 500;
 
+    private const TOTAL_TTL = 600;
+
     public function __construct(
         private readonly ComunaCatalog $catalog,
         private readonly BarrioMatcher $matcher,
         private readonly ComunaAssigner $assigner,
     ) {}
 
-    // GET /admin/territorio/barrios-sin-comuna?municipio_id=
+    // GET /admin/territorio/barrios-sin-comuna?municipio_id=&solo_total=1
+    // solo_total: only the municipio and how many barrio texts have no comuna (no matcher), cached 10 minutes.
     public function pendientes(Request $request): JsonResponse
     {
-        $data = $request->validate(['municipio_id' => 'nullable|uuid']);
+        $data = $request->validate(['municipio_id' => 'nullable|uuid', 'solo_total' => 'nullable|boolean']);
         if (! empty($data['municipio_id'])) {
             $this->authorizeGeo($data['municipio_id']);
         }
@@ -45,30 +49,14 @@ class ComunaController extends Controller
         $municipio = collect($municipios)->firstWhere('id', $municipioId);
         abort_unless($municipio, 404, 'Ese municipio no tiene comunas.');
 
-        $groups = [];
-        foreach (ComunaAssigner::TABLES as $table => $municipioSql) {
-            $rows = $this->ownRows($table, $municipioId)
-                ->whereNull('comuna_id')
-                ->where(fn ($q) => $q->whereNull('comuna_source')->orWhere('comuna_source', '!=', 'manual'))
-                ->whereNotNull('barrio')->where('barrio', '!=', '')
-                ->groupBy('barrio')
-                ->orderByDesc(DB::raw('count(*)'))->orderBy('barrio')
-                ->get(['barrio', DB::raw('count(*) AS n')]);
+        if ($request->boolean('solo_total')) {
+            $total = Cache::remember($this->totalKey($municipioId), self::TOTAL_TTL, fn () => count($this->groups($municipioId)));
 
-            foreach ($rows as $row) {
-                $norm = $this->matcher->normalizeFor($municipioId, $row->barrio);
-                if ($norm === '') {
-                    continue;
-                }
-                $groups[$norm] ??= ['texto' => $norm, 'ejemplos' => [], 'lideres' => 0, 'event_attendees' => 0, 'organizaciones' => 0, 'total' => 0];
-                $groups[$norm][$table] += (int) $row->n;
-                $groups[$norm]['total'] += (int) $row->n;
-                if (count($groups[$norm]['ejemplos']) < 3 && ! in_array(trim($row->barrio), $groups[$norm]['ejemplos'], true)) {
-                    $groups[$norm]['ejemplos'][] = trim($row->barrio);
-                }
-            }
+            return response()->json(['success' => true, 'municipio' => $municipio, 'total_textos' => $total]);
         }
 
+        $groups = $this->groups($municipioId);
+        Cache::put($this->totalKey($municipioId), count($groups), self::TOTAL_TTL);
         $campaignId = $this->campaign()->ownId();
         $pendientes = collect($groups)->sortByDesc('total')->take(self::LIMIT)->map(function ($g) use ($municipioId, $campaignId) {
             $match = $this->matcher->match($municipioId, $campaignId, $g['ejemplos'][0]);
@@ -172,6 +160,7 @@ class ComunaController extends Controller
             return [$aliasId, $counts];
         });
         $this->matcher->forget();
+        Cache::forget($this->totalKey($municipioId));
 
         $total = array_sum($counts);
 
@@ -213,6 +202,7 @@ class ComunaController extends Controller
         }
 
         DB::table('lideres')->where('id', $lider->id)->update($values + ['updated_at' => now()]);
+        Cache::forget($this->totalKey($municipioId));
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => 'geo.ficha_comuna',
@@ -227,6 +217,41 @@ class ComunaController extends Controller
             'success' => true,
             'message' => $values['comuna_id'] ? 'Comuna actualizada.' : 'Comuna quitada.',
         ] + $this->catalog->fichaPayload($municipioId, $values['comuna_id'], $values['comuna_source']));
+    }
+
+    // Barrio texts of the user's own records in the municipio that have no comuna, grouped by their normalized form.
+    private function groups(string $municipioId): array
+    {
+        $groups = [];
+        foreach (ComunaAssigner::TABLES as $table => $municipioSql) {
+            $rows = $this->ownRows($table, $municipioId)
+                ->whereNull('comuna_id')
+                ->where(fn ($q) => $q->whereNull('comuna_source')->orWhere('comuna_source', '!=', 'manual'))
+                ->whereNotNull('barrio')->where('barrio', '!=', '')
+                ->groupBy('barrio')
+                ->orderByDesc(DB::raw('count(*)'))->orderBy('barrio')
+                ->get(['barrio', DB::raw('count(*) AS n')]);
+
+            foreach ($rows as $row) {
+                $norm = $this->matcher->normalizeFor($municipioId, $row->barrio);
+                if ($norm === '') {
+                    continue;
+                }
+                $groups[$norm] ??= ['texto' => $norm, 'ejemplos' => [], 'lideres' => 0, 'event_attendees' => 0, 'organizaciones' => 0, 'total' => 0];
+                $groups[$norm][$table] += (int) $row->n;
+                $groups[$norm]['total'] += (int) $row->n;
+                if (count($groups[$norm]['ejemplos']) < 3 && ! in_array(trim($row->barrio), $groups[$norm]['ejemplos'], true)) {
+                    $groups[$norm]['ejemplos'][] = trim($row->barrio);
+                }
+            }
+        }
+
+        return $groups;
+    }
+
+    private function totalKey(string $municipioId): string
+    {
+        return 'barrios_sin_comuna_total:'.($this->campaign()->ownId() ?? 'todas').':'.$municipioId;
     }
 
     // [{id, nombre}] of the municipios with comunas inside the user's territory.

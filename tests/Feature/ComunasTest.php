@@ -494,6 +494,31 @@ class ComunasTest extends TestCase
         $this->assertSame(BarrioMatcher::OTRO_MUNICIPIO, $res[1]['estado']);
     }
 
+    public function test_the_admin_home_gets_only_the_cached_total_and_an_alias_refreshes_it(): void
+    {
+        $this->lider('Balcones de Provenza');
+        $this->lider('LA PAZ, FLORIDABLANCA');
+        $url = '/admin/territorio/barrios-sin-comuna?solo_total=1';
+        $user = $this->writer();
+
+        $this->actingAs($user)->getJson($url)->assertOk()
+            ->assertExactJson(['success' => true, 'municipio' => ['id' => $this->geo['bga'], 'nombre' => 'Bucaramanga'], 'total_textos' => 2]);
+
+        // Cached: a new text does not show until the cache expires or an alias settles one.
+        $this->lider('Otro barrio nuevo');
+        $this->lider('Un barrio mas');
+        $this->actingAs($user)->getJson($url)->assertJsonPath('total_textos', 2);
+
+        $this->actingAs($user)->postJson('/admin/territorio/barrios/alias', [
+            'municipio_id' => $this->geo['bga'], 'texto' => 'Balcones de Provenza', 'comuna_id' => $this->geo['c10'],
+        ])->assertOk();
+        $this->actingAs($user)->getJson($url)->assertJsonPath('total_textos', 3);
+        $this->actingAs($user)->getJson('/admin/territorio/barrios-sin-comuna')->assertJsonPath('total_textos', 3);
+
+        $this->actingAs($this->user(['view.mapa', 'view.votantes', 'write.data']))->getJson($url)->assertForbidden();
+        $this->actingAs($user)->getJson('/admin/territorio/barrios-sin-comuna?solo_total=quizas')->assertStatus(422);
+    }
+
     public function test_the_queue_follows_permissions_and_territory(): void
     {
         $this->actingAs($this->user(['view.mapa', 'view.votantes', 'write.data']))->getJson('/admin/territorio/barrios-sin-comuna')->assertForbidden();

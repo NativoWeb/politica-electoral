@@ -820,8 +820,8 @@ class CampaignAdminTest extends TestCase
 
     // --- Platform admin screens ---
 
-    private const PLATFORM_SCREENS = ['/admin/territorio', '/admin/partidos', '/admin/importaciones', '/admin/catalogos',
-        '/admin/personas', '/admin/cargos', '/admin/elecciones'];
+    private const PLATFORM_SCREENS = ['/admin/territorio', '/admin/territorio/divisiones', '/admin/territorio/barrios',
+        '/admin/partidos', '/admin/importaciones', '/admin/catalogos', '/admin/personas', '/admin/cargos', '/admin/elecciones'];
 
     private function createPlatformScreenTables(): void
     {
@@ -886,7 +886,7 @@ class CampaignAdminTest extends TestCase
     public function test_platform_admin_screens_are_forbidden_to_campaigns_that_do_not_edit_electoral_data(): void
     {
         $id = (string) Str::uuid();
-        $urls = [...self::PLATFORM_SCREENS, "/admin/personas/{$id}/json", "/admin/elecciones/{$id}/json", "/admin/elecciones/contest/{$id}/json"];
+        $urls = [...self::PLATFORM_SCREENS, "/admin/personas/{$id}/json", "/admin/territorio/departamento/{$id}/municipios", "/admin/elecciones/{$id}/json", "/admin/elecciones/contest/{$id}/json"];
 
         foreach ([$this->adminX, $this->adminY] as $actor) {
             foreach ($urls as $url) {
@@ -904,6 +904,84 @@ class CampaignAdminTest extends TestCase
                 $this->actingAs($actor)->get($url)->assertOk();
             }
         }
+    }
+
+    // Santander with its provincias and a DIVIPOLA departamento whose municipios hang straight from it.
+    private function seedDivisiones(): array
+    {
+        $this->createPlatformScreenTables();
+        $ids = ['santander' => (string) Str::uuid(), 'soto' => (string) Str::uuid(), 'nds' => (string) Str::uuid(),
+            'cucuta' => (string) Str::uuid(), 'ocana' => (string) Str::uuid()];
+        DB::table('geographic_units')->where('id', $this->mun)->delete();
+        DB::table('geographic_units')->insert([
+            ['id' => $ids['nds'], 'type' => 'department', 'canonical_name' => 'Norte de Santander', 'parent_id' => null, 'official_code' => '54', 'is_active' => true],
+            ['id' => $ids['santander'], 'type' => 'department', 'canonical_name' => 'SANTANDER', 'parent_id' => null, 'official_code' => '68', 'is_active' => true],
+            ['id' => $ids['soto'], 'type' => 'province', 'canonical_name' => 'Metropolitana', 'parent_id' => $ids['santander'], 'official_code' => null, 'is_active' => true],
+            ['id' => $this->mun, 'type' => 'municipality', 'canonical_name' => 'Girón', 'parent_id' => $ids['soto'], 'official_code' => '68307', 'is_active' => true],
+            ['id' => $ids['cucuta'], 'type' => 'municipality', 'canonical_name' => 'Cúcuta', 'parent_id' => $ids['nds'], 'official_code' => '54001', 'is_active' => true],
+            ['id' => $ids['ocana'], 'type' => 'municipality', 'canonical_name' => 'Ocaña', 'parent_id' => $ids['nds'], 'official_code' => '54498', 'is_active' => false],
+        ]);
+
+        return $ids;
+    }
+
+    public function test_divisiones_sends_santander_whole_and_the_other_departamentos_only_with_counts(): void
+    {
+        $ids = $this->seedDivisiones();
+
+        $this->actingAs($this->adminCd)->get('/admin/territorio/divisiones')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->component('Admin/TerritoryDivisiones')
+                ->where('principal.id', $ids['santander'])
+                ->where('principal.totalProvincias', 1)
+                ->where('principal.totalMunicipios', 1)
+                ->where('principal.provincias.0.municipios.0.name', 'Girón')
+                ->where('principal.provincias.0.municipios.0.parent_id', $ids['soto'])
+                ->has('departamentos', 1)
+                ->where('departamentos.0.id', $ids['nds'])
+                ->where('departamentos.0.code', '54')
+                ->where('departamentos.0.totalMunicipios', 2)
+                ->where('departamentos.0.nombresMunicipios', ['Cúcuta', 'Ocaña'])
+                ->missing('departamentos.0.municipios')
+                ->missing('departamentos.0.provincias')
+                ->where('totalMunicipios', 3)
+                ->where('provincias', [['id' => $ids['soto'], 'name' => 'Metropolitana', 'dept' => 'SANTANDER']]));
+    }
+
+    public function test_the_admin_home_shows_the_territory_cards_with_the_santander_counts(): void
+    {
+        $this->seedDivisiones();
+
+        $this->actingAs($this->superadmin)->get('/admin/territorio')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->component('Admin/Territory')
+                ->where('resumen', ['departamentos' => 2, 'municipios' => 3,
+                    'principal' => ['name' => 'SANTANDER', 'provincias' => 1, 'municipios' => 1]]));
+
+        $this->actingAs($this->superadmin)->get('/admin/territorio?tab=barrios')->assertRedirect('/admin/territorio/barrios');
+        $this->actingAs($this->superadmin)->get('/admin/territorio/barrios')->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->component('Admin/TerritoryBarrios'));
+    }
+
+    public function test_the_municipios_of_a_departamento_load_when_it_is_opened(): void
+    {
+        $ids = $this->seedDivisiones();
+
+        $this->actingAs($this->adminCd)->getJson("/admin/territorio/departamento/{$ids['nds']}/municipios")->assertOk()
+            ->assertJson(['success' => true, 'provincias' => []])
+            ->assertJsonPath('municipios.0.name', 'Cúcuta')
+            ->assertJsonPath('municipios.0.code', '54001')
+            ->assertJsonPath('municipios.1.is_active', false)
+            ->assertJsonCount(2, 'municipios');
+
+        $this->actingAs($this->adminCd)->getJson("/admin/territorio/departamento/{$ids['santander']}/municipios")->assertOk()
+            ->assertJsonPath('provincias.0.count', 1)
+            ->assertJsonPath('provincias.0.municipios.0.id', $this->mun)
+            ->assertJsonCount(0, 'municipios');
+
+        $this->actingAs($this->adminCd)->getJson("/admin/territorio/departamento/{$ids['cucuta']}/municipios")->assertNotFound()
+            ->assertJson(['success' => false]);
+        $this->actingAs($this->adminCd)->getJson('/admin/territorio/departamento/'.Str::uuid().'/municipios')->assertNotFound();
+        $this->actingAs($this->adminCd)->getJson('/admin/territorio/departamento/no-uuid/municipios')->assertNotFound();
+        $this->actingAs($this->adminX)->getJson("/admin/territorio/departamento/{$ids['nds']}/municipios")->assertForbidden();
     }
 
     public function test_the_admin_home_sends_other_campaigns_to_screens_they_can_open(): void

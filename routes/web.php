@@ -406,6 +406,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         // Platform screens (shared electoral data): read and write only for whoever edits it, the rest get a 403.
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory')->middleware('electoral.platform');
+        Route::get('/territorio/divisiones', [TerritoryController::class, 'divisiones'])->name('territory.divisiones')->middleware('electoral.platform');
+        Route::get('/territorio/barrios', [TerritoryController::class, 'barrios'])->name('territory.barrios')->middleware('electoral.platform');
+        Route::get('/territorio/departamento/{id}/municipios', [TerritoryController::class, 'municipiosDepartamento'])->name('territory.departamento.municipios')->middleware('electoral.platform')->whereUuid('id');
         Route::post('/territorio/departamento', [TerritoryController::class, 'storeDepartamento'])->name('territory.departamento.store')->middleware('electoral.platform');
         Route::post('/territorio/provincia', [TerritoryController::class, 'storeProvincia'])->name('territory.provincia.store')->middleware('electoral.platform');
         Route::post('/territorio/municipio', [TerritoryController::class, 'storeMunicipio'])->name('territory.municipio.store')->middleware('electoral.platform');
