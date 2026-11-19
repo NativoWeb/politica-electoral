@@ -941,6 +941,7 @@ class WhatsAppController extends Controller
      * Actualiza el estado de un destinatario usando el teléfono recibido desde Meta.
      */
 
+    
     public function updateRecipientStatusByPhone(Request $request)
     {
         if (!$this->hasValidBirthdayToken($request)) {
@@ -948,7 +949,7 @@ class WhatsAppController extends Controller
                 'message' => 'No autorizado.',
             ], 401);
         }
-
+    
         $validated = $request->validate([
             'phone' => ['required', 'string', 'max:30'],
             'status' => ['required', 'in:sent,delivered,read,failed'],
@@ -959,18 +960,17 @@ class WhatsAppController extends Controller
             'title' => ['nullable', 'string', 'max:1000'],
             'message' => ['nullable', 'string', 'max:10000'],
         ]);
-
+    
         $phoneDigits = preg_replace('/\D+/', '', $validated['phone']);
-
-        if (strlen($phoneDigits) < 10) {
+    
+        if ($phoneDigits === '') {
             return response()->json([
                 'success' => false,
-                'message' => 'El número de teléfono no es válido.',
+                'message' => 'No se recibió un número de teléfono válido.',
             ], 422);
         }
-
-        $lastTenDigits = substr($phoneDigits, -10);
-
+    
+        // Buscar coincidencia exacta del teléfono, sin importar su longitud.
         $recipient = WhatsAppSendRecipient::query()
             ->whereHas('send', fn ($q) => $q->whereIn(
                 'campaign_id',
@@ -985,50 +985,58 @@ class WhatsAppController extends Controller
             )
             ->whereIn('status', ['pendiente', 'enviando', 'enviado'])
             ->whereRaw(
-                "right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = ?",
-                [$lastTenDigits]
+                "regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ?",
+                [$phoneDigits]
             )
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->first();
-
+    
         if (!$recipient) {
             return response()->json([
                 'success' => false,
                 'message' => 'No se encontró un destinatario pendiente para ese teléfono.',
             ], 404);
         }
-
-        $newStatus = match ($validated['status']) {
-            'sent' => 'enviando',
-            'delivered' => 'enviado',
-            'read' => 'leido',
-            'failed' => 'error',
-        };
-
-        $errorReason = null;
-
-        if ($validated['status'] === 'failed') {
-            $errorReason = $validated['error_reason']
-                ?? data_get($validated, 'error_data.details')
-                ?? $validated['title']
-                ?? $validated['message']
-                ?? null;
-
-            $errorReason = is_string($errorReason)
-                ? trim($errorReason)
-                : null;
-
-            if ($errorReason === '') {
-                $errorReason = null;
+    
+        // Detectar automáticamente teléfonos incompletos.
+        $phoneIsInvalid = strlen($phoneDigits) < 10;
+    
+        if ($phoneIsInvalid) {
+            $newStatus = 'error';
+            $errorReason = 'Número de teléfono mal escrito o incompleto.';
+        } else {
+            $newStatus = match ($validated['status']) {
+                'sent' => 'enviando',
+                'delivered' => 'enviado',
+                'read' => 'leido',
+                'failed' => 'error',
+            };
+    
+            $errorReason = null;
+    
+            if ($validated['status'] === 'failed') {
+                $errorReason = $validated['error_reason']
+                    ?? data_get($validated, 'error_data.details')
+                    ?? $validated['title']
+                    ?? $validated['message']
+                    ?? null;
+    
+                $errorReason = is_string($errorReason)
+                    ? trim($errorReason)
+                    : null;
+    
+                if ($errorReason === '') {
+                    $errorReason = null;
+                }
             }
         }
-
+    
         $recipient->update([
             'status' => $newStatus,
             'error_reason' => $errorReason,
         ]);
-
+    
         return response()->json([
             'success' => true,
             'recipient_id' => $recipient->id,
