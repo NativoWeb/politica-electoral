@@ -964,6 +964,11 @@ class WhatsAppController extends Controller
         ]);
     
         $phoneDigits = preg_replace('/\D+/', '', $validated['phone']);
+        
+        // Quitar el indicativo colombiano únicamente si tiene 12 dígitos.
+        if (strlen($phoneDigits) === 12 && str_starts_with($phoneDigits, '57')) {
+            $phoneDigits = substr($phoneDigits, 2);
+        }
     
         if ($phoneDigits === '') {
             return response()->json([
@@ -972,7 +977,8 @@ class WhatsAppController extends Controller
             ], 422);
         }
     
-        // Buscar coincidencia exacta del teléfono, sin importar su longitud.
+        // Buscar coincidencia exacta del teléfono,
+        // quitando el indicativo colombiano 57 cuando corresponda.
         $recipient = WhatsAppSendRecipient::query()
             ->whereHas('send', fn ($q) => $q->whereIn(
                 'campaign_id',
@@ -987,13 +993,20 @@ class WhatsAppController extends Controller
             )
             ->whereIn('status', ['pendiente', 'enviando', 'enviado'])
             ->whereRaw(
-                "regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ?",
+                "(
+                    CASE
+                        WHEN length(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g')) = 12
+                             AND left(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 2) = '57'
+                        THEN substring(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') from 3)
+                        ELSE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g')
+                    END
+                ) = ?",
                 [$phoneDigits]
             )
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->first();
-    
+        
         if (!$recipient) {
             return response()->json([
                 'success' => false,
