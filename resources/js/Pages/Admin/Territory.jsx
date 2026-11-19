@@ -57,8 +57,10 @@ export default function Territory({ resumen }) {
                 <p className="text-[12px] text-white/60 mt-0.5">Territorio, partidos, usuarios y auditoría</p>
             </div>
 
-            <div className="p-4 space-y-3 max-w-3xl">
+            <div className="p-4 lg:p-6 space-y-3">
                 <SectionTitle>Territorio</SectionTitle>
+                {/* Two columns on wide screens so the cards use the whole width. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <AdminCard
                     href="/admin/territorio/divisiones"
                     title="Divisiones territoriales"
@@ -73,8 +75,10 @@ export default function Territory({ resumen }) {
                     iconClass="bg-emerald-100 text-emerald-700"
                     icon={ICONS.barrios}
                 />
+                </div>
 
                 <SectionTitle>Más opciones</SectionTitle>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <AdminCard href="/admin/partidos" title="Partidos" subtitle="Crear, editar y desactivar partidos" iconClass="bg-amber-100 text-amber-700" icon={ICONS.partidos} />
                 {isSuperadmin && (
                     <AdminCard href="/admin/campanas" title="Grupos políticos" subtitle="Crear, editar y desactivar grupos políticos" iconClass="bg-indigo-100 text-indigo-700" icon={ICONS.grupos} />
@@ -85,6 +89,7 @@ export default function Territory({ resumen }) {
                 {canAudit && (
                     <AdminCard href="/admin/auditoria" title="Auditoría" subtitle="Registro de todo lo que se hace en el sistema" iconClass="bg-sky-100 text-sky-700" icon={ICONS.auditoria} />
                 )}
+                </div>
             </div>
         </AppLayout>
     );
