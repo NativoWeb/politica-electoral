@@ -814,6 +814,27 @@ class CampaignIsolationTest extends TestCase
 
     // --- 4. Exports and offline packages ---
 
+    // A territory is a restriction, not a filter: with nothing filtered a user with a territory sees, like everybody,
+    // only the elected candidates of the shared electoral rows.
+    public function test_a_territory_user_without_filters_sees_only_the_elected_candidates(): void
+    {
+        $this->candidateNamedLike('Electo Territorio');
+        $this->candidateNamedLike('Perdedor Territorio');
+        DB::table('candidacies')->whereIn('person_id', DB::table('persons')->where('full_name', 'Perdedor Territorio')->select('id'))
+            ->update(['outcome' => 'not_elected']);
+        $this->userCd->forceFill(['territory_scope' => [$this->mun]])->save();
+
+        $names = collect($this->actingAs($this->userCd)->get('/mapa-politico?tipo=alcaldia')->assertOk()
+            ->viewData('page')['props']['data'])->pluck('nombre');
+        $this->assertTrue($names->contains('Electo Territorio'));
+        $this->assertFalse($names->contains('Perdedor Territorio'));
+
+        // Choosing the municipio shows every candidate, as before.
+        $names = collect($this->actingAs($this->userCd)->get("/mapa-politico?tipo=alcaldia&municipio={$this->mun}")->assertOk()
+            ->viewData('page')['props']['data'])->pluck('nombre');
+        $this->assertTrue($names->contains('Perdedor Territorio'));
+    }
+
     private function candidateNamedLikeC(): void
     {
         $this->candidateNamedLike('Ceci Campaña Y');

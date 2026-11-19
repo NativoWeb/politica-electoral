@@ -454,6 +454,10 @@ class MapaPoliticoController extends Controller
             }
         }
 
+        // Whether the USER chose a place or a search: a territory restriction is not a filter, so a user with a territory
+        // also gets only the elected candidates when nothing is filtered, like everybody else.
+        $noGeoFilter = ! $munId && ! $provinciaIds && ! $searchEscaped && ! $barrioEscaped;
+
         // If user has territory restriction and no geo filter set, force filter by allowed IDs
         if ($allowedGeoIds && ! $munId && ! $provinciaIds) {
             $provinciaIds = $allowedGeoIds;
@@ -469,7 +473,6 @@ class MapaPoliticoController extends Controller
         }
 
         $data = [];
-        $noGeoFilter = ! $munId && ! $provinciaIds && ! $searchEscaped && ! $barrioEscaped;
 
         $applyEstado = function ($query) use ($estado) {
             if ($estado === 'inactivos') {
