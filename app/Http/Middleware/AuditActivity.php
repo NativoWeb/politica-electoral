@@ -32,6 +32,7 @@ class AuditActivity
         'asistentes' => 'evento_asistente',
         'importar' => 'evento_importacion',
         'empresarios' => 'organizacion',
+        'configuracion' => 'configuracion',
     ];
 
     // Request attributes a controller may set with the changed fields (previous / new values); masked by AuditLog.

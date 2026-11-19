@@ -14,8 +14,11 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Campaign;
 use App\Models\CargoCategory;
 use App\Models\Lider;
+use App\Models\Person;
 use App\Models\PoliticalOrganization;
+use App\Rules\OpcionDeCatalogo;
 use App\Services\CachedQueries;
+use App\Services\Configuracion\Ajuste;
 use App\Services\Eventos\EventScope;
 use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
@@ -75,12 +78,11 @@ class MapaPoliticoController extends Controller
         self::VOTANTES => self::VOTANTES_LABEL,
     ];
 
-    // Rows of each person section in the listing; the rest are counted and come by pages of PAGE_SIZE ("Ver más").
+    // Rows of each person section in the listing and of each "Ver más" page: defaults of the ajuste mapa.tamano_pagina.
     public const SECTION_LIMIT = 200;
 
-    public const PAGE_SIZE = 200;
-
     // Rows of each person section in an export (Excel) or for the agent: a city has tens of thousands of voters.
+    // Default of the ajuste mapa.export_max_filas.
     public const EXPORT_MAX_ROWS = 10000;
 
     public const AREA_METROPOLITANA_MUNICIPIOS = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
@@ -483,12 +485,13 @@ class MapaPoliticoController extends Controller
 
         if ($page !== null) {
             $query = $this->personSectionQuery($page['section'], $sectionFilters);
+            $pageSize = Ajuste::int('mapa.tamano_pagina');
             $rows = $query
-                ? $query->orderBy('nombre')->orderBy('id')->offset($page['offset'])->limit(self::PAGE_SIZE + 1)->get()->map(fn ($r) => (array) $r)->toArray()
+                ? $query->orderBy('nombre')->orderBy('id')->offset($page['offset'])->limit($pageSize + 1)->get()->map(fn ($r) => (array) $r)->toArray()
                 : [];
 
-            $hasMore = count($rows) > self::PAGE_SIZE;
-            $rows = array_slice($rows, 0, self::PAGE_SIZE);
+            $hasMore = count($rows) > $pageSize;
+            $rows = array_slice($rows, 0, $pageSize);
             // The next page starts after every row READ, also the ones left out below: counting only the returned
             // ones would read some fichas twice.
             $nextOffset = $page['offset'] + count($rows);
@@ -587,7 +590,7 @@ class MapaPoliticoController extends Controller
         // === PERSON SECTIONS (Líderes, Nuevos Líderes, Directorio, Asistentes, Votantes) ===
         // Each one up to its cap; a cut section is counted in SQL and its next pages come from seccion().
         // Voters are only counted until the page filters for them or their section is opened.
-        $limit = $sectionLimit ?? ($forExport ? self::EXPORT_MAX_ROWS : self::SECTION_LIMIT);
+        $limit = $sectionLimit ?? Ajuste::int($forExport ? 'mapa.export_max_filas' : 'mapa.tamano_pagina');
         $votantesDeferred = ! $forExport && ! in_array(self::VOTANTES, $tipos, true) && ! $searchEscaped && empty($cargos)
             && empty($barrios_filter) && ! $partido && ! $destacado && ! $profesion;
         $sectionPaging = [];
@@ -975,7 +978,7 @@ class MapaPoliticoController extends Controller
 
     public function storeLider(Request $request)
     {
-        $data = $request->validate([
+        $data = $request->validate(OpcionDeCatalogo::enReglas([
             'nombre' => 'required|string|max:255',
             'municipio_id' => 'required|uuid|exists:geographic_units,id',
             'cargo' => 'nullable|string|max:255',
@@ -1023,7 +1026,7 @@ class MapaPoliticoController extends Controller
             'instagram' => 'nullable|string|max:255',
             // Reusing an electoral person's id would make authorizePersonOrLider treat it as this lider.
             'client_id' => 'nullable|uuid|unique:persons,id',
-        ]);
+        ]));
         $data = Cedula::normalizeFields($data);
         $this->authorizeGeo($data['municipio_id']);
 
@@ -1333,7 +1336,7 @@ class MapaPoliticoController extends Controller
         // them. Any other campaign only updates (or creates) its own lider for that person.
         $canEditElectoral = $this->campaign()->canEditElectoral();
 
-        $data = $request->validate([
+        $data = $request->validate(OpcionDeCatalogo::enReglas([
             'nombre' => 'sometimes|required|string|max:255',
             'telefono' => 'nullable|string|max:20',
             'email' => 'nullable|string|max:255',
@@ -1382,7 +1385,7 @@ class MapaPoliticoController extends Controller
             'facebook' => 'nullable|string|max:255',
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
-        ]);
+        ], $this->storedFichas($id)));
         $data = Cedula::normalizeFields(UpdateVotante::withoutNulls($data));
 
         $cedula = $data['cedula'] ?? null;
@@ -1681,6 +1684,18 @@ class MapaPoliticoController extends Controller
         return back()->with('success', 'Datos actualizados.');
     }
 
+    // The lideres row(s) of a ficha (a lider id, or an electoral person, merged ones by their survivor, and its own lider
+    // by name): the list values they already have stay valid when the panel saves them again.
+    private function storedFichas(string $id): Collection
+    {
+        $rows = DB::table('lideres')->where('id', $id)->get();
+        if ($rows->isEmpty() && ($fullName = DB::table('persons')->where('id', Person::resolveId($id))->value('full_name'))) {
+            $rows = $this->ownLideres()->whereRaw('LOWER(nombre) = LOWER(?)', [$fullName])->get();
+        }
+
+        return $rows;
+    }
+
     public function storeNexo(Request $request, string $personId, AddNexo $addNexo)
     {
         if (! Str::isUuid($personId)) {
@@ -1691,7 +1706,7 @@ class MapaPoliticoController extends Controller
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
-            'parentesco' => 'nullable|string|max:50',
+            'parentesco' => ['nullable', 'string', 'max:50', new OpcionDeCatalogo('parentesco')],
             'cargo' => 'nullable|string|max:100',
             'edad' => 'nullable|integer|min:0|max:120',
             'gustos' => 'nullable|string|max:500',
@@ -1719,7 +1734,7 @@ class MapaPoliticoController extends Controller
 
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
-            'parentesco' => 'nullable|string|max:50',
+            'parentesco' => ['nullable', 'string', 'max:50', new OpcionDeCatalogo('parentesco', [DB::table('nexos_familiares')->where('id', $id)->value('parentesco')])],
             'cargo' => 'nullable|string|max:100',
             'edad' => 'nullable|integer|min:0|max:120',
             'gustos' => 'nullable|string|max:500',

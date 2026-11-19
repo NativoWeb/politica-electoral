@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { forbiddenMessage } from '@/lib/campaign';
+import CatalogoOptions from '@/Components/CatalogoOptions';
+import { etiquetaDe, useCatalogos } from '@/lib/catalogos';
 
-const TIPO_CONTACTO = ['Celular', 'Fijo', 'WhatsApp', 'Email', 'Otro'];
 const ESTADO_CONTACTO = ['activo', 'inactivo'];
 
-const emptyForm = { tipo: 'Celular', valor: '', principal: false, estado: 'activo' };
+const emptyForm = { tipo: 'celular', valor: '', principal: false, estado: 'activo' };
 
 export default function ContactosManager({ personId, contactos: initialContactos = [], onUpdate, readOnly = false }) {
+    const catalogos = useCatalogos();
     const [contactos, setContactos] = useState(initialContactos);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -71,7 +73,7 @@ export default function ContactosManager({ personId, contactos: initialContactos
 
     function startEdit(c) {
         setEditingId(c.id);
-        setForm({ tipo: c.tipo || 'Celular', valor: c.valor || '', principal: !!c.principal, estado: c.estado || 'activo' });
+        setForm({ tipo: c.tipo || 'celular', valor: c.valor || '', principal: !!c.principal, estado: c.estado || 'activo' });
         setShowForm(false);
     }
 
@@ -106,7 +108,7 @@ export default function ContactosManager({ personId, contactos: initialContactos
                         <div>
                             <label className="block text-[11px] font-bold text-[var(--color-ink-faint)] mb-1">Tipo</label>
                             <select className={inputCls} value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
-                                {TIPO_CONTACTO.map(t => <option key={t} value={t}>{t}</option>)}
+                                <CatalogoOptions catalogo="tipo_contacto" actual={form.tipo} />
                             </select>
                         </div>
                         <div>
@@ -141,7 +143,7 @@ export default function ContactosManager({ personId, contactos: initialContactos
                 <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-lg mb-2">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">{c.tipo}</span>
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">{etiquetaDe(catalogos, 'tipo_contacto', c.tipo)}</span>
                             <span className="text-[14px] font-semibold text-[var(--color-ink)] truncate">{c.valor}</span>
                             {c.principal && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[9px] font-bold rounded">Principal</span>}
                             {c.estado === 'inactivo' && <span className="px-1.5 py-0.5 bg-gray-200 text-gray-500 text-[9px] font-bold rounded">Inactivo</span>}

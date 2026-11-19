@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Agent;
 
+use App\Rules\OpcionDeCatalogo;
+
 class AgentStoreVotanteRequest extends AgentFormRequest
 {
     public function rules(): array
@@ -14,7 +16,7 @@ class AgentStoreVotanteRequest extends AgentFormRequest
             'partido' => ['nullable', 'string', 'max:255'],
             'direccion' => ['nullable', 'string', 'max:255'],
             'barrio' => ['nullable', 'string', 'max:100'],
-            'zona' => ['nullable', 'in:rural,urbana'],
+            'zona' => ['nullable', new OpcionDeCatalogo('zona')],
             'profesion' => ['nullable', 'string', 'max:255'],
             'genero' => ['nullable', 'string', 'max:20'],
             'fecha_nacimiento' => ['nullable', 'date', 'before:today'],

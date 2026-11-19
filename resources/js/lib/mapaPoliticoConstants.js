@@ -52,8 +52,6 @@ export const CARGOS_DISPONIBLES = [
     'Funcionario',
 ];
 
-export const PARENTESCOS = ['Esposa', 'Esposo', 'Hijo/a', 'Hermano/a', 'Padre', 'Madre', 'Sobrino/a', 'Tío/a', 'Primo/a', 'Cuñado/a', 'Suegro/a', 'Otro'];
-
 export const AREA_METROPOLITANA = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
 
 // The national catalog repeats names (Rionegro, Barbosa, La Paz...): a municipio of another departamento says which.
@@ -78,27 +76,5 @@ export function municipioByName(municipios, name) {
     const matches = (municipios || []).filter(m => m.name === name);
     return matches.find(isSantanderMunicipio) || matches[0] || null;
 }
-
-export const NIVEL_CONFIANZA_OPTIONS = [
-    { value: '', label: 'Sin asignar' },
-    { value: 'sin_llamar', label: 'Sin llamar' },
-    { value: 'contactado', label: 'Contactado' },
-    { value: 'confirmado', label: 'Confirmado' },
-    { value: 'comprometido', label: 'Comprometido' },
-    { value: 'no_responde', label: 'No responde' },
-];
-
-export const NIVEL_CONFIANZA_COLORS = {
-    sin_llamar: 'bg-gray-100 text-gray-600',
-    contactado: 'bg-blue-100 text-blue-700',
-    confirmado: 'bg-emerald-100 text-emerald-700',
-    comprometido: 'bg-green-100 text-green-800',
-    no_responde: 'bg-red-100 text-red-600',
-};
-
-export const GENERO_OPTIONS = ['Masculino', 'Femenino', 'Otro', 'No binario'];
-export const TIPO_DOCUMENTO_OPTIONS = ['CC', 'CE', 'TI', 'PA', 'RC', 'NIP', 'NUIP'];
-export const ESTADO_CIVIL_OPTIONS = ['Soltero/a', 'Casado/a', 'Unión libre', 'Divorciado/a', 'Viudo/a'];
-export const ESCOLARIDAD_OPTIONS = ['Primaria', 'Secundaria', 'Técnico', 'Tecnólogo', 'Universitario', 'Posgrado', 'Ninguno'];
 
 export const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)]";

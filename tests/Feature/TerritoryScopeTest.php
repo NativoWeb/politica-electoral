@@ -652,7 +652,7 @@ class TerritoryScopeTest extends TestCase
         $this->actingAs($this->campo)->getJson("/mapa-politico/persona/{$absorbed}")->assertOk()->assertJsonPath('id', $this->liderA);
         $this->actingAs($this->campo)->get("/persona/{$absorbed}")->assertRedirect("/persona/{$survivor}");
 
-        $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$absorbed}/nexos", ['nombre' => 'Hijo de Ana', 'parentesco' => 'Hijo'])
+        $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$absorbed}/nexos", ['nombre' => 'Hijo de Ana', 'parentesco' => 'Hijo/a'])
             ->assertSuccessful();
         $this->assertSame($survivor, DB::table('nexos_familiares')->where('nombre', 'Hijo de Ana')->value('person_id'));
         $this->assertSame(0, DB::table('nexos_familiares')->where('person_id', $absorbed)->count());

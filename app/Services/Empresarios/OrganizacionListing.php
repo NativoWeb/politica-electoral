@@ -4,8 +4,8 @@ namespace App\Services\Empresarios;
 
 use App\Http\Controllers\MapaPoliticoController;
 use App\Models\Organizacion;
-use App\Models\OrganizacionMiembro;
 use App\Services\CachedQueries;
+use App\Services\Configuracion\Catalogo;
 use App\Support\CurrentCampaign;
 use App\Support\Nit;
 use App\Support\Provincias;
@@ -159,10 +159,10 @@ class OrganizacionListing
             ->pluck('id')->values()->all() ?: ['00000000-0000-0000-0000-000000000000'];
     }
 
-    // Roles for the screen: [{value, label}].
+    // Active roles (Centro de configuración) for the screen: [{value, label}].
     public static function roles(): array
     {
-        return collect(OrganizacionMiembro::ROLES)->map(fn ($l, $v) => ['value' => $v, 'label' => $l])->values()->all();
+        return array_map(fn ($o) => ['value' => $o['valor'], 'label' => $o['etiqueta']], Catalogo::opciones('rol_miembro'));
     }
 
     public static function whereContains($query, string $column, string $value, string $boolean = 'and')

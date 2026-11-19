@@ -213,9 +213,9 @@ export function sourceLabel(attendee) {
 
 /* ── Birth date with three selects ── */
 
-export function birthYears(now = new Date()) {
-    // Youth councillors register from 14.
-    const newest = now.getFullYear() - 14;
+// minAge: the ajuste asistentes.edad_minima (shared prop ajustesPublicos.edad_minima_asistentes); youth councillors register from 14.
+export function birthYears(now = new Date(), minAge = 14) {
+    const newest = now.getFullYear() - minAge;
 
     return Array.from({ length: newest - 1900 + 1 }, (_, i) => newest - i);
 }

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\CampaignController;
 use App\Http\Controllers\Admin\CatalogCrudController;
+use App\Http\Controllers\Admin\ConfiguracionController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
 use App\Http\Controllers\Admin\WhatsAppController;
@@ -385,6 +386,22 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::post('/', [CampaignController::class, 'store'])->name('store');
         Route::put('/{id}', [CampaignController::class, 'update'])->name('update')->whereUuid('id');
         Route::post('/{id}/toggle', [CampaignController::class, 'toggle'])->name('toggle')->whereUuid('id');
+    });
+
+    // Centro de configuración: superadmin only and global (lists of the forms, ajustes, history). Outside view.admin so
+    // any other role gets a 403 and not a redirect.
+    Route::prefix('admin/configuracion')->name('admin.configuracion.')->middleware('superadmin')->group(function () {
+        Route::get('/', [ConfiguracionController::class, 'index'])->name('index');
+        Route::get('/listas/{catalogo}', [ConfiguracionController::class, 'lista'])->name('lista')->where('catalogo', '[a-z_]+');
+        Route::post('/listas/{catalogo}/opciones', [ConfiguracionController::class, 'storeOpcion'])->name('opciones.store')->where('catalogo', '[a-z_]+');
+        Route::post('/listas/{catalogo}/orden', [ConfiguracionController::class, 'reorder'])->name('opciones.reorder')->where('catalogo', '[a-z_]+');
+        Route::put('/opciones/{id}', [ConfiguracionController::class, 'updateOpcion'])->name('opciones.update')->whereUuid('id');
+        Route::delete('/opciones/{id}', [ConfiguracionController::class, 'destroyOpcion'])->name('opciones.destroy')->whereUuid('id');
+        Route::get('/ajustes', [ConfiguracionController::class, 'ajustes'])->name('ajustes');
+        Route::put('/ajustes/{clave}', [ConfiguracionController::class, 'updateAjuste'])->name('ajustes.update')->where('clave', '[a-z_.]+');
+        Route::delete('/ajustes/{clave}', [ConfiguracionController::class, 'resetAjuste'])->name('ajustes.reset')->where('clave', '[a-z_.]+');
+        Route::get('/historial', [ConfiguracionController::class, 'historial'])->name('historial');
+        Route::post('/historial/{id}/revertir', [ConfiguracionController::class, 'revertir'])->name('historial.revertir')->whereUuid('id');
     });
 
     // Admin panel — requires view.admin permission

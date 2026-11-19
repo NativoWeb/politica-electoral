@@ -9,6 +9,7 @@ use App\Models\Person;
 use App\Models\WhatsAppSend;
 use App\Models\WhatsAppSendRecipient;
 use App\Models\WhatsAppTemplate;
+use App\Services\Configuracion\Ajuste;
 use App\Support\CurrentCampaign;
 use Carbon\Carbon;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -37,9 +38,10 @@ class WhatsAppController extends Controller
     private const FILTER_OPTIONS_LIMIT = 500;
 
     // Recipients of one manual send: more is refused with a message to filter (n8n receives them in one payload).
+    // Ajuste whatsapp.max_destinatarios (default: N8N_WHATSAPP_MAX_RECIPIENTS).
     public static function maxRecipients(): int
     {
-        return (int) config('services.n8n.whatsapp_max_recipients', 5000);
+        return Ajuste::int('whatsapp.max_destinatarios');
     }
 
     /**

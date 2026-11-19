@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\Configuracion\AjusteStore;
+use App\Services\Configuracion\CatalogoStore;
 use App\Services\Eventos\Ocr\AnthropicOcrClient;
 use App\Services\Eventos\Ocr\OcrClient;
 use App\Services\Geo\BarrioMatcher;
@@ -23,6 +25,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(ComunaCatalog::class);
         $this->app->scoped(BarrioMatcher::class);
         $this->app->scoped(ComunaAssigner::class);
+        // Per request: the lists and ajustes of the Centro de configuración (cached across requests).
+        $this->app->scoped(CatalogoStore::class);
+        $this->app->scoped(AjusteStore::class);
         // Tests bind a fake here: they never call the real API.
         $this->app->bind(OcrClient::class, AnthropicOcrClient::class);
     }

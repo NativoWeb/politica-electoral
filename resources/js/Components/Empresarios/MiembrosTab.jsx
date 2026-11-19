@@ -34,6 +34,7 @@ export default function MiembrosTab({ org, editable, roles = [], onChanged }) {
     const rolSelect = (value, onChange, id) => (
         <select id={id} className={inputCls} value={value} onChange={e => onChange(e.target.value)}>
             {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            {value && !roles.some(r => r.value === value) && <option value={value}>{value} (ya no se ofrece)</option>}
         </select>
     );
 

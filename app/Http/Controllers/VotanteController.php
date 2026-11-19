@@ -10,6 +10,7 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Models\LiderContacto;
 use App\Models\LiderInfoPolitica;
+use App\Rules\OpcionDeCatalogo;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
 use App\Services\Geo\ComunaCatalog;
@@ -283,7 +284,7 @@ class VotanteController extends Controller
 
     public function store(Request $request, CreateVotante $createVotante)
     {
-        $data = $request->validate([
+        $data = $request->validate(OpcionDeCatalogo::enReglas([
             'nombre' => 'required|string|max:255',
             'municipio_id' => 'required|uuid|exists:geographic_units,id',
             'cargo' => 'nullable|string|max:255',
@@ -328,7 +329,7 @@ class VotanteController extends Controller
             'facebook' => 'nullable|string|max:255',
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
-        ]);
+        ]));
 
         $lider = $createVotante->handle($data);
 
@@ -341,7 +342,7 @@ class VotanteController extends Controller
             abort(404);
         }
 
-        $data = $request->validate([
+        $data = $request->validate(OpcionDeCatalogo::enReglas([
             'nombre' => 'nullable|string|max:255',
             'cargo' => 'nullable|string|max:255',
             'tipo' => 'nullable|string|max:255',
@@ -388,7 +389,7 @@ class VotanteController extends Controller
             'facebook' => 'nullable|string|max:255',
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
-        ]);
+        ], DB::table('lideres')->where('id', $id)->get()));
 
         $updateVotante->handle($id, $data);
 
@@ -419,7 +420,7 @@ class VotanteController extends Controller
         $lider = $addContacto->authorizeFor($liderId);
 
         $data = $request->validate([
-            'tipo' => 'required|string|max:30',
+            'tipo' => ['required', 'string', 'max:30', new OpcionDeCatalogo('tipo_contacto')],
             'valor' => 'required|string|max:200',
             'principal' => 'nullable|boolean',
             'estado' => 'nullable|string|max:20',
@@ -443,7 +444,7 @@ class VotanteController extends Controller
         $this->authorizeLiderWrite($contacto->lider_id);
 
         $data = $request->validate([
-            'tipo' => 'nullable|string|max:30',
+            'tipo' => ['nullable', 'string', 'max:30', new OpcionDeCatalogo('tipo_contacto', [$contacto->tipo])],
             'valor' => 'nullable|string|max:200',
             'principal' => 'nullable|boolean',
             'estado' => 'nullable|string|max:20',

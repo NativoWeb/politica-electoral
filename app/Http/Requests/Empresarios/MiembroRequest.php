@@ -2,9 +2,10 @@
 
 namespace App\Http\Requests\Empresarios;
 
-use App\Models\OrganizacionMiembro;
+use App\Rules\OpcionDeCatalogo;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 // POST /empresarios/{id}/miembros: an existing ficha (lider_id) or a person typed by hand (nombre, cédula, teléfono).
 // PUT /empresarios/miembros/{miembro}: rol and nota.
@@ -18,6 +19,10 @@ class MiembroRequest extends FormRequest
     public function rules(): array
     {
         $creating = $this->isMethod('POST');
+        $miembro = $this->route('miembro');
+        $miembroId = is_object($miembro) ? $miembro->getKey() : $miembro;
+        $rolActual = ! $creating && is_string($miembroId) && Str::isUuid($miembroId)
+            ? DB::table('organizacion_miembros')->where('id', $miembroId)->value('rol') : null;
 
         return [
             'lider_id' => ['nullable', 'uuid'],
@@ -25,7 +30,7 @@ class MiembroRequest extends FormRequest
             'cedula' => ['nullable', 'string', 'max:20', 'regex:/^[\d.\s]{5,20}$/'],
             'telefono' => ['nullable', 'string', 'max:60'],
             'municipio' => ['nullable', 'string', 'max:120'],
-            'rol' => ['required', Rule::in(array_keys(OrganizacionMiembro::ROLES))],
+            'rol' => ['required', 'string', new OpcionDeCatalogo('rol_miembro', [$rolActual])],
             'nota' => ['nullable', 'string', 'max:500'],
         ];
     }
@@ -36,7 +41,6 @@ class MiembroRequest extends FormRequest
             'nombre.required_without' => 'Busque la persona o escriba su nombre.',
             'cedula.regex' => 'La cédula solo lleva números.',
             'rol.required' => 'Elija el rol.',
-            'rol.in' => 'Elija un rol de la lista.',
         ];
     }
 }

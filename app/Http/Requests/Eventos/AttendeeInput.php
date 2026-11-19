@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Eventos;
 
+use App\Services\Configuracion\Ajuste;
 use App\Support\Cedula;
 use Illuminate\Support\Str;
 
@@ -9,8 +10,13 @@ use Illuminate\Support\Str;
 // and validate the same way before RegisterAttendee runs.
 class AttendeeInput
 {
-    // Youth councillors (consejeros de juventudes) register from 14.
+    // Youth councillors (consejeros de juventudes) register from 14: the floor of the ajuste asistentes.edad_minima.
     public const MIN_AGE = 14;
+
+    public static function minAge(): int
+    {
+        return Ajuste::int('asistentes.edad_minima');
+    }
 
     public const FIELDS = [
         'client_uuid', 'nombres', 'apellidos', 'cedula', 'celular',
@@ -73,7 +79,7 @@ class AttendeeInput
             'celular' => ['required', 'string', 'regex:/^3\d{9}$/'],
             'barrio' => ['required', 'string', 'max:120'],
             'fijo' => ['nullable', 'string', 'regex:/^\d{7,10}$/'],
-            'fecha_nacimiento' => ['bail', 'nullable', 'string', 'regex:/^\d{4}-\d{2}-\d{2}$/', self::existingDate(...), 'after:1900-01-01', 'before_or_equal:'.now('America/Bogota')->subYears(self::MIN_AGE)->toDateString()],
+            'fecha_nacimiento' => ['bail', 'nullable', 'string', 'regex:/^\d{4}-\d{2}-\d{2}$/', self::existingDate(...), 'after:1900-01-01', 'before_or_equal:'.now('America/Bogota')->subYears(self::minAge())->toDateString()],
             'direccion' => ['nullable', 'string', 'max:255'],
         ];
     }
@@ -102,7 +108,7 @@ class AttendeeInput
             'barrio.max' => 'El barrio no puede tener más de 120 caracteres.',
             'fijo.regex' => 'El teléfono fijo debe tener entre 7 y 10 dígitos.',
             'fecha_nacimiento.regex' => 'La fecha de nacimiento debe tener el formato AAAA-MM-DD.',
-            'fecha_nacimiento.before_or_equal' => 'El registro es solo para mayores de '.self::MIN_AGE.' años.',
+            'fecha_nacimiento.before_or_equal' => 'El registro es solo para mayores de '.self::minAge().' años.',
             'fecha_nacimiento.after' => 'Revise la fecha de nacimiento.',
             'direccion.max' => 'La dirección no puede tener más de 255 caracteres.',
             'client_uuid.required' => 'Falta el identificador del registro. Recargue la página.',

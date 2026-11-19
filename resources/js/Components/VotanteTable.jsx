@@ -1,14 +1,8 @@
 import { router } from '@inertiajs/react';
 import CampaignChip from '@/Components/CampaignChip';
 import { eventCountLabel } from '@/lib/eventosIntegracion';
+import { badgeStyle, colorDe, etiquetaDe, useCatalogos } from '@/lib/catalogos';
 
-const NIVEL_BADGE = {
-    sin_llamar: { label: 'Sin llamar', cls: 'bg-gray-100 text-gray-600' },
-    contactado: { label: 'Contactado', cls: 'bg-yellow-100 text-yellow-700' },
-    confirmado: { label: 'Confirmado', cls: 'bg-blue-100 text-blue-700' },
-    comprometido: { label: 'Comprometido', cls: 'bg-emerald-100 text-emerald-700' },
-    no_responde: { label: 'No responde', cls: 'bg-red-100 text-red-700' },
-};
 
 function WhatsAppIcon() {
     return (
@@ -29,6 +23,7 @@ function TagDot({ active, label, color }) {
 }
 
 export default function VotanteTable({ votantes, selectedId, onSelect, showEventos = false }) {
+    const catalogos = useCatalogos();
     const { data, current_page, last_page, links, from, to, total } = votantes;
 
     function goToPage(url) {
@@ -69,7 +64,8 @@ export default function VotanteTable({ votantes, selectedId, onSelect, showEvent
                     <tbody className="divide-y divide-[var(--color-line)]">
                         {data.map(v => {
                             const isSelected = selectedId === v.id;
-                            const badge = NIVEL_BADGE[v.nivel_confianza] || NIVEL_BADGE.sin_llamar;
+                            const nivel = v.nivel_confianza || 'sin_llamar';
+                            const badge = { label: etiquetaDe(catalogos, 'nivel_confianza', nivel), color: colorDe(catalogos, 'nivel_confianza', nivel) };
                             const phone = v.telefono?.replace(/\D/g, '') || '';
 
                             return (
@@ -108,7 +104,7 @@ export default function VotanteTable({ votantes, selectedId, onSelect, showEvent
                                         )}
                                     </td>
                                     <td className="px-3 py-2.5">
-                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge.cls}`}>
+                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge.color ? '' : 'bg-gray-100 text-gray-600'}`} style={badgeStyle(badge.color)}>
                                             {badge.label}
                                         </span>
                                     </td>

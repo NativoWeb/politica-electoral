@@ -2,11 +2,12 @@
 
 namespace App\Http\Requests\Agent;
 
-use Illuminate\Validation\Rule;
+use App\Rules\OpcionDeCatalogo;
 
 // Fields the agent may write on a votante; cedula and municipio are create-only (nombre: see AgentUpdateVotanteRequest).
 final class AgentVotanteRules
 {
+    // Every code (the list filter accepts them all); writes take the active options of the Centro de configuración.
     public const NIVELES_CONFIANZA = ['sin_llamar', 'contactado', 'confirmado', 'comprometido', 'no_responde'];
 
     public const FLAGS = ['militante', 'autoriza_datos', 'verificado', 'gran_elector',
@@ -15,7 +16,7 @@ final class AgentVotanteRules
     public static function editable(): array
     {
         $rules = [
-            'nivel_confianza' => ['sometimes', 'string', Rule::in(self::NIVELES_CONFIANZA)],
+            'nivel_confianza' => ['sometimes', 'string', new OpcionDeCatalogo('nivel_confianza')],
             'observacion' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'telefono' => ['sometimes', 'nullable', 'string', 'max:20'],
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],

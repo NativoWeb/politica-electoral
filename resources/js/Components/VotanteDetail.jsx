@@ -13,17 +13,13 @@ import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
+import CatalogoOptions from '@/Components/CatalogoOptions';
+import { etiquetaDe, useCatalogos } from '@/lib/catalogos';
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 const readCls = "text-[13px] text-[var(--color-ink)] py-1";
 const fieldLabelCls = "block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-0.5";
 
-const GENERO_OPTIONS = ['', 'Masculino', 'Femenino', 'Otro'];
-const ESTADO_CIVIL_OPTIONS = ['', 'Soltero/a', 'Casado/a', 'Union libre', 'Divorciado/a', 'Viudo/a'];
-const ZONA_OPTIONS = ['', 'rural', 'urbana'];
-const ESCOLARIDAD_OPTIONS = ['', 'Ninguna', 'Primaria', 'Secundaria', 'Tecnico', 'Tecnologo', 'Profesional', 'Postgrado'];
-const NIVEL_CONFIANZA_OPTIONS = ['sin_llamar', 'contactado', 'confirmado', 'comprometido', 'no_responde'];
-const TIPO_DOCUMENTO_OPTIONS = ['', 'CC', 'CE', 'TI', 'PA', 'RC', 'NIT'];
 
 const TAG_FIELDS = [
     { key: 'verificado', label: 'Verificado' },
@@ -132,6 +128,7 @@ export default function VotanteDetail({
     const rootRef = useRef(null);
     const campaign = useCampaign();
     const authUser = usePage().props.auth?.user;
+    const catalogos = useCatalogos();
     const canSeeEventos = canSeeEventAttendees(authUser);
     const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
@@ -361,9 +358,10 @@ export default function VotanteDetail({
                         <Field label="Tipo documento">
                             {editing ? (
                                 <select value={form.tipo_documento} onChange={e => setField('tipo_documento', e.target.value)} className={inputCls}>
-                                    {TIPO_DOCUMENTO_OPTIONS.map(o => <option key={o} value={o}>{o || 'Seleccionar'}</option>)}
+                                    <option value="">Seleccionar</option>
+                                    <CatalogoOptions catalogo="tipo_documento" actual={[data?.tipo_documento, form.tipo_documento]} />
                                 </select>
-                            ) : <p className={readCls}>{form.tipo_documento || '-'}</p>}
+                            ) : <p className={readCls}>{etiquetaDe(catalogos, 'tipo_documento', form.tipo_documento) || '-'}</p>}
                         </Field>
                         <Field label="Cedula">
                             {editing ? <input value={form.cedula} onChange={e => setField('cedula', e.target.value)} className={inputCls} /> : <p className={readCls + ' font-mono'}>{form.cedula || '-'}</p>}
@@ -374,9 +372,10 @@ export default function VotanteDetail({
                         <Field label="Genero">
                             {editing ? (
                                 <select value={form.genero} onChange={e => setField('genero', e.target.value)} className={inputCls}>
-                                    {GENERO_OPTIONS.map(o => <option key={o} value={o}>{o || 'Seleccionar'}</option>)}
+                                    <option value="">Seleccionar</option>
+                                    <CatalogoOptions catalogo="genero" actual={[data?.genero, form.genero]} />
                                 </select>
-                            ) : <p className={readCls}>{form.genero || '-'}</p>}
+                            ) : <p className={readCls}>{etiquetaDe(catalogos, 'genero', form.genero) || '-'}</p>}
                         </Field>
                         <Field label="Fecha nacimiento">
                             {editing ? <input type="date" value={form.fecha_nacimiento} onChange={e => setField('fecha_nacimiento', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.fecha_nacimiento || '-'}</p>}
@@ -384,9 +383,10 @@ export default function VotanteDetail({
                         <Field label="Estado civil">
                             {editing ? (
                                 <select value={form.estado_civil} onChange={e => setField('estado_civil', e.target.value)} className={inputCls}>
-                                    {ESTADO_CIVIL_OPTIONS.map(o => <option key={o} value={o}>{o || 'Seleccionar'}</option>)}
+                                    <option value="">Seleccionar</option>
+                                    <CatalogoOptions catalogo="estado_civil" actual={[data?.estado_civil, form.estado_civil]} />
                                 </select>
-                            ) : <p className={readCls}>{form.estado_civil || '-'}</p>}
+                            ) : <p className={readCls}>{etiquetaDe(catalogos, 'estado_civil', form.estado_civil) || '-'}</p>}
                         </Field>
                         <Field label="Profesion">
                             {editing ? <input value={form.profesion} onChange={e => setField('profesion', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.profesion || '-'}</p>}
@@ -394,9 +394,10 @@ export default function VotanteDetail({
                         <Field label="Escolaridad">
                             {editing ? (
                                 <select value={form.escolaridad} onChange={e => setField('escolaridad', e.target.value)} className={inputCls}>
-                                    {ESCOLARIDAD_OPTIONS.map(o => <option key={o} value={o}>{o || 'Seleccionar'}</option>)}
+                                    <option value="">Seleccionar</option>
+                                    <CatalogoOptions catalogo="escolaridad" actual={[data?.escolaridad, form.escolaridad]} />
                                 </select>
-                            ) : <p className={readCls}>{form.escolaridad || '-'}</p>}
+                            ) : <p className={readCls}>{etiquetaDe(catalogos, 'escolaridad', form.escolaridad) || '-'}</p>}
                         </Field>
                     </div>
                 </Accordion>
@@ -429,9 +430,10 @@ export default function VotanteDetail({
                         <Field label="Zona">
                             {editing ? (
                                 <select value={form.zona} onChange={e => setField('zona', e.target.value)} className={inputCls}>
-                                    {ZONA_OPTIONS.map(o => <option key={o} value={o}>{o || 'Seleccionar'}</option>)}
+                                    <option value="">Seleccionar</option>
+                                    <CatalogoOptions catalogo="zona" actual={[data?.zona, form.zona]} />
                                 </select>
-                            ) : <p className={readCls}>{form.zona || '-'}</p>}
+                            ) : <p className={readCls}>{etiquetaDe(catalogos, 'zona', form.zona) || '-'}</p>}
                         </Field>
                         {!creating && data?.id && (data.comunas || []).length > 0 && (
                             <div className="col-span-2">
@@ -611,9 +613,9 @@ export default function VotanteDetail({
                             <Field label="Nivel de confianza">
                                 {editing ? (
                                     <select value={form.nivel_confianza} onChange={e => setField('nivel_confianza', e.target.value)} className={inputCls}>
-                                        {NIVEL_CONFIANZA_OPTIONS.map(o => <option key={o} value={o}>{o.replace('_', ' ')}</option>)}
+                                        <CatalogoOptions catalogo="nivel_confianza" actual={[data?.nivel_confianza, form.nivel_confianza]} />
                                     </select>
-                                ) : <p className={readCls}>{(form.nivel_confianza || '').replace('_', ' ') || '-'}</p>}
+                                ) : <p className={readCls}>{etiquetaDe(catalogos, 'nivel_confianza', form.nivel_confianza) || '-'}</p>}
                             </Field>
                         </div>
                     </div>

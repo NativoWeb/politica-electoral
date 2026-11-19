@@ -108,7 +108,7 @@ class ImportRowValidator
         $fecha = self::isoDate($mapped['fecha_nacimiento'] ?? null);
         if ($fecha !== null) {
             [$y, $m, $d] = array_map('intval', explode('-', $fecha));
-            $adult = checkdate($m, $d, $y) && $y >= 1900 && $fecha <= now('America/Bogota')->subYears(\App\Http\Requests\Eventos\AttendeeInput::MIN_AGE)->toDateString();
+            $adult = checkdate($m, $d, $y) && $y >= 1900 && $fecha <= now('America/Bogota')->subYears(AttendeeInput::minAge())->toDateString();
             $fecha = $adult ? $fecha : null;
         }
 

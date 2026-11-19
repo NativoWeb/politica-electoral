@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\CompromisosResumenDiario;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -33,8 +34,11 @@ Schedule::command('cache:prune-expired')->daily();
 // "* * * * * php artisan schedule:run" on the server.
 Schedule::command('eventos:limpiar-importaciones')->dailyAt('03:30');
 
-// Daily e-mail with each manager's overdue, due-soon and reminded compromisos (docs/eventos-api.md section 14).
-Schedule::command('compromisos:resumen-diario')->dailyAt('07:00')->timezone('America/Bogota');
+// Daily e-mail with each manager's overdue, due-soon and reminded compromisos (docs/eventos-api.md section 14), from the
+// hour of the ajuste compromisos.hora_resumen: the schedule is defined before any database read, so it runs every 15
+// minutes and sends once a day (CompromisosResumenDiario::toca and its mark).
+Schedule::command('compromisos:resumen-diario --programado')->everyFifteenMinutes()->timezone('America/Bogota')
+    ->when(fn () => CompromisosResumenDiario::toca());
 
 // Comunas of the records that arrived by bulk loads that skip the model hooks (docs/geografia.md); never overwrites a
 // manual comuna.

@@ -21,7 +21,8 @@ class Normalizer
     // the original code in migracion_flags.electo_codigos.genero.
     public const GENERO = ['1' => 'Femenino', '2' => 'Masculino', '3' => 'Otro'];
 
-    // Electo escolaridad catalog (unaccented upper key) => the values of our screens (mapaPoliticoConstants.js).
+    // Electo escolaridad catalog (unaccented upper key) => the values of our screens (list escolaridad of
+    // App\Support\Configuracion\CatalogoRegistry).
     public const ESCOLARIDAD = [
         'NINGUNO' => 'Ninguno', 'PRIMARIA' => 'Primaria', 'BACHILLER' => 'Secundaria', 'TECNICO' => 'Técnico',
         'TECNOLOGO' => 'Tecnólogo', 'PROFESIONAL' => 'Universitario', 'ESPECIALIZACION' => 'Posgrado',

@@ -3,19 +3,23 @@
 namespace App\Support;
 
 use App\Models\User;
+use App\Services\Configuracion\Ajuste;
 
-// Feature flags of config/features.php. Being superadmin or holding '*' never turns a module on.
+// Feature flags of config/features.php. Being superadmin or holding '*' never turns a module on. On/off is the ajuste
+// of the Centro de configuración (its default is the env flag); the beta users stay in config.
 class Features
 {
     private const CONFIG = [
         'campanas' => 'features.campanas_electorales',
     ];
 
+    private const AJUSTES = [
+        'campanas' => 'modulos.campanas_electorales',
+    ];
+
     public static function enabled(string $feature): bool
     {
-        $key = self::CONFIG[$feature] ?? null;
-
-        return $key !== null && (bool) config("{$key}.enabled", false);
+        return isset(self::AJUSTES[$feature]) && Ajuste::bool(self::AJUSTES[$feature]);
     }
 
     public static function enabledFor(string $feature, ?User $user): bool

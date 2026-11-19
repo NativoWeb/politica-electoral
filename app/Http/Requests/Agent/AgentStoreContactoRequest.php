@@ -2,12 +2,10 @@
 
 namespace App\Http\Requests\Agent;
 
-use Illuminate\Validation\Rule;
+use App\Rules\OpcionDeCatalogo;
 
 class AgentStoreContactoRequest extends AgentFormRequest
 {
-    public const TIPOS = ['celular', 'fijo', 'whatsapp', 'email', 'otro'];
-
     protected function prepareForValidation(): void
     {
         if (is_string($this->input('tipo'))) {
@@ -18,7 +16,7 @@ class AgentStoreContactoRequest extends AgentFormRequest
     public function rules(): array
     {
         return [
-            'tipo' => ['required', 'string', Rule::in(self::TIPOS)],
+            'tipo' => ['required', 'string', new OpcionDeCatalogo('tipo_contacto')],
             'valor' => ['required', 'string', 'max:200'],
             'principal' => ['sometimes', 'boolean'],
         ];

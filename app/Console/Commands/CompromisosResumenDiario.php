@@ -4,24 +4,58 @@ namespace App\Console\Commands;
 
 use App\Mail\CompromisosResumen;
 use App\Models\User;
+use App\Services\Configuracion\Ajuste;
 use App\Services\Eventos\Actas\CompromisoAlertas;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
-// Daily e-mail (scheduled 7:00 a. m. Bogotá) to every active user with manage.eventos or manage.empresarios and a valid e-mail: their
-// overdue, due-soon and reminded compromisos, only of their campaigns and territory (CompromisoAlertas runs as that
-// user). Nobody with nothing pending gets a message. Logs carry counts and user ids only.
+// Daily e-mail (from the hour of the ajuste compromisos.hora_resumen, Bogotá; 07:00 by default) to every active user
+// with manage.eventos or manage.empresarios and a valid e-mail: their overdue, due-soon and reminded compromisos, only
+// of their campaigns and territory (CompromisoAlertas runs as that user). Nobody with nothing pending gets a message.
+// Logs carry counts and user ids only.
 class CompromisosResumenDiario extends Command
 {
-    protected $signature = 'compromisos:resumen-diario {--dry-run : Muestra a quién se enviaría, sin enviar}';
+    protected $signature = 'compromisos:resumen-diario
+        {--dry-run : Muestra a quién se enviaría, sin enviar}
+        {--programado : Corrida del scheduler: una sola vez al día, desde la hora del ajuste}';
 
     protected $description = 'Envía a cada gestor de eventos el resumen de compromisos vencidos, por vencer y con recordatorio';
 
+    // The scheduler runs every quarter of an hour: once the hour of the ajuste arrived (Bogotá) and today's summary was
+    // not sent. A quarter that did not run is caught up by the next one; changing the hour after sending does not
+    // send again the same day.
+    public static function toca(?Carbon $now = null): bool
+    {
+        $now = ($now ?? now())->copy()->setTimezone('America/Bogota');
+
+        return $now->format('H:i') >= Ajuste::get('compromisos.hora_resumen') && ! Cache::has(self::marca($now));
+    }
+
+    // Key of the "already sent today" mark (Bogotá date).
+    public static function marca(?Carbon $now = null): string
+    {
+        return 'compromisos:resumen:'.($now ?? now())->copy()->setTimezone('America/Bogota')->toDateString();
+    }
+
     public function handle(CompromisoAlertas $alertas): int
     {
+        // The mark is taken before sending, so two overlapping runs never send twice.
+        $marca = null;
+        if ($this->option('programado') && ! $this->option('dry-run')) {
+            $now = now();
+            if (! Cache::add(self::marca($now), true, $now->copy()->setTimezone('America/Bogota')->endOfDay())) {
+                $this->info('El resumen de hoy ya se envió.');
+
+                return self::SUCCESS;
+            }
+            $marca = self::marca($now);
+        }
+
         $dry = (bool) $this->option('dry-run');
         if (! $dry && ! self::mailConfigured()) {
             Log::warning('compromisos:resumen-diario: correo no configurado, no se envía nada.');
@@ -63,6 +97,11 @@ class CompromisosResumenDiario extends Command
 
         Log::info('compromisos:resumen-diario', ['revisados' => $users->count(), 'enviados' => $sent, 'fallidos' => $failed, 'dry_run' => $dry]);
         $this->info(($dry ? 'Se enviaría a ' : 'Enviados: ')."{$sent} de {$users->count()} usuarios.".($failed ? " Fallidos: {$failed}." : ''));
+
+        // Nothing went out because the mail server failed: the next quarter tries again.
+        if ($marca !== null && $failed > 0 && $sent === 0) {
+            Cache::forget($marca);
+        }
 
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }

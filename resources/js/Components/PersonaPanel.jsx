@@ -19,11 +19,9 @@ import useEscapeKey from '@/lib/useEscapeKey';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
 import { municipioByName, municipioLabel } from '@/lib/mapaPoliticoConstants';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
-import {
-    TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, PARENTESCOS,
-    NIVEL_CONFIANZA_OPTIONS, NIVEL_CONFIANZA_COLORS,
-    GENERO_OPTIONS, TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
-} from '@/lib/mapaPoliticoConstants';
+import { TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES } from '@/lib/mapaPoliticoConstants';
+import CatalogoOptions from '@/Components/CatalogoOptions';
+import { badgeStyle, colorDe, etiquetaDe, useCatalogos } from '@/lib/catalogos';
 
 function useConfirm() {
     const [state, setState] = useState({ open: false, title: '', message: '', onConfirm: null, danger: false });
@@ -123,6 +121,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     useEscapeKey(() => (confirmOpen ? closeConfirm() : onClose()));
     const campaign = useCampaign();
     const authUser = usePage().props.auth?.user;
+    const catalogos = useCatalogos();
     const canSeeEventos = canSeeEventAttendees(authUser);
     const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
@@ -780,7 +779,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <label className={labelCls}>Tipo documento</label>
                                             <select className={fieldCls} value={f('tipo_documento')} onChange={e => set('tipo_documento', e.target.value)}>
                                                 <option value="">Seleccionar...</option>
-                                                {TIPO_DOCUMENTO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                                <CatalogoOptions catalogo="tipo_documento" actual={[data?.tipo_documento, f('tipo_documento')]} />
                                             </select>
                                         </div>
                                     </div>
@@ -793,7 +792,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <label className={labelCls}>Genero</label>
                                             <select className={fieldCls} value={f('genero')} onChange={e => set('genero', e.target.value)}>
                                                 <option value="">Seleccionar...</option>
-                                                {GENERO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                                <CatalogoOptions catalogo="genero" actual={[data?.genero, f('genero')]} />
                                             </select>
                                         </div>
                                     </div>
@@ -806,7 +805,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <label className={labelCls}>Estado civil</label>
                                             <select className={fieldCls} value={f('estado_civil')} onChange={e => set('estado_civil', e.target.value)}>
                                                 <option value="">Seleccionar...</option>
-                                                {ESTADO_CIVIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                                <CatalogoOptions catalogo="estado_civil" actual={[data?.estado_civil, f('estado_civil')]} />
                                             </select>
                                         </div>
                                     </div>
@@ -819,7 +818,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <label className={labelCls}>Escolaridad</label>
                                             <select className={fieldCls} value={f('escolaridad')} onChange={e => set('escolaridad', e.target.value)}>
                                                 <option value="">Seleccionar...</option>
-                                                {ESCOLARIDAD_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                                <CatalogoOptions catalogo="escolaridad" actual={[data?.escolaridad, f('escolaridad')]} />
                                             </select>
                                         </div>
                                     </div>
@@ -842,13 +841,13 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         <p className="text-[15px] text-[var(--color-ink)] whitespace-pre-line break-words">{data.observacion || 'Sin observaciones.'}</p>
                                     </div>
                                     <DataRow label="Cedula" value={data.cedula} />
-                                    <DataRow label="Tipo doc." value={data.tipo_documento} />
+                                    <DataRow label="Tipo doc." value={etiquetaDe(catalogos, 'tipo_documento', data.tipo_documento)} />
                                     <DataRow label="Fec. expedicion" value={dateVal(data.fecha_expedicion_doc)} />
-                                    <DataRow label="Genero" value={data.genero} />
+                                    <DataRow label="Genero" value={etiquetaDe(catalogos, 'genero', data.genero)} />
                                     <DataRow label="Fec. nacimiento" value={dateVal(data.fecha_nacimiento)} />
-                                    <DataRow label="Estado civil" value={data.estado_civil} />
+                                    <DataRow label="Estado civil" value={etiquetaDe(catalogos, 'estado_civil', data.estado_civil)} />
                                     <DataRow label="Profesion" value={data.profesion} />
-                                    <DataRow label="Escolaridad" value={data.escolaridad} />
+                                    <DataRow label="Escolaridad" value={etiquetaDe(catalogos, 'escolaridad', data.escolaridad)} />
                                     {data.foto && (
                                         <div className="flex items-start justify-between py-2 border-b border-[var(--color-line)]">
                                             <span className="text-[14px] text-[var(--color-ink-faint)] uppercase tracking-wider flex-shrink-0 w-[140px]">Foto</span>
@@ -897,8 +896,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         <label className={labelCls}>Zona</label>
                                         <select className={fieldCls} value={f('zona')} onChange={e => set('zona', e.target.value)}>
                                             <option value="">Seleccionar...</option>
-                                            <option value="rural">Rural</option>
-                                            <option value="urbana">Urbana</option>
+                                            <CatalogoOptions catalogo="zona" actual={[data?.zona, f('zona')]} />
                                         </select>
                                     </div>
                                     {isLider && !data._offline && (
@@ -994,7 +992,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             onSaved={res => setData(d => ({ ...d, comuna_id: res.comuna_id, comuna_source: res.comuna_source, comuna_nombre: res.comuna_nombre }))}
                                         />
                                     )}
-                                    <DataRow label="Zona" value={data.zona} />
+                                    <DataRow label="Zona" value={etiquetaDe(catalogos, 'zona', data.zona)} />
                                     {(data.puesto_votacion || data.departamento_votacion || data.municipio_votacion) && (
                                         <>
                                             <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] pt-3">Puesto de votacion</p>
@@ -1170,7 +1168,8 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <div>
                                                 <label className={labelCls}>Nivel de confianza</label>
                                                 <select className={fieldCls} value={f('nivel_confianza')} onChange={e => set('nivel_confianza', e.target.value)}>
-                                                    {NIVEL_CONFIANZA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                    <option value="">Sin asignar</option>
+                                                    <CatalogoOptions catalogo="nivel_confianza" actual={[data?.nivel_confianza, f('nivel_confianza')]} />
                                                 </select>
                                             </div>
                                         </div>
@@ -1194,8 +1193,8 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         {data.nivel_confianza && (
                                             <div className="flex items-start justify-between py-2 border-b border-[var(--color-line)]">
                                                 <span className="text-[14px] text-[var(--color-ink-faint)] uppercase tracking-wider flex-shrink-0 w-[140px]">Confianza</span>
-                                                <span className={`px-2 py-1 rounded text-[12px] font-bold ${NIVEL_CONFIANZA_COLORS[data.nivel_confianza] || 'bg-gray-100 text-gray-600'}`}>
-                                                    {NIVEL_CONFIANZA_OPTIONS.find(o => o.value === data.nivel_confianza)?.label || data.nivel_confianza}
+                                                <span className={`px-2 py-1 rounded text-[12px] font-bold ${colorDe(catalogos, 'nivel_confianza', data.nivel_confianza) ? '' : 'bg-gray-100 text-gray-600'}`} style={badgeStyle(colorDe(catalogos, 'nivel_confianza', data.nivel_confianza))}>
+                                                    {etiquetaDe(catalogos, 'nivel_confianza', data.nivel_confianza)}
                                                 </span>
                                             </div>
                                         )}
@@ -1341,7 +1340,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                                 <label className={labelCls}>Parentesco</label>
                                                 <select className={fieldCls} value={nexoForm.parentesco} onChange={e => setNexoForm({ ...nexoForm, parentesco: e.target.value })}>
                                                     <option value="">Seleccionar...</option>
-                                                    {PARENTESCOS.map(p => <option key={p} value={p}>{p}</option>)}
+                                                    <CatalogoOptions catalogo="parentesco" actual={nexoForm.parentesco} />
                                                 </select>
                                             </div>
                                         </div>
@@ -1397,7 +1396,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                                         <label className={labelCls}>Parentesco</label>
                                                         <select className="w-full border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--color-primary)]" value={nexoForm.parentesco} onChange={e => setNexoForm({ ...nexoForm, parentesco: e.target.value })}>
                                                             <option value="">Seleccionar...</option>
-                                                            {PARENTESCOS.map(p => <option key={p} value={p}>{p}</option>)}
+                                                            <CatalogoOptions catalogo="parentesco" actual={nexoForm.parentesco} />
                                                         </select>
                                                     </div>
                                                 </div>
@@ -1439,7 +1438,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                                 <div>
                                                     <p className="text-[16px] lg:text-[18px] font-bold text-[var(--color-ink)]">{n.nombre}</p>
                                                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                        {n.parentesco && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-[12px] font-bold rounded">{n.parentesco}</span>}
+                                                        {n.parentesco && <span className="px-2 py-1 bg-blue-100 text-blue-700 text-[12px] font-bold rounded">{etiquetaDe(catalogos, 'parentesco', n.parentesco)}</span>}
                                                         {n.cargo && <span className="text-[14px] text-[var(--color-ink-faint)]">{n.cargo}</span>}
                                                         {n.edad && <span className="text-[14px] text-[var(--color-ink-faint)]">{n.edad} anos</span>}
                                                     </div>

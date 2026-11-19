@@ -2,15 +2,8 @@ import { useState, useRef, useEffect, useId } from 'react';
 import { useCampaign } from '@/lib/campaign';
 import { formatEventDate } from '@/lib/eventos';
 import { eventOptionLabel } from '@/lib/eventosIntegracion';
+import { catalogoDe, useCatalogos } from '@/lib/catalogos';
 
-const NIVEL_OPTIONS = [
-    { value: '', label: 'Todos' },
-    { value: 'sin_llamar', label: 'Sin llamar' },
-    { value: 'contactado', label: 'Contactado' },
-    { value: 'confirmado', label: 'Confirmado' },
-    { value: 'comprometido', label: 'Comprometido' },
-    { value: 'no_responde', label: 'No responde' },
-];
 
 // Electo import (lideres.migracion_flags).
 const POR_COMPLETAR_OPTIONS = [
@@ -81,6 +74,8 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     const porCompletarId = `${uid}-por-completar`;
     const importadosId = `${uid}-importados-inactivos`;
     const campaign = useCampaign();
+    // Every nivel, also the switched off ones: old fichas may still have them.
+    const nivelOptions = [{ value: '', label: 'Todos' }, ...catalogoDe(useCatalogos(), 'nivel_confianza').map(o => ({ value: o.valor, label: o.etiqueta }))];
     const [munSearch, setMunSearch] = useState('');
     const [munOpen, setMunOpen] = useState(false);
     const munRef = useRef(null);
@@ -236,7 +231,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
                     onChange={e => setNivelConfianza(e.target.value)}
                     className={inputCls}
                 >
-                    {NIVEL_OPTIONS.map(o => (
+                    {nivelOptions.map(o => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                 </select>

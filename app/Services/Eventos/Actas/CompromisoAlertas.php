@@ -4,13 +4,14 @@ namespace App\Services\Eventos\Actas;
 
 use App\Models\EventActa;
 use App\Models\EventCompromiso;
+use App\Services\Configuracion\Ajuste;
 use App\Services\Empresarios\OrganizacionScope;
 use App\Services\Eventos\EventScope;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 // What needs attention for the current user (request()->user(): visible campaigns and territory): open compromisos
-// (pendiente, en_curso) of CONFIRMED actas that are overdue, due within DIAS days, or whose reminder date arrived.
+// (pendiente, en_curso) of CONFIRMED actas that are overdue, due within the days of the ajuste compromisos.dias_por_vencer (default DIAS), or whose reminder date arrived.
 // Each compromiso counts once, in that order of priority. Used by the bell and the daily e-mail. Events' compromisos
 // with view.eventos/manage.eventos, organizations' (docs/empresarios.md) with view.empresarios/manage.empresarios.
 class CompromisoAlertas
@@ -24,7 +25,7 @@ class CompromisoAlertas
     public function summary(int $limit = 15): array
     {
         $today = EventCompromiso::today();
-        $soon = Carbon::parse($today)->addDays(self::DIAS)->toDateString();
+        $soon = Carbon::parse($today)->addDays(Ajuste::int('compromisos.dias_por_vencer'))->toDateString();
         // "< next day": a date column may come back with a time (SQLite stores 'Y-m-d 00:00:00').
         $afterSoon = Carbon::parse($soon)->addDay()->toDateString();
         $tomorrow = Carbon::parse($today)->addDay()->toDateString();

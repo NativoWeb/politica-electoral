@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-vi.mock('@inertiajs/react', () => ({ router: { reload: vi.fn() } }));
+// The lists come from the shared prop "opcionesListas"; without it the forms use the original options.
+vi.mock('@inertiajs/react', () => ({ router: { reload: vi.fn() }, usePage: () => ({ props: {} }) }));
 vi.mock('@/lib/offlineDb', () => ({ offlineCreateLider: vi.fn() }));
 vi.mock('@/lib/useAllMunicipios', () => ({ useAllMunicipios: list => list }));
 vi.mock('@/Components/SearchableDropdown', () => ({

@@ -10,6 +10,7 @@ use App\Models\AuditLog;
 use App\Models\Organizacion;
 use App\Models\OrganizacionMiembro;
 use App\Models\OrgCatalogo;
+use App\Services\Configuracion\Catalogo;
 use App\Services\Empresarios\OrganizacionListing;
 use App\Services\Empresarios\OrganizacionScope;
 use App\Services\Empresarios\OrganizacionService;
@@ -176,7 +177,7 @@ class OrganizacionController extends Controller
             ->map(fn ($r) => [
                 'id' => $r->id, 'nombre' => $r->nombre, 'tipo' => $r->tipo, 'tipo_label' => Organizacion::TIPOS[$r->tipo] ?? $r->tipo,
                 'municipio' => $r->municipio, 'campaign_id' => $r->campaign_id, 'rol' => $r->rol,
-                'rol_label' => OrganizacionMiembro::ROLES[$r->rol] ?? $r->rol, 'nota' => $r->nota,
+                'rol_label' => Catalogo::etiqueta('rol_miembro', $r->rol), 'nota' => $r->nota,
             ]);
 
         return response()->json(['success' => true, 'data' => $items]);
@@ -277,7 +278,7 @@ class OrganizacionController extends Controller
                 return [
                     'id' => $m->id, 'lider_id' => $inside ? $m->lider_id : null, 'nombre' => $m->nombre,
                     'cedula' => $inside ? $m->cedula : null, 'telefono' => $inside ? $m->telefono : null, 'municipio' => $m->municipio,
-                    'rol' => $m->rol, 'rol_label' => OrganizacionMiembro::ROLES[$m->rol] ?? $m->rol, 'nota' => $m->nota, 'campaign_id' => $m->campaign_id,
+                    'rol' => $m->rol, 'rol_label' => Catalogo::etiqueta('rol_miembro', $m->rol), 'nota' => $m->nota, 'campaign_id' => $m->campaign_id,
                 ];
             })->values()->all();
         $related = fn ($query) => $this->scope->scope($query, 'g')->leftJoin('geographic_units as m', 'm.id', '=', 'g.municipio_id')

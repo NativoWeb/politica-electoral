@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { usePage } from '@inertiajs/react';
 import { MONTHS, barrioSuggestions, birthYears } from '@/lib/eventos';
 
 export const fieldCls = 'w-full px-4 py-3.5 border-2 border-[var(--color-line-strong)] rounded-xl text-[18px] text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-primary)] aria-[invalid=true]:border-red-500';
@@ -39,7 +40,7 @@ function TextField({ name, label, required, value, onChange, error, inputRef, hi
 }
 
 export function BirthDateSelects({ value, onChange, error }) {
-    const years = birthYears();
+    const years = birthYears(new Date(), usePage().props?.ajustesPublicos?.edad_minima_asistentes ?? 14);
     const errorId = 'att-birth-error';
     const selectCls = `${fieldCls.replace('px-4', 'px-2')} appearance-none`;
     const describedBy = error ? errorId : undefined;

@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\CompromisosResumenDiario;
 use App\Mail\CompromisosResumen;
 use App\Models\Campaign;
 use App\Models\CampaignEvent;
 use App\Models\User;
+use App\Services\Configuracion\Ajuste;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -245,6 +248,50 @@ class EventCompromisoTest extends TestCase
 
         $this->artisan('compromisos:resumen-diario')->expectsOutputToContain('Correo no configurado')->assertSuccessful();
         Mail::assertNothingSent();
+    }
+
+    public function test_the_scheduled_summary_goes_once_a_day_and_catches_up_a_skipped_quarter(): void
+    {
+        (require database_path('migrations/2026_11_19_000001_create_centro_configuracion_tables.php'))->up();
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.test']);
+        Mail::fake();
+        $this->acta($this->event, [$this->compromiso('Vencido CD', now('America/Bogota')->subDays(3)->toDateString())]);
+        $at = fn (string $time) => $this->travelTo(Carbon::parse("2026-11-19 {$time}", 'America/Bogota'));
+
+        $at('06:45');
+        $this->assertFalse(CompromisosResumenDiario::toca());
+
+        // 07:00 and 07:15 did not run: 07:30 still sends.
+        $at('07:30');
+        $this->assertTrue(CompromisosResumenDiario::toca());
+        $this->artisan('compromisos:resumen-diario', ['--programado' => true])->assertSuccessful();
+        Mail::assertSent(CompromisosResumen::class, 1);
+        $this->assertFalse(CompromisosResumenDiario::toca());
+
+        // An overlapping run, or the hour moved later the same day: no second e-mail.
+        $this->artisan('compromisos:resumen-diario', ['--programado' => true])->expectsOutputToContain('ya se envió')->assertSuccessful();
+        DB::table('ajustes')->insert(['clave' => 'compromisos.hora_resumen', 'valor' => json_encode('09:00'), 'tipo' => 'time', 'created_at' => now(), 'updated_at' => now()]);
+        Ajuste::olvidar();
+        $at('09:15');
+        $this->assertFalse(CompromisosResumenDiario::toca());
+        Mail::assertSent(CompromisosResumen::class, 1);
+
+        // Next day, from the new hour.
+        $this->travelTo(Carbon::parse('2026-11-20 08:45', 'America/Bogota'));
+        $this->assertFalse(CompromisosResumenDiario::toca());
+        $this->travelTo(Carbon::parse('2026-11-20 09:00', 'America/Bogota'));
+        $this->assertTrue(CompromisosResumenDiario::toca());
+    }
+
+    public function test_a_scheduled_summary_that_could_not_send_anything_is_retried(): void
+    {
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.test']);
+        $this->acta($this->event, [$this->compromiso('Vencido CD', now('America/Bogota')->subDays(3)->toDateString())]);
+        $this->travelTo(Carbon::parse('2026-11-19 07:00', 'America/Bogota'));
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP caído'));
+
+        $this->artisan('compromisos:resumen-diario', ['--programado' => true])->assertFailed();
+        $this->assertTrue(CompromisosResumenDiario::toca());
     }
 
     public function test_isolation_and_permissions(): void

@@ -11,6 +11,7 @@ use App\Exports\GenericExport;
 use App\Exports\SheetsExport;
 use App\Exports\StreamedXlsx;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Services\Configuracion\Ajuste;
 use App\Services\GobernacionResultados;
 
 class ExportController extends Controller
@@ -20,6 +21,7 @@ class ExportController extends Controller
     public const PDF_MAX_ROWS = 500;
 
     // Votantes Excel: written row by row; past this many rows the file says it was cut (Bucaramanga alone has ~39.000).
+    // Default of the ajuste votantes.export_max_filas.
     public const VOTANTES_EXCEL_MAX_ROWS = 50000;
 
     // Up to this many rows an Excel is built as always (PhpSpreadsheet); bigger ones are streamed (openspout).
@@ -56,7 +58,7 @@ class ExportController extends Controller
             abort_unless($request->user()->hasPermission('view.votantes'), 403);
             $total = app(VotanteController::class)->listing($request)->count();
             if ($total > self::streamAfterRows()) {
-                $max = self::VOTANTES_EXCEL_MAX_ROWS;
+                $max = Ajuste::int('votantes.export_max_filas');
                 $rows = $this->votantesQuery($request)->limit($max)->cursor()->map(fn ($l) => $this->votanteRow($l));
 
                 return StreamedXlsx::download($rows, $columns, $title, $filename,

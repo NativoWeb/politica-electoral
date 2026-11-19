@@ -3,6 +3,8 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Services\Configuracion\Ajuste;
+use App\Services\Configuracion\Catalogo;
 use App\Support\CurrentCampaign;
 use App\Support\Features;
 use App\Support\PartyLogos;
@@ -90,6 +92,9 @@ class HandleInertiaRequests extends Middleware
                 'campanas' => Features::enabledFor('campanas', $user)
                     && ($user->hasPermission('view.campanas') || $user->hasPermission('manage.campanas')),
             ],
+            // Lists of the forms and the public ajustes (Centro de configuración); both cached, a few KB.
+            'opcionesListas' => fn () => $user ? Catalogo::paraFrontend() : [],
+            'ajustesPublicos' => fn () => Ajuste::publicos(),
             'visibleCampaigns' => fn () => $user ? $campaign->visibleCampaigns() : [],
             'partyLogos' => fn () => $user ? PartyLogos::map() : [],
             'agent' => $user ? [

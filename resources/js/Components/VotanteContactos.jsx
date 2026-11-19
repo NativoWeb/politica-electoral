@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import CatalogoOptions from '@/Components/CatalogoOptions';
+import { etiquetaDe, useCatalogos } from '@/lib/catalogos';
 
-const TIPO_OPTIONS = ['celular', 'fijo', 'whatsapp', 'email', 'otro'];
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 
 export default function VotanteContactos({ contactos = [], liderId, apiFetch, onUpdate, readOnly }) {
+    const catalogos = useCatalogos();
     const [adding, setAdding] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [form, setForm] = useState({ tipo: 'celular', valor: '', principal: false, estado: 'activo' });
@@ -75,7 +77,7 @@ export default function VotanteContactos({ contactos = [], liderId, apiFetch, on
                         <div className="flex-1 space-y-2">
                             <div className="flex gap-2">
                                 <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })} className={inputCls + ' w-28 flex-shrink-0'}>
-                                    {TIPO_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                                    <CatalogoOptions catalogo="tipo_contacto" actual={form.tipo} />
                                 </select>
                                 <input value={form.valor} onChange={e => setForm({ ...form, valor: e.target.value })} placeholder="Valor" className={inputCls} />
                             </div>
@@ -95,7 +97,7 @@ export default function VotanteContactos({ contactos = [], liderId, apiFetch, on
                     ) : (
                         <>
                             <div className="flex-1 min-w-0">
-                                <span className="text-[11px] font-semibold text-[var(--color-ink-faint)] uppercase">{c.tipo}</span>
+                                <span className="text-[11px] font-semibold text-[var(--color-ink-faint)] uppercase">{etiquetaDe(catalogos, 'tipo_contacto', c.tipo)}</span>
                                 <p className="text-[13px] text-[var(--color-ink)] truncate">{c.valor}</p>
                             </div>
                             {c.principal && (
@@ -121,7 +123,7 @@ export default function VotanteContactos({ contactos = [], liderId, apiFetch, on
                 <div className="p-3 rounded-lg border border-blue-200 bg-blue-50/50 space-y-2">
                     <div className="flex gap-2">
                         <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })} className={inputCls + ' w-28 flex-shrink-0'}>
-                            {TIPO_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                            <CatalogoOptions catalogo="tipo_contacto" actual={form.tipo} />
                         </select>
                         <input value={form.valor} onChange={e => setForm({ ...form, valor: e.target.value })} placeholder="Valor (telefono, email...)" className={inputCls} />
                     </div>

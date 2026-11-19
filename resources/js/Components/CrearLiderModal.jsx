@@ -6,10 +6,8 @@ import SearchableDropdown from '@/Components/SearchableDropdown';
 import ReferenteFields from '@/Components/ReferenteFields';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
 import { isSantanderMunicipio } from '@/lib/mapaPoliticoConstants';
-import {
-    TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES, GENERO_OPTIONS,
-    TIPO_DOCUMENTO_OPTIONS, ESTADO_CIVIL_OPTIONS, ESCOLARIDAD_OPTIONS,
-} from '@/lib/mapaPoliticoConstants';
+import { TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES } from '@/lib/mapaPoliticoConstants';
+import CatalogoOptions from '@/Components/CatalogoOptions';
 
 function VoiceButton({ onResult, label }) {
     const [listening, setListening] = useState(false);
@@ -348,14 +346,14 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                                     <label className={labelCls}>Tipo documento</label>
                                     <select className={fieldCls} value={form.tipo_documento} onChange={e => set('tipo_documento', e.target.value)}>
                                         <option value="">Seleccionar...</option>
-                                        {TIPO_DOCUMENTO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                        <CatalogoOptions catalogo="tipo_documento" actual={form.tipo_documento} />
                                     </select>
                                 </div>
                                 <div>
                                     <label className={labelCls}>Genero</label>
                                     <select className={fieldCls} value={form.genero} onChange={e => set('genero', e.target.value)}>
                                         <option value="">Seleccionar...</option>
-                                        {GENERO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                        <CatalogoOptions catalogo="genero" actual={form.genero} />
                                     </select>
                                 </div>
                             </div>
@@ -368,7 +366,7 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                                     <label className={labelCls}>Estado civil</label>
                                     <select className={fieldCls} value={form.estado_civil} onChange={e => set('estado_civil', e.target.value)}>
                                         <option value="">Seleccionar...</option>
-                                        {ESTADO_CIVIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                        <CatalogoOptions catalogo="estado_civil" actual={form.estado_civil} />
                                     </select>
                                 </div>
                             </div>
@@ -376,7 +374,7 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                                 <label className={labelCls}>Escolaridad</label>
                                 <select className={fieldCls} value={form.escolaridad} onChange={e => set('escolaridad', e.target.value)}>
                                     <option value="">Seleccionar...</option>
-                                    {ESCOLARIDAD_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                    <CatalogoOptions catalogo="escolaridad" actual={form.escolaridad} />
                                 </select>
                             </div>
                             <div>
@@ -391,8 +389,7 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                                 <label className={labelCls}>Zona</label>
                                 <select className={fieldCls} value={form.zona} onChange={e => set('zona', e.target.value)}>
                                     <option value="">Seleccionar...</option>
-                                    <option value="rural">Rural</option>
-                                    <option value="urbana">Urbana</option>
+                                    <CatalogoOptions catalogo="zona" actual={form.zona} />
                                 </select>
                             </div>
                             <p className="text-[12px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">Puesto de votacion</p>

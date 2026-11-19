@@ -11,6 +11,7 @@ const ICONS = {
     partidos: <path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm0 0h3" />,
     grupos: <path strokeLinecap="round" strokeLinejoin="round" d="M4 21V4m0 0h11l-1.5 4L15 12H4" />,
     usuarios: <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />,
+    configuracion: <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />,
     auditoria: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />,
 };
 
@@ -85,6 +86,9 @@ export default function Territory({ resumen }) {
                 )}
                 {isSuperadmin && (
                     <AdminCard href="/admin/usuarios" title="Usuarios" subtitle="Crear cuentas y asignar roles" iconClass="bg-purple-100 text-purple-700" icon={ICONS.usuarios} />
+                )}
+                {isSuperadmin && (
+                    <AdminCard href="/admin/configuracion" title="Configuración" subtitle="Listas de los formularios, ajustes del sistema e historial" iconClass="bg-slate-100 text-slate-700" icon={ICONS.configuracion} />
                 )}
                 {canAudit && (
                     <AdminCard href="/admin/auditoria" title="Auditoría" subtitle="Registro de todo lo que se hace en el sistema" iconClass="bg-sky-100 text-sky-700" icon={ICONS.auditoria} />
