@@ -55,6 +55,7 @@ trait BuildsEventosScenario
             $t->uuid('parent_id')->nullable();
             $t->uuid('candidate_person_id')->nullable();
             $t->boolean('whatsapp_enabled')->default(false);
+            $t->boolean('ve_resultados_electorales')->default(false);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -249,6 +250,7 @@ trait BuildsEventosScenario
             ['id' => $this->campX = (string) Str::uuid(), 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID],
             ['id' => $this->campY = (string) Str::uuid(), 'name' => 'Otra', 'slug' => 'otra', 'parent_id' => null],
         ]);
+        DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->update(['ve_resultados_electorales' => true]);
 
         $this->soto = $this->geo('province', 'Soto');
         $this->giron = $this->geo('municipality', 'Girón', $this->soto);

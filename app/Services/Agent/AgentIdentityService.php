@@ -93,6 +93,7 @@ class AgentIdentityService
                 'name' => DB::table('campaigns')->where('id', $user->campaignId())->value('name'),
                 'all' => $user->role?->code === 'R01_SUPERADMIN',
                 'visible_ids' => app(CurrentCampaign::class)->visibleIdsFor($user),
+                've_resultados_electorales' => app(CurrentCampaign::class)->seesElectoralResultsFor($user),
             ],
         ];
     }

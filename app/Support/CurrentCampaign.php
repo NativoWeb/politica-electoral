@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Campaign;
 use App\Models\User;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -16,6 +17,8 @@ class CurrentCampaign
     private array $descendants = [];
 
     private ?array $allIds = null;
+
+    public const SIN_RESULTADOS = 'Tu grupo político no tiene acceso a los resultados electorales.';
 
     public function user(): ?User
     {
@@ -50,6 +53,7 @@ class CurrentCampaign
             'name' => $campaign->name,
             'whatsapp_enabled' => (bool) $campaign->whatsapp_enabled,
             'is_subcampaign' => $campaign->parent_id !== null,
+            've_resultados_electorales' => $this->seesElectoralResults(),
         ] : null;
     }
 
@@ -127,6 +131,47 @@ class CurrentCampaign
         }
 
         return $this->isSuperadmin() || $this->ownId() === Campaign::DEFAULT_ID;
+    }
+
+    // The single rule for the shared electoral results (candidates, votes and parties of Alcaldía, Concejo, Senado,
+    // Cámara, Asamblea and Gobernación): the superadmin always, anyone else only when their own grupo político has
+    // ve_resultados_electorales on. Without an authenticated user (artisan commands) nothing is restricted.
+    public function seesElectoralResults(): bool
+    {
+        $user = $this->user();
+
+        return $user === null || $this->seesElectoralResultsFor($user);
+    }
+
+    // The same rule for a given user (the agent's whoami by phone). Cached on the request, never longer: the switch
+    // can change between two requests served by the same container.
+    public function seesElectoralResultsFor(User $user): bool
+    {
+        $cache = request()->attributes;
+        $key = 'sees_electoral_results:'.$user->id;
+        if (! $cache->has($key)) {
+            $cache->set($key, $user->role?->code === 'R01_SUPERADMIN'
+                || (bool) DB::table('campaigns')->where('id', $user->campaignId())->value('ve_resultados_electorales'));
+        }
+
+        return $cache->get($key);
+    }
+
+    public function abortUnlessSeesElectoralResults(): void
+    {
+        if (! $this->seesElectoralResults()) {
+            self::denyElectoralResults();
+        }
+    }
+
+    // 403 with the reason: {success: false, message} for JSON (AJAX convention), the Spanish 403 page otherwise.
+    public static function denyElectoralResults(): never
+    {
+        if (request()->expectsJson()) {
+            throw new HttpResponseException(response()->json(['success' => false, 'message' => self::SIN_RESULTADOS], 403));
+        }
+
+        abort(403, self::SIN_RESULTADOS);
     }
 
     public function scope($query, string $column = 'campaign_id')

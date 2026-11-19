@@ -30,7 +30,7 @@ class CampanasFeatureFlagTest extends TestCase
         $this->withoutVite();
         $this->createSchema();
 
-        DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico']);
+        DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico', 've_resultados_electorales' => true]);
         foreach ([['R01_SUPERADMIN', 5], ['R09_CAMPO', 1]] as [$code, $level]) {
             $this->roles[$code] = Role::create(['code' => $code, 'name' => $code, 'level' => $level])->id;
         }
@@ -48,6 +48,7 @@ class CampanasFeatureFlagTest extends TestCase
             $t->uuid('parent_id')->nullable();
             $t->uuid('candidate_person_id')->nullable();
             $t->boolean('whatsapp_enabled')->default(false);
+            $t->boolean('ve_resultados_electorales')->default(false);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });

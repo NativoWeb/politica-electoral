@@ -200,7 +200,7 @@ class MapaPoliticoController extends Controller
 
         $sectionCounts = self::sectionCounts($data);
 
-        $partyTotals = $this->partyTotalsWithLista($munId, $provinciaIds);
+        $partyTotals = $this->campaign()->seesElectoralResults() ? $this->partyTotalsWithLista($munId, $provinciaIds) : [];
         if ($partido) {
             $partyTotals = array_map(fn ($list) => array_values(array_filter($list, fn ($p) => mb_strtoupper($p['partido'] ?? '') === mb_strtoupper($partido))), $partyTotals);
         }
@@ -420,7 +420,10 @@ class MapaPoliticoController extends Controller
         $estado = $request->input('estado', 'activos');
         // Filtering by campaign shows only that campaign's lideres: shared electoral rows belong to no campaign.
         $campana = $this->campaign()->filterId($request->input('campana'));
-        $electoral = $campana === null;
+        // Without the electoral results (CurrentCampaign::seesElectoralResults) the Alcaldía, Concejo, Senado, Cámara and
+        // Asamblea sections list only the group's own fichas whose cargo is of that office (ownElectoralFichas).
+        $seesResults = $this->campaign()->seesElectoralResults();
+        $electoral = $campana === null && $seesResults;
 
         // #3: Escape search for ILIKE
         $searchEscaped = $search ? $this->escapeLike($search) : null;
@@ -677,6 +680,10 @@ class MapaPoliticoController extends Controller
             }
         }
 
+        if (! $seesResults && $page === null) {
+            $data = array_merge($data, $this->ownElectoralFichas($tipoMatch, $sectionFilters, $limit));
+        }
+
         // === FILTRO POR PARTIDO ===
         if ($partido) {
             $data = array_values(array_filter($data, fn ($row) => mb_strtoupper($row['partido'] ?? '') === mb_strtoupper($partido)));
@@ -853,6 +860,38 @@ class MapaPoliticoController extends Controller
         $approxTotal = count($data) + array_sum(array_map(fn ($p) => $p['total'] - $p['loaded'], $sectionPaging));
 
         return compact('data', 'municipios', 'provincias', 'municipioInfo', 'munId', 'provinciaIds', 'partido', 'campana', 'applyEstado', 'multiFicha', 'sectionPaging', 'approxTotal');
+    }
+
+    // Section => cargo patterns of the own fichas listed there for a group without the electoral results
+    // ("Candidato Alcaldía 2027" and "Alcalde" go to Alcaldía, "Concejal" to Concejo...).
+    private const OWN_ELECTORAL_SECTIONS = [
+        'alcaldia' => ['Alcaldía', ['%alcald%']],
+        'concejo' => ['Concejo', ['%concej%']],
+        'senado' => ['Senado', ['%senad%']],
+        'camara' => ['Cámara', ['%cámara%', '%camara%', '%representante%']],
+        'asamblea' => ['Asamblea', ['%asamblea%', '%diputad%']],
+    ];
+
+    // The group's own fichas of Líderes and Nuevos Líderes (never voters) in the electoral sections chosen, with
+    // every filter of the page: what a group without the electoral results sees in Alcaldía, Concejo, Senado, Cámara
+    // and Asamblea. A ficha in Líderes too merges with its row here by id in rows().
+    private function ownElectoralFichas(Closure $tipoMatch, array $f, int $limit): array
+    {
+        $rows = [];
+        foreach (self::OWN_ELECTORAL_SECTIONS as $key => [$label, $patterns]) {
+            if (! $tipoMatch($key)) {
+                continue;
+            }
+            foreach (['lideres', 'nuevos_lideres'] as $section) {
+                $query = $this->personSectionQuery($section, ['tipos' => [$section]] + $f);
+                $query->where(fn ($q) => collect($patterns)->each(fn ($p) => $q->orWhereRaw('LOWER(cargo) LIKE ?', [$p])));
+                foreach ($query->orderBy('nombre')->orderBy('id')->limit($limit)->get() as $row) {
+                    $rows[] = ['tipo_registro' => $label] + (array) $row;
+                }
+            }
+        }
+
+        return $rows;
     }
 
     // personKey => true of the Alcaldía and Concejo candidates that the listing shows with the same filters and that
@@ -1085,7 +1124,7 @@ class MapaPoliticoController extends Controller
             'barrio' => $data['barrio'] ?? null,
             'zona' => $data['zona'] ?? null,
             'observacion' => $data['observacion'] ?? null,
-            'partido' => filled($data['partido'] ?? null) ? \App\Models\PoliticalOrganization::upperName($data['partido']) : null,
+            'partido' => filled($data['partido'] ?? null) ? PoliticalOrganization::upperName($data['partido']) : null,
             'geographic_unit_id' => $data['municipio_id'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -1159,7 +1198,8 @@ class MapaPoliticoController extends Controller
 
         $nexoOwners = [$id];
         $candidatePersonId = null;
-        if ($source === 'lider') {
+        // A namesake candidacy (its party and votes) only for a group that sees the electoral results.
+        if ($source === 'lider' && $this->campaign()->seesElectoralResults()) {
             $linkedPersons = app(UpdateVotante::class)->linkedPersonIds($person);
             $nexoOwners = array_merge($nexoOwners, $linkedPersons->all());
             $candidatePersonId = $linkedPersons->count() === 1 ? $linkedPersons->first() : null;

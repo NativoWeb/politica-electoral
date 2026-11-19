@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Campaign;
 use App\Services\CampaignService;
 use App\Support\CurrentCampaign;
 use Illuminate\Foundation\Http\FormRequest;
@@ -23,8 +24,13 @@ class CampaignRequest extends FormRequest
             'slug' => CampaignService::slug($this->input('slug'), $this->input('name')),
             'parent_id' => $this->input('parent_id') ?: null,
             'candidate_person_id' => $this->input('candidate_person_id') ?: null,
-            'whatsapp_enabled' => $this->boolean('whatsapp_enabled'),
         ]);
+        // A switch that was not sent keeps its stored value (and leaves no audit): only a sent one is changed.
+        foreach (['whatsapp_enabled', 've_resultados_electorales'] as $switch) {
+            if ($this->has($switch)) {
+                $this->merge([$switch => $this->boolean($switch)]);
+            }
+        }
     }
 
     public function rules(): array
@@ -35,6 +41,7 @@ class CampaignRequest extends FormRequest
             'parent_id' => ['nullable', 'uuid', 'exists:campaigns,id'],
             'candidate_person_id' => ['nullable', 'uuid', Rule::exists('persons', 'id')->whereNull('deleted_at')],
             'whatsapp_enabled' => ['boolean'],
+            've_resultados_electorales' => ['boolean'],
         ];
     }
 
@@ -42,6 +49,11 @@ class CampaignRequest extends FormRequest
     {
         return [
             function (Validator $validator) {
+                // The root group always sees the electoral results: they are the platform's own data.
+                if ($this->route('id') === Campaign::DEFAULT_ID && $this->has('ve_resultados_electorales')
+                    && ! $this->boolean('ve_resultados_electorales')) {
+                    $validator->errors()->add('ve_resultados_electorales', 'El grupo político principal siempre ve los resultados electorales.');
+                }
                 if ($validator->errors()->has('parent_id')) {
                     return;
                 }

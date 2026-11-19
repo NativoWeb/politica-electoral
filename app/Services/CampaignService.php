@@ -55,6 +55,7 @@ class CampaignService
             'parent_id' => $data['parent_id'] ?? null,
             'candidate_person_id' => $data['candidate_person_id'] ?? null,
             'whatsapp_enabled' => (bool) ($data['whatsapp_enabled'] ?? false),
+            've_resultados_electorales' => (bool) ($data['ve_resultados_electorales'] ?? false),
             'is_active' => true,
         ]);
         $campaign->save();

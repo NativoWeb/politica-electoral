@@ -13,6 +13,7 @@ use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsureOfflineOwner;
 use App\Http\Middleware\EnsurePasswordChanged;
+use App\Http\Middleware\EnsureSeesElectoralResults;
 use App\Http\Middleware\EnsureSuperadmin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveMergedPerson;
@@ -55,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'can.write' => EnsureCanWrite::class,
             'electoral.platform' => EnsureElectoralPlatform::class,
+            'electoral.results' => EnsureSeesElectoralResults::class,
             'campaign.whatsapp' => EnsureCampaignWhatsApp::class,
             'password.changed' => EnsurePasswordChanged::class,
             'permission' => EnsureHasPermission::class,

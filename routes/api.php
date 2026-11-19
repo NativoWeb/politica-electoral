@@ -72,8 +72,8 @@ Route::prefix('agent/v1')->name('api.agent.')->middleware(['throttle:agent', 'ag
             });
             Route::get('/votantes/{id}/seguimientos', [AgentVotanteController::class, 'seguimientos'])->name('votantes.seguimientos.index');
             Route::middleware('throttle:agent-reports')->group(function () {
-                Route::get('/reportes/municipio/{id}', [ReportController::class, 'municipio'])->name('reportes.municipio');
-                Route::get('/reportes/persona/{id}', [ReportController::class, 'persona'])->name('reportes.persona');
+                Route::get('/reportes/municipio/{id}', [ReportController::class, 'municipio'])->name('reportes.municipio')->middleware('electoral.results');
+                Route::get('/reportes/persona/{id}', [ReportController::class, 'persona'])->name('reportes.persona')->middleware('electoral.results');
             });
 
             Route::middleware('agent.can_write')->group(function () {

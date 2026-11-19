@@ -662,7 +662,8 @@ class EventoController extends Controller
     public function searchFigures(Request $request): JsonResponse
     {
         $q = Str::upper(Str::ascii(trim((string) $request->query('q', ''))));
-        if (mb_strlen($q) < 3) {
+        // Electoral persons and their candidacies are results: none for a group without them.
+        if (mb_strlen($q) < 3 || ! $this->campaign()->seesElectoralResults()) {
             return response()->json(['success' => true, 'data' => []]);
         }
 

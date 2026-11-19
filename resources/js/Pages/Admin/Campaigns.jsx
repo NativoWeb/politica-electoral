@@ -117,6 +117,7 @@ function CampaignModal({ tree, campaigns, defaultId, campaign, isEdit, onClose }
         slug: campaign?.slug ?? '',
         parent_id: isEdit ? (campaign?.parentId ?? '') : defaultId,
         whatsapp_enabled: campaign?.whatsappEnabled ?? false,
+        ve_resultados_electorales: campaign?.veResultadosElectorales ?? false,
         candidate_person_id: campaign?.candidateId ?? '',
     });
     const [slugTouched, setSlugTouched] = useState(isEdit);
@@ -225,6 +226,27 @@ function CampaignModal({ tree, campaigns, defaultId, campaign, isEdit, onClose }
                                 {form.errors.whatsapp_enabled && <p className="text-[13px] text-red-600 mt-1">{form.errors.whatsapp_enabled}</p>}
                             </div>
 
+                            <div className="border border-[var(--color-line)] rounded-lg p-3">
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={isDefault || !!form.data.ve_resultados_electorales}
+                                        onChange={e => form.setData('ve_resultados_electorales', e.target.checked)}
+                                        disabled={isDefault}
+                                        className="mt-1 w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="block text-[15px] font-bold text-[var(--color-ink)]">Ve resultados electorales</span>
+                                        <span className="block text-[13px] text-[var(--color-ink-faint)] mt-0.5">
+                                            {isDefault
+                                                ? 'El grupo político principal siempre ve los resultados electorales.'
+                                                : 'Sus usuarios ven los candidatos, electos, votos y partidos de Alcaldía, Concejo, Senado, Cámara, Asamblea y Gobernación. Apagado: solo ven las fichas de su grupo.'}
+                                        </span>
+                                    </span>
+                                </label>
+                                {form.errors.ve_resultados_electorales && <p className="text-[13px] text-red-600 mt-1">{form.errors.ve_resultados_electorales}</p>}
+                            </div>
+
                             <CandidatePicker value={candidate} onChange={pickCandidate} error={form.errors.candidate_person_id} />
 
                             <div className="border-t border-[var(--color-line)] pt-2">
@@ -294,6 +316,9 @@ function CampaignRow({ node, depth = 0, onEdit, onToggle }) {
                                 <p className="text-[15px] font-bold text-[var(--color-ink)] truncate" title={node.name}>{node.name}</p>
                                 {!node.isActive && (
                                     <span className="flex-shrink-0 px-2 py-0.5 rounded-md bg-red-50 border border-red-200 text-red-700 text-[11px] font-bold">Inactivo</span>
+                                )}
+                                {node.veResultadosElectorales && (
+                                    <span className="flex-shrink-0 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-bold">Ve resultados</span>
                                 )}
                             </div>
                             <p className="text-[13px] text-[var(--color-ink-faint)]">{campaignSummary(node)}</p>

@@ -78,6 +78,11 @@ class CampaignIsolationPostgresTest extends TestCase
         return $id;
     }
 
+    private function seesResults(string $campaignId): void
+    {
+        DB::table('campaigns')->where('id', $campaignId)->update(['ve_resultados_electorales' => true]);
+    }
+
     private function user(string $campaignId): User
     {
         $user = User::create([
@@ -128,10 +133,14 @@ class CampaignIsolationPostgresTest extends TestCase
     public function test_another_campaign_editing_a_candidate_only_touches_its_own_lider(): void
     {
         $p = $this->candidate('Zzcamp Pedro Candidato');
+        $payload = ['nombre' => 'Zzcamp Pedro Renombrado', 'partido' => $p->otherOrg->canonical_name, 'telefono' => '3009990000'];
 
-        $this->actingAs($this->userX)->putJson("/mapa-politico/persona/{$p->id}", [
-            'nombre' => 'Zzcamp Pedro Renombrado', 'partido' => $p->otherOrg->canonical_name, 'telefono' => '3009990000',
-        ])->assertOk();
+        // Without the electoral results the candidate is not even reachable.
+        $this->actingAs($this->userX)->putJson("/mapa-politico/persona/{$p->id}", $payload)->assertForbidden();
+        $this->assertDatabaseMissing('lideres', ['telefono' => '3009990000']);
+
+        $this->seesResults($this->campX);
+        $this->actingAs($this->userX)->putJson("/mapa-politico/persona/{$p->id}", $payload)->assertOk();
 
         $this->assertSame('Zzcamp Pedro Candidato', DB::table('persons')->where('id', $p->id)->value('full_name'));
         $this->assertSame($p->org->id, $this->endorsedOrg($p->candidacy));
@@ -160,6 +169,8 @@ class CampaignIsolationPostgresTest extends TestCase
             ->assertOk()->assertJsonPath('source', 'lider')->assertJsonPath('id', $this->liderA);
 
         $cedulaA = DB::table('lideres')->where('id', $this->liderA)->value('cedula');
+        $this->actingAs($this->userX)->getJson("/mapa-politico/persona/{$p->id}")->assertForbidden();
+        $this->seesResults($this->campX);
         $this->actingAs($this->userX)->getJson("/mapa-politico/persona/{$p->id}")
             ->assertOk()->assertJsonPath('source', 'persona')->assertJsonPath('id', $p->id)
             ->assertJsonMissing(['cedula' => $cedulaA]);
@@ -191,12 +202,18 @@ class CampaignIsolationPostgresTest extends TestCase
             ['id' => (string) Str::uuid(), 'campaign_id' => DB::table('lideres')->where('id', $this->liderC)->value('campaign_id'), 'person_id' => $this->liderC, 'nombre' => 'Nexo de C', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
+        $this->candidate('Zzcamp Candidato Offline');
+
         $x = $this->actingAs($this->userX)->getJson("/api/offline/download/{$this->mun}")->assertOk()->json();
         $this->assertSame([$this->liderB], array_column($x['lideres'], 'id'));
         $this->assertSame([], $x['nexos']);
+        // X does not see the electoral results: no candidate goes to its phones.
+        $this->assertNotContains('Zzcamp Candidato Offline', array_column($x['personas'], 'nombre'));
+        $this->assertSame([], $x['gobernador']);
 
         $cd = $this->actingAs($this->userCd)->getJson("/api/offline/download/{$this->mun}")->assertOk()->json();
         $this->assertEqualsCanonicalizing([$this->liderA, $this->liderB], array_column($cd['lideres'], 'id'));
+        $this->assertContains('Zzcamp Candidato Offline', array_column($cd['personas'], 'nombre'));
         $this->assertSame(['Nexo de A'], array_column($cd['nexos'], 'nombre'));
     }
 

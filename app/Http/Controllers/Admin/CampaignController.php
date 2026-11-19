@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CampaignRequest;
+use App\Models\AuditLog;
 use App\Models\Campaign;
 use App\Services\CampaignService;
 use Illuminate\Http\JsonResponse;
@@ -37,6 +38,7 @@ class CampaignController extends Controller
                 'parentId' => $c->parent_id,
                 'parentName' => $c->parent?->name,
                 'whatsappEnabled' => $c->whatsapp_enabled,
+                'veResultadosElectorales' => $c->ve_resultados_electorales,
                 'isActive' => $c->is_active,
                 'isDefault' => $c->id === Campaign::DEFAULT_ID,
                 'candidateId' => $c->candidate_person_id,
@@ -55,6 +57,9 @@ class CampaignController extends Controller
     public function store(CampaignRequest $request): RedirectResponse
     {
         $campaign = $this->campaigns->create($request->validated());
+        if ($campaign->ve_resultados_electorales) {
+            $this->auditResultsAccess($campaign, null);
+        }
 
         return back()->with('success', "Grupo político \"{$campaign->name}\" creado.");
     }
@@ -62,7 +67,11 @@ class CampaignController extends Controller
     public function update(CampaignRequest $request, string $id): RedirectResponse
     {
         $campaign = Campaign::findOrFail($id);
+        $before = (bool) $campaign->ve_resultados_electorales;
         $campaign->update($request->validated());
+        if ($before !== (bool) $campaign->ve_resultados_electorales) {
+            $this->auditResultsAccess($campaign, $before);
+        }
 
         return back()->with('success', "Grupo político \"{$campaign->name}\" actualizado.");
     }
@@ -79,6 +88,22 @@ class CampaignController extends Controller
         return back()->with('success', $campaign->is_active
             ? "Grupo político \"{$campaign->name}\" activado: sus usuarios ya pueden entrar."
             : "Grupo político \"{$campaign->name}\" desactivado: sus usuarios ya no pueden entrar.");
+    }
+
+    // Who turned the electoral results on or off for a group, apart from the request log: it decides what the group sees.
+    private function auditResultsAccess(Campaign $campaign, ?bool $before): void
+    {
+        AuditLog::create([
+            'user_id' => request()->user()?->id,
+            'action' => 'CAMPAIGN_ELECTORAL_RESULTS',
+            'entity_type' => 'campana',
+            'entity_id' => $campaign->id,
+            'metadata' => ['campana' => $campaign->name],
+            'before_state' => $before === null ? null : ['ve_resultados_electorales' => $before],
+            'after_state' => ['ve_resultados_electorales' => (bool) $campaign->ve_resultados_electorales],
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+        ]);
     }
 
     // Electoral persons by name, to pick a campaign's candidate.

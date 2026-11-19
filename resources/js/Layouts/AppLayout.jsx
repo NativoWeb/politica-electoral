@@ -227,7 +227,8 @@ function ExportButtons({ url }) {
 }
 
 const SIDEBAR_ITEMS = [
-    { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador' },
+    // electoral: only electoral results, hidden for a grupo político without them (auth.seesElectoralResults).
+    { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador', electoral: true },
     { name: 'MAPA', href: '/mapa-politico', label: 'Mapa Politico', tabLabel: 'Mapa', permission: 'view.mapa' },
     { name: 'VOTANTES', href: '/votantes', label: 'Votantes', permission: 'view.votantes' },
     { name: 'EVENTOS', href: '/eventos', label: 'Eventos', permission: ['view.eventos', 'manage.eventos', 'register.asistentes'] },
@@ -247,7 +248,9 @@ function menuItems(items, auth, hasPerm, features) {
     const enabled = (feature) => !feature || features?.[feature] === true;
     // Auditoría is a card of the Admin page: its own menu item only for who cannot open that page.
     const adminHome = allowed('view.admin') && auth?.canEditElectoral !== false;
-    return items.filter(item => enabled(item.feature) && allowed(item.permission) && !(item.name === 'AUDITORIA' && adminHome)).flatMap(item => {
+    const seesResults = auth?.seesElectoralResults !== false;
+    return items.filter(item => enabled(item.feature) && allowed(item.permission) && !(item.name === 'AUDITORIA' && adminHome)
+        && !(item.electoral && !seesResults)).flatMap(item => {
         if (item.name !== 'ADMIN' || auth?.canEditElectoral !== false) return [item];
         return hasPerm('manage.users') ? [{ ...item, href: '/admin/usuarios', label: 'Usuarios', icon: 'USUARIOS' }] : [];
     });
@@ -488,8 +491,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         <CampaignBadge campaign={auth?.campaign} className="max-w-[46vw] md:max-w-[220px] lg:max-w-[260px]" />
                     </div>
 
+                    {/* Every search result is an electoral page: no search for a group without the results. */}
                     <div className="hidden md:block flex-1 max-w-lg mx-8">
-                        <GlobalSearch />
+                        {auth?.seesElectoralResults !== false && <GlobalSearch />}
                     </div>
 
                     {/* Desktop header actions */}
@@ -554,9 +558,11 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     </div>
                 )}
                 {/* Mobile search bar */}
-                <div className="lg:hidden bg-[var(--color-primary-dark)] px-3 py-2">
-                    <GlobalSearch />
-                </div>
+                {auth?.seesElectoralResults !== false && (
+                    <div className="lg:hidden bg-[var(--color-primary-dark)] px-3 py-2">
+                        <GlobalSearch />
+                    </div>
+                )}
             </header>
 
             {/* Mobile user menu (bottom sheet) */}

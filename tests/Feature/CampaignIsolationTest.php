@@ -59,6 +59,7 @@ class CampaignIsolationTest extends TestCase
             $t->uuid('parent_id')->nullable();
             $t->uuid('candidate_person_id')->nullable();
             $t->boolean('whatsapp_enabled')->default(false);
+            $t->boolean('ve_resultados_electorales')->default(false);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -235,6 +236,7 @@ class CampaignIsolationTest extends TestCase
             ['id' => $this->campX = (string) Str::uuid(), 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID],
             ['id' => $this->campY = (string) Str::uuid(), 'name' => 'Otra', 'slug' => 'otra', 'parent_id' => null],
         ]);
+        DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->update(['ve_resultados_electorales' => true]);
 
         $provincia = $this->geo('province', 'Soto');
         $this->mun = $this->geo('municipality', 'Girón', $provincia);
@@ -611,7 +613,8 @@ class CampaignIsolationTest extends TestCase
         // A campaign the user cannot see (or garbage) is ignored, never a way in.
         $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $names($this->userCd, "&campana={$this->campY}"));
         $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $names($this->userCd, '&campana=no-es-uuid'));
-        $this->assertSame(['Beto Campaña X', 'Ceci Campaña Y'], $names($this->userX, '&campana='.Campaign::DEFAULT_ID));
+        // X does not see the electoral results (ve_resultados_electorales off): only its own lideres, never the candidate.
+        $this->assertSame(['Beto Campaña X'], $names($this->userX, '&campana='.Campaign::DEFAULT_ID));
         $this->actingAs($this->userCd)->get("/mapa-politico?tipo=lideres&campana={$this->campY}")
             ->assertInertia(fn (AssertableInertia $page) => $page->missing('filters.campana'));
     }
@@ -1040,6 +1043,8 @@ class CampaignIsolationTest extends TestCase
         $person = (string) Str::uuid();
         DB::table('persons')->insert(['id' => $person, 'full_name' => 'Candidato Compartido']);
         $nexoCd = $this->nexo(Campaign::DEFAULT_ID, $person, 'Nexo del CD');
+        // Only a group that sees the electoral results reaches an electoral person (ElectoralResultsAccessTest).
+        DB::table('campaigns')->where('id', $this->campY)->update(['ve_resultados_electorales' => true]);
 
         $this->actingAs($this->userY)->postJson("/mapa-politico/persona/{$person}/nexos", ['nombre' => 'Nexo de Y'])->assertOk();
         $this->assertDatabaseHas('nexos_familiares', ['person_id' => $person, 'nombre' => 'Nexo de Y', 'campaign_id' => $this->campY]);
@@ -1103,7 +1108,7 @@ class CampaignIsolationTest extends TestCase
 
     public function test_the_panel_shows_every_field_of_a_new_lider(): void
     {
-        $id = (string) \Illuminate\Support\Str::uuid();
+        $id = (string) Str::uuid();
         $this->actingAs($this->userCd)->postJson('/mapa-politico/crear-lider', [
             'client_id' => $id, 'nombre' => 'Carlo Panel Garza', 'municipio_id' => $this->mun, 'tipos' => ['Nuevos Líderes'], 'cargo' => 'Lider',
             'observacion' => 'Es cafetero.', 'genero' => 'Masculino', 'tipo_documento' => 'CC', 'estado_civil' => 'Soltero/a',

@@ -52,6 +52,7 @@ class CampaignScreenTest extends TestCase
             $t->uuid('parent_id')->nullable();
             $t->uuid('candidate_person_id')->nullable();
             $t->boolean('whatsapp_enabled')->default(false);
+            $t->boolean('ve_resultados_electorales')->default(false);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -131,6 +132,7 @@ class CampaignScreenTest extends TestCase
             ['id' => $this->campX = (string) Str::uuid(), 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID],
             ['id' => $this->campY = (string) Str::uuid(), 'name' => 'Otra', 'slug' => 'otra', 'parent_id' => null],
         ]);
+        DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->update(['ve_resultados_electorales' => true]);
 
         foreach ([['R01_SUPERADMIN', 5], ['R02_ADMIN_FUNCIONAL', 4], ['R09_CAMPO', 1]] as [$code, $level]) {
             $this->roles[$code] = Role::create(['code' => $code, 'name' => $code, 'level' => $level])->id;
@@ -250,6 +252,62 @@ class CampaignScreenTest extends TestCase
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'PUT admin.campaigns.update', 'entity_type' => 'campana', 'entity_id' => $this->campX,
         ]);
+    }
+
+    public function test_the_electoral_results_switch_is_saved_audited_and_only_by_the_superadmin(): void
+    {
+        $this->assertFalse((bool) DB::table('campaigns')->where('id', $this->campX)->value('ve_resultados_electorales'));
+        $payload = ['name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 've_resultados_electorales' => true];
+
+        // A group's own admin cannot give itself the results.
+        $this->actingAs($this->adminX)->put("/admin/campanas/{$this->campX}", $payload)->assertForbidden();
+        $this->assertFalse((bool) DB::table('campaigns')->where('id', $this->campX)->value('ve_resultados_electorales'));
+
+        $this->actingAs($this->superadmin)->put("/admin/campanas/{$this->campX}", $payload)->assertSessionHasNoErrors();
+        $this->assertTrue((bool) DB::table('campaigns')->where('id', $this->campX)->value('ve_resultados_electorales'));
+        $log = DB::table('audit_logs')->where('action', 'CAMPAIGN_ELECTORAL_RESULTS')->where('entity_id', $this->campX)->first();
+        $this->assertSame($this->superadmin->id, $log->user_id);
+        $this->assertSame(['ve_resultados_electorales' => false], json_decode($log->before_state, true));
+        $this->assertSame(['ve_resultados_electorales' => true], json_decode($log->after_state, true));
+
+        // Saving again without a change logs nothing new; turning it off does.
+        $this->actingAs($this->superadmin)->put("/admin/campanas/{$this->campX}", $payload)->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('audit_logs')->where('action', 'CAMPAIGN_ELECTORAL_RESULTS')->count());
+        $this->actingAs($this->superadmin)->put("/admin/campanas/{$this->campX}", ['ve_resultados_electorales' => false] + $payload)->assertSessionHasNoErrors();
+        $this->assertFalse((bool) DB::table('campaigns')->where('id', $this->campX)->value('ve_resultados_electorales'));
+        $this->assertSame(2, DB::table('audit_logs')->where('action', 'CAMPAIGN_ELECTORAL_RESULTS')->count());
+
+        // A new group starts without the results unless the box is checked.
+        $this->actingAs($this->superadmin)->post('/admin/campanas', ['name' => 'Grupo Nuevo', 'parent_id' => ''])->assertSessionHasNoErrors();
+        $this->assertFalse((bool) $this->campaign('grupo-nuevo')->ve_resultados_electorales);
+        $this->actingAs($this->superadmin)->post('/admin/campanas', ['name' => 'Grupo Con', 'parent_id' => '', 've_resultados_electorales' => true])->assertSessionHasNoErrors();
+        $this->assertTrue((bool) $this->campaign('grupo-con')->ve_resultados_electorales);
+        $this->assertSame(3, DB::table('audit_logs')->where('action', 'CAMPAIGN_ELECTORAL_RESULTS')->count());
+
+        $this->actingAs($this->superadmin)->get('/admin/campanas')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('campaigns.0.veResultadosElectorales', true));
+    }
+
+    public function test_a_switch_not_sent_keeps_its_value_and_the_root_group_never_loses_the_results(): void
+    {
+        DB::table('campaigns')->where('id', $this->campX)->update(['whatsapp_enabled' => true]);
+        $cd = ['name' => 'Centro Democrático', 'slug' => 'centro-democratico', 'parent_id' => ''];
+
+        // Neither switch sent: both keep their stored value and nothing is audited.
+        $this->actingAs($this->superadmin)->put('/admin/campanas/'.Campaign::DEFAULT_ID, $cd)->assertSessionHasNoErrors();
+        $this->actingAs($this->superadmin)->put("/admin/campanas/{$this->campX}", ['name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID])
+            ->assertSessionHasNoErrors();
+        $this->assertTrue((bool) DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->value('ve_resultados_electorales'));
+        $this->assertTrue((bool) DB::table('campaigns')->where('id', $this->campX)->value('whatsapp_enabled'));
+        $this->assertSame(0, DB::table('audit_logs')->where('action', 'CAMPAIGN_ELECTORAL_RESULTS')->count());
+
+        // Turning the root group's results off is refused, as reparenting or deactivating it.
+        $this->actingAs($this->superadmin)->put('/admin/campanas/'.Campaign::DEFAULT_ID, $cd + ['ve_resultados_electorales' => false])
+            ->assertSessionHasErrors(['ve_resultados_electorales' => 'El grupo político principal siempre ve los resultados electorales.']);
+        $this->actingAs($this->superadmin)->putJson('/admin/campanas/'.Campaign::DEFAULT_ID, $cd + ['ve_resultados_electorales' => false])
+            ->assertStatus(422)->assertJsonValidationErrors('ve_resultados_electorales');
+        $this->assertTrue((bool) DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->value('ve_resultados_electorales'));
+        $this->assertSame(0, DB::table('audit_logs')->where('action', 'CAMPAIGN_ELECTORAL_RESULTS')->count());
     }
 
     public function test_the_root_campaign_is_never_reparented_nor_deactivated(): void

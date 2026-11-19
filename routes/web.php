@@ -71,7 +71,7 @@ Route::post('/e/{token}', [EventoPublicoController::class, 'store'])->name('even
 
 // Public API (no auth required)
 Route::middleware('auth')->get('/api/search', [SearchController::class, 'search'])->name('search');
-Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api');
+Route::middleware('auth')->get('/api/comparar', [ComparadorController::class, 'comparar'])->name('comparar.api')->middleware('electoral.results');
 
 // Offline API: it packs a municipio's Mapa Politico data and only the map downloads it
 Route::middleware(['auth', 'password.changed', 'audit', 'permission:view.mapa'])->get('/api/offline/download/{municipioId}', [OfflineController::class, 'download'])->name('offline.download')->whereUuid('municipioId');
@@ -79,20 +79,20 @@ Route::middleware(['auth', 'password.changed', 'audit', 'permission:view.mapa'])
 // Protected routes
 Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/municipio/{id}', [MunicipioController::class, 'show'])->name('municipio.show')->whereUuid('id');
-    Route::get('/persona/{id}', [PersonaController::class, 'show'])->name('persona.show')->whereUuid('id');
-    Route::get('/partido/{id}', [PartidoController::class, 'show'])->name('partido.show')->whereUuid('id');
-    Route::get('/senado', [LegislativoController::class, 'senado'])->name('senado');
-    Route::get('/senado/{id}', [LegislativoController::class, 'senadoMunicipio'])->name('senado.municipio')->whereUuid('id');
-    Route::get('/camara', [LegislativoController::class, 'camara'])->name('camara');
-    Route::get('/camara/{id}', [LegislativoController::class, 'camaraMunicipio'])->name('camara.municipio')->whereUuid('id');
-    Route::get('/concejo', [LegislativoController::class, 'concejo'])->name('concejo');
-    Route::get('/concejo/{id}', [LegislativoController::class, 'concejoMunicipio'])->name('concejo.municipio')->whereUuid('id');
-    Route::get('/gobernador', [LegislativoController::class, 'gobernador'])->name('gobernador')->middleware('permission:view.gobernador');
-    Route::get('/gobernador/{id}', [LegislativoController::class, 'gobernadorMunicipio'])->name('gobernador.municipio')->whereUuid('id')->middleware('permission:view.gobernador');
-    Route::get('/asamblea', [LegislativoController::class, 'asamblea'])->name('asamblea');
-    Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio')->whereUuid('id');
-    Route::get('/consultas', [LegislativoController::class, 'consultas'])->name('consultas');
+    Route::get('/municipio/{id}', [MunicipioController::class, 'show'])->name('municipio.show')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/persona/{id}', [PersonaController::class, 'show'])->name('persona.show')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/partido/{id}', [PartidoController::class, 'show'])->name('partido.show')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/senado', [LegislativoController::class, 'senado'])->name('senado')->middleware('electoral.results');
+    Route::get('/senado/{id}', [LegislativoController::class, 'senadoMunicipio'])->name('senado.municipio')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/camara', [LegislativoController::class, 'camara'])->name('camara')->middleware('electoral.results');
+    Route::get('/camara/{id}', [LegislativoController::class, 'camaraMunicipio'])->name('camara.municipio')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/concejo', [LegislativoController::class, 'concejo'])->name('concejo')->middleware('electoral.results');
+    Route::get('/concejo/{id}', [LegislativoController::class, 'concejoMunicipio'])->name('concejo.municipio')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/gobernador', [LegislativoController::class, 'gobernador'])->name('gobernador')->middleware('permission:view.gobernador')->middleware('electoral.results');
+    Route::get('/gobernador/{id}', [LegislativoController::class, 'gobernadorMunicipio'])->name('gobernador.municipio')->whereUuid('id')->middleware('permission:view.gobernador')->middleware('electoral.results');
+    Route::get('/asamblea', [LegislativoController::class, 'asamblea'])->name('asamblea')->middleware('electoral.results');
+    Route::get('/asamblea/{id}', [LegislativoController::class, 'asambleaMunicipio'])->name('asamblea.municipio')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/consultas', [LegislativoController::class, 'consultas'])->name('consultas')->middleware('electoral.results');
     Route::get('/api/geo/municipios-todos', [GeoController::class, 'todosLosMunicipios'])->name('geo.municipios.todos');
     // Lideres are shown by the map and by Votantes: either view lets them in, nothing else does.
     Route::middleware('permission:view.mapa|view.votantes')->group(function () {
@@ -369,15 +369,15 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         ->middleware('throttle:10,1')->name('perfil.whatsapp.codigo');
     Route::delete('/perfil/whatsapp', [WhatsAppLinkController::class, 'destroy'])->name('perfil.whatsapp.destroy');
 
-    Route::get('/analisis', [ComparadorController::class, 'index'])->name('comparador');
+    Route::get('/analisis', [ComparadorController::class, 'index'])->name('comparador')->middleware('electoral.results');
 
     // Exports
     Route::get('/exportar/excel', [ExportController::class, 'excel'])->name('export.excel');
     Route::get('/exportar/pdf', [ExportController::class, 'pdf'])->name('export.pdf');
 
     // PDF Reports
-    Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona')->whereUuid('id');
-    Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio')->whereUuid('id');
+    Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona')->whereUuid('id')->middleware('electoral.results');
+    Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio')->whereUuid('id')->middleware('electoral.results');
 
     // Campaigns: superadmin only, outside view.admin so any other role gets a 403 and not a redirect
     Route::prefix('admin/campanas')->name('admin.campaigns.')->middleware('superadmin')->group(function () {

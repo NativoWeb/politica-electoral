@@ -9,9 +9,9 @@ use App\Models\ElectoralResult;
 use App\Models\Person;
 use App\Models\PoliticalOrganization;
 use App\Services\CachedQueries;
+use App\Support\CurrentCampaign;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
@@ -30,7 +30,12 @@ class DashboardController extends Controller
 
     public function index(Request $request)
     {
+        $seesResults = app(CurrentCampaign::class)->seesElectoralResults();
         foreach (self::LANDINGS as $permission => $path) {
+            // /gobernador is only electoral results: a group without them lands on its next view.
+            if ($path === '/gobernador' && ! $seesResults) {
+                continue;
+            }
             if ($request->user()->hasPermission($permission)) {
                 return redirect($path);
             }
@@ -170,7 +175,9 @@ class DashboardController extends Controller
 
         foreach (['Alcaldía', 'Gobernación', 'Concejo Municipal', 'Asamblea Departamental'] as $officeName) {
             $officeId = $offices[$officeName] ?? null;
-            if (!$officeId) continue;
+            if (! $officeId) {
+                continue;
+            }
 
             $totalVotos = (int) DB::table('electoral_results')
                 ->join('contests', 'electoral_results.contest_id', '=', 'contests.id')
@@ -200,7 +207,9 @@ class DashboardController extends Controller
         // Senado y Cámara (legislativo — sin office_id filtrable fácilmente, usar event type)
         foreach (['Senado', 'Cámara'] as $corp) {
             $corpId = DB::table('corporations')->where('name', $corp)->value('id');
-            if (!$corpId) continue;
+            if (! $corpId) {
+                continue;
+            }
 
             $totalVotos = (int) DB::table('electoral_results')
                 ->join('contests', 'electoral_results.contest_id', '=', 'contests.id')

@@ -43,7 +43,7 @@ function campaign(overrides) {
 const CAMPAIGNS = [
     campaign({ id: 'ind', name: 'Independiente Prueba', slug: 'independiente-prueba' }),
     campaign({ id: 'sub-b', name: 'Sub Beta', slug: 'sub-beta', parentId: 'cd', isActive: false, usersCount: 1 }),
-    campaign({ id: 'cd', name: 'Centro Democrático', slug: 'centro-democratico', isDefault: true, whatsappEnabled: true, usersCount: 1234, lideresCount: 931 }),
+    campaign({ id: 'cd', name: 'Centro Democrático', slug: 'centro-democratico', isDefault: true, whatsappEnabled: true, veResultadosElectorales: true, usersCount: 1234, lideresCount: 931 }),
     campaign({ id: 'sub-a', name: 'Sub Alfa', slug: 'sub-alfa', parentId: 'cd', candidateId: 'p1', candidateName: 'Alejandro Cárdenas', usersCount: 3 }),
 ];
 
@@ -119,6 +119,37 @@ describe('Admin Campaigns page', () => {
 
         const options = [...within(dialog).getByLabelText('Grupo principal').options].map(o => o.textContent.replace(/ /g, ' '));
         expect(options).toEqual(['Ninguno (independiente)', 'Centro Democrático', '   └ Sub Alfa', '   └ Sub Beta (inactivo)', 'Independiente Prueba']);
+    });
+
+    it('marks the groups that see the electoral results and edits the switch in the modal', () => {
+        renderPage();
+        expect(within(rowOf('Centro Democrático').querySelector('div')).getByText('Ve resultados')).toBeInTheDocument();
+        expect(screen.getAllByText('Ve resultados')).toHaveLength(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Editar Centro Democrático' }));
+        let dialog = screen.getByRole('dialog', { name: 'EDITAR GRUPO POLÍTICO' });
+        const cdBox = within(dialog).getByRole('checkbox', { name: /Ve resultados electorales/ });
+        expect(cdBox).toBeChecked();
+        // The root group always sees them: the box cannot be turned off.
+        expect(cdBox).toBeDisabled();
+        expect(dialog).toHaveTextContent('El grupo político principal siempre ve los resultados electorales.');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Editar Sub Alfa' }));
+        dialog = screen.getByRole('dialog', { name: 'EDITAR GRUPO POLÍTICO' });
+        const box = within(dialog).getByRole('checkbox', { name: /Ve resultados electorales/ });
+        expect(box).not.toBeChecked();
+        expect(box).toBeEnabled();
+        expect(dialog).toHaveTextContent('Apagado: solo ven las fichas de su grupo.');
+        fireEvent.click(box);
+        expect(box).toBeChecked();
+    });
+
+    it('starts a new group without the electoral results', () => {
+        renderPage();
+        fireEvent.click(screen.getByRole('button', { name: '+ Nuevo grupo político' }));
+        const dialog = screen.getByRole('dialog', { name: 'NUEVO GRUPO POLÍTICO' });
+        expect(within(dialog).getByRole('checkbox', { name: /Ve resultados electorales/ })).not.toBeChecked();
     });
 
     it('edits in a modal that cannot pick the campaign itself as its parent', () => {

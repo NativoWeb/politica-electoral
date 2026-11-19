@@ -393,7 +393,8 @@ class AgentIdentityTest extends TestCase
             'permissions' => ['view.mapa', 'write.data', 'use.whatsapp'],
             'territory' => ['restricted' => true, 'municipios' => [['id' => $this->munA, 'name' => 'Girón']]],
             'can_write' => true,
-            'campaign' => ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'all' => false, 'visible_ids' => [Campaign::DEFAULT_ID]],
+            'campaign' => ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'all' => false, 'visible_ids' => [Campaign::DEFAULT_ID],
+                've_resultados_electorales' => true],
         ]);
     }
 
@@ -446,7 +447,7 @@ class AgentIdentityTest extends TestCase
 
         $this->agent('GET', '/api/agent/v1/me', null, ['token' => $token])
             ->assertOk()
-            ->assertJsonPath('campaign', ['id' => $campX, 'name' => 'Alejandro', 'all' => false, 'visible_ids' => [$campX]]);
+            ->assertJsonPath('campaign', ['id' => $campX, 'name' => 'Alejandro', 'all' => false, 'visible_ids' => [$campX], 've_resultados_electorales' => false]);
     }
 
     // visible_ids comes from CurrentCampaign (the web's rule): the own campaign plus its subcampaigns, all for R01.

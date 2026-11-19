@@ -18,11 +18,12 @@ class Campaign extends Model
     public const DEFAULT_ID = '3b83a83b-81f4-4fb2-894a-2888dc919070';
 
     protected $fillable = [
-        'name', 'slug', 'parent_id', 'candidate_person_id', 'whatsapp_enabled', 'is_active',
+        'name', 'slug', 'parent_id', 'candidate_person_id', 'whatsapp_enabled', 'is_active', 've_resultados_electorales',
     ];
 
     protected $casts = [
         'whatsapp_enabled' => 'boolean',
+        've_resultados_electorales' => 'boolean',
         'is_active' => 'boolean',
         'ocr_enabled' => 'boolean',
     ];

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\CurrentCampaign;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,14 +12,15 @@ class SearchController extends Controller
     public function search(Request $request): JsonResponse
     {
         $q = trim($request->input('q', ''));
-        if (mb_strlen($q) < 2) {
+        // Every result leads to an electoral page (persona, municipio, partido).
+        if (mb_strlen($q) < 2 || ! app(CurrentCampaign::class)->seesElectoralResults()) {
             return response()->json(['results' => []]);
         }
 
         $normalized = mb_strtoupper($q);
         $normalized = str_replace(
-            ['Á','É','Í','Ó','Ú','Ñ'],
-            ['A','E','I','O','U','N'],
+            ['Á', 'É', 'Í', 'Ó', 'Ú', 'Ñ'],
+            ['A', 'E', 'I', 'O', 'U', 'N'],
             $normalized
         );
 
@@ -27,10 +29,10 @@ class SearchController extends Controller
                 ->whereNull('deleted_at')
                 ->whereNull('merged_into_id')
                 ->where(function ($query) use ($normalized) {
-                    $query->whereRaw("normalized_name % ?", [$normalized])
-                        ->orWhereRaw("normalized_name ILIKE ?", ["%{$normalized}%"]);
+                    $query->whereRaw('normalized_name % ?', [$normalized])
+                        ->orWhereRaw('normalized_name ILIKE ?', ["%{$normalized}%"]);
                 })
-                ->orderByRaw("similarity(normalized_name, ?) DESC", [$normalized])
+                ->orderByRaw('similarity(normalized_name, ?) DESC', [$normalized])
                 ->limit(5)
                 ->select('id', 'full_name as name', 'identity_status')
                 ->get()
@@ -46,11 +48,11 @@ class SearchController extends Controller
                 ->join('geographic_units as g', 'ga.geographic_unit_id', '=', 'g.id')
                 ->where('g.type', 'municipality')
                 ->where(function ($query) use ($normalized) {
-                    $query->whereRaw("ga.normalized_alias % ?", [$normalized])
-                        ->orWhereRaw("ga.normalized_alias ILIKE ?", ["%{$normalized}%"]);
+                    $query->whereRaw('ga.normalized_alias % ?', [$normalized])
+                        ->orWhereRaw('ga.normalized_alias ILIKE ?', ["%{$normalized}%"]);
                 })
                 ->select('g.id', 'g.canonical_name as name')
-                ->selectRaw("MAX(similarity(ga.normalized_alias, ?)) as sim", [$normalized])
+                ->selectRaw('MAX(similarity(ga.normalized_alias, ?)) as sim', [$normalized])
                 ->groupBy('g.id', 'g.canonical_name')
                 ->orderByDesc('sim')
                 ->limit(5)
@@ -65,10 +67,10 @@ class SearchController extends Controller
 
             $orgs = DB::table('political_organizations')
                 ->where(function ($query) use ($normalized) {
-                    $query->whereRaw("canonical_name % ?", [$normalized])
-                        ->orWhereRaw("canonical_name ILIKE ?", ["%{$normalized}%"]);
+                    $query->whereRaw('canonical_name % ?', [$normalized])
+                        ->orWhereRaw('canonical_name ILIKE ?', ["%{$normalized}%"]);
                 })
-                ->orderByRaw("similarity(canonical_name, ?) DESC", [$normalized])
+                ->orderByRaw('similarity(canonical_name, ?) DESC', [$normalized])
                 ->limit(5)
                 ->select('id', 'canonical_name as name', 'acronym')
                 ->get()
@@ -76,7 +78,7 @@ class SearchController extends Controller
                     'id' => $r->id,
                     'name' => $r->name,
                     'type' => 'partido',
-                    'url' => "/",
+                    'url' => '/',
                     'detail' => $r->acronym ?? 'Partido',
                 ]);
 

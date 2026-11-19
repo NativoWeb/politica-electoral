@@ -97,7 +97,8 @@ trait ScopesTerritory
         }
     }
 
-    // Electoral persons belong to a territory through their candidacies or their results there.
+    // Electoral persons belong to a territory through their candidacies or their results there, and only a grupo
+    // político that sees the electoral results reaches one at all.
     // $write only matters for lideres: shared electoral persons are guarded by canEditElectoral() where edited.
     protected function authorizePersonOrLider(?string $id, bool $write = false): void
     {
@@ -109,6 +110,9 @@ trait ScopesTerritory
             $this->authorizeLiderRow($lider, $write);
 
             return;
+        }
+        if (! $this->campaign()->seesElectoralResults() && DB::table('persons')->where('id', $id)->exists()) {
+            CurrentCampaign::denyElectoralResults();
         }
         $allowed = $this->allowedGeoIds();
         if ($allowed === null) {

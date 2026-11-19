@@ -21,10 +21,11 @@ trait WithCampaignColumns
                 $t->uuid('parent_id')->nullable();
                 $t->uuid('candidate_person_id')->nullable();
                 $t->boolean('whatsapp_enabled')->default(false);
+                $t->boolean('ve_resultados_electorales')->default(false);
                 $t->boolean('is_active')->default(true);
                 $t->timestamps();
             });
-            DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico', 'whatsapp_enabled' => true]);
+            DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico', 've_resultados_electorales' => true, 'whatsapp_enabled' => true]);
         }
 
         foreach (['users', 'lideres', 'nexos_familiares', 'whatsapp_templates', 'whatsapp_sends'] as $table) {

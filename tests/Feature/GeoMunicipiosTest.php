@@ -39,6 +39,7 @@ class GeoMunicipiosTest extends TestCase
             $t->string('slug')->unique();
             $t->uuid('parent_id')->nullable();
             $t->boolean('whatsapp_enabled')->default(false);
+            $t->boolean('ve_resultados_electorales')->default(false);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -80,7 +81,7 @@ class GeoMunicipiosTest extends TestCase
             $t->timestamp('created_at')->useCurrent();
         });
 
-        DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico']);
+        DB::table('campaigns')->insert(['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico', 've_resultados_electorales' => true]);
         $this->role = Role::create(['code' => 'R09_CAMPO', 'name' => 'Campo', 'level' => 1])->id;
         DB::table('geographic_units')->insert(['id' => (string) Str::uuid(), 'type' => 'department', 'canonical_name' => 'Santander', 'official_code' => '68']);
     }

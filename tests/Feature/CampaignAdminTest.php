@@ -63,6 +63,7 @@ class CampaignAdminTest extends TestCase
             $t->uuid('parent_id')->nullable();
             $t->uuid('candidate_person_id')->nullable();
             $t->boolean('whatsapp_enabled')->default(false);
+            $t->boolean('ve_resultados_electorales')->default(false);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -196,6 +197,7 @@ class CampaignAdminTest extends TestCase
             ['id' => $this->campX = (string) Str::uuid(), 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => false],
             ['id' => $this->campY = (string) Str::uuid(), 'name' => 'Otra', 'slug' => 'otra', 'parent_id' => null, 'whatsapp_enabled' => true],
         ]);
+        DB::table('campaigns')->where('id', Campaign::DEFAULT_ID)->update(['ve_resultados_electorales' => true]);
 
         foreach ([['R01_SUPERADMIN', 5], ['R02_ADMIN_FUNCIONAL', 4], ['R03_ADMIN_DATOS', 4], ['R09_CAMPO', 1],
             ['R10_CONSULTA', 1], ['R12_REPORTES', 1]] as [$code, $level]) {
@@ -649,11 +651,11 @@ class CampaignAdminTest extends TestCase
     public function test_pages_share_the_users_campaign_and_whether_it_edits_electoral_data(): void
     {
         $this->actingAs($this->adminX)->get('/admin/usuarios')->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('auth.user.campaign', ['id' => $this->campX, 'name' => 'Alejandro', 'whatsapp_enabled' => false, 'is_subcampaign' => true])
+            ->where('auth.user.campaign', ['id' => $this->campX, 'name' => 'Alejandro', 'whatsapp_enabled' => false, 'is_subcampaign' => true, 've_resultados_electorales' => false])
             ->where('auth.user.canEditElectoral', false));
 
         $this->actingAs($this->adminCd)->get('/admin/usuarios')->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('auth.user.campaign', ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'whatsapp_enabled' => true, 'is_subcampaign' => false])
+            ->where('auth.user.campaign', ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'whatsapp_enabled' => true, 'is_subcampaign' => false, 've_resultados_electorales' => true])
             ->where('auth.user.canEditElectoral', true));
     }
 

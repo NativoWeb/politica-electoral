@@ -85,6 +85,7 @@ class HandleInertiaRequests extends Middleware
                     'whatsapp' => $this->whatsappLink($user),
                     'campaign' => $campaign->info(),
                     'canEditElectoral' => $campaign->canEditElectoral(),
+                    'seesElectoralResults' => $campaign->seesElectoralResults(),
                 ] : null,
             ],
             // true only when the module is on for this user and the user may open it: the menu shows it then.

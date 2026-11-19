@@ -113,3 +113,33 @@ describe('AppLayout "Auditoria" entry', () => {
         expect(auditLinks().length).toBeGreaterThan(0);
     });
 });
+
+describe('AppLayout without the electoral results (auth.seesElectoralResults)', () => {
+    const original = globalThis.fetch;
+    const gobernadorLinks = () => [...document.querySelectorAll('a')].filter(a => a.getAttribute('href') === '/gobernador');
+    const searchBoxes = () => document.querySelectorAll('input[type="text"]');
+    const as = (seesElectoralResults) => {
+        page.props = { auth: { user: { name: 'Ana', permissions: ALL, campaign: { id: 'x', name: 'Alejandro' }, canEditElectoral: false, seesElectoralResults } }, visibleCampaigns: [] };
+    };
+    beforeEach(() => {
+        page.url = '/mapa-politico';
+        globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ data: {} }) }));
+    });
+    afterEach(() => { cleanup(); globalThis.fetch = original; });
+
+    it('hides Gobernador and the search of candidates for a group without them', () => {
+        as(false);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(gobernadorLinks()).toHaveLength(0);
+        expect(searchBoxes()).toHaveLength(0);
+        // The rest of the menu stays.
+        expect([...document.querySelectorAll('a')].some(a => a.getAttribute('href') === '/mapa-politico')).toBe(true);
+    });
+
+    it('keeps Gobernador and the search for a group that sees them', () => {
+        as(true);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(gobernadorLinks().length).toBeGreaterThan(0);
+        expect(searchBoxes().length).toBeGreaterThan(0);
+    });
+});

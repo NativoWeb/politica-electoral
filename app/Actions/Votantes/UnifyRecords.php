@@ -66,7 +66,7 @@ class UnifyRecords
                 'telefono' => $l->telefono, 'municipio' => $l->municipio, 'cargo' => $l->cargo, 'candidatura' => null]);
 
         $candidatos = collect();
-        if (! $byNumber && $this->campaign()->canEditElectoral()) {
+        if (! $byNumber && $this->campaign()->canEditElectoral() && $this->campaign()->seesElectoralResults()) {
             $sameFicha = $kind === 'lider' ? $this->updateVotante->linkedPersonIds($record)->all() : [];
             $normalized = '%'.self::escapeLike(TextNormalizer::normalizeName($q)).'%';
             $candidatos = $this->territoryPersons(DB::table('persons as p'))

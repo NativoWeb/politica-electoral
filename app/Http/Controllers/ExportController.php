@@ -2,17 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\GenericExport;
 use App\Exports\SheetsExport;
 use App\Exports\StreamedXlsx;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Services\Configuracion\Ajuste;
 use App\Services\GobernacionResultados;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ExportController extends Controller
 {
@@ -40,6 +40,7 @@ class ExportController extends Controller
 
     public function excel(Request $request)
     {
+        $this->authorizeSource($request);
         if ($request->input('source') === 'gobernador') {
             $report = $this->gobernadorReport($request);
             $resumen = array_map(fn ($r) => ['concepto' => $r[0], 'valor' => $r[1]], $report['resumen']);
@@ -75,6 +76,14 @@ class ExportController extends Controller
         return Excel::download(new GenericExport($data, $columns, $title), $filename);
     }
 
+    // Gobernador, Senado, Cámara and Asamblea are only electoral results; the Mapa leaves them out by itself (rows()).
+    private function authorizeSource(Request $request): void
+    {
+        if (in_array($request->input('source'), ['gobernador', 'senado', 'camara', 'asamblea'], true)) {
+            $this->campaign()->abortUnlessSeesElectoralResults();
+        }
+    }
+
     private static function cutNotice(int $shown, int $total): string
     {
         return 'Archivo recortado: '.number_format($shown, 0, ',', '.').' de '.number_format($total, 0, ',', '.')
@@ -83,6 +92,7 @@ class ExportController extends Controller
 
     public function pdf(Request $request)
     {
+        $this->authorizeSource($request);
         EventoImportController::raiseMemoryLimit();
         set_time_limit(120);
 
@@ -130,10 +140,10 @@ class ExportController extends Controller
             'truncated' => $truncated,
             'totalCount' => $totalCount,
         ])->setPaper('a4', 'landscape')
-          ->setOption('isRemoteEnabled', false)
-          ->setOption('isPhpEnabled', false);
+            ->setOption('isRemoteEnabled', false)
+            ->setOption('isPhpEnabled', false);
 
-        return $pdf->download(str_replace(' ', '_', $title) . '.pdf');
+        return $pdf->download(str_replace(' ', '_', $title).'.pdf');
     }
 
     // [rows, total]: the total counts the rows a cut Mapa section left out ($limit caps each person section).
@@ -248,10 +258,16 @@ class ExportController extends Controller
     private function getCorporacionData(string $corpName, ?string $munId): array
     {
         $corpId = DB::table('corporations')->where('name', $corpName)->value('id');
-        if (!$corpId) return [];
+        if (! $corpId) {
+            return [];
+        }
 
         $resQuery = DB::table('electoral_results')->whereIn('metric_type', ['votes', 'nominal_votes'])->where('value', '>', 0);
-        if ($munId) $resQuery->where('geographic_unit_id', $munId); else $this->scopeToTerritory($resQuery);
+        if ($munId) {
+            $resQuery->where('geographic_unit_id', $munId);
+        } else {
+            $this->scopeToTerritory($resQuery);
+        }
 
         $query = DB::table('candidacies as c')
             ->join('persons as p', 'c.person_id', '=', 'p.id')

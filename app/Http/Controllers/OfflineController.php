@@ -28,8 +28,10 @@ class OfflineController extends Controller
             ->select('g.id', 'g.canonical_name as name', 'prov.canonical_name as provincia')
             ->first();
 
-        abort_if(!$mun, 404, 'Municipio no encontrado');
+        abort_if(! $mun, 404, 'Municipio no encontrado');
         $this->authorizeGeo($mun->id);
+        // A group without the electoral results takes only its fichas to the phone.
+        $seesResults = $this->campaign()->seesElectoralResults();
 
         $votesSubQuery = DB::table('electoral_results')
             ->whereIn('metric_type', ['votes', 'nominal_votes'])
@@ -38,7 +40,7 @@ class OfflineController extends Controller
             ->groupBy('candidacy_id');
 
         // Alcaldía candidates
-        $alcaldiaOffice = DB::table('offices')->where('name', 'Alcaldía')->value('id');
+        $alcaldiaOffice = $seesResults ? DB::table('offices')->where('name', 'Alcaldía')->value('id') : null;
         $alcaldes = [];
         if ($alcaldiaOffice) {
             $alcaldes = DB::table('candidacies as c')
@@ -63,7 +65,7 @@ class OfflineController extends Controller
         }
 
         // Concejo candidates
-        $concejoCorp = DB::table('corporations')->where('name', 'Concejo')->value('id');
+        $concejoCorp = $seesResults ? DB::table('corporations')->where('name', 'Concejo')->value('id') : null;
         $concejales = [];
         if ($concejoCorp) {
             $concejales = DB::table('candidacies as c')
@@ -93,7 +95,7 @@ class OfflineController extends Controller
             ->where(fn ($q) => $q->where('tipo', '!=', Lider::TIPO_VOTANTE)->orWhereNull('tipo'))
             ->where(function ($q) {
                 $q->where('cargo', 'not ilike', '%Directorio Municipal%')
-                  ->orWhereNull('cargo');
+                    ->orWhereNull('cargo');
             })
             // Event attendees are off by default in the Mapa Político for who may see events, so the offline copy
             // leaves them out too; anyone else has them as ordinary lideres.
@@ -123,15 +125,17 @@ class OfflineController extends Controller
             ->get()->map(fn ($r) => (array) $r)->toArray();
 
         // Senado / Cámara / Asamblea (votes filtered by municipio)
-        $corpMap = [
+        $corpMap = $seesResults ? [
             'Senado' => 'Senado',
             'Cámara de Representantes' => 'Cámara',
             'Asamblea' => 'Asamblea',
-        ];
+        ] : [];
         $congresistas = [];
         foreach ($corpMap as $corpName => $label) {
             $corpId = DB::table('corporations')->where('name', $corpName)->value('id');
-            if (!$corpId) continue;
+            if (! $corpId) {
+                continue;
+            }
 
             $resSubQuery = DB::table('electoral_results')
                 ->whereIn('metric_type', ['votes', 'nominal_votes'])
@@ -172,7 +176,7 @@ class OfflineController extends Controller
             array_column($congresistas, 'id')
         );
         $nexos = [];
-        if (!empty($personIds)) {
+        if (! empty($personIds)) {
             $nexos = $this->campaign()->scope(DB::table('nexos_familiares'))
                 ->whereIn('person_id', $personIds)
                 ->select('id', 'person_id as personId', 'nombre', 'parentesco', 'cargo', 'edad', 'gustos', 'observaciones')
@@ -181,7 +185,7 @@ class OfflineController extends Controller
         }
 
         // Gobernador (same for all municipios), only for whoever may open /gobernador
-        $gobOffice = $request->user()->hasPermission('view.gobernador')
+        $gobOffice = $seesResults && $request->user()->hasPermission('view.gobernador')
             ? DB::table('offices')->where('name', 'Gobernación')->value('id')
             : null;
         $gobernador = [];
