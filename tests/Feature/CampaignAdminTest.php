@@ -192,6 +192,8 @@ class CampaignAdminTest extends TestCase
 
     private function seedScenario(): void
     {
+        (require database_path('migrations/2026_11_19_182454_create_whatsapp_daily_analytics_table.php'))->up();
+
         DB::table('campaigns')->insert([
             ['id' => Campaign::DEFAULT_ID, 'name' => 'Centro Democrático', 'slug' => 'centro-democratico', 'parent_id' => null, 'whatsapp_enabled' => true],
             ['id' => $this->campX = (string) Str::uuid(), 'name' => 'Alejandro', 'slug' => 'alejandro', 'parent_id' => Campaign::DEFAULT_ID, 'whatsapp_enabled' => false],
@@ -547,6 +549,37 @@ class CampaignAdminTest extends TestCase
 
         $this->assertSame(1, DB::table('whatsapp_templates')->count());
         $this->assertSame('Plantilla X', DB::table('whatsapp_templates')->value('name'));
+    }
+
+    // There is one WhatsApp account for every grupo político: its analytics are seen only by the root campaign.
+    public function test_whatsapp_analytics_are_seen_only_by_the_root_campaign_and_the_superadmin(): void
+    {
+        config(['services.n8n.whatsapp_waba_id' => 'waba-1']);
+        $row = fn (string $waba, string $date, int $sent, int $delivered, float $cost) => DB::table('whatsapp_daily_analytics')
+            ->insert(['waba_id' => $waba, 'date' => $date, 'sent' => $sent, 'delivered' => $delivered, 'volume' => $sent, 'cost' => $cost]);
+        $row('waba-1', '2026-11-16', 100, 80, 2.0);
+        $row('waba-1', '2026-11-22', 50, 20, 0.8);
+        $row('waba-1', '2026-11-23', 999, 999, 99);
+        $row('otra-waba', '2026-11-17', 999, 999, 99);
+
+        foreach ([$this->adminCd, $this->superadmin] as $actor) {
+            $this->actingAs($actor)->getJson('/admin/whatsapp/analytics/weekly?year=2026&week=47')->assertOk()->assertJson([
+                'waba_id' => 'waba-1', 'start_date' => '2026-11-16', 'end_date' => '2026-11-22',
+                'sent' => 150, 'delivered' => 100, 'spend' => 2.8, 'cost_per_delivered' => 0.028,
+            ]);
+        }
+
+        $this->actingAs($this->adminY)->getJson('/admin/whatsapp/analytics/weekly?year=2026&week=47')->assertForbidden()->assertExactJson([
+            'success' => false, 'message' => 'La analítica de WhatsApp es de toda la cuenta: solo la ve el grupo político principal.',
+        ]);
+        // Without WhatsApp the campaign.whatsapp middleware already refuses it.
+        $this->actingAs($this->adminX)->getJson('/admin/whatsapp/analytics/weekly?year=2026&week=47')->assertForbidden();
+
+        $canView = fn (User $actor) => $this->actingAs($actor)->get('/admin/whatsapp')->assertOk()
+            ->viewData('page')['props']['can_view_analytics'];
+        $this->assertTrue($canView($this->adminCd));
+        $this->assertTrue($canView($this->superadmin));
+        $this->assertFalse($canView($this->adminY));
     }
 
     public function test_templates_belong_to_the_own_campaign(): void

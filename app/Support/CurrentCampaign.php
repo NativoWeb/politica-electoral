@@ -133,6 +133,13 @@ class CurrentCampaign
         return $this->isSuperadmin() || $this->ownId() === Campaign::DEFAULT_ID;
     }
 
+    // There is a single WhatsApp Business account for every grupo político, so its analytics are account-wide:
+    // only the superadmin and the root campaign's team see them.
+    public function seesWhatsAppAnalytics(): bool
+    {
+        return $this->isSuperadmin() || $this->ownId() === Campaign::DEFAULT_ID;
+    }
+
     // The single rule for the shared electoral results (candidates, votes and parties of Alcaldía, Concejo, Senado,
     // Cámara, Asamblea and Gobernación): the superadmin always, anyone else only when their own grupo político has
     // ve_resultados_electorales on. Without an authenticated user (artisan commands) nothing is restricted.

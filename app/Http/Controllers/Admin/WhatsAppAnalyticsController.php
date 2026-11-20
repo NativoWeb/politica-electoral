@@ -1,8 +1,10 @@
 <?php
+
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\WhatsAppDailyAnalytic;
+use App\Support\CurrentCampaign;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,10 +13,12 @@ use Illuminate\Validation\Rule;
 
 class WhatsAppAnalyticsController extends Controller
 {
-    /**
-     * WABA autorizada para almacenar estas analíticas.
-     */
-    private const WABA_ID = '1774484810096337';
+    private const MAX_INT = 2147483647;
+
+    private function wabaId(): string
+    {
+        return (string) config('services.n8n.whatsapp_waba_id');
+    }
 
     /**
      * Recibe y almacena las métricas diarias enviadas por n8n.
@@ -46,7 +50,7 @@ class WhatsAppAnalyticsController extends Controller
             'waba_id' => [
                 'required',
                 'string',
-                Rule::in([self::WABA_ID]),
+                Rule::in([$this->wabaId()]),
             ],
 
             'data' => [
@@ -58,30 +62,35 @@ class WhatsAppAnalyticsController extends Controller
             'data.*.date' => [
                 'required',
                 'date_format:Y-m-d',
+                'distinct',
             ],
 
             'data.*.sent' => [
                 'required',
                 'integer',
                 'min:0',
+                'max:'.self::MAX_INT,
             ],
 
             'data.*.delivered' => [
                 'required',
                 'integer',
                 'min:0',
+                'max:'.self::MAX_INT,
             ],
 
             'data.*.volume' => [
                 'required',
                 'integer',
                 'min:0',
+                'max:'.self::MAX_INT,
             ],
 
             'data.*.cost' => [
                 'required',
                 'numeric',
                 'min:0',
+                'max:99999999',
             ],
         ]);
 
@@ -135,8 +144,15 @@ class WhatsAppAnalyticsController extends Controller
      *
      * La semana comienza el lunes y termina el domingo.
      */
-    public function weekly(Request $request): JsonResponse
+    public function weekly(Request $request, CurrentCampaign $campaign): JsonResponse
     {
+        if (! $campaign->seesWhatsAppAnalytics()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'La analítica de WhatsApp es de toda la cuenta: solo la ve el grupo político principal.',
+            ], 403);
+        }
+
         $validated = $request->validate([
             'year' => [
                 'nullable',
@@ -178,7 +194,7 @@ class WhatsAppAnalyticsController extends Controller
             ->endOfDay();
 
         $analytics = WhatsAppDailyAnalytic::query()
-            ->where('waba_id', self::WABA_ID)
+            ->where('waba_id', $this->wabaId())
             ->whereBetween('date', [
                 $startDate->toDateString(),
                 $endDate->toDateString(),
@@ -201,7 +217,7 @@ class WhatsAppAnalyticsController extends Controller
             : 0;
 
         return response()->json([
-            'waba_id' => self::WABA_ID,
+            'waba_id' => $this->wabaId(),
             'year' => $year,
             'week' => $week,
             'start_date' => $startDate->toDateString(),

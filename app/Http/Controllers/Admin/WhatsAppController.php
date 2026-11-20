@@ -253,6 +253,7 @@ class WhatsAppController extends Controller
             ]);
 
         return Inertia::render('Admin/WhatsApp', [
+            'can_view_analytics' => app(CurrentCampaign::class)->seesWhatsAppAnalytics(),
             'contacts' => $paginatedContacts,
             'templates' => $templates,
             'filter_options' => $filterOptions,

@@ -39,6 +39,8 @@ return [
         'whatsapp_webhook' => env('N8N_WHATSAPP_WEBHOOK'),
         'birthday_token' => env('N8N_BIRTHDAY_TOKEN'),
         'whatsapp_analytics_token' => env('N8N_WHATSAPP_ANALYTICS_TOKEN'),
+        // The only WhatsApp Business account whose daily analytics are accepted and shown.
+        'whatsapp_waba_id' => env('N8N_WHATSAPP_WABA_ID') ?: '1774484810096337',
         // Recipients of one manual send ("select all that match" over a city is refused above it).
         'whatsapp_max_recipients' => (int) env('N8N_WHATSAPP_MAX_RECIPIENTS', 5000),
     ],

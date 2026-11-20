@@ -160,6 +160,7 @@ export default function WhatsApp({
     templates = [],
     filters = {},
     filter_options: serverFilterOptions = {},
+    can_view_analytics: canViewAnalytics = false,
 }) {
 
        // Analíticas de WhatsApp
@@ -176,6 +177,7 @@ export default function WhatsApp({
     const [analyticsData, setAnalyticsData] = useState(null);
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
     const [analyticsError, setAnalyticsError] = useState('');
+    const [analyticsReloadKey, setAnalyticsReloadKey] = useState(0);
 
     const [selectedTemplateId, setSelectedTemplateId] = useState(
         filters.template_id ? String(filters.template_id) : ''
@@ -884,7 +886,7 @@ export default function WhatsApp({
 
     // Consulta las analíticas semanales almacenadas en Laravel.
     useEffect(() => {
-        if (!analyticsOpen) return;
+        if (!analyticsOpen || !canViewAnalytics) return;
 
         let cancelled = false;
 
@@ -908,6 +910,12 @@ export default function WhatsApp({
                         },
                     }
                 );
+
+                const isJson = (response.headers.get('content-type') ?? '').includes('application/json');
+
+                if (!isJson) {
+                    throw new Error('Su sesión expiró. Recargue la página.');
+                }
 
                 const data = await response.json();
 
@@ -941,7 +949,7 @@ export default function WhatsApp({
         return () => {
             cancelled = true;
         };
-    }, [analyticsOpen, analyticsYear, analyticsWeek]);
+    }, [analyticsOpen, canViewAnalytics, analyticsYear, analyticsWeek, analyticsReloadKey]);
 
     const formatBirthDate = (birthDate) => {
         if (!birthDate) return 'Sin fecha';
@@ -1075,13 +1083,15 @@ export default function WhatsApp({
                         </p>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => setAnalyticsOpen(true)}
-                        className="self-start rounded-lg border border-white/30 bg-white/10 px-4 py-2.5 text-[11px] font-semibold text-white transition hover:bg-white/20 sm:self-center"
-                    >
-                        Analíticas
-                    </button>
+                    {canViewAnalytics && (
+                        <button
+                            type="button"
+                            onClick={() => setAnalyticsOpen(true)}
+                            className="self-start rounded-lg border border-white/30 bg-white/10 px-4 py-2.5 text-[11px] font-semibold text-white transition hover:bg-white/20 sm:self-center"
+                        >
+                            Analíticas
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -2156,7 +2166,7 @@ export default function WhatsApp({
                 </div>
             </div>
 
-            {analyticsOpen && (
+            {canViewAnalytics && analyticsOpen && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/60 p-4"
                     onMouseDown={(event) => {
@@ -2271,7 +2281,7 @@ export default function WhatsApp({
                                         type="button"
                                         onClick={() => {
                                             setAnalyticsData(null);
-                                            setAnalyticsWeek((current) => current);
+                                            setAnalyticsReloadKey((key) => key + 1);
                                         }}
                                         className="mt-3 text-[11px] font-semibold text-red-700 underline"
                                     >
