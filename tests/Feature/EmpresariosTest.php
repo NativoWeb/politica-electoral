@@ -471,7 +471,7 @@ class EmpresariosTest extends TestCase
         $this->actingAs($this->manager)->get('/empresarios/exportar.xlsx?tipo=empresa')->assertOk()
             ->assertHeader('content-disposition', 'attachment; filename=empresarios-y-gremios.xlsx');
         $this->actingAs($this->manager)->get('/empresarios/exportar.pdf')->assertOk();
-        $log = DB::table('audit_logs')->where('action', 'ORGANIZACIONES_EXPORTADAS')->first();
+        $log = DB::table('audit_logs')->where('action', 'EXPORT empresarios.exportar.excel')->first();
         $this->assertSame(1, json_decode($log->metadata, true)['filas']);
     }
 

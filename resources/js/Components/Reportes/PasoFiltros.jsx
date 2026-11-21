@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { conFiltro, resumenFiltros, sinChip, validarRango } from '@/lib/reportes';
+import { conFiltro, mismoPeriodo, periodosDe, resumenFiltros, sinChip, unidadDe, validarFechas, validarRango } from '@/lib/reportes';
 import ChipGroup from './ChipGroup';
 import BuscadorOpciones from './BuscadorOpciones';
 import { Chip, IconoChevron, IconoX, focoCls } from './ui';
@@ -119,6 +119,93 @@ function Rango({ filtro, valor, onCambiar }) {
     );
 }
 
+// Two big date boxes with one-tap periods. Same rule as Rango: while the pair is invalid nothing is applied.
+// A relative period ({relativo}) leaves the boxes empty: it is a moving window, not two dates.
+function Fechas({ filtro, valor, onCambiar }) {
+    const id = useId();
+    const actual = valor ?? { desde: null, hasta: null };
+    const externo = JSON.stringify(actual);
+    const [desde, setDesde] = useState(actual.desde ?? '');
+    const [hasta, setHasta] = useState(actual.hasta ?? '');
+    const [incompletas, setIncompletas] = useState({ desde: false, hasta: false });
+    const enviado = useRef(externo);
+    const periodos = periodosDe(filtro);
+
+    useEffect(() => {
+        if (externo === enviado.current) return;
+        enviado.current = externo;
+        const v = JSON.parse(externo);
+        setDesde(v.desde ?? '');
+        setHasta(v.hasta ?? '');
+        setIncompletas({ desde: false, hasta: false });
+    }, [externo]);
+
+    const { error } = validarFechas(desde, hasta, { incompleta: incompletas.desde || incompletas.hasta });
+
+    function aplicar(valorNuevo) {
+        enviado.current = JSON.stringify(valorNuevo ?? { desde: null, hasta: null });
+        onCambiar(valorNuevo);
+    }
+
+    // A date box gives '' while the date is half typed; validity.badInput tells that apart from an empty box.
+    function escribir(campo, input) {
+        const next = { desde, hasta, [campo]: input.value };
+        const inc = { ...incompletas, [campo]: !!input.validity?.badInput };
+        campo === 'desde' ? setDesde(input.value) : setHasta(input.value);
+        setIncompletas(inc);
+        const r = validarFechas(next.desde, next.hasta, { incompleta: inc.desde || inc.hasta });
+        aplicar(r.error ? null : r.rango);
+    }
+
+    function elegir(p, activo) {
+        const r = activo ? null : p.valor;
+        setDesde(r?.desde ?? '');
+        setHasta(r?.hasta ?? '');
+        setIncompletas({ desde: false, hasta: false });
+        aplicar(r);
+    }
+
+    const inputCls = `w-full sm:w-56 min-h-14 px-4 text-lg rounded-md border-2 bg-bg text-ink focus:border-primary ${focoCls}`;
+    const caja = (campo, texto, v) => (
+        <div>
+            <label htmlFor={`${id}-${campo}`} className="block text-lg text-ink mb-2">
+                {texto}<span className="sr-only"> ({filtro.etiqueta})</span>
+            </label>
+            <input
+                id={`${id}-${campo}`}
+                type="date"
+                value={v}
+                onChange={e => escribir(campo, e.target)}
+                aria-invalid={!!error}
+                aria-describedby={error ? `${id}-e` : undefined}
+                className={`${inputCls} ${error ? 'border-danger' : 'border-line-strong'}`}
+            />
+        </div>
+    );
+
+    return (
+        <div role="group" aria-labelledby={`${id}-t`}>
+            <p id={`${id}-t`} className="text-lg font-semibold text-ink mb-3">{filtro.etiqueta}</p>
+            <div className="flex flex-wrap gap-3">
+                {periodos.map(p => {
+                    const activo = mismoPeriodo(p.valor, actual);
+                    return <Chip key={p.etiqueta} activo={activo} onClick={() => elegir(p, activo)}>{p.etiqueta}</Chip>;
+                })}
+            </div>
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-end gap-4">
+                {caja('desde', 'Desde', desde)}
+                {caja('hasta', 'Hasta', hasta)}
+            </div>
+            {error && (
+                <p id={`${id}-e`} role="alert" className="mt-3 text-lg text-danger font-semibold">
+                    {error} Mientras tanto no se filtra por {filtro.etiqueta.toLowerCase()}.
+                </p>
+            )}
+            {filtro.ayuda && <p className="mt-3 text-base text-ink-soft">{filtro.ayuda}</p>}
+        </div>
+    );
+}
+
 function Interruptor({ filtro, valor, onCambiar }) {
     return (
         <div>
@@ -133,6 +220,7 @@ function Control({ filtro, filtros, etiquetas, onCambiar }) {
     const cambiar = (v, nuevasEtiquetas) => onCambiar(filtro.clave, v, nuevasEtiquetas);
 
     if (filtro.tipo === 'rango') return <Rango filtro={filtro} valor={valor} onCambiar={cambiar} />;
+    if (filtro.tipo === 'fechas') return <Fechas filtro={filtro} valor={valor} onCambiar={cambiar} />;
     if (filtro.tipo === 'interruptor') return <Interruptor filtro={filtro} valor={valor} onCambiar={cambiar} />;
 
     // A filter that depends on another (Comuna on Municipio) only offers the options of what is chosen there.
@@ -172,6 +260,8 @@ export default function PasoFiltros({ fuente, filtros, etiquetas, onFiltros }) {
     const grupos = fuente.secciones;
     const [abiertos, setAbiertos] = useState(() => new Set(grupos.filter(g => g.abierto).map(g => g.titulo)));
     const chips = resumenFiltros(filtros, fuente, etiquetas);
+    const u = unidadDe(fuente, filtros);
+    const pregunta = u.quienes === 'A quiénes' ? '¿A quiénes quieres ver?' : `¿Qué ${u.plural} quieres ver?`;
 
     function cambiar(clave, valor, nuevasEtiquetas = {}) {
         const next = conFiltro(filtros, clave, valor);
@@ -195,11 +285,11 @@ export default function PasoFiltros({ fuente, filtros, etiquetas, onFiltros }) {
 
     return (
         <div>
-            <h2 className="font-heading text-3xl font-bold text-ink text-balance">¿A quiénes quieres ver?</h2>
+            <h2 className="font-heading text-3xl font-bold text-ink text-balance">{pregunta}</h2>
 
             <div className="mt-5 p-5 rounded-lg bg-panel border-2 border-line">
                 {chips.length === 0 ? (
-                    <p className="text-lg text-ink">Estás viendo a <strong>todas las personas</strong>. Elige abajo para quedarte con algunas.</p>
+                    <p className="text-lg text-ink">Estás viendo {u.a}<strong>{u.todas}</strong>. Elige abajo para quedarte con {u.femenino ? 'algunas' : 'algunos'}.</p>
                 ) : (
                     <>
                         <p className="text-lg font-semibold text-ink mb-3">Estás viendo:</p>
@@ -220,7 +310,7 @@ export default function PasoFiltros({ fuente, filtros, etiquetas, onFiltros }) {
                 )}
             </div>
 
-            <p className="mt-4 text-lg text-ink-soft">Si eliges varios, verás a las personas de cualquiera de ellos.</p>
+            <p className="mt-4 text-lg text-ink-soft">Si eliges varios, verás {u.a}{u.femenino ? 'las' : 'los'} {u.plural} de cualquiera de ellos.</p>
 
             <div className="mt-4 rounded-lg bg-panel border-2 border-line">
                 {grupos.map(g => (

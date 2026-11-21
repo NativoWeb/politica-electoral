@@ -20,6 +20,7 @@ use App\Models\EventAttendee;
 use App\Models\EventImport;
 use App\Models\EventType;
 use App\Services\Eventos\Ocr\OcrSettings;
+use App\Services\Reportes\DescargaGuard;
 use App\Support\Cedula;
 use App\Support\PlanillaQr;
 use App\Support\Provincias;
@@ -37,7 +38,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 // Eventos especiales (contract in docs/eventos-api.md). Campaign isolation as in Votantes: events of the own
 // campaign and its subcampaigns are visible, only the own campaign's are written; a user with a territory only
@@ -145,29 +146,34 @@ class EventoController extends Controller
         ]);
     }
 
-    // GET /eventos/{id}/asistentes.xlsx: the attendees the detail shows with the same filters, unpaginated.
-    public function exportAttendees(Request $request, string $id): BinaryFileResponse
+    // GET /eventos/{id}/asistentes.xlsx: the attendees the detail shows with the same filters, unpaginated. Through
+    // DescargaGuard (lock, quota, audit before the file); without export.datos_personales, no personal column.
+    public function exportAttendees(Request $request, string $id, DescargaGuard $guard): SymfonyResponse
     {
         $event = $this->findEvent($id);
         $filters = $this->attendeeFilters($request);
-        EventoImportController::raiseMemoryLimit();
+        [$columns, $removed] = DescargaGuard::columnasPermitidas(array_keys(self::ATTENDEE_EXPORT_LABELS), $request->user());
 
-        $attendees = $this->attendeesQuery($event, $filters)->get();
-        $rows = $attendees->map(fn (EventAttendee $a) => $this->attendeeExportRow($a))->all();
+        $response = $guard->descargar($request, 'EXPORT eventos.asistentes.excel', function () use ($event, $filters, $columns, $removed) {
+            EventoImportController::raiseMemoryLimit();
+            $rows = $this->attendeesQuery($event, $filters)->get()->map(fn (EventAttendee $a) => $this->attendeeExportRow($a))->all();
+            $filename = 'asistentes-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento').'.xlsx';
 
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'EVENTO_ASISTENTES_EXPORTADOS',
-            'entity_type' => 'evento',
-            'entity_id' => $event->id,
-            'metadata' => ['route' => 'eventos.asistentes.excel', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
+            return [
+                'metadata' => [
+                    'fuente' => 'eventos.asistentes', 'formato' => 'excel', 'evento_id' => $event->id, 'columnas' => $columns,
+                    'columnas_quitadas' => $removed, 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters)),
+                    'con_datos_personales' => (bool) array_intersect($columns, DescargaGuard::COLUMNAS_SENSIBLES),
+                ],
+                'generar' => fn () => Excel::download(new GenericExport($rows, $columns, 'Asistentes', self::ATTENDEE_EXPORT_LABELS,
+                    $removed ? DescargaGuard::AVISO_SIN_DATOS : null), $filename),
+            ];
+        });
+        if ($removed) {
+            $response->headers->set('X-Columnas-Quitadas', implode(',', $removed));
+        }
 
-        $filename = 'asistentes-'.(Str::slug(Str::limit($event->nombre, 60, '')) ?: 'evento').'.xlsx';
-
-        return Excel::download(new GenericExport($rows, array_keys(self::ATTENDEE_EXPORT_LABELS), 'Asistentes', self::ATTENDEE_EXPORT_LABELS), $filename);
+        return $response;
     }
 
     // One row of the attendees' Excel (the agent's export uses the same columns).

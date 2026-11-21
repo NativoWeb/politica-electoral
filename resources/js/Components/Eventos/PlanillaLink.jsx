@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { esAppInstalada, guardarOAbrir, irA } from '@/lib/descargaArchivo';
+
+export { esAppInstalada as isStandalone } from '@/lib/descargaArchivo';
 
 export const PLANILLA_THROTTLED = 'Ha descargado muchas planillas seguidas. Espere un minuto e intente de nuevo.';
 
@@ -18,41 +21,15 @@ export function planillaErrorMessage(status) {
     }
 }
 
-// Installed app (home screen): there a blob download may do nothing (iOS), so the browser opens the URL itself.
-export function isStandalone() {
-    if (typeof window === 'undefined') return false;
-    if (window.navigator?.standalone === true) return true;
-    try {
-        return !!window.matchMedia?.('(display-mode: standalone)')?.matches;
-    } catch {
-        return false;
-    }
-}
-
-function goToUrl(url) {
-    window.location.href = url;
-}
-
 function fileName(res, eventId) {
     const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') || '');
     return match ? decodeURIComponent(match[1]) : `planilla-${eventId}.pdf`;
 }
 
-function saveBlob(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 // Download of the printable attendance sheet. It goes through fetch so a refusal (too many downloads,
 // session, permission) is told in Spanish instead of failing silently; the href keeps "open in new tab" working.
 // In the installed app a HEAD request checks first (429, session...) and then the browser opens the URL.
-export default function PlanillaLink({ eventId, className, messageClassName = '', navigate = goToUrl }) {
+export default function PlanillaLink({ eventId, className, messageClassName = '', navigate = irA }) {
     const [state, setState] = useState({ busy: false, error: '' });
 
     async function download(event) {
@@ -61,7 +38,7 @@ export default function PlanillaLink({ eventId, className, messageClassName = ''
         if (state.busy) return;
         setState({ busy: true, error: '' });
         const url = planillaUrl(eventId);
-        const standalone = isStandalone();
+        const standalone = esAppInstalada();
         let res;
         try {
             res = await fetch(url, {
@@ -87,9 +64,9 @@ export default function PlanillaLink({ eventId, className, messageClassName = ''
             return;
         }
         try {
-            saveBlob(await res.blob(), fileName(res, eventId));
+            guardarOAbrir(await res.blob(), fileName(res, eventId), url, navigate);
         } catch {
-            // The blob could not be saved here: the browser downloads the URL itself.
+            // The body could not be read: the browser downloads the URL itself.
             navigate(url);
         }
         setState({ busy: false, error: '' });

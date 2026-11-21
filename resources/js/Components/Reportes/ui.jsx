@@ -1,5 +1,36 @@
+import { useId, useRef } from 'react';
+import useDialogFocus from '@/lib/useDialogFocus';
+import useEscapeKey from '@/lib/useEscapeKey';
+
 // Shared pieces of the Reportes screens. Sizes follow docs/DESIGN.md: nothing under 16px, 56px buttons,
 // 48px chips, yellow focus ring.
+
+// A question before doing something: a bottom sheet on a phone, centered on a desktop. Escape and the backdrop go back.
+export function Dialogo({ titulo, children, acciones, onVolver }) {
+    const ref = useRef(null);
+    const id = useId();
+    useDialogFocus(ref);
+    useEscapeKey(onVolver, ref);
+    return (
+        <>
+            <div className="fixed inset-0 z-50 bg-ink/60" onClick={onVolver} aria-hidden="true" />
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
+                <div
+                    ref={ref}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby={`${id}-t`}
+                    aria-describedby={`${id}-d`}
+                    className="pointer-events-auto w-full sm:max-w-lg max-h-[100dvh] overflow-y-auto bg-panel rounded-t-2xl sm:rounded-xl p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:pb-6 shadow-2xl"
+                >
+                    <h2 id={`${id}-t`} className="font-heading text-2xl font-bold text-ink">{titulo}</h2>
+                    <div id={`${id}-d`} className="mt-3 space-y-3 text-lg text-ink text-pretty">{children}</div>
+                    <div className="mt-6 flex flex-col sm:flex-row-reverse sm:flex-wrap gap-3">{acciones}</div>
+                </div>
+            </div>
+        </>
+    );
+}
 
 const VARIANTES = {
     primario: 'bg-primary text-white border-2 border-primary hover:bg-primary-light hover:border-primary-light active:bg-primary-dark',

@@ -20,7 +20,8 @@ function DataRow({ label, value }) {
 
 // Ficha of an organization (orgId) or the form of a new one (orgId null), in a centered modal with tabs:
 // Datos, Miembros, Gremios/Empresas and Actas. onSaved(ficha) / onDeleted() let the list reload.
-export default function OrganizacionPanel({ orgId, onClose, onSaved, onDeleted, onOpen, canManage, catalogos, municipios, gremios, rangos, roles }) {
+// soloVer: opened from somewhere without the catalogs the form needs (Reportes): nothing can be edited there.
+export default function OrganizacionPanel({ orgId, onClose, onSaved, onDeleted, onOpen, canManage, catalogos, municipios, gremios, rangos, roles, soloVer = false }) {
     const creating = !orgId;
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(!creating);
@@ -49,7 +50,7 @@ export default function OrganizacionPanel({ orgId, onClose, onSaved, onDeleted, 
         return () => { alive = false; };
     }, [orgId, creating]);
 
-    const editable = creating ? canManage : !!data?.can?.edit;
+    const editable = !soloVer && (creating ? canManage : !!data?.can?.edit);
     // An empresa only joins gremios of its own campaign.
     const ownGremios = (gremios ?? []).filter(g => g.id !== data?.id && (creating || g.campaign_id === data?.campaign_id));
 

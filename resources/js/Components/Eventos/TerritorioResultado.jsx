@@ -3,6 +3,7 @@ import { LinkStatusBadge, StatusBadge } from '@/Components/Eventos/EventoBadges'
 import Pagination from '@/Components/Eventos/Pagination';
 import { formatEventDate } from '@/lib/eventos';
 import { SOURCE_LABELS, territoryExcelUrl } from '@/lib/eventosIntegracion';
+import EnlaceDescarga from '@/Components/EnlaceDescarga';
 
 const ONLY = ['resultado', 'filters'];
 
@@ -40,9 +41,9 @@ export default function TerritorioResultado({ resultado, filters, lugar }) {
         <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-[17px] font-bold text-[var(--color-ink)]">{lugar}</p>
-                <a href={territoryExcelUrl(filters)} className="min-h-[48px] px-4 py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-[16px] font-bold flex items-center">
+                <EnlaceDescarga href={territoryExcelUrl(filters)} nombre="Territorio" className="min-h-[48px] px-4 py-2.5 rounded-xl bg-[var(--color-primary)] text-white text-[16px] font-bold flex items-center">
                     Descargar Excel
-                </a>
+                </EnlaceDescarga>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">

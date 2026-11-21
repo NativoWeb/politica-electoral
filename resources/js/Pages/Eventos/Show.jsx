@@ -13,6 +13,7 @@ import ImportLoads from '@/Components/Eventos/ImportLoads';
 import Pagination from '@/Components/Eventos/Pagination';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import { attendeesExcelUrl } from '@/lib/eventosIntegracion';
+import EnlaceDescarga from '@/Components/EnlaceDescarga';
 import { useCampaign } from '@/lib/campaign';
 import { APPROVE_MESSAGE, allSelected, canManageEventos, canSeeFicha, deleteAttendeesMessage, eventErrorMessage, formatEventRange, formatShortDate, isSelectable, placeLine, pruneSelection, sourceLabel, toggleAll, toggleSelected } from '@/lib/eventos';
 
@@ -346,9 +347,9 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <h2 id="asistentes-title" className="text-[16px] font-extrabold text-[var(--color-ink)]">Asistentes ({asistentes?.total ?? 0})</h2>
                             {(asistentes?.total ?? 0) > 0 && (
-                                <a href={attendeesExcelUrl(evento.id, filters)} className="min-h-[44px] px-4 py-2 rounded-xl border-2 border-[var(--color-line-strong)] text-[15px] font-bold text-[var(--color-ink)] flex items-center">
+                                <EnlaceDescarga href={attendeesExcelUrl(evento.id, filters)} nombre="Asistentes" className="min-h-[44px] px-4 py-2 rounded-xl border-2 border-[var(--color-line-strong)] text-[15px] font-bold text-[var(--color-ink)] flex items-center">
                                     Descargar Excel{filters?.link_status || filters?.source || filters?.q ? ' (con el filtro)' : ''}
-                                </a>
+                                </EnlaceDescarga>
                             )}
                         </div>
                         <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-0.5 [scrollbar-width:none]" role="group" aria-label="Filtrar por estado">

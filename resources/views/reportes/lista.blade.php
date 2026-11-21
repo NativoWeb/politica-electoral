@@ -58,14 +58,14 @@
     <div class="datos">
         <div class="generado">{{ $generado }}</div>
 
-        <div class="total">{{ number_format($total, 0, ',', '.') }} <span>{{ $total === 1 ? 'persona' : 'personas' }}</span></div>
+        <div class="total">{{ number_format($total, 0, ',', '.') }} <span>{{ $total === 1 ? ($unidad['singular'] ?? 'persona') : ($unidad['plural'] ?? 'personas') }}</span></div>
 
         @if($aviso)
             <div class="aviso">{{ $aviso }}</div>
         @endif
 
         <h2>Filtros</h2>
-        <div class="filtros">{{ $filtros ? implode(' · ', $filtros) : 'Ninguno: todas las personas activas.' }}</div>
+        <div class="filtros">{{ $filtros ? implode(' · ', $filtros) : 'Ninguno: '.($unidad['todos'] ?? 'todas las personas activas').'.' }}</div>
 
         @if($desglose['municipios'])
             {{-- Two columns, «Otros» last: the cover stays on one page with ten municipios. --}}

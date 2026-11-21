@@ -147,7 +147,7 @@ class EventCompromisoTest extends TestCase
 
         $this->actingAs($this->manager)->get("/eventos/compromisos.xlsx?evento={$other->id}")->assertOk()
             ->assertDownload('compromisos.xlsx');
-        $this->assertSame(1, DB::table('audit_logs')->where('action', 'EVENTO_COMPROMISOS_EXPORTADOS')->count());
+        $this->assertSame(1, DB::table('audit_logs')->where('action', 'EXPORT eventos.compromisos.excel')->count());
     }
 
     public function test_compromisos_of_a_borrador_are_not_listed_nor_followed(): void

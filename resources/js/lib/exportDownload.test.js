@@ -36,4 +36,29 @@ describe('descargarExportacion (header Exportar)', () => {
         expect(toast()).toBe('No tienes permiso para descargar estos datos.');
         expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
     });
+
+    it('in the installed app (iPhone) the browser opens the URL itself: one request, no HEAD, no blob', async () => {
+        const matchMedia = window.matchMedia;
+        window.matchMedia = vi.fn(query => ({ matches: query === '(display-mode: standalone)' }));
+        try {
+            globalThis.fetch = vi.fn();
+            const navegar = vi.fn();
+            expect(await descargarExportacion('/eventos/compromisos.xlsx?estado=pendiente', 'Compromisos', { navegar })).toEqual({ estado: 'navegador' });
+            expect(navegar).toHaveBeenCalledWith('/eventos/compromisos.xlsx?estado=pendiente');
+            // A HEAD would count as a second download in DescargaGuard (quota and audit row).
+            expect(globalThis.fetch).not.toHaveBeenCalled();
+            expect(URL.createObjectURL).not.toHaveBeenCalled();
+        } finally {
+            window.matchMedia = matchMedia;
+        }
+    });
+
+    it('when this browser cannot save the blob, it opens the URL instead of failing silently', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(xlsx()));
+        URL.createObjectURL = vi.fn(() => { throw new Error('blob not supported'); });
+        const navegar = vi.fn();
+        expect(await descargarExportacion('/empresarios/exportar.xlsx', 'Empresarios', { navegar })).toEqual({ estado: 'navegador' });
+        expect(navegar).toHaveBeenCalledWith('/empresarios/exportar.xlsx');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
 });

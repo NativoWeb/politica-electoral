@@ -21,12 +21,12 @@ export const ORDENES_POR_DEFECTO = [
     { valor: 'referidos:desc', etiqueta: 'Más personas referidas' },
 ];
 
-// Internal kinds: chips (several, "O"), unico (one or none), buscar, rango, interruptor (on/off).
+// Internal kinds: chips (several, "O"), unico (one or none), buscar, rango, fechas, interruptor (on/off).
 // The backend sends chips+multiple:false for "unico" and "casilla" for "interruptor" (Catalogo/Filtro.php).
 function tipoDe(f) {
     if (f.tipo === 'casilla' || f.tipo === 'interruptor') return 'interruptor';
     if (f.tipo === 'chips' && f.multiple === false) return 'unico';
-    if (['chips', 'unico', 'buscar', 'rango'].includes(f.tipo)) return f.tipo;
+    if (['chips', 'unico', 'buscar', 'rango', 'fechas'].includes(f.tipo)) return f.tipo;
     return Array.isArray(f.opciones) && f.opciones.length ? 'chips' : 'buscar';
 }
 
@@ -57,13 +57,16 @@ function normalizarFiltro(f, grupo) {
             hasta: r.valor?.hasta ?? r.hasta ?? null,
         }))
         : [];
+    const periodos = tipo === 'fechas'
+        ? crudas.map(o => ({ etiqueta: texto(o?.etiqueta ?? o?.label), relativo: texto(o?.valor?.relativo ?? o?.relativo) })).filter(o => o.relativo && o.etiqueta)
+        : [];
     const remoto = tipo === 'buscar' && (!!opcionesDe || crudas.length === 0);
     return {
         clave: texto(f.clave ?? f.key),
         etiqueta: texto(f.etiqueta ?? f.label),
         grupo: texto(grupo ?? f.grupo ?? 'Otros filtros'),
         tipo,
-        opciones: tipo === 'rango' || tipo === 'interruptor' || remoto ? null : crudas.map(normalizarOpcion),
+        opciones: tipo === 'rango' || tipo === 'fechas' || tipo === 'interruptor' || remoto ? null : crudas.map(normalizarOpcion),
         // Remote search: GET /reportes/opciones/{opciones_de ?? clave}.
         remoto,
         opcionesDe: texto(opcionesDe ?? f.clave ?? f.key),
@@ -73,10 +76,19 @@ function normalizarFiltro(f, grupo) {
         dependeDe: f.depende_de ?? f.dependeDe
             ?? ((f.clave ?? f.key) !== 'municipio' && crudas.length > 0 && crudas.every(o => o && typeof o === 'object' && 'municipio' in o) ? 'municipio' : null),
         rangos,
+        periodos,
         unidad: texto(f.unidad),
         // "unico": the option that applies when nothing is chosen (e.g. Estado → Activas). Choosing it clears the filter.
-        porDefecto: f.por_defecto === undefined || f.por_defecto === null || typeof f.por_defecto === 'object' ? null : texto(f.por_defecto),
+        // A mandatory one (Empresarios → vista) falls back to its first option.
+        porDefecto: porDefectoDe(f, tipo, crudas),
+        obligatorio: !!(f.obligatorio ?? f.requerido),
     };
+}
+
+function porDefectoDe(f, tipo, crudas) {
+    if (f.por_defecto !== undefined && f.por_defecto !== null && typeof f.por_defecto !== 'object') return texto(f.por_defecto);
+    if ((f.obligatorio ?? f.requerido) && tipo === 'unico' && crudas.length) return texto(normalizarOpcion(crudas[0]).valor);
+    return null;
 }
 
 function normalizarColumna(c) {
@@ -87,6 +99,8 @@ function normalizarColumna(c) {
         sensible: !!c.sensible,
         siempre: !!(c.siempre ?? c.fija),
         ordenable: !!c.ordenable,
+        // Empresarios: the vistas the column belongs to; null = every one.
+        vistas: Array.isArray(c.vistas) && c.vistas.length ? c.vistas.map(texto) : null,
     };
 }
 
@@ -104,13 +118,22 @@ function seccionesDe(raw) {
 }
 
 export function normalizarFuente(raw) {
-    const secciones = seccionesDe(raw).map(s => ({ ...s, filtros: s.filtros.filter(f => f.clave) })).filter(s => s.filtros.length);
+    const clave = texto(raw.clave ?? raw.key);
+    // Each filter knows its source: a remote search asks /reportes/opciones/{x}?fuente=<clave>.
+    const secciones = seccionesDe(raw)
+        .map(s => ({ ...s, filtros: s.filtros.filter(f => f.clave).map(f => ({ ...f, fuente: clave })) }))
+        .filter(s => s.filtros.length);
     if (secciones.length && !secciones.some(s => s.abierto)) secciones[0].abierto = true;
     const columnas = (Array.isArray(raw.columnas) ? raw.columnas : Object.values(raw.columnas ?? {})).map(normalizarColumna).filter(c => c.clave);
+    const u = raw.unidad;
+    const unidad = u && typeof u === 'object' && u.singular && u.plural
+        ? { singular: texto(u.singular), plural: texto(u.plural), todos: texto(u.todos), femenino: typeof u.femenino === 'boolean' ? u.femenino : null }
+        : null;
     return {
-        clave: texto(raw.clave ?? raw.key),
+        clave,
         etiqueta: texto(raw.etiqueta ?? raw.label),
         descripcion: texto(raw.descripcion),
+        unidad,
         total: raw.total === null || raw.total === undefined || !Number.isFinite(Number(raw.total)) ? null : Number(raw.total),
         secciones,
         filtros: secciones.flatMap(s => s.filtros),
@@ -121,6 +144,7 @@ export function normalizarFuente(raw) {
             descripcion: texto(p.descripcion),
             columnas: p.columnas === '*' ? '*' : [].concat(p.columnas ?? []).map(texto),
             porDefecto: !!(p.por_defecto ?? p.default),
+            vista: p.vista ? texto(p.vista) : null,
         })),
         // Backend: {clave, etiqueta, descripcion, spec: {filtros, columnas?}}.
         atajos: (raw.atajos ?? []).map(a => {
@@ -155,6 +179,7 @@ export function gruposDe(items) {
 export function filtroVacio(valor) {
     if (valor === null || valor === undefined || valor === '' || valor === false) return true;
     if (Array.isArray(valor)) return valor.length === 0;
+    if (typeof valor === 'object' && 'relativo' in valor) return !valor.relativo;
     if (typeof valor === 'object') return (valor.desde ?? null) === null && (valor.hasta ?? null) === null;
     return false;
 }
@@ -198,6 +223,84 @@ export function validarRango(desdeTexto, hastaTexto) {
     return { rango: { desde, hasta } };
 }
 
+/* ── Dates (filter "fechas": {desde, hasta} as YYYY-MM-DD) ── */
+
+const ZONA = 'America/Bogota';
+
+export function fechaValida(t) {
+    if (typeof t !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(t)) return false;
+    const [a, m, d] = t.split('-').map(Number);
+    const f = new Date(Date.UTC(a, m - 1, d));
+    return a >= 1900 && f.getUTCFullYear() === a && f.getUTCMonth() === m - 1 && f.getUTCDate() === d;
+}
+
+export function normalizarFechas(r) {
+    const desde = fechaValida(r?.desde) ? r.desde : null;
+    const hasta = fechaValida(r?.hasta) ? r.hasta : null;
+    if (desde !== null && hasta !== null && desde > hasta) return { desde: null, hasta: null };
+    return { desde, hasta };
+}
+
+// Same rule as the age: an invalid pair applies nothing, never half of it.
+// `incompleta`: the browser's date box has something typed that is not a whole date yet (its value is '').
+export function validarFechas(desdeTexto, hastaTexto, { incompleta = false } = {}) {
+    const campos = [String(desdeTexto ?? '').trim(), String(hastaTexto ?? '').trim()];
+    if (incompleta || campos.some(t => t !== '' && !fechaValida(t))) return { error: 'Escribe la fecha completa: día, mes y año.' };
+    const [desde, hasta] = campos.map(t => (t === '' ? null : t));
+    if (desde !== null && hasta !== null && desde > hasta) return { error: 'La fecha «desde» debe ser igual o anterior a la fecha «hasta».' };
+    return { rango: { desde, hasta } };
+}
+
+const iso = (f) => f.toISOString().slice(0, 10);
+
+export function hoyEnBogota(ahora = new Date()) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: ZONA }).format(ahora);
+}
+
+// Hoy, Esta semana (lunes a domingo), Este mes (del 1 al último día) and Último mes (from the same day one
+// month back until today), in Bogotá's calendar.
+export function atajosFechas(ahora = new Date()) {
+    const hoy = hoyEnBogota(ahora);
+    const [a, m, d] = hoy.split('-').map(Number);
+    const base = new Date(Date.UTC(a, m - 1, d));
+    const lunes = new Date(Date.UTC(a, m - 1, d - ((base.getUTCDay() + 6) % 7)));
+    const domingo = new Date(Date.UTC(lunes.getUTCFullYear(), lunes.getUTCMonth(), lunes.getUTCDate() + 6));
+    const diasMesAnterior = new Date(Date.UTC(a, m - 1, 0)).getUTCDate();
+    const haceUnMes = new Date(Date.UTC(a, m - 2, Math.min(d, diasMesAnterior)));
+    return [
+        { etiqueta: 'Hoy', desde: hoy, hasta: hoy },
+        { etiqueta: 'Esta semana', desde: iso(lunes), hasta: iso(domingo) },
+        { etiqueta: 'Este mes', desde: iso(new Date(Date.UTC(a, m - 1, 1))), hasta: iso(new Date(Date.UTC(a, m, 0))) },
+        { etiqueta: 'Último mes', desde: iso(haceUnMes), hasta: hoy },
+    ];
+}
+
+// The buttons of a "fechas" filter: the source's relative periods (they keep meaning "the last month" in a saved
+// report) and Hoy / Esta semana / Este mes / Último mes for whatever the source does not already offer.
+export function periodosDe(filtro, ahora = new Date()) {
+    const remotos = (filtro.periodos ?? []).map(p => ({ etiqueta: p.etiqueta, valor: { relativo: p.relativo } }));
+    const nombres = new Set(remotos.map(p => p.etiqueta.toLowerCase()));
+    const locales = atajosFechas(ahora).filter(p => !nombres.has(p.etiqueta.toLowerCase())).map(p => ({ etiqueta: p.etiqueta, valor: { desde: p.desde, hasta: p.hasta } }));
+    return [...locales, ...remotos];
+}
+
+export const mismoPeriodo = (a, b) => !!a && !!b && (a.relativo
+    ? a.relativo === b.relativo
+    : !b.relativo && (a.desde ?? null) === (b.desde ?? null) && (a.hasta ?? null) === (b.hasta ?? null));
+
+export function textoFecha(t) {
+    const [a, m, d] = t.split('-');
+    return `${Number(d)}/${Number(m)}/${a}`;
+}
+
+export function textoFechas(r) {
+    if (r.desde !== null && r.hasta !== null) {
+        return r.desde === r.hasta ? `el ${textoFecha(r.desde)}` : `del ${textoFecha(r.desde)} al ${textoFecha(r.hasta)}`;
+    }
+    if (r.desde !== null) return `desde el ${textoFecha(r.desde)}`;
+    return `hasta el ${textoFecha(r.hasta)}`;
+}
+
 // Values for an unknown filter or of the wrong shape are dropped; the server re-validates anyway.
 export function limpiarFiltros(filtros, fuente) {
     const out = {};
@@ -218,12 +321,35 @@ export function limpiarFiltros(filtros, fuente) {
         }
         else if (f.tipo === 'interruptor') v = valor === true || valor === 'true' || valor === 1;
         else if (f.tipo === 'rango') v = normalizarRango(valor);
+        else if (f.tipo === 'fechas') {
+            v = valor && typeof valor === 'object' && 'relativo' in valor
+                ? (f.periodos.some(x => x.relativo === valor.relativo) ? { relativo: valor.relativo } : null)
+                : normalizarFechas(valor);
+        }
         if (!filtroVacio(v)) out[clave] = v;
     }
     return out;
 }
 
 /* ── Columns ── */
+
+// The chosen vista of a source that has one (Empresarios: organizaciones | miembros), or null.
+export function vistaDe(fuente, filtros = {}) {
+    const f = fuente?.filtros.find(x => x.clave === 'vista');
+    if (!f) return null;
+    return String(filtros.vista ?? f.porDefecto ?? f.opciones?.[0]?.valor ?? '');
+}
+
+// The source as seen in that vista: only its columns and presets (another vista's column is a 422).
+export function fuenteEnVista(fuente, filtros = {}) {
+    const vista = vistaDe(fuente, filtros);
+    if (vista === null) return fuente;
+    return {
+        ...fuente,
+        columnas: fuente.columnas.filter(c => !c.vistas || c.vistas.includes(vista)),
+        presets: fuente.presets.filter(p => !p.vista || p.vista === vista),
+    };
+}
 
 export function columnasPermitidas(fuente, puedeDatosPersonales) {
     return fuente.columnas.filter(c => puedeDatosPersonales || !c.sensible);
@@ -286,12 +412,14 @@ export function leerEstado(url, fuentes, puedeDatosPersonales) {
     const orden = ordenes.some(o => o.valor === query.get('o')) ? query.get('o') : ordenes[0].valor;
     const pagina = Math.max(1, Number.parseInt(query.get('p') ?? '1', 10) || 1);
     const etiquetas = parseJson(query.get('et'), {});
+    const filtros = limpiarFiltros(parseJson(query.get('f'), {}), fuente);
+    const enVista = fuente ? fuenteEnVista(fuente, filtros) : null;
     return {
         fuente,
         paso,
-        filtros: limpiarFiltros(parseJson(query.get('f'), {}), fuente),
-        columnas: fuente
-            ? (columnasUrl === null ? columnasPorDefecto(fuente, puedeDatosPersonales) : limpiarColumnas(columnasUrl.split(','), fuente, puedeDatosPersonales))
+        filtros,
+        columnas: enVista
+            ? (columnasUrl === null ? columnasPorDefecto(enVista, puedeDatosPersonales) : limpiarColumnas(columnasUrl.split(','), enVista, puedeDatosPersonales))
             : [],
         orden,
         busqueda: (query.get('q') ?? '').slice(0, 100),
@@ -325,7 +453,9 @@ export function pareceDocumento(texto) {
 }
 
 // The people left out by default, in words (Estado = Activas and no "Incluir fallecidos"), or '' when none.
+// Only Personas: another source's "estado" (a compromiso's) says nothing about fallecidos or inactive people.
 export function textoExcluidos(filtros, fuente) {
+    if (fuente?.clave !== 'personas') return '';
     const hay = (clave) => fuente?.filtros.some(f => f.clave === clave);
     const fallecidos = hay('incluir_fallecidos') && !filtros.incluir_fallecidos;
     const inactivas = hay('estado') && filtros.estado === undefined;
@@ -349,9 +479,27 @@ export function specDe(estado) {
 
 /* ── Words for the chosen filters ── */
 
-export function etiquetaValor(filtro, valor, etiquetas = {}) {
+// The name of a chosen value, or null when only its id is known (a remote search whose label was not kept: a link
+// without "et", a shortcut that names an evento by id).
+export function nombreDeValor(filtro, valor, etiquetas = {}) {
     const op = filtro.opciones?.find(o => mismoValor(o.valor, valor));
-    return op?.etiqueta ?? etiquetas[String(valor)] ?? String(valor);
+    const nombre = op?.etiqueta ?? etiquetas[String(valor)];
+    if (nombre) return nombre;
+    return pareceId(valor) ? null : String(valor);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const pareceId = (v) => UUID.test(String(v));
+
+// "1 evento elegido", "2 referentes elegidos": a value is never shown as its id.
+export function textoElegidos(filtro, n) {
+    const singular = filtro.etiqueta.toLowerCase();
+    const plural = /[aeiouáéó]$/.test(singular) ? `${singular}s` : `${singular}es`;
+    return `${n} ${n === 1 ? singular : plural} ${n === 1 ? 'elegido' : 'elegidos'}`;
+}
+
+export function etiquetaValor(filtro, valor, etiquetas = {}) {
+    return nombreDeValor(filtro, valor, etiquetas) ?? textoElegidos(filtro, 1);
 }
 
 export function textoRango(r, unidad = 'años') {
@@ -368,9 +516,19 @@ export function resumenFiltros(filtros, fuente, etiquetas = {}) {
         const f = fuente.filtros.find(x => x.clave === clave);
         if (!f) continue;
         if (Array.isArray(valor)) {
-            for (const v of valor) chips.push({ id: `${clave}:${v}`, clave, valor: v, texto: etiquetaValor(f, v, etiquetas) });
+            // Values without a name go together in one chip ("2 eventos elegidos") that removes them all.
+            const sinNombre = [];
+            for (const v of valor) {
+                const nombre = nombreDeValor(f, v, etiquetas);
+                if (nombre === null) sinNombre.push(v);
+                else chips.push({ id: `${clave}:${v}`, clave, valor: v, texto: nombre });
+            }
+            if (sinNombre.length) chips.push({ id: `${clave}:sin-nombre`, clave, valores: sinNombre, texto: textoElegidos(f, sinNombre.length) });
         } else if (f.tipo === 'rango') {
             chips.push({ id: clave, clave, texto: `${f.etiqueta}: ${textoRango(valor, f.unidad || 'años')}` });
+        } else if (f.tipo === 'fechas') {
+            const periodo = valor.relativo ? f.periodos.find(x => x.relativo === valor.relativo)?.etiqueta : null;
+            chips.push({ id: clave, clave, texto: `${f.etiqueta}: ${periodo ?? textoFechas(valor)}` });
         } else if (f.tipo === 'interruptor') {
             chips.push({ id: clave, clave, texto: f.etiqueta });
         } else {
@@ -382,13 +540,109 @@ export function resumenFiltros(filtros, fuente, etiquetas = {}) {
 
 export function sinChip(filtros, chip) {
     const valor = filtros[chip.clave];
-    return conFiltro(filtros, chip.clave, Array.isArray(valor) ? valor.filter(v => v !== chip.valor) : null);
+    const quitar = chip.valores ?? [chip.valor];
+    return conFiltro(filtros, chip.clave, Array.isArray(valor) ? valor.filter(v => !quitar.includes(v)) : null);
 }
 
 /* ── Numbers and messages ── */
 
 export const numero = (n) => (Number(n) || 0).toLocaleString('es-CO');
 export const personas = (n) => `${numero(n)} ${Number(n) === 1 ? 'persona' : 'personas'}`;
+
+/* ── Words of each source ── */
+
+// gente: rows that are people ("¿A quiénes…?", "ver a todos los asistentes"); otherwise "¿Qué compromisos…?".
+const UNIDADES = {
+    personas: { singular: 'persona', plural: 'personas', femenino: true, gente: true },
+    asistencias: { singular: 'asistente', plural: 'asistentes', femenino: false, gente: true },
+    compromisos: { singular: 'compromiso', plural: 'compromisos', femenino: false, gente: false },
+    organizaciones: { singular: 'organización', plural: 'organizaciones', femenino: true, gente: false },
+    miembros: { singular: 'miembro', plural: 'miembros', femenino: false, gente: true },
+};
+const GENERICA = { singular: 'resultado', plural: 'resultados', femenino: false, gente: false };
+
+// The words of the rows of a source. Empresarios lists organizations or their members depending on its vista;
+// the backend's `unidad` is the one of the default filters, so it only applies to the default vista.
+export function unidadDe(fuente, filtros = {}) {
+    let clave = fuente?.clave;
+    if (clave === 'empresarios') clave = vistaDe(fuente, filtros) === 'miembros' ? 'miembros' : 'organizaciones';
+    const local = UNIDADES[clave] ?? GENERICA;
+    const b = fuente?.unidad && (fuente.clave !== 'empresarios' || clave === 'organizaciones') ? fuente.unidad : null;
+    const singular = b?.singular || local.singular;
+    const plural = b?.plural || local.plural;
+    const femenino = typeof b?.femenino === 'boolean' ? b.femenino : local.femenino;
+    return {
+        singular,
+        plural,
+        femenino,
+        todas: b?.todos || `${femenino ? 'todas las' : 'todos los'} ${plural}`,
+        ninguna: clave === 'personas' ? 'Nadie' : `${femenino ? 'Ninguna' : 'Ningún'} ${singular}`,
+        a: local.gente ? 'a ' : '',
+        quienes: local.gente ? 'A quiénes' : 'Cuáles',
+    };
+}
+
+export const cantidad = (n, unidad) => `${numero(n)} ${Number(n) === 1 ? unidad.singular : unidad.plural}`;
+export const mayuscula = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+
+/* ── The phone card of a row ── */
+
+// subtitulo: the cells under the name, joined by " · "; destacadas: data shown first (when chosen);
+// rotulos: a clearer label than the column's.
+const TARJETAS = {
+    personas: { subtitulo: ['municipio', 'tipo'] },
+    asistencias: { subtitulo: ['evento', 'fecha'], destacadas: ['municipio'], rotulos: { municipio: 'Municipio del evento' } },
+    compromisos: { subtitulo: ['estado', 'fecha_limite'], destacadas: ['origen_nombre', 'responsables'], rotulos: { responsables: 'Responsable' } },
+    empresarios: { subtitulo: ['tipo', 'municipio'] },
+};
+const MAX_DATOS = 3;
+
+const conValor = (v) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
+
+// {titulo, subtitulo: [valores], datos: [{clave, etiqueta, valor}]} for the card of `fila` with the chosen `columnas`.
+export function tarjetaDe(fuenteClave, fila, columnas) {
+    const c = fila?.celdas ?? {};
+    const conf = TARJETAS[fuenteClave] ?? { subtitulo: ['municipio', 'tipo'] };
+    const titulo = 'nombre' in c ? 'nombre' : (columnas[0]?.clave ?? 'nombre');
+    const subtitulo = conf.subtitulo.filter(k => k !== titulo && conValor(c[k]));
+    const usadas = new Set([titulo, ...conf.subtitulo]);
+    // A compromiso's origen goes as the label of its name: "Evento: Foro" / "Organización: Café del Sur".
+    if (fuenteClave === 'compromisos' && conValor(c.origen) && columnas.some(col => col.clave === 'origen_nombre')) usadas.add('origen');
+    const orden = [
+        ...(conf.destacadas ?? []).map(k => columnas.find(col => col.clave === k)).filter(Boolean),
+        ...columnas.filter(col => !(conf.destacadas ?? []).includes(col.clave)),
+    ];
+    const datos = orden
+        .filter(col => !usadas.has(col.clave))
+        .slice(0, MAX_DATOS)
+        .map(col => {
+            let etiqueta = conf.rotulos?.[col.clave] ?? col.etiqueta;
+            if (fuenteClave === 'compromisos' && col.clave === 'origen_nombre' && conValor(c.origen)) etiqueta = String(c.origen);
+            return { clave: col.clave, etiqueta, valor: c[col.clave] };
+        });
+    return { titulo, subtitulo: subtitulo.map(k => c[k]), datos };
+}
+
+/* ── What tapping a row does ── */
+
+// A same-site path only: never another host ("//x", "/\x", "https://x") or a script ("javascript:").
+const rutaInterna = (u) => typeof u === 'string' && /^\/(?![/\\])/.test(u) && !/[\s<>"\\]/.test(u);
+
+// {tipo:'ficha', id, editable} | {tipo:'compromiso', url} | {tipo:'organizacion', id} | null. A row without the key
+// (Personas before B-3) opens its own ficha.
+export function accionDe(fila) {
+    if (!fila || typeof fila !== 'object') return null;
+    if (!('accion' in fila)) {
+        return fila.id !== undefined && fila.id !== null && fila.id !== '' ? { tipo: 'ficha', id: fila.id, editable: fila.editable !== false } : null;
+    }
+    const a = fila.accion;
+    if (!a || typeof a !== 'object') return null;
+    const id = a.id === undefined || a.id === null || a.id === '' ? null : a.id;
+    if (a.tipo === 'ficha' && id !== null) return { tipo: 'ficha', id, editable: (a.editable ?? fila.editable) !== false };
+    if (a.tipo === 'organizacion' && id !== null) return { tipo: 'organizacion', id };
+    if (a.tipo === 'compromiso' && rutaInterna(a.url)) return { tipo: 'compromiso', url: a.url };
+    return null;
+}
 
 export function mensajeError(error, accion = 'consulta', formato = 'excel') {
     const status = error?.status ?? 0;
@@ -443,8 +697,9 @@ export const pedirLista = (spec, pagina, signal) => postJson(`/reportes/${encode
         filas: Array.isArray(d.filas) ? d.filas : [],
     }));
 
-export async function pedirOpciones(filtro, q, municipios, signal) {
+export async function pedirOpciones(filtro, q, municipios, signal, fuente = '') {
     const params = new URLSearchParams();
+    if (fuente) params.set('fuente', fuente);
     params.set('q', q);
     for (const m of municipios ?? []) params.append('municipios[]', m);
     let res;
@@ -478,10 +733,12 @@ export const FORMATOS = {
 // The PDF only fits this many columns per person (contract B-2); the server keeps the first ones of the spec.
 export const PDF_MAX_COLUMNAS = 8;
 
-export function nombreSugerido(chips, fecha = new Date(), extension = 'xlsx') {
-    const partes = chips.slice(0, 3).map(c => c.texto.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '')).filter(Boolean);
-    const dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(fecha);
-    return `Reporte_${partes.length ? partes.join('_') : 'Personas'}_${dia}.${extension}`;
+const paraArchivo = (t) => String(t).replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '');
+
+export function nombreSugerido(chips, fecha = new Date(), extension = 'xlsx', base = 'Personas') {
+    const partes = chips.slice(0, 3).map(c => paraArchivo(c.texto)).filter(Boolean);
+    const dia = new Intl.DateTimeFormat('en-CA', { timeZone: ZONA }).format(fecha);
+    return `Reporte_${partes.length ? partes.join('_') : (paraArchivo(base) || 'Personas')}_${dia}.${extension}`;
 }
 
 export const descargarExcel = (spec) => descargarArchivo(spec, 'excel');
@@ -513,17 +770,9 @@ export async function descargarArchivo(spec, formato) {
     return { blob, disposition: res.headers.get('content-disposition') };
 }
 
-export function guardarBlob(blob, nombre) {
-    const href = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = href;
-    a.download = nombre;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // iOS (PWA) lee el blob tarde: se libera al minuto, no al segundo.
-    setTimeout(() => URL.revokeObjectURL(href), 60000);
-}
+// Reportes downloads with POST (the spec is the body): there is no URL the browser could open instead, so the
+// installed-app fallback of the GET downloads (lib/descargaArchivo) does not apply here.
+export { guardarBlob } from '@/lib/descargaArchivo';
 
 /* ── Hooks ── */
 

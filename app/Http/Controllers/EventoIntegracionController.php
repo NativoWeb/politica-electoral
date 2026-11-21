@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Exports\GenericExport;
 use App\Exports\SheetsExport;
 use App\Http\Controllers\Concerns\ScopesTerritory;
-use App\Models\AuditLog;
 use App\Services\Eventos\EventScope;
 use App\Services\Eventos\TerritoryView;
+use App\Services\Reportes\DescargaGuard;
 use App\Support\Provincias;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 // Eventos especiales, phase 4 (docs/eventos-api.md §12): the events of a person's ficha and the territory view.
 // Both need view.eventos or manage.eventos (route) and only reach events of visible campaigns inside the territory.
@@ -102,62 +102,74 @@ class EventoIntegracionController extends Controller
         ]);
     }
 
-    // GET /eventos/territorio/excel?municipio=&barrio=: the same three lists as the screen, unpaginated.
-    public function territorioExcel(Request $request): BinaryFileResponse
+    // GET /eventos/territorio/excel?municipio=&barrio=: the same three lists as the screen, unpaginated. Through
+    // DescargaGuard (lock, quota, audit before the file); without export.datos_personales, no personal column.
+    public function territorioExcel(Request $request, DescargaGuard $guard): SymfonyResponse
     {
         [$municipio, $barrio, $key] = $this->territoryFilters($request);
         abort_unless($municipio, 404);
-        EventoImportController::raiseMemoryLimit();
 
-        $lideres = $this->territory->lideres($municipio->id, $key)->limit(self::TERRITORIO_EXCEL_MAX_LIDERES)->get()->map(fn ($l) => [
-            'nombre' => $l->nombre, 'cedula' => $l->cedula, 'telefono' => $l->telefono, 'barrio' => $l->barrio,
-            'cargo' => $l->cargo, 'partido' => $l->partido, 'campana' => $this->campaignName($l->campaign_id),
-        ])->all();
-        $eventos = $this->territory->eventos($municipio->id, $key)->get()->map(fn ($e) => [
-            'nombre' => $e->nombre, 'tipo' => $e->tipo, 'fecha' => $this->date($e->starts_at, true),
-            'estado' => ucfirst($e->status), 'asistentes' => (int) $e->asistentes,
-            'asistentes_barrio' => isset($e->asistentes_barrio) ? (int) $e->asistentes_barrio : null,
-            'campana' => $this->campaignName($e->campaign_id),
-        ])->all();
-        $asistentes = $this->territory->asistentes($municipio->id, $key)->get()->map(fn ($a) => [
-            'nombres' => $a->nombres, 'apellidos' => $a->apellidos, 'cedula' => $a->cedula, 'celular' => $a->celular,
-            'barrio' => $a->barrio, 'evento' => $a->evento, 'fecha' => $this->date($a->starts_at, true),
-            'origen' => self::SOURCES[$a->source] ?? $a->source, 'estado' => self::LINK_STATUSES[$a->link_status] ?? $a->link_status,
-            'campana' => $this->campaignName($a->campaign_id),
-        ])->all();
-
-        $eventoColumns = ['nombre', 'tipo', 'fecha', 'estado', 'asistentes', ...($key ? ['asistentes_barrio'] : []), 'campana'];
-        $labels = [
-            'nombre' => 'NOMBRE', 'cedula' => 'CÉDULA', 'telefono' => 'TELÉFONO', 'barrio' => 'BARRIO', 'cargo' => 'CARGO',
-            'partido' => 'PARTIDO', 'campana' => 'GRUPO POLÍTICO', 'tipo' => 'TIPO', 'fecha' => 'FECHA', 'estado' => 'ESTADO',
-            'asistentes' => 'ASISTENTES', 'asistentes_barrio' => 'ASISTENTES DEL BARRIO', 'nombres' => 'NOMBRES',
-            'apellidos' => 'APELLIDOS', 'celular' => 'CELULAR', 'evento' => 'EVENTO', 'origen' => 'ORIGEN',
-        ];
         $multiple = count($this->campaign()->visibleIds() ?? []) > 1;
         $drop = fn (array $cols) => $multiple ? $cols : array_values(array_diff($cols, ['campana']));
+        $user = $request->user();
+        [$liderColumns, $liderRemoved] = DescargaGuard::columnasPermitidas($drop(['nombre', 'cedula', 'telefono', 'barrio', 'cargo', 'partido', 'campana']), $user);
+        $eventoColumns = $drop(['nombre', 'tipo', 'fecha', 'estado', 'asistentes', ...($key ? ['asistentes_barrio'] : []), 'campana']);
+        [$asistenteColumns, $asistenteRemoved] = DescargaGuard::columnasPermitidas(
+            $drop(['nombres', 'apellidos', 'cedula', 'celular', 'barrio', 'evento', 'fecha', 'origen', 'estado', 'campana']), $user);
+        $removed = array_values(array_unique([...$liderRemoved, ...$asistenteRemoved]));
 
-        $sheets = [
-            new GenericExport($lideres, $drop(['nombre', 'cedula', 'telefono', 'barrio', 'cargo', 'partido', 'campana']), 'Líderes', $labels),
-            new GenericExport($eventos, $drop($eventoColumns), 'Eventos', $labels),
-            new GenericExport($asistentes, $drop(['nombres', 'apellidos', 'cedula', 'celular', 'barrio', 'evento', 'fecha', 'origen', 'estado', 'campana']), 'Asistentes', $labels),
-        ];
+        $response = $guard->descargar($request, 'EXPORT eventos.territorio.excel', function () use (
+            $municipio, $barrio, $key, $liderColumns, $liderRemoved, $eventoColumns, $asistenteColumns, $asistenteRemoved, $removed
+        ) {
+            EventoImportController::raiseMemoryLimit();
+            $lideres = $this->territory->lideres($municipio->id, $key)->limit(self::TERRITORIO_EXCEL_MAX_LIDERES)->get()->map(fn ($l) => [
+                'nombre' => $l->nombre, 'cedula' => $l->cedula, 'telefono' => $l->telefono, 'barrio' => $l->barrio,
+                'cargo' => $l->cargo, 'partido' => $l->partido, 'campana' => $this->campaignName($l->campaign_id),
+            ])->all();
+            $eventos = $this->territory->eventos($municipio->id, $key)->get()->map(fn ($e) => [
+                'nombre' => $e->nombre, 'tipo' => $e->tipo, 'fecha' => $this->date($e->starts_at, true),
+                'estado' => ucfirst($e->status), 'asistentes' => (int) $e->asistentes,
+                'asistentes_barrio' => isset($e->asistentes_barrio) ? (int) $e->asistentes_barrio : null,
+                'campana' => $this->campaignName($e->campaign_id),
+            ])->all();
+            $asistentes = $this->territory->asistentes($municipio->id, $key)->get()->map(fn ($a) => [
+                'nombres' => $a->nombres, 'apellidos' => $a->apellidos, 'cedula' => $a->cedula, 'celular' => $a->celular,
+                'barrio' => $a->barrio, 'evento' => $a->evento, 'fecha' => $this->date($a->starts_at, true),
+                'origen' => self::SOURCES[$a->source] ?? $a->source, 'estado' => self::LINK_STATUSES[$a->link_status] ?? $a->link_status,
+                'campana' => $this->campaignName($a->campaign_id),
+            ])->all();
 
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'EVENTOS_TERRITORIO_EXPORTADO',
-            'entity_type' => 'evento',
-            'entity_id' => null,
-            'metadata' => [
-                'route' => 'eventos.territorio.excel', 'municipio_id' => $municipio->id, 'barrio' => $key !== null,
-                'lideres' => count($lideres), 'eventos' => count($eventos), 'asistentes' => count($asistentes),
-            ],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
+            $labels = [
+                'nombre' => 'NOMBRE', 'cedula' => 'CÉDULA', 'telefono' => 'TELÉFONO', 'barrio' => 'BARRIO', 'cargo' => 'CARGO',
+                'partido' => 'PARTIDO', 'campana' => 'GRUPO POLÍTICO', 'tipo' => 'TIPO', 'fecha' => 'FECHA', 'estado' => 'ESTADO',
+                'asistentes' => 'ASISTENTES', 'asistentes_barrio' => 'ASISTENTES DEL BARRIO', 'nombres' => 'NOMBRES',
+                'apellidos' => 'APELLIDOS', 'celular' => 'CELULAR', 'evento' => 'EVENTO', 'origen' => 'ORIGEN',
+            ];
+            // A sheet without its personal columns says so above its headings.
+            $aviso = fn (array $quitadas) => $quitadas ? DescargaGuard::AVISO_SIN_DATOS : null;
+            $sheets = [
+                new GenericExport($lideres, $liderColumns, 'Líderes', $labels, $aviso($liderRemoved)),
+                new GenericExport($eventos, $eventoColumns, 'Eventos', $labels),
+                new GenericExport($asistentes, $asistenteColumns, 'Asistentes', $labels, $aviso($asistenteRemoved)),
+            ];
+            $name = 'territorio-'.(Str::slug($municipio->canonical_name.($barrio ? ' '.$barrio : '')) ?: 'municipio').'.xlsx';
 
-        $name = 'territorio-'.(Str::slug($municipio->canonical_name.($barrio ? ' '.$barrio : '')) ?: 'municipio').'.xlsx';
+            return [
+                'metadata' => [
+                    'fuente' => 'eventos.territorio', 'formato' => 'excel', 'municipio_id' => $municipio->id, 'barrio' => $key !== null,
+                    'lideres' => count($lideres), 'eventos' => count($eventos), 'asistentes' => count($asistentes),
+                    'columnas' => ['lideres' => $liderColumns, 'eventos' => $eventoColumns, 'asistentes' => $asistenteColumns],
+                    'columnas_quitadas' => $removed,
+                    'con_datos_personales' => (bool) array_intersect([...$liderColumns, ...$asistenteColumns], DescargaGuard::COLUMNAS_SENSIBLES),
+                ],
+                'generar' => fn () => Excel::download(new SheetsExport($sheets), $name),
+            ];
+        });
+        if ($removed) {
+            $response->headers->set('X-Columnas-Quitadas', implode(',', $removed));
+        }
 
-        return Excel::download(new SheetsExport($sheets), $name);
+        return $response;
     }
 
     // [municipio row | null, barrio as typed | null, barrio key | null]. A municipio outside the territory is a 403.

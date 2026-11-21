@@ -354,6 +354,7 @@ class EventIntegrationTest extends TestCase
         $this->lider(Campaign::DEFAULT_ID, '=HYPERLINK("http://x","clic")', '777', ['barrio' => 'San Martín']);
         $query = "?municipio={$this->giron}&barrio=san%20martin";
         $screen = $this->territorio($this->cd, $query)['resultado'];
+        $this->conDatosPersonales();
 
         Excel::fake();
         $this->actingAs($this->cd)->get('/eventos/territorio/excel'.$query)->assertOk();
@@ -374,10 +375,16 @@ class EventIntegrationTest extends TestCase
         $this->assertSame(array_column($screen['eventos'], 'nombre'), array_column($eventos, 0));
         $this->assertSame(array_column($screen['asistentes']['data'], 'cedula'), array_map('strval', array_column($asistentes, 2)));
         $this->assertContains('GRUPO POLÍTICO', $sheets[0]->headings(), 'CD sees two campaigns: the sheet says whose each lider is');
-        $this->assertSame(1, DB::table('audit_logs')->where('action', 'EVENTOS_TERRITORIO_EXPORTADO')->count());
+        $this->assertSame(1, DB::table('audit_logs')->where('action', 'EXPORT eventos.territorio.excel')->count());
     }
 
     // ── 5. Excel de asistentes del evento ──
+
+    // The old exports keep cédula and phones only with export.datos_personales (DescargaGuard, docs/reportes.md).
+    private function conDatosPersonales(): void
+    {
+        $this->cd->update(['permissions' => array_merge(self::PERMS, ['export.datos_personales'])]);
+    }
 
     private function attendeesExcel(User $user, CampaignEvent $event, string $query = ''): array
     {
@@ -397,6 +404,7 @@ class EventIntegrationTest extends TestCase
     {
         $this->attendee($this->evCd, null, '888', 'Centro', 'qr', 'pendiente', '=1+1');
         $screen = $this->actingAs($this->cd)->get("/eventos/{$this->evCd->id}")->assertOk()->viewData('page')['props']['asistentes'];
+        $this->conDatosPersonales();
 
         $excel = $this->attendeesExcel($this->cd, $this->evCd);
         $this->assertSame(['NOMBRES', 'APELLIDOS', 'CÉDULA', 'CELULAR', 'TELÉFONO FIJO', 'FECHA DE NACIMIENTO', 'DIRECCIÓN', 'BARRIO',
@@ -409,7 +417,7 @@ class EventIntegrationTest extends TestCase
 
         $pendientes = $this->attendeesExcel($this->cd, $this->evCd, '?link_status=pendiente');
         $this->assertEqualsCanonicalizing(['666', '888'], array_map('strval', array_column($pendientes['data'], 2)));
-        $this->assertSame(2, DB::table('audit_logs')->where('action', 'EVENTO_ASISTENTES_EXPORTADOS')->count());
+        $this->assertSame(2, DB::table('audit_logs')->where('action', 'EXPORT eventos.asistentes.excel')->count());
     }
 
     public function test_attendees_excel_respects_isolation_and_permissions(): void
@@ -490,6 +498,7 @@ class EventIntegrationTest extends TestCase
 
     public function test_documents_and_phones_are_written_as_text_in_every_excel(): void
     {
+        $this->conDatosPersonales();
         $evento = $this->xlsx($this->cd, "/eventos/{$this->evCd->id}/asistentes.xlsx");
         $this->assertSame('s', $this->typeUnder($evento, 'Asistentes', 'CÉDULA'));
         $this->assertSame('s', $this->typeUnder($evento, 'Asistentes', 'CELULAR'));
@@ -515,6 +524,7 @@ class EventIntegrationTest extends TestCase
 
     public function test_territory_attendees_sheet_says_whose_campaign(): void
     {
+        $this->conDatosPersonales();
         Excel::fake();
         $this->actingAs($this->cd)->get("/eventos/territorio/excel?municipio={$this->giron}")->assertOk();
         Excel::assertDownloaded('territorio-giron.xlsx', function (SheetsExport $export) {

@@ -15,6 +15,7 @@ use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\Actas\CompromisoAlertas;
 use App\Services\Eventos\Actas\CompromisoListing;
 use App\Services\Eventos\EventScope;
+use App\Services\Reportes\DescargaGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -27,7 +28,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 // Only compromisos of CONFIRMED actas are listed and followed (a borrador's are edited in the acta).
@@ -60,51 +61,59 @@ class EventoCompromisoController extends Controller
         ]);
     }
 
-    // GET /eventos/compromisos.xlsx: the same filters, unpaginated.
-    public function export(Request $request): BinaryFileResponse
+    // GET /eventos/compromisos.xlsx: the same filters, unpaginated. Through DescargaGuard (lock, quota, audit before
+    // the file); without export.datos_personales, without the phones of the responsables.
+    public function export(Request $request, DescargaGuard $guard): SymfonyResponse
     {
         $filters = $this->filters($request);
-        EventoImportController::raiseMemoryLimit();
-        $items = $this->listing->query($filters)->get();
-        $responsables = $this->listing->responsables($items->pluck('id')->all());
+        $columns = ['origen', 'evento', 'municipio', 'acta', 'fecha_acta', 'compromiso', 'responsables', 'telefono', 'fecha_limite', 'estado', 'vencido', 'avances'];
+        [$columns, $removed] = DescargaGuard::columnasPermitidas($columns, $request->user());
 
-        $rows = $items->map(function ($c) use ($responsables) {
-            $r = collect($responsables[$c->id] ?? []);
+        $response = $guard->descargar($request, 'EXPORT eventos.compromisos.excel', function () use ($filters, $columns, $removed) {
+            EventoImportController::raiseMemoryLimit();
+            $items = $this->listing->query($filters)->get();
+            $responsables = $this->listing->responsables($items->pluck('id')->all());
+
+            $rows = $items->map(function ($c) use ($responsables) {
+                $r = collect($responsables[$c->id] ?? []);
+
+                return [
+                    'origen' => $c->event_id ? 'Evento' : 'Organización',
+                    'evento' => $c->evento ?? $c->organizacion,
+                    'municipio' => $c->municipio,
+                    'acta' => $c->acta_titulo,
+                    'fecha_acta' => $c->acta_fecha ? Carbon::parse($c->acta_fecha)->format('d/m/Y') : null,
+                    'compromiso' => $c->descripcion,
+                    'responsables' => $r->pluck('nombre')->implode(' / '),
+                    'telefono' => CompromisoListing::telefonosConNombre($r->all()),
+                    'fecha_limite' => $c->fecha_limite ? Carbon::parse($c->fecha_limite)->format('d/m/Y') : null,
+                    'estado' => EventCompromiso::LABELS[$c->estado] ?? $c->estado,
+                    'vencido' => CompromisoListing::isVencido($c) ? 'Sí' : 'No',
+                    'avances' => (int) $c->avances,
+                ];
+            })->all();
+
+            $labels = [
+                'origen' => 'ORIGEN', 'evento' => 'EVENTO / ORGANIZACIÓN', 'municipio' => 'MUNICIPIO', 'acta' => 'ACTA', 'fecha_acta' => 'FECHA DEL ACTA', 'compromiso' => 'COMPROMISO',
+                'responsables' => 'RESPONSABLES', 'telefono' => 'TELÉFONOS', 'fecha_limite' => 'FECHA LÍMITE', 'estado' => 'ESTADO',
+                'vencido' => 'VENCIDO', 'avances' => 'AVANCES',
+            ];
 
             return [
-                'origen' => $c->event_id ? 'Evento' : 'Organización',
-                'evento' => $c->evento ?? $c->organizacion,
-                'municipio' => $c->municipio,
-                'acta' => $c->acta_titulo,
-                'fecha_acta' => $c->acta_fecha ? Carbon::parse($c->acta_fecha)->format('d/m/Y') : null,
-                'compromiso' => $c->descripcion,
-                'responsables' => $r->pluck('nombre')->implode(' / '),
-                'telefono' => $r->pluck('telefono')->filter()->implode(' / '),
-                'fecha_limite' => $c->fecha_limite ? Carbon::parse($c->fecha_limite)->format('d/m/Y') : null,
-                'estado' => EventCompromiso::LABELS[$c->estado] ?? $c->estado,
-                'vencido' => CompromisoListing::isVencido($c) ? 'Sí' : 'No',
-                'avances' => (int) $c->avances,
+                'metadata' => [
+                    'fuente' => 'eventos.compromisos', 'formato' => 'excel', 'evento_id' => $filters['evento'], 'organizacion_id' => $filters['organizacion'],
+                    'columnas' => $columns, 'columnas_quitadas' => $removed, 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters)),
+                    'con_datos_personales' => (bool) array_intersect($columns, DescargaGuard::COLUMNAS_SENSIBLES),
+                ],
+                'generar' => fn () => Excel::download(new GenericExport($rows, $columns, 'Compromisos', $labels,
+                    $removed ? DescargaGuard::AVISO_SIN_DATOS : null), 'compromisos.xlsx'),
             ];
-        })->all();
+        });
+        if ($removed) {
+            $response->headers->set('X-Columnas-Quitadas', implode(',', $removed));
+        }
 
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'EVENTO_COMPROMISOS_EXPORTADOS',
-            'entity_type' => 'evento',
-            'entity_id' => $filters['evento'] ?? $filters['organizacion'],
-            'metadata' => ['route' => 'eventos.compromisos.excel', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
-
-        $columns = ['origen', 'evento', 'municipio', 'acta', 'fecha_acta', 'compromiso', 'responsables', 'telefono', 'fecha_limite', 'estado', 'vencido', 'avances'];
-        $labels = [
-            'origen' => 'ORIGEN', 'evento' => 'EVENTO / ORGANIZACIÓN', 'municipio' => 'MUNICIPIO', 'acta' => 'ACTA', 'fecha_acta' => 'FECHA DEL ACTA', 'compromiso' => 'COMPROMISO',
-            'responsables' => 'RESPONSABLES', 'telefono' => 'TELÉFONOS', 'fecha_limite' => 'FECHA LÍMITE', 'estado' => 'ESTADO',
-            'vencido' => 'VENCIDO', 'avances' => 'AVANCES',
-        ];
-
-        return Excel::download(new GenericExport($rows, $columns, 'Compromisos', $labels), 'compromisos.xlsx');
+        return $response;
     }
 
     // GET /eventos/compromisos/{compromiso}: the compromiso with its history.

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import SearchableDropdown from '@/Components/SearchableDropdown';
 import OrganizacionSecciones from '@/Components/Empresarios/OrganizacionSecciones';
 import OrganizacionPanel from '@/Components/Empresarios/OrganizacionPanel';
+import EnlaceDescarga from '@/Components/EnlaceDescarga';
 import CatalogosModal from '@/Components/Empresarios/CatalogosModal';
 import { failure, request } from '@/lib/actas';
 import { filtersQuery } from '@/lib/empresarios';
@@ -73,8 +74,8 @@ export default function EmpresariosIndex({ data = [], truncated, filters = {}, m
                         <p className="hidden lg:block text-[13px] text-white/60 mt-0.5">Empresas, gremios, sus miembros y las actas de reunión</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <a href={`/empresarios/exportar.xlsx${filtersQuery(filters)}`} className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">Excel</a>
-                        <a href={`/empresarios/exportar.pdf${filtersQuery(filters)}`} className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">PDF</a>
+                        <EnlaceDescarga href={`/empresarios/exportar.xlsx${filtersQuery(filters)}`} nombre="Empresarios" className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">Excel</EnlaceDescarga>
+                        <EnlaceDescarga href={`/empresarios/exportar.pdf${filtersQuery(filters)}`} nombre="Empresarios" className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">PDF</EnlaceDescarga>
                         {can.manage && (
                             <>
                                 <button type="button" onClick={() => setShowCatalogos(true)} className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold">Sectores</button>

@@ -1,7 +1,8 @@
 import { showGlobalToast } from '@/lib/api';
-import { guardarBlob, nombreArchivo } from '@/lib/reportes';
+import { nombreArchivo } from '@/lib/reportes';
+import { esAppInstalada, guardarOAbrir, irA } from '@/lib/descargaArchivo';
 
-export const AVISO_COLUMNAS_QUITADAS = 'El archivo no incluye cédula, teléfono ni dirección porque no tienes el permiso para descargar datos personales.';
+export const AVISO_COLUMNAS_QUITADAS = 'El archivo no incluye datos personales (cédula, teléfonos, correo, dirección u observaciones) porque no tienes el permiso para descargar datos personales.';
 
 function mensajeDe(status, data) {
     if (status === 401 || status === 419) return 'La página estuvo abierta mucho tiempo. Recárgala e intenta de nuevo.';
@@ -14,8 +15,15 @@ let enCurso = false;
 
 // The header "Exportar" (GET /exportar/{excel|pdf}) downloaded through fetch, so the answer can be read: a refusal
 // is said in words and X-Columnas-Quitadas tells the file left the personal columns out (DescargaGuard).
-export async function descargarExportacion(url, fallbackNombre = 'Exportacion') {
+// Installed app (iPhone): a blob download may do nothing there, so the browser opens the URL itself. No HEAD check
+// first, as the Planilla does: DescargaGuard counts a HEAD as a download (quota, audit row, the file built twice).
+// A refusal is then the Spanish error page of the server (403/429 with "Volver al inicio").
+export async function descargarExportacion(url, fallbackNombre = 'Exportacion', { navegar = irA } = {}) {
     if (enCurso) return { estado: 'ocupado' };
+    if (esAppInstalada()) {
+        navegar(url);
+        return { estado: 'navegador' };
+    }
     enCurso = true;
     showGlobalToast('Preparando tu archivo…', 'info');
     try {
@@ -34,7 +42,9 @@ export async function descargarExportacion(url, fallbackNombre = 'Exportacion') 
         }
         const blob = await res.blob();
         const extension = tipo.includes('pdf') ? 'pdf' : 'xlsx';
-        guardarBlob(blob, nombreArchivo(res.headers.get('content-disposition'), `${fallbackNombre}.${extension}`));
+        if (guardarOAbrir(blob, nombreArchivo(res.headers.get('content-disposition'), `${fallbackNombre}.${extension}`), url, navegar) === 'navegador') {
+            return { estado: 'navegador' };
+        }
         const quitadas = (res.headers.get('x-columnas-quitadas') || '').trim();
         const huboQuitadas = quitadas !== '' && quitadas !== '0';
         showGlobalToast(huboQuitadas ? AVISO_COLUMNAS_QUITADAS : 'Listo. Se descargó tu archivo.', huboQuitadas ? 'info' : 'success');

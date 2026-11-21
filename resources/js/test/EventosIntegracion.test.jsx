@@ -303,6 +303,12 @@ describe('Territory view', () => {
         render(<TerritorioResultado resultado={RESULTADO} filters={{ municipio: 'm1', barrio: 'San Martín' }} lugar="Barrio San Martín, Girón" />);
         expect(screen.getByText('Barrio San Martín, Girón')).toBeTruthy();
         expect(screen.getByRole('link', { name: 'Descargar Excel' }).getAttribute('href')).toBe('/eventos/territorio/excel?municipio=m1&barrio=San+Mart%C3%ADn');
+        // The Excel goes through fetch (DescargaGuard): no page navigation, so a 403/429 can be said in words.
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response('{}', { status: 403, headers: { 'Content-Type': 'application/json' } })));
+        const clic = new MouseEvent('click', { bubbles: true, cancelable: true });
+        screen.getByRole('link', { name: 'Descargar Excel' }).dispatchEvent(clic);
+        expect(clic.defaultPrevented).toBe(true);
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/eventos/territorio/excel?municipio=m1&barrio=San+Mart%C3%ADn');
         expect(screen.getByText('Eventos en el barrio')).toBeTruthy();
         expect(screen.getByRole('heading', { name: 'Eventos realizados en el barrio (1)' })).toBeTruthy();
         expect(screen.getByText('2 del barrio')).toBeTruthy();

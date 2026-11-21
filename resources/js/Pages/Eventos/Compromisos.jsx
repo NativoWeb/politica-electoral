@@ -1,4 +1,5 @@
 import AppLayout from '@/Layouts/AppLayout';
+import EnlaceDescarga from '@/Components/EnlaceDescarga';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import CampaignChip from '@/Components/CampaignChip';
@@ -38,9 +39,9 @@ export default function Compromisos({ compromisos, filters, eventos, organizacio
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-1">
                     <h1 className="text-[20px] lg:text-[24px] font-extrabold leading-tight">Compromisos de las actas</h1>
                     {(compromisos?.total ?? 0) > 0 && (
-                        <a href={`/eventos/compromisos.xlsx${compromisosQuery(filters)}`} className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center">
+                        <EnlaceDescarga href={`/eventos/compromisos.xlsx${compromisosQuery(filters)}`} nombre="Compromisos" className="min-h-[44px] px-4 py-2.5 bg-white/15 border border-white/20 rounded-xl text-[15px] font-bold flex items-center">
                             Descargar Excel{active ? ' (con el filtro)' : ''}
-                        </a>
+                        </EnlaceDescarga>
                     )}
                 </div>
             </div>

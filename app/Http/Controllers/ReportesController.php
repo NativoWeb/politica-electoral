@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Services\Reportes\Catalogo\Columna;
 use App\Services\Reportes\DescargaGuard;
 use App\Services\Reportes\Fuentes\Fuente;
-use App\Services\Reportes\Fuentes\PersonasFuente;
 use App\Services\Reportes\ReporteException;
 use App\Services\Reportes\ReporteService;
 use App\Services\Reportes\ReportSpec;
@@ -22,7 +21,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
-// Módulo Reportes (docs/reportes.md): build a list of people with filters, see it, open their ficha and download it.
+// Módulo Reportes (docs/reportes.md): build a list (people, attendees, compromisos, organizations) with filters, see it,
+// open what a row points to and download it.
 // view.reportes lets in (routes); each fuente asks its own view permission and export.datos_personales guards the
 // personal columns, in the screen and in the file.
 class ReportesController extends Controller
@@ -80,15 +80,16 @@ class ReportesController extends Controller
             $partes = $f->describir($spec, $user);
             $ahora = CarbonImmutable::now('America/Bogota');
             $catalogo = $f->columnas($user);
+            $unidad = $f->unidad($spec->filtros);
 
             $nombre = self::nombreArchivo($f->etiqueta(), self::sinBusqueda($partes), $ahora);
             $encabezado = [
                 self::titulo($f->etiqueta(), $partes),
-                'Filtros: '.($partes ? implode(' · ', $partes) : 'ninguno (todas las personas activas)'),
+                'Filtros: '.($partes ? implode(' · ', $partes) : 'ninguno ('.$unidad['todos'].')'),
                 'Generado por '.$user->name.' el '.$ahora->format('d/m/Y').' a las '.$ahora->format('H:i').' (hora de Bogotá)',
             ];
             $aviso = $recortado
-                ? 'Tu lista tiene '.self::numero($total).' personas. Este archivo trae las primeras '.self::numero($tope)
+                ? 'Tu lista tiene '.self::numero($total).' '.$unidad['plural'].'. Este archivo trae '.self::primeras($unidad).' '.self::numero($tope)
                     .'. Para tener el resto, divide la lista por municipio.'
                 : null;
 
@@ -167,6 +168,7 @@ class ReportesController extends Controller
         $ahora = CarbonImmutable::now('America/Bogota');
         $catalogo = $f->columnas($user);
         $grupo = app(CurrentCampaign::class)->info();
+        $unidad = $f->unidad($spec->filtros);
 
         $pdf = Pdf::loadView('reportes.lista', [
             'titulo' => self::titulo($f->etiqueta(), $partes),
@@ -175,9 +177,11 @@ class ReportesController extends Controller
             'generado' => 'Generado por '.$user->name.', '.self::fechaHora($ahora),
             'filtros' => $partes,
             'total' => $total,
+            'unidad' => $unidad,
             'desglose' => $f->porMunicipio($spec, $user, self::PDF_MUNICIPIOS),
             'aviso' => $recortado
-                ? 'Este PDF muestra las primeras '.self::numero($filas).' de '.self::numero($total).' personas. Para tenerlas todas, descarga el Excel.'
+                ? 'Este PDF muestra '.self::primeras($unidad).' '.self::numero($filas).' de '.self::numero($total).' '.$unidad['plural']
+                    .'. Para tener'.($unidad['femenino'] ? 'las todas' : 'los todos').', descarga el Excel.'
                 : null,
             'columnas' => array_combine($spec->columnas, array_map(fn ($c) => $catalogo[$c]->etiqueta, $spec->columnas)),
             'filas' => $filas > 0 ? iterator_to_array($f->filas($spec, $user, $filas), false) : [],
@@ -218,13 +222,30 @@ class ReportesController extends Controller
         return 'data:image/png;base64,'.base64_encode((string) file_get_contents($archivo));
     }
 
+    // ?fuente= the fuente open in the screen; without it, the first fuente the user has that knows the filter (B-1 clients).
     public function opciones(Request $request, string $filtro): JsonResponse
     {
         $user = $request->user();
-        $fuente = $this->reportes->fuente(PersonasFuente::CLAVE, $user);
         $q = $request->query('q', '');
+        $q = is_string($q) ? $q : '';
         $municipios = $request->query('municipios', []);
-        $opciones = $fuente->opciones($filtro, is_string($q) ? $q : '', is_array($municipios) ? $municipios : [], $user);
+        $municipios = is_array($municipios) ? $municipios : [];
+        $clave = $request->query('fuente');
+
+        if (is_string($clave) && $clave !== '') {
+            $opciones = $this->reportes->fuente($clave, $user)->opciones($filtro, $q, $municipios, $user);
+        } else {
+            $disponibles = $this->reportes->disponibles($user);
+            if (! $disponibles) {
+                throw ReporteException::prohibido('No tienes permiso para ver esta información.');
+            }
+            $opciones = null;
+            foreach ($disponibles as $fuente) {
+                if (($opciones = $fuente->opciones($filtro, $q, $municipios, $user)) !== null) {
+                    break;
+                }
+            }
+        }
         if ($opciones === null) {
             return response()->json(['success' => false, 'message' => 'Ese filtro no tiene opciones para buscar.'], 404);
         }
@@ -262,13 +283,19 @@ class ReportesController extends Controller
     // Characters per column: the name wide, lists of contacts and events wider, the rest as their heading (12 to 40).
     private static function anchos(array $columnas, array $catalogo): array
     {
-        $fijos = ['nombre' => 35, 'contactos' => 40, 'eventos' => 40, 'direccion' => 35, 'referente' => 30, 'marcas' => 30, 'observacion' => 60];
+        $fijos = ['nombre' => 35, 'contactos' => 40, 'eventos' => 40, 'direccion' => 35, 'referente' => 30, 'marcas' => 30, 'observacion' => 60,
+            'evento' => 35, 'descripcion' => 60, 'responsables' => 35, 'origen_nombre' => 35, 'acta' => 35, 'organizacion' => 35, 'representante' => 30];
         $out = [];
         foreach ($columnas as $c) {
             $out[$c] = $fijos[$c] ?? max(12, min(40, mb_strlen($catalogo[$c]->etiqueta ?? $c) + 4));
         }
 
         return $out;
+    }
+
+    private static function primeras(array $unidad): string
+    {
+        return $unidad['femenino'] ? 'las primeras' : 'los primeros';
     }
 
     private static function numero(int $n): string

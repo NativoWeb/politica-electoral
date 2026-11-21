@@ -10,6 +10,9 @@ use App\Services\Geo\BarrioMatcher;
 use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
 use App\Services\Reportes\DescargaGuard;
+use App\Services\Reportes\Fuentes\AsistenciasFuente;
+use App\Services\Reportes\Fuentes\CompromisosFuente;
+use App\Services\Reportes\Fuentes\OrganizacionesFuente;
 use App\Services\Reportes\Fuentes\PersonasFuente;
 use App\Support\CurrentCampaign;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -32,6 +35,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(AjusteStore::class);
         // Per request: it memoizes the municipios, comunas and referentes the user may filter by.
         $this->app->scoped(PersonasFuente::class);
+        $this->app->scoped(AsistenciasFuente::class);
+        $this->app->scoped(CompromisosFuente::class);
+        $this->app->scoped(OrganizacionesFuente::class);
         // Tests bind a fake here: they never call the real API.
         $this->app->bind(OcrClient::class, AnthropicOcrClient::class);
     }

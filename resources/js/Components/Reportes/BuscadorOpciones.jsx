@@ -13,7 +13,7 @@ export default function BuscadorOpciones({ filtro, valor = [], etiquetas = {}, m
     const remoto = filtro.remoto;
     const clave = `${filtro.clave}|${q.trim()}|${municipios.join(',')}`;
     const busqueda = useDebouncedRequest(
-        (signal) => pedirOpciones(filtro.opcionesDe, q.trim(), municipios, signal),
+        (signal) => pedirOpciones(filtro.opcionesDe, q.trim(), municipios, signal, filtro.fuente),
         clave,
         { enabled: remoto && abierto },
     );

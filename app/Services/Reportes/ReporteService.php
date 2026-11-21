@@ -6,7 +6,10 @@ use App\Models\User;
 use App\Services\Configuracion\Ajuste;
 use App\Services\FichaCatalogos;
 use App\Services\Reportes\Catalogo\Columna;
+use App\Services\Reportes\Fuentes\AsistenciasFuente;
+use App\Services\Reportes\Fuentes\CompromisosFuente;
 use App\Services\Reportes\Fuentes\Fuente;
+use App\Services\Reportes\Fuentes\OrganizacionesFuente;
 use App\Services\Reportes\Fuentes\PersonasFuente;
 
 // The reports module (docs/reportes.md): which fuentes a user has and the one check every request goes through
@@ -22,7 +25,13 @@ class ReporteService
 
     public const MAX_PAGINA = 2000;
 
-    private const FUENTES = [PersonasFuente::class];
+    // In screen order.
+    private const FUENTES = [
+        PersonasFuente::class,
+        AsistenciasFuente::class,
+        CompromisosFuente::class,
+        OrganizacionesFuente::class,
+    ];
 
     public static function puedeDatosPersonales(User $user): bool
     {
@@ -71,8 +80,10 @@ class ReporteService
     {
         $fuente = $this->fuente($clave, $user);
         $spec = ReportSpec::desde($spec, $clave);
+        $filtros = $fuente->normalizarFiltros($spec->filtros, $user);
 
-        $catalogo = $fuente->columnas($user);
+        // The columns valid with these filters (Empresarios: those of the chosen vista).
+        $catalogo = $fuente->columnasPara($filtros, $user);
         $desconocidas = array_values(array_diff($spec->columnas, array_keys($catalogo)));
         if ($desconocidas) {
             throw ReporteException::invalido('Una de las columnas pedidas no existe.', ['spec.columnas' => ['Columna no reconocida.']]);
@@ -84,19 +95,19 @@ class ReporteService
 
         $columnas = $spec->columnas;
         if ($conColumnas) {
-            if ($columnas === [] && $fuente instanceof PersonasFuente) {
-                $columnas = $fuente->columnasPorDefecto($user);
+            if ($columnas === []) {
+                $columnas = $fuente->columnasPorDefecto($user, $filtros);
             }
             // The always-present columns (the name) go first.
             $siempre = array_keys(array_filter($catalogo, fn (Columna $c) => $c->siempre));
             $columnas = array_values(array_unique([...$siempre, ...$columnas]));
         }
 
-        $ordenes = PersonasFuente::ordenes();
+        $ordenes = $fuente->ordenes();
         $orden = collect($ordenes)->first(fn ($o) => $o['clave'] === $spec->ordenCampo);
-        $spec = $spec->conFiltros($fuente->normalizarFiltros($spec->filtros, $user))
+        $spec = $spec->conFiltros($filtros)
             ->conColumnas($columnas)
-            ->conOrden($orden ? $spec->ordenCampo : 'nombre', $orden ? $spec->ordenDir : 'asc');
+            ->conOrden($orden ? $spec->ordenCampo : $ordenes[0]['clave'], $orden ? $spec->ordenDir : $ordenes[0]['dir']);
 
         return [$fuente, $spec];
     }
@@ -113,22 +124,25 @@ class ReporteService
     {
         $fuentes = [];
         foreach ($this->disponibles($user) as $fuente) {
+            $filtros = $fuente->normalizarFiltros([], $user);
             $base = ReportSpec::desde(['v' => ReportSpec::VERSION, 'filtros' => []], $fuente->clave());
             $fuentes[] = [
                 'clave' => $fuente->clave(),
                 'etiqueta' => $fuente->etiqueta(),
                 'descripcion' => $fuente->descripcion(),
-                'total' => $fuente->contar($base->conFiltros($fuente->normalizarFiltros([], $user)), $user),
+                'unidad' => $fuente->unidad($filtros),
+                'total' => $fuente->contar($base->conFiltros($filtros), $user),
                 'filtros' => $fuente->filtros($user),
                 'columnas' => array_values(array_map(fn (Columna $c) => $c->paraFrontend(), $fuente->columnas($user))),
                 'presets' => $fuente->presets($user),
                 'atajos' => $fuente->atajos($user),
-                'ordenes' => PersonasFuente::ordenes(),
+                'ordenes' => $fuente->ordenes(),
             ];
         }
 
-        // The ficha opened from the list: PersonaPanel (view.mapa) needs the Mapa's cargos; both fichas the municipios.
+        // The ficha opened from a row: PersonaPanel (view.mapa) needs the Mapa's cargos; both fichas the municipios.
         $fichas = app(FichaCatalogos::class);
+        $conFichas = $fuentes && ($user->hasPermission('view.votantes') || $user->hasPermission('view.mapa'));
         $conMapa = $fuentes && $user->hasPermission('view.mapa');
 
         return [
@@ -138,7 +152,7 @@ class ReporteService
             'porPagina' => self::POR_PAGINA,
             'cargosPorTipo' => $conMapa ? $fichas->cargosPorTipo() : (object) [],
             'cargoCategorias' => $conMapa ? $fichas->cargoCategorias() : [],
-            'municipios' => $fuentes ? $fichas->municipios() : [],
+            'municipios' => $conFichas ? $fichas->municipios() : [],
         ];
     }
 }

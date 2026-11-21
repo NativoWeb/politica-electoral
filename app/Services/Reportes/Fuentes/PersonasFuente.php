@@ -100,6 +100,11 @@ class PersonasFuente implements Fuente
         return 'Votantes, líderes, directorio y todos los que tienen ficha';
     }
 
+    public function unidad(array $filtros): array
+    {
+        return ['singular' => 'persona', 'plural' => 'personas', 'todos' => 'todas las personas activas', 'femenino' => true];
+    }
+
     // Nobody sees more people here than in the screens they already have.
     public function disponible(User $user): bool
     {
@@ -247,22 +252,28 @@ class PersonasFuente implements Fuente
         return collect($c)->keyBy('clave')->all();
     }
 
+    public function columnasPara(array $filtros, User $user): array
+    {
+        return $this->columnas($user);
+    }
+
     public function presets(User $user): array
     {
         $permitidas = array_keys(array_filter($this->columnas($user), fn (Columna $c) => ! $c->sensible || ReporteService::puedeDatosPersonales($user)));
         $solo = fn (array $cols) => array_values(array_intersect($cols, $permitidas));
         $conDatos = ReporteService::puedeDatosPersonales($user);
 
-        return [
-            ['clave' => 'contacto_basico', 'etiqueta' => 'Contacto básico', 'por_defecto' => $conDatos,
-                'columnas' => $solo(['nombre', 'cedula', 'telefono', 'municipio', 'barrio', 'referente'])],
+        // A contact preset only with export.datos_personales: without it, it would promise columns it cannot have.
+        return array_values(array_filter([
+            $conDatos ? ['clave' => 'contacto_basico', 'etiqueta' => 'Contacto básico', 'por_defecto' => true,
+                'columnas' => $solo(['nombre', 'cedula', 'telefono', 'municipio', 'barrio', 'referente'])] : null,
             ['clave' => 'nombre_lugar', 'etiqueta' => 'Solo nombre y lugar', 'por_defecto' => ! $conDatos,
                 'columnas' => $solo(['nombre', 'municipio', 'barrio', 'tipo', 'nivel_confianza'])],
             ['clave' => 'completo', 'etiqueta' => 'Completo', 'por_defecto' => false, 'columnas' => $permitidas],
-        ];
+        ]));
     }
 
-    public function columnasPorDefecto(User $user): array
+    public function columnasPorDefecto(User $user, array $filtros = []): array
     {
         return collect($this->presets($user))->firstWhere('por_defecto', true)['columnas'];
     }
@@ -284,8 +295,7 @@ class PersonasFuente implements Fuente
         ]));
     }
 
-    // [{clave, dir, etiqueta}] the list can be sorted by.
-    public static function ordenes(): array
+    public function ordenes(): array
     {
         return [
             ['clave' => 'nombre', 'dir' => 'asc', 'etiqueta' => 'Nombre A–Z'],
@@ -474,7 +484,7 @@ class PersonasFuente implements Fuente
             // The cédula is personal data: only searched with export.datos_personales.
             $user = $this->user();
             $porCedula = $user !== null && ReporteService::puedeDatosPersonales($user);
-            $q->where(fn ($w) => $w->where('lideres.nombre', self::like(), "%{$escaped}%")
+            $q->where(fn ($w) => self::contiene($w, 'lideres.nombre', $busqueda)
                 ->when($porCedula, fn ($x) => $x->orWhere('lideres.cedula', 'like', "%{$escaped}%")));
         }
 
@@ -525,12 +535,17 @@ class PersonasFuente implements Fuente
             ->offset(($pagina - 1) * $porPagina)
             ->limit($porPagina)
             ->get()
-            ->map(fn ($row) => [
-                'id' => $row->id,
+            ->map(function ($row) use ($puedeEscribir, $own, $spec, $user) {
                 // A subgrupo's ficha is read-only (ScopesTerritory::authorizeCampaign), and so is any ficha without write rights.
-                'editable' => $puedeEscribir && ($own === null || $row->campaign_id === $own),
-                'celdas' => $this->celdas($row, $spec->columnas, $user),
-            ])->all();
+                $editable = $puedeEscribir && ($own === null || $row->campaign_id === $own);
+
+                return [
+                    'id' => $row->id,
+                    'editable' => $editable,
+                    'accion' => ['tipo' => 'ficha', 'id' => $row->id, 'editable' => $editable],
+                    'celdas' => $this->celdas($row, $spec->columnas, $user),
+                ];
+            })->all();
     }
 
     public function filas(ReportSpec $spec, User $user, int $limite): iterable
@@ -780,11 +795,11 @@ class PersonasFuente implements Fuente
         $visibles = $this->municipiosVisibles();
         $municipios = array_values(array_filter($municipios, fn ($m) => is_string($m) && isset($visibles[$m])));
 
-        $distintos = function (string $campo) use ($escaped, $municipios) {
+        $distintos = function (string $campo) use ($q, $escaped, $municipios) {
             $query = $this->scopeToTerritory(Lider::query()->toBase(), 'lideres.geographic_unit_id')
                 ->whereNotNull("lideres.{$campo}")->where("lideres.{$campo}", '!=', '')
                 ->when($municipios, fn ($x) => $x->whereIn('lideres.geographic_unit_id', $municipios))
-                ->when($escaped !== '', fn ($x) => $x->where("lideres.{$campo}", self::like(), "%{$escaped}%"))
+                ->when($escaped !== '', fn ($x) => self::contiene($x, "lideres.{$campo}", $q))
                 ->distinct()->orderBy("lideres.{$campo}")->limit(self::OPCIONES_MAX);
 
             return $query->pluck("lideres.{$campo}")->map(fn ($v) => ['valor' => $v, 'etiqueta' => $v])->all();
@@ -796,14 +811,14 @@ class PersonasFuente implements Fuente
             'profesiones' => $distintos('profesion'),
             'referentes' => mb_strlen($q) < 2 ? [] : $this->scopeToTerritory(Lider::query()->toBase(), 'lideres.geographic_unit_id')
                 ->whereNotNull('lideres.cedula')->where('lideres.cedula', '!=', '')->where('lideres.is_active', true)
-                ->where('lideres.nombre', self::like(), "%{$escaped}%")
+                ->where(fn ($x) => self::contiene($x, 'lideres.nombre', $q))
                 ->when($municipios, fn ($x) => $x->whereIn('lideres.geographic_unit_id', $municipios))
                 ->orderBy('lideres.nombre')->orderBy('lideres.id')->limit(self::OPCIONES_MAX)
                 ->get(['lideres.id', 'lideres.nombre', 'lideres.municipio'])
                 ->map(fn ($r) => ['valor' => $r->id, 'etiqueta' => $r->nombre.($r->municipio ? ' · '.$r->municipio : '')])->all(),
             'eventos' => ! EventScope::canSeeAttendees($user) ? null : app(EventScope::class)->events()
                 ->leftJoin('geographic_units as m', 'm.id', '=', 'ev.municipio_id')
-                ->when($escaped !== '', fn ($x) => $x->where('ev.nombre', self::like(), "%{$escaped}%"))
+                ->when($escaped !== '', fn ($x) => self::contiene($x, 'ev.nombre', $q))
                 ->orderByDesc('ev.starts_at')->limit(self::OPCIONES_MAX)
                 ->get(['ev.id', 'ev.nombre', 'ev.starts_at', 'm.canonical_name as municipio'])
                 ->map(fn ($e) => ['valor' => $e->id, 'etiqueta' => $e->nombre.' · '.self::fecha(EventScope::iso($e->starts_at)).($e->municipio ? ' · '.$e->municipio : '')])->all(),
@@ -972,9 +987,14 @@ class PersonasFuente implements Fuente
         return DB::connection()->getDriverName() === 'pgsql';
     }
 
-    private static function like(): string
+    // "Contains" without caring about case or accents: unaccent(lower()) on PostgreSQL, lower() elsewhere (SQLite tests).
+    private static function contiene($query, string $expresion, string $valor)
     {
-        return self::esPg() ? 'ilike' : 'like';
+        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($valor)).'%';
+
+        return self::esPg()
+            ? $query->whereRaw("unaccent(lower({$expresion})) like unaccent(?)", [$like])
+            : $query->whereRaw("lower({$expresion}) like ?", [$like]);
     }
 
     // Values of a subquery joined by the unit separator (parsed back in PHP).

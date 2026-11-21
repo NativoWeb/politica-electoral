@@ -72,6 +72,107 @@ export function filasDe(n, desde = 0) {
     }));
 }
 
+// B-3 sources, in the shape of docs/reportes.md (synthetic data).
+export const FUENTE_ASISTENCIAS = {
+    clave: 'asistencias',
+    etiqueta: 'Eventos y asistencia',
+    descripcion: 'Quiénes fueron a cada evento',
+    total: 320,
+    unidad: { singular: 'asistente', plural: 'asistentes', todos: 'todos los asistentes', femenino: false },
+    filtros: [
+        {
+            clave: 'evento', etiqueta: '¿Qué evento?', abierto: true, filtros: [
+                { clave: 'evento', etiqueta: 'Evento', tipo: 'buscar', multiple: true, opciones: [], opciones_de: 'eventos' },
+                { clave: 'fecha', etiqueta: 'Fecha del evento', tipo: 'fechas', multiple: false, opciones: [
+                    { valor: { relativo: 'ultimos_7' }, etiqueta: 'Última semana' }, { valor: { relativo: 'ultimos_30' }, etiqueta: 'Último mes' },
+                ] },
+            ],
+        },
+        {
+            clave: 'ficha', etiqueta: 'Ficha', abierto: false, filtros: [
+                { clave: 'sin_ficha', etiqueta: 'Sin ficha', tipo: 'casilla', multiple: false, opciones: [] },
+            ],
+        },
+    ],
+    columnas: [
+        { clave: 'nombre', etiqueta: 'Persona', grupo: 'Asistente', sensible: false, siempre: true },
+        { clave: 'cedula', etiqueta: 'Cédula', grupo: 'Asistente', sensible: true, siempre: false },
+        { clave: 'evento', etiqueta: 'Evento', grupo: 'Evento', sensible: false, siempre: false },
+        { clave: 'fecha', etiqueta: 'Fecha', grupo: 'Evento', sensible: false, siempre: false },
+    ],
+    presets: [{ clave: 'basico', etiqueta: 'Básico', columnas: ['nombre', 'evento', 'fecha'], por_defecto: true }],
+    ordenes: [{ clave: 'fecha', dir: 'desc', etiqueta: 'Más recientes' }, { clave: 'nombre', dir: 'asc', etiqueta: 'Nombre A–Z' }],
+    atajos: [
+        { clave: 'ultimo_mes', etiqueta: 'Asistentes del último mes', spec: { v: 1, fuente: 'asistencias', filtros: { fecha: { relativo: 'ultimos_30' } } } },
+        { clave: 'sin_ficha', etiqueta: 'Asistentes sin ficha', spec: { v: 1, fuente: 'asistencias', filtros: { sin_ficha: true } } },
+    ],
+};
+
+export const FUENTE_COMPROMISOS = {
+    clave: 'compromisos',
+    etiqueta: 'Compromisos y actas',
+    descripcion: 'Lo que se prometió en eventos y reuniones',
+    total: 41,
+    unidad: { singular: 'compromiso', plural: 'compromisos', todos: 'todos los compromisos', femenino: false },
+    filtros: [
+        {
+            clave: 'estado', etiqueta: 'Estado', abierto: true, filtros: [
+                { clave: 'estado', etiqueta: 'Estado', tipo: 'chips', multiple: true, opciones: [
+                    { valor: 'pendiente', etiqueta: 'Pendiente' }, { valor: 'cumplido', etiqueta: 'Cumplido' },
+                ] },
+                { clave: 'fecha_limite', etiqueta: 'Fecha límite', tipo: 'fechas', multiple: false, opciones: [
+                    { valor: { relativo: 'proximos_7' }, etiqueta: 'Próximos 7 días' },
+                ] },
+            ],
+        },
+    ],
+    columnas: [
+        { clave: 'descripcion', etiqueta: 'Compromiso', grupo: 'Compromiso', sensible: false, siempre: true },
+        { clave: 'estado', etiqueta: 'Estado', grupo: 'Compromiso', sensible: false, siempre: false },
+        { clave: 'fecha_limite', etiqueta: 'Fecha límite', grupo: 'Compromiso', sensible: false, siempre: false },
+    ],
+    presets: [],
+    ordenes: [{ clave: 'fecha_limite', dir: 'asc', etiqueta: 'Fecha límite' }],
+    atajos: [
+        { clave: 'vencidos', etiqueta: 'Compromisos vencidos', spec: { v: 1, fuente: 'compromisos', filtros: { estado: ['pendiente'] } } },
+    ],
+};
+
+export const FUENTE_EMPRESARIOS = {
+    clave: 'empresarios',
+    etiqueta: 'Empresarios y gremios',
+    descripcion: 'Empresas, gremios y sus miembros',
+    total: 15,
+    unidad: { singular: 'organización', plural: 'organizaciones', todos: 'todas las organizaciones', femenino: true },
+    filtros: [
+        {
+            clave: 'vista', etiqueta: '¿Qué quieres listar?', abierto: true, filtros: [
+                { clave: 'vista', etiqueta: 'Listar', tipo: 'chips', multiple: false, obligatorio: true, por_defecto: 'organizaciones', opciones: [
+                    { valor: 'organizaciones', etiqueta: 'Organizaciones' }, { valor: 'miembros', etiqueta: 'Miembros' },
+                ] },
+                { clave: 'tipo', etiqueta: 'Tipo', tipo: 'chips', multiple: true, opciones: [
+                    { valor: 'empresa', etiqueta: 'Empresa' }, { valor: 'gremio', etiqueta: 'Gremio' },
+                ] },
+            ],
+        },
+    ],
+    columnas: [
+        { clave: 'nombre', etiqueta: 'Nombre', grupo: 'Organización', sensible: false, siempre: true },
+        { clave: 'nit', etiqueta: 'NIT', grupo: 'Organización', sensible: false, siempre: false, vistas: ['organizaciones'] },
+        { clave: 'correo', etiqueta: 'Correo', grupo: 'Organización', sensible: true, siempre: false, vistas: ['organizaciones'] },
+        { clave: 'organizacion', etiqueta: 'Organización', grupo: 'Miembro', sensible: false, siempre: false, vistas: ['miembros'] },
+        { clave: 'rol', etiqueta: 'Rol', grupo: 'Miembro', sensible: false, siempre: false, vistas: ['miembros'] },
+    ],
+    presets: [
+        { clave: 'org', etiqueta: 'Organizaciones', columnas: ['nombre', 'nit'], por_defecto: true, vista: 'organizaciones' },
+        { clave: 'miem', etiqueta: 'Miembros', columnas: ['nombre', 'organizacion', 'rol'], por_defecto: true, vista: 'miembros' },
+    ],
+    ordenes: [{ clave: 'nombre', dir: 'asc', etiqueta: 'Nombre A–Z' }],
+    atajos: [
+        { clave: 'miembros', etiqueta: 'Miembros de organizaciones', spec: { v: 1, fuente: 'empresarios', filtros: { vista: 'miembros' } } },
+    ],
+};
+
 export function jsonResponse(body, status = 200, headers = {}) {
     return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } }));
 }

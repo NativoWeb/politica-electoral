@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { DEBOUNCE_MS, mensajeError, numero, pedirLista, personas, useDebouncedRequest } from '@/lib/reportes';
+import { router } from '@inertiajs/react';
+import { DEBOUNCE_MS, accionDe, cantidad, mayuscula, mensajeError, numero, pedirLista, unidadDe, useDebouncedRequest } from '@/lib/reportes';
+import OrganizacionPanel from '@/Components/Empresarios/OrganizacionPanel';
 import TarjetaPersona, { textoCelda } from './TarjetaPersona';
 import BotonDescarga from './BotonDescarga';
 import FichaPersona from './FichaPersona';
@@ -38,15 +40,17 @@ function Paginacion({ pagina, total, porPagina, onPagina }) {
     );
 }
 
-// Step 4: the list itself. The ficha opens on top; closing it reloads the same page of the same spec
-// (the rows stay on screen meanwhile, so the scroll does not jump).
+// Step 4: the list itself. Tapping a row does what its accion says: a ficha or an organization opens on top
+// (closing it reloads the same page of the same spec; the rows stay on screen meanwhile, so the scroll does not
+// jump); a compromiso is a visit to its page (Back returns here: the whole list lives in the URL); no accion, no tap.
 export default function ListaReporte({
-    spec, estado, fuente, chips, tope, topePdf, puedeDatosPersonales, puedeMapa, fichaProps, nota = '',
+    spec, estado, fuente, chips, tope, topePdf, puedeDatosPersonales, puedeMapa, fichaProps, organizacionProps = null, nota = '',
     onBusqueda, onOrden, onPagina, onCambiarPaso,
 }) {
     const id = useId();
     const [refresco, setRefresco] = useState(0);
     const [ficha, setFicha] = useState(null);
+    const [org, setOrg] = useState(null);
     const [aviso, setAviso] = useState('');
     const pendiente = useRef(null);
     const botones = useRef(new Map());
@@ -67,7 +71,7 @@ export default function ListaReporte({
 
     useEffect(() => {
         if (lista.estado !== 'ok' || !pendiente.current) return;
-        const { id: fichaId, nombre, guardado } = pendiente.current;
+        const { filaId: fichaId, nombre, guardado } = pendiente.current;
         pendiente.current = null;
         if (!datos.filas.some(f => String(f.id) === String(fichaId))) {
             setAviso(`${guardado ? 'Guardado. ' : ''}${nombre} ya no cumple los filtros, por eso salió de la lista.`);
@@ -83,23 +87,37 @@ export default function ListaReporte({
         }
     }, [lista.estado, datos, estado.pagina, onPagina]);
 
+    const columnas = estado.columnas.map(c => fuente.columnas.find(x => x.clave === c)).filter(Boolean);
+    const u = unidadDe(fuente, estado.filtros);
+    const textoCambiar = u.quienes === 'A quiénes' ? 'Cambiar a quiénes' : 'Cambiar filtros';
+
     function abrir(fila) {
+        const accion = accionDe(fila);
+        if (!accion) return;
         setAviso('');
-        setFicha({ id: fila.id, nombre: textoCelda(fila.celdas?.nombre), guardado: false });
+        if (accion.tipo === 'compromiso') {
+            router.visit(accion.url);
+            return;
+        }
+        const abierta = { filaId: fila.id, id: accion.id, nombre: textoCelda(fila.celdas?.nombre ?? fila.celdas?.[columnas[0]?.clave]), guardado: false };
+        if (accion.tipo === 'organizacion') setOrg(abierta);
+        else setFicha(abierta);
     }
 
     function cerrar() {
-        pendiente.current = ficha;
+        pendiente.current = ficha ?? org;
         setFicha(null);
+        setOrg(null);
         setRefresco(r => r + 1);
     }
+
+    const marcarGuardado = (set) => () => set(f => (f ? { ...f, guardado: true } : f));
 
     function irAPagina(p) {
         onPagina(p);
         inicioLista.current?.scrollIntoView?.({ block: 'start' });
     }
 
-    const columnas = estado.columnas.map(c => fuente.columnas.find(x => x.clave === c)).filter(Boolean);
     const [campoOrden, dirOrden] = estado.orden.split(':');
     const total = datos?.total ?? null;
     const mostrarEsqueleto = lista.estado !== 'error' && !datos && lista.estado !== 'ok';
@@ -116,12 +134,12 @@ export default function ListaReporte({
         <div>
             <h2 className="font-heading text-3xl font-bold text-ink">Tu lista</h2>
             <p className="mt-2 text-xl text-ink" aria-live="polite">
-                <strong className="tabular-nums">{total === null ? 'Cargando…' : personas(total)}</strong>
+                <strong className="tabular-nums">{total === null ? 'Cargando…' : cantidad(total, u)}</strong>
                 {chips.map(c => <span key={c.id}> · {c.texto}</span>)}
             </p>
             {nota && <p className="mt-1 text-base text-ink-soft">{nota}</p>}
             <div className="mt-4 flex flex-wrap gap-3">
-                <Boton variante="secundario" onClick={() => onCambiarPaso(2)}>Cambiar a quiénes</Boton>
+                <Boton variante="secundario" onClick={() => onCambiarPaso(2)}>{textoCambiar}</Boton>
                 <Boton variante="secundario" onClick={() => onCambiarPaso(3)}>Cambiar datos</Boton>
             </div>
 
@@ -138,7 +156,7 @@ export default function ListaReporte({
                                 value={texto}
                                 maxLength={100}
                                 onChange={e => { setTexto(e.target.value); onBusqueda(e.target.value); }}
-                                placeholder="Nombre o cédula…"
+                                placeholder={fuente.clave === 'personas' ? 'Nombre o cédula…' : 'Escribe para buscar…'}
                                 autoComplete="off"
                                 enterKeyHint="search"
                                 className={`w-full min-h-14 pl-14 pr-4 text-lg rounded-md border-2 border-line-strong bg-bg text-ink placeholder:text-ink-soft focus:border-primary ${focoCls}`}
@@ -166,9 +184,13 @@ export default function ListaReporte({
                         columnas={columnas.map(c => c.etiqueta)}
                         chips={chips}
                         vacia={!total}
+                        unidad={u}
+                        base={fuente.etiqueta}
                     />
-                    {!puedeDatosPersonales && (
-                        <p className="mt-1 text-base text-ink-soft max-w-xs">Tu descarga no incluye cédula, teléfono ni dirección.</p>
+                    {!puedeDatosPersonales && fuente.columnas.some(c => c.sensible) && (
+                        <p className="mt-1 text-base text-ink-soft max-w-xs">
+                            {fuente.clave === 'personas' ? 'Tu descarga no incluye cédula, teléfono ni dirección.' : 'Tu descarga no incluye los datos con candado.'}
+                        </p>
                     )}
                 </div>
             </div>
@@ -195,13 +217,13 @@ export default function ListaReporte({
                     <div className="p-6 rounded-lg bg-panel border-2 border-line text-lg text-ink flex flex-col sm:flex-row sm:items-center gap-4">
                         {estado.busqueda.trim() ? (
                             <>
-                                <span className="flex-1">Nadie con «{estado.busqueda.trim()}» en esta lista.</span>
+                                <span className="flex-1">{u.ninguna} con «{estado.busqueda.trim()}» en esta lista.</span>
                                 <Boton variante="secundario" onClick={() => { setTexto(''); onBusqueda(''); }}>Borrar búsqueda</Boton>
                             </>
                         ) : (
                             <>
-                                <span className="flex-1">Nadie cumple todos estos filtros. Prueba quitando uno.</span>
-                                <Boton variante="secundario" onClick={() => onCambiarPaso(2)}>Cambiar a quiénes</Boton>
+                                <span className="flex-1">{u.ninguna} cumple todos estos filtros. Prueba quitando uno.</span>
+                                <Boton variante="secundario" onClick={() => onCambiarPaso(2)}>{textoCambiar}</Boton>
                             </>
                         )}
                     </div>
@@ -209,10 +231,10 @@ export default function ListaReporte({
 
                 {datos && datos.filas.length > 0 && lista.estado !== 'error' && (
                     <div className={lista.estado === 'cargando' && !refrescando ? 'opacity-50 transition-opacity' : ''}>
-                        {/* Desktop: table. The whole row opens the ficha; the name is the keyboard target. */}
+                        {/* Desktop: table. The whole row does its accion; the first cell is the keyboard target. A row without one is plain text. */}
                         <div className="hidden lg:block overflow-x-auto rounded-lg border-2 border-line bg-panel">
                             <table className="w-full text-lg">
-                                <caption className="sr-only">Personas de la lista, página {estado.pagina}</caption>
+                                <caption className="sr-only">{mayuscula(u.plural)} de la lista, página {estado.pagina}</caption>
                                 <thead className="bg-bg">
                                     <tr>
                                         {columnas.map(col => {
@@ -232,11 +254,15 @@ export default function ListaReporte({
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-line">
-                                    {datos.filas.map(fila => (
-                                        <tr key={fila.id} onClick={() => abrir(fila)} className="h-14 cursor-pointer hover:bg-primary/5">
+                                    {datos.filas.map(fila => {
+                                        const clicable = accionDe(fila) !== null;
+                                        return (
+                                        <tr key={fila.id} onClick={clicable ? () => abrir(fila) : undefined} className={clicable ? 'h-14 cursor-pointer hover:bg-primary/5' : 'h-14'}>
                                             {columnas.map((col, i) => (
                                                 <td key={col.clave} className="px-4 py-2 text-ink align-middle">
-                                                    {i === 0 ? (
+                                                    {i === 0 && !clicable ? (
+                                                        <span className="font-semibold text-ink">{textoCelda(fila.celdas?.[col.clave])}</span>
+                                                    ) : i === 0 ? (
                                                         <button
                                                             type="button"
                                                             ref={el => { if (el) botones.current.set(String(fila.id), el); }}
@@ -244,13 +270,14 @@ export default function ListaReporte({
                                                             className={`text-left font-semibold text-primary underline-offset-4 hover:underline rounded ${focoCls}`}
                                                         >
                                                             {textoCelda(fila.celdas?.[col.clave])}
-                                                            {fila.editable === false && <span className="sr-only"> (solo para ver)</span>}
+                                                            {accionDe(fila)?.editable === false && <span className="sr-only"> (solo para ver)</span>}
                                                         </button>
                                                     ) : textoCelda(fila.celdas?.[col.clave])}
                                                 </td>
                                             ))}
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -262,7 +289,9 @@ export default function ListaReporte({
                                     <TarjetaPersona
                                         fila={fila}
                                         columnas={columnas}
-                                        onAbrir={abrir}
+                                        onAbrir={accionDe(fila) ? abrir : null}
+                                        soloVer={accionDe(fila)?.editable === false}
+                                        fuenteClave={fuente.clave}
                                         botonRef={el => { if (el) botones.current.set(`m:${fila.id}`, el); }}
                                     />
                                 </li>
@@ -279,8 +308,26 @@ export default function ListaReporte({
                     personId={ficha.id}
                     puedeMapa={puedeMapa}
                     onClose={cerrar}
-                    onSaved={() => setFicha(f => (f ? { ...f, guardado: true } : f))}
+                    onSaved={marcarGuardado(setFicha)}
                     {...fichaProps}
+                />
+            )}
+
+            {org && (
+                <OrganizacionPanel
+                    key={org.id}
+                    orgId={org.id}
+                    soloVer={!organizacionProps?.catalogos}
+                    canManage={false}
+                    catalogos={organizacionProps?.catalogos ?? {}}
+                    municipios={organizacionProps?.municipios ?? []}
+                    gremios={organizacionProps?.gremios ?? []}
+                    rangos={organizacionProps?.rangos ?? []}
+                    roles={organizacionProps?.roles ?? []}
+                    onClose={cerrar}
+                    onOpen={orgId => setOrg(o => (o ? { ...o, id: orgId } : o))}
+                    onSaved={marcarGuardado(setOrg)}
+                    onDeleted={cerrar}
                 />
             )}
         </div>

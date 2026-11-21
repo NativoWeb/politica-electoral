@@ -102,6 +102,21 @@ class CompromisoListing
         ];
     }
 
+    // Each phone with its responsable, only those who have one: "Ana Pérez: 3001234567; Beto: 3109990000" (null if none).
+    // A list of phones alone could not say whose each one is.
+    public static function telefonosConNombre(array $responsables): ?string
+    {
+        $out = [];
+        foreach ($responsables as $r) {
+            $telefono = trim((string) ($r['telefono'] ?? ''));
+            if ($telefono !== '') {
+                $out[] = trim((string) ($r['nombre'] ?? '')).': '.$telefono;
+            }
+        }
+
+        return $out ? implode('; ', $out) : null;
+    }
+
     public static function isVencido(object $c): bool
     {
         return $c->fecha_limite !== null && in_array($c->estado, EventCompromiso::ABIERTOS, true)

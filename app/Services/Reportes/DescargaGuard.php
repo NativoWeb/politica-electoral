@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
-// Every file with people in it (Reportes and the old /exportar/*) goes through here: one download at a time per
+// Every file with people in it (Reportes, the old /exportar/* and the Eventos and Empresarios exports) goes through here: one download at a time per
 // user, 5 per minute and 30 per hour (limiter reportes-descarga, AppServiceProvider), and an audit row written
 // BEFORE the first byte leaves. Without export.datos_personales no personal column reaches the file.
 class DescargaGuard
@@ -40,16 +40,17 @@ class DescargaGuard
 
     public const SEGUIDAS = 'Pediste varias descargas seguidas. Espera un minuto y vuelve a intentarlo.';
 
-    public const AVISO_SIN_DATOS = 'Este archivo no incluye cédula, teléfono ni dirección: requiere el permiso Descargar datos personales.';
+    // Generic on purpose: the same line heads every file that lost columns (the exact ones go in X-Columnas-Quitadas).
+    public const AVISO_SIN_DATOS = 'Este archivo no incluye datos personales (cédula, teléfonos, correo, dirección u observaciones) porque no tienes el permiso Descargar datos personales.';
 
     public const POR_HORA_MENSAJE = 'Llegaste al máximo de descargas por hora. Intenta de nuevo más tarde.';
 
-    // Columns of the old exports (/exportar/*) that are personal data: the same rule as the Reportes catalog
+    // Columns of the old exports (/exportar/*, Eventos, Empresarios) that are personal data: the same rule as the Reportes catalog
     // (sensible), by the names those exports use.
     public const COLUMNAS_SENSIBLES = [
         'cedula', 'documento', 'telefono', 'celular', 'fijo', 'whatsapp', 'email', 'direccion', 'contactos',
         'facebook', 'twitter', 'instagram', 'redes', 'fecha_nacimiento', 'fecha_expedicion', 'fecha_expedicion_doc',
-        'referente_documento', 'observacion', 'observaciones',
+        'referente_documento', 'observacion', 'observaciones', 'representante_cedula', 'representante_celular', 'correo',
     ];
 
     public static function limites(Request $request): array

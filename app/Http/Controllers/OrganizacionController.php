@@ -14,6 +14,7 @@ use App\Services\Configuracion\Catalogo;
 use App\Services\Empresarios\OrganizacionListing;
 use App\Services\Empresarios\OrganizacionScope;
 use App\Services\Empresarios\OrganizacionService;
+use App\Services\Reportes\DescargaGuard;
 use App\Support\Cedula;
 use App\Support\Nit;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -26,6 +27,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 // Empresarios y gremios (docs/empresarios.md): seen with view.empresarios, written with manage.empresarios in the own
 // campaign and the user's territory (routes + OrganizacionScope). Audit: ids, counts and field names only.
@@ -224,35 +226,73 @@ class OrganizacionController extends Controller
         return response()->json(['success' => true, 'message' => 'Valor actualizado.', 'data' => $this->catalogos()]);
     }
 
-    // GET /empresarios/exportar.xlsx (same filters as the screen; NIT, cédula and phones as text)
-    public function excel(Request $request)
+    // GET /empresarios/exportar.xlsx (same filters as the screen; NIT, cédula and phones as text). Through DescargaGuard
+    // (lock, quota, audit before the file); without export.datos_personales, no personal column.
+    public function excel(Request $request, DescargaGuard $guard): SymfonyResponse
     {
-        EventoImportController::raiseMemoryLimit();
         $filters = $this->listing->filters($request);
-        $rows = $this->exportRows($this->listing->rows($filters, self::EXPORT_LIMIT));
-        $this->audit($request, 'ORGANIZACIONES_EXPORTADAS', null, ['formato' => 'xlsx', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))]);
+        [$columns, $removed] = DescargaGuard::columnasPermitidas(self::EXPORT_COLUMNS, $request->user());
 
-        return Excel::download(new GenericExport($rows, self::EXPORT_COLUMNS, 'Empresarios y gremios', self::EXPORT_LABELS), 'empresarios-y-gremios.xlsx');
+        $response = $guard->descargar($request, 'EXPORT empresarios.exportar.excel', function () use ($filters, $columns, $removed) {
+            EventoImportController::raiseMemoryLimit();
+            $rows = $this->exportRows($this->listing->rows($filters, self::EXPORT_LIMIT));
+
+            return [
+                'metadata' => $this->exportMetadata('excel', $filters, $columns, $removed, count($rows)),
+                'generar' => fn () => Excel::download(new GenericExport($rows, $columns, 'Empresarios y gremios', self::EXPORT_LABELS,
+                    $removed ? DescargaGuard::AVISO_SIN_DATOS : null), 'empresarios-y-gremios.xlsx'),
+            ];
+        });
+
+        return $this->withRemoved($response, $removed);
     }
 
     // GET /empresarios/exportar.pdf (at most PDF_LIMIT rows; the Excel has them all)
-    public function pdf(Request $request)
+    public function pdf(Request $request, DescargaGuard $guard): SymfonyResponse
     {
-        EventoImportController::raiseMemoryLimit();
         $filters = $this->listing->filters($request);
-        $all = $this->listing->rows($filters, self::PDF_LIMIT + 1);
-        $rows = $this->exportRows(array_slice($all, 0, self::PDF_LIMIT));
-        $this->audit($request, 'ORGANIZACIONES_EXPORTADAS', null, ['formato' => 'pdf', 'filas' => count($rows), 'filtros' => array_keys(array_filter($filters))]);
+        [$columns, $removed] = DescargaGuard::columnasPermitidas(
+            ['nombre', 'tipo', 'nit', 'municipio', 'sector_economico', 'representante', 'representante_celular', 'miembros'], $request->user());
 
-        return Pdf::loadView('exports.table', [
-            'data' => $rows,
-            'columns' => ['nombre', 'tipo', 'nit', 'municipio', 'sector_economico', 'representante', 'representante_celular', 'miembros'],
-            'title' => 'Empresarios y gremios',
-            'date' => now('America/Bogota')->format('d/m/Y H:i'),
-            'truncated' => count($all) > self::PDF_LIMIT,
-            'totalCount' => count($all) > self::PDF_LIMIT ? count($this->listing->rows($filters, self::EXPORT_LIMIT)) : count($rows),
-        ])->setPaper('a4', 'landscape')->setOption('isRemoteEnabled', false)->setOption('isPhpEnabled', false)
-            ->download('empresarios-y-gremios.pdf');
+        $response = $guard->descargar($request, 'EXPORT empresarios.exportar.pdf', function () use ($filters, $columns, $removed) {
+            EventoImportController::raiseMemoryLimit();
+            $all = $this->listing->rows($filters, self::PDF_LIMIT + 1);
+            $rows = $this->exportRows(array_slice($all, 0, self::PDF_LIMIT));
+
+            return [
+                'metadata' => $this->exportMetadata('pdf', $filters, $columns, $removed, count($rows)),
+                'generar' => fn () => Pdf::loadView('exports.table', [
+                    'data' => $rows,
+                    'columns' => $columns,
+                    'title' => 'Empresarios y gremios',
+                    'date' => now('America/Bogota')->format('d/m/Y H:i'),
+                    'truncated' => count($all) > self::PDF_LIMIT,
+                    'totalCount' => count($all) > self::PDF_LIMIT ? count($this->listing->rows($filters, self::EXPORT_LIMIT)) : count($rows),
+                    'aviso' => $removed ? DescargaGuard::AVISO_SIN_DATOS : null,
+                ])->setPaper('a4', 'landscape')->setOption('isRemoteEnabled', false)->setOption('isPhpEnabled', false)
+                    ->download('empresarios-y-gremios.pdf'),
+            ];
+        });
+
+        return $this->withRemoved($response, $removed);
+    }
+
+    private function exportMetadata(string $format, array $filters, array $columns, array $removed, int $rows): array
+    {
+        return [
+            'fuente' => 'empresarios', 'formato' => $format, 'columnas' => $columns, 'columnas_quitadas' => $removed, 'filas' => $rows,
+            'filtros' => array_keys(array_filter($filters)),
+            'con_datos_personales' => (bool) array_intersect($columns, DescargaGuard::COLUMNAS_SENSIBLES),
+        ];
+    }
+
+    private function withRemoved(SymfonyResponse $response, array $removed): SymfonyResponse
+    {
+        if ($removed) {
+            $response->headers->set('X-Columnas-Quitadas', implode(',', $removed));
+        }
+
+        return $response;
     }
 
     private function exportRows(array $rows): array

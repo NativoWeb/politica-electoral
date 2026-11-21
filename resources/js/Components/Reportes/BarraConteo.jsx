@@ -1,9 +1,11 @@
-import { numero } from '@/lib/reportes';
+import { numero, unidadDe } from '@/lib/reportes';
 import { Boton, Girando, IconoFlecha } from './ui';
 
-// Fixed at the bottom while choosing (steps 2 and 3): how many people the list has right now.
+// Fixed at the bottom while choosing (steps 2 and 3): how many rows (people, compromisos…) the list has right now.
 // On a phone it sits on top of the 72px tab bar (which grows by the iPhone safe area, so this does too). States: counting (previous number dimmed), error, zero, ok.
-export default function BarraConteo({ estado, total, mensajeError, nota = '', ultimoFiltro, onQuitarUltimo, onReintentar, siguiente }) {
+const PERSONAS = unidadDe({ clave: 'personas' });
+
+export default function BarraConteo({ estado, total, mensajeError, nota = '', ultimoFiltro, onQuitarUltimo, onReintentar, siguiente, unidad = PERSONAS }) {
     const contando = estado === 'cargando' || estado === 'idle';
     const error = estado === 'error';
     const cero = estado === 'ok' && total === 0;
@@ -19,13 +21,13 @@ export default function BarraConteo({ estado, total, mensajeError, nota = '', ul
                             <span className={`font-heading text-3xl font-bold tabular-nums text-ink transition-opacity duration-150 ${contando ? 'opacity-50' : ''}`}>
                                 {total === null ? '—' : numero(total)}
                             </span>
-                            <span className="text-lg text-ink">{total === 1 ? 'persona' : 'personas'}</span>
+                            <span className="text-lg text-ink">{total === 1 ? unidad.singular : unidad.plural}</span>
                             {contando && (
                                 <span className="inline-flex items-center gap-2 text-lg text-ink-soft"><Girando className="w-5 h-5" />Contando…</span>
                             )}
                         </p>
                     )}
-                    {cero && <p className="text-lg text-ink">Nadie cumple todos estos filtros. Prueba quitando uno.</p>}
+                    {cero && <p className="text-lg text-ink">{unidad.ninguna} cumple todos estos filtros. Prueba quitando uno.</p>}
                     {nota && !error && <p className="text-base text-ink-soft">{nota}</p>}
                 </div>
                 <div className="flex flex-wrap gap-3">
