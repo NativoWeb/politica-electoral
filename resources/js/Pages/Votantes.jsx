@@ -1,5 +1,5 @@
 import AppLayout from '@/Layouts/AppLayout';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useState, useCallback } from 'react';
 import VotanteFilters, { EventFilterChips } from '@/Components/VotanteFilters';
 import VotanteTable from '@/Components/VotanteTable';
@@ -43,6 +43,8 @@ function KpiCard({ icon, label, value, accent }) {
 }
 
 export default function Votantes({ votantes, counters, municipios, filters, eventos = [], canViewEventos = false }) {
+    // Creating a votante needs write.data on the server (H1).
+    const canWrite = !!usePage().props.auth?.user?.canWrite;
     const [selectedId, setSelectedId] = useState(null);
     const [detailData, setDetailData] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
@@ -154,13 +156,13 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                             Filtros
                         </button>
-                        <button
+                        {canWrite && <button
                             onClick={handleCreate}
                             className="flex items-center gap-1.5 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg text-[13px] font-bold hover:bg-[var(--color-primary-light)] active:bg-[var(--color-primary-dark)] transition-colors"
                         >
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                             Nuevo Votante
-                        </button>
+                        </button>}
                     </div>
                 </div>
 

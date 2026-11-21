@@ -371,6 +371,18 @@ describe('offlineDb', () => {
             expect(document.getElementById('global-offline-toast').textContent).toContain(READ_ONLY);
         });
 
+        it('un 403 por falta de write.data sale de la cola y avisa en palabras simples que no tiene permiso para editar', async () => {
+            const { db } = offlineDb;
+            db.pendingChanges.toArray.mockResolvedValueOnce([update]);
+            global.fetch.mockResolvedValueOnce(respond(403, { message: 'No tiene permisos para acceder a esta sección.' }));
+
+            const result = await offlineDb.syncPendingChanges();
+
+            expect(result).toMatchObject({ rejected: 1, messages: [offlineDb.NO_PERMISSION_TO_EDIT] });
+            expect(db.pendingChanges.update).toHaveBeenCalledWith(7, expect.objectContaining({ rejected: true, rejectedStatus: 403, rejectedReason: offlineDb.NO_PERMISSION_TO_EDIT }));
+            expect(document.getElementById('global-offline-toast').textContent).toContain('No tienes permiso para editar fichas.');
+        });
+
         it('un 422 también se descarta con el motivo del servidor', async () => {
             const { db } = offlineDb;
             db.pendingChanges.toArray.mockResolvedValueOnce([update]);

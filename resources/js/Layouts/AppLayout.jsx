@@ -6,6 +6,7 @@ import { OfflineIndicator } from '@/Components/OfflineManager';
 import CompromisosCampana from '@/Components/Eventos/CompromisosCampana';
 import { logout } from '@/lib/logout';
 import { canExportFrom } from '@/lib/exportPermission';
+import { descargarExportacion } from '@/lib/exportDownload';
 
 const TYPE_LABELS = { persona: 'Persona', municipio: 'Municipio', partido: 'Partido' };
 const TYPE_COLORS = {
@@ -158,7 +159,7 @@ WHATSAPP: (
     ),
 };
 
-/* ── Export buttons ── */
+/* ── Export buttons (downloaded through fetch: refusals and X-Columnas-Quitadas are told in words) ── */
 function ExportButtons({ url }) {
     const [open, setOpen] = useState(false);
 
@@ -211,11 +212,11 @@ function ExportButtons({ url }) {
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
-                        <a href={getExportUrl('excel')} className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 text-[13px] font-semibold text-[var(--color-ink)] border-b border-gray-100 transition-colors" onClick={() => setOpen(false)}>
+                        <a href={getExportUrl('excel')} className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 text-[13px] font-semibold text-[var(--color-ink)] border-b border-gray-100 transition-colors" onClick={(e) => { e.preventDefault(); setOpen(false); descargarExportacion(getExportUrl('excel')); }}>
                             <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                             Excel (.xlsx)
                         </a>
-                        <a href={getExportUrl('pdf')} className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-[13px] font-semibold text-[var(--color-ink)] transition-colors" onClick={() => setOpen(false)}>
+                        <a href={getExportUrl('pdf')} className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-[13px] font-semibold text-[var(--color-ink)] transition-colors" onClick={(e) => { e.preventDefault(); setOpen(false); descargarExportacion(getExportUrl('pdf')); }}>
                             <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                             PDF (.pdf)
                         </a>
@@ -236,6 +237,8 @@ const SIDEBAR_ITEMS = [
     { name: 'EMPRESARIOS', href: '/empresarios', label: 'Empresarios', tabLabel: 'Empresas', permission: ['view.empresarios', 'manage.empresarios'] },
     // Hidden until the backend turns the module on with features.campanas; desktop only, the tab bar is already full.
     { name: 'CAMPANAS_ELECTORALES', href: '/campanas-electorales', label: 'Campañas electorales', permission: ['view.campanas', 'manage.campanas'], feature: 'campanas', desktopOnly: true },
+    // On a phone, Reportes lives in the Exportar sheet (the tab bar is full).
+    { name: 'REPORTES', href: '/reportes', label: 'Reportes', permission: 'view.reportes', desktopOnly: true },
     // { name: 'WHATSAPP', href: '/admin/whatsapp', label: 'WhatsApp', permission: 'view.admin' },
     { name: 'ADMIN', href: '/admin/territorio', label: 'Admin', permission: 'view.admin' },
     { name: 'AUDITORIA', href: '/admin/auditoria', label: 'Auditoria', permission: 'audit.view', desktopOnly: true },
@@ -306,6 +309,13 @@ const ICONS_EXTRA = {
             <path d="M5 21V4m0 0h11l-2 4 2 4H5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     ),
+    REPORTES: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5" aria-hidden="true">
+            <path d="M9 4h6a1 1 0 011 1v1H8V5a1 1 0 011-1z" strokeLinejoin="round" />
+            <path d="M8 5H6a1 1 0 00-1 1v14a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1h-2" strokeLinejoin="round" />
+            <path d="M9 11h6M9 15h6M9 19h3" strokeLinecap="round" />
+        </svg>
+    ),
     AUDITORIA: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" strokeLinejoin="round" />
@@ -370,7 +380,7 @@ function PasswordModal({ open, onClose }) {
 }
 
 /* ── Mobile Export Sheet ── */
-function MobileExportSheet({ open, onClose, url }) {
+function MobileExportSheet({ open, onClose, url, canExport = true, canReportes = false }) {
     if (!open) return null;
 
     function getExportUrl(format) {
@@ -404,12 +414,28 @@ function MobileExportSheet({ open, onClose, url }) {
                 <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-3" />
                 <div className="px-6 pt-5 pb-3">
                     <h3 className="text-[18px] font-extrabold text-[var(--color-ink)]">Descargar datos</h3>
-                    <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">Elige el formato para exportar</p>
+                    <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">{canExport ? 'Elige el formato para exportar' : 'Arma tu lista y descárgala'}</p>
                 </div>
                 <div className="px-4 pb-6 space-y-3">
+                    {canReportes && (
+                    <Link
+                        href="/reportes"
+                        onClick={onClose}
+                        className="flex items-center gap-4 px-5 py-5 bg-blue-50 border-2 border-blue-200 rounded-2xl active:bg-blue-100 transition-colors"
+                    >
+                        <div className="w-14 h-14 rounded-xl bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0 text-white [&>svg]:w-7 [&>svg]:h-7">
+                            {ICONS_EXTRA.REPORTES}
+                        </div>
+                        <div>
+                            <p className="text-[17px] font-bold text-[var(--color-primary)]">Reportes</p>
+                            <p className="text-[16px] text-[var(--color-ink-soft)]">Elige a quiénes y qué datos, y descarga tu lista</p>
+                        </div>
+                    </Link>
+                    )}
+                    {canExport && (<>
                     <a
                         href={getExportUrl('excel')}
-                        onClick={onClose}
+                        onClick={(e) => { e.preventDefault(); const destino = getExportUrl('excel'); onClose(); descargarExportacion(destino); }}
                         className="flex items-center gap-4 px-5 py-5 bg-emerald-50 border-2 border-emerald-200 rounded-2xl active:bg-emerald-100 transition-colors"
                     >
                         <div className="w-14 h-14 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0">
@@ -422,7 +448,7 @@ function MobileExportSheet({ open, onClose, url }) {
                     </a>
                     <a
                         href={getExportUrl('pdf')}
-                        onClick={onClose}
+                        onClick={(e) => { e.preventDefault(); const destino = getExportUrl('pdf'); onClose(); descargarExportacion(destino); }}
                         className="flex items-center gap-4 px-5 py-5 bg-red-50 border-2 border-red-200 rounded-2xl active:bg-red-100 transition-colors"
                     >
                         <div className="w-14 h-14 rounded-xl bg-red-500 flex items-center justify-center flex-shrink-0">
@@ -433,6 +459,7 @@ function MobileExportSheet({ open, onClose, url }) {
                             <p className="text-[13px] text-red-600">Documento para imprimir o compartir</p>
                         </div>
                     </a>
+                    </>)}
                     <button onClick={onClose} className="w-full py-4 text-[16px] font-bold text-[var(--color-ink-faint)] rounded-2xl border-2 border-gray-200 active:bg-gray-100 mt-2">
                         Cancelar
                     </button>
@@ -449,10 +476,13 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const hasPerm = (p) => perms.includes('*') || perms.includes(p);
     const visibleItems = menuItems(SIDEBAR_ITEMS, auth, hasPerm, props.features);
     const canExport = canExportFrom(url.split('?')[0], hasPerm);
+    const canReportes = hasPerm('view.reportes');
+    // The Exportar tab opens a sheet with the screen's Excel/PDF and, with view.reportes, the Reportes entry.
+    const showExportTab = canExport || canReportes;
     const canSeeCompromisos = hasPerm('view.eventos') || hasPerm('manage.eventos') || hasPerm('view.empresarios') || hasPerm('manage.empresarios');
     const tabItems = visibleItems.filter(item => !item.desktopOnly);
     // Six tabs (with Exportar) at 360px only fit with the smaller label.
-    const tabLabelCls = tabItems.length + (canExport ? 1 : 0) > 5 ? 'text-[11px]' : 'text-[12px]';
+    const tabLabelCls = tabItems.length + (showExportTab ? 1 : 0) > 5 ? 'text-[11px]' : 'text-[12px]';
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
@@ -658,8 +688,8 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         );
                     })}
 
-                    {/* Exportar Excel/PDF */}
-                    {canExport && (
+                    {/* Exportar Excel/PDF (and Reportes) */}
+                    {showExportTab && (
                     <button
                         onClick={() => setExportSheetOpen(true)}
                         className="flex flex-col items-center justify-center flex-1 min-w-0 gap-1 text-white/50 active:bg-white/10 transition-colors"
@@ -690,7 +720,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
             )}
 
             {/* Mobile export bottom sheet */}
-            <MobileExportSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} url={url} />
+            <MobileExportSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} url={url} canExport={canExport} canReportes={canReportes} />
         </div>
     );
 }

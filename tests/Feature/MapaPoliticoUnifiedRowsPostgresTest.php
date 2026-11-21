@@ -39,7 +39,7 @@ class MapaPoliticoUnifiedRowsPostgresTest extends TestCase
         $this->user = User::create([
             'name' => 'Unificado PG', 'email' => 'unif-pg-'.Str::random(8).'@test.local', 'password' => 'secret123',
             'role_id' => Role::where('code', 'R02_ADMIN_FUNCIONAL')->value('id'),
-            'territory_scope' => [$this->mun], 'permissions' => ['view.votantes', 'view.mapa', 'write.data'],
+            'territory_scope' => [$this->mun], 'permissions' => ['view.votantes', 'view.mapa', 'write.data', 'export.datos_personales'], // the exports checked here carry phones and notes (H3)
         ]);
         $this->user->forceFill(['campaign_id' => Campaign::DEFAULT_ID])->save();
     }

@@ -335,10 +335,20 @@ class ViewPermissionsTest extends TestCase
 
         $this->actingAs($this->user('R09_CAMPO', ['view.mapa']))->get('/exportar/excel?source=votantes')->assertForbidden();
 
-        $this->actingAs($this->user('R09_CAMPO', ['view.votantes']))
+        $this->actingAs($this->user('R09_CAMPO', ['view.votantes', 'export.datos_personales']))
             ->get('/exportar/excel?source=votantes&title=Votantes&municipio=M%C3%A1laga')->assertOk();
         Excel::assertDownloaded('Votantes.xlsx', function (GenericExport $export) {
             $this->assertSame([['Beatriz Votante', 'Málaga', 'Votante', '—', 'CD', '3001234567', '—', 'Nota']], $export->array());
+
+            return true;
+        });
+
+        // Without export.datos_personales the phone and the notes stay out of the file (DescargaGuard, H3).
+        Excel::fake();
+        $this->actingAs($this->user('R09_CAMPO', ['view.votantes']))
+            ->get('/exportar/excel?source=votantes&title=Votantes&municipio=M%C3%A1laga')->assertOk();
+        Excel::assertDownloaded('Votantes.xlsx', function (GenericExport $export) {
+            $this->assertSame([['Beatriz Votante', 'Málaga', 'Votante', '—', 'CD', '—']], $export->array());
 
             return true;
         });

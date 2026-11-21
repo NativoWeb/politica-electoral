@@ -219,6 +219,21 @@ class CampaignIsolationTest extends TestCase
             $t->integer('value')->nullable();
         });
 
+        // Every download writes its audit row (DescargaGuard).
+        Schema::create('audit_logs', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('user_id')->nullable();
+            $t->string('action', 80);
+            $t->string('entity_type', 80)->nullable();
+            $t->uuid('entity_id')->nullable();
+            $t->json('metadata')->nullable();
+            $t->json('before_state')->nullable();
+            $t->json('after_state')->nullable();
+            $t->string('ip_address', 45)->nullable();
+            $t->text('user_agent')->nullable();
+            $t->string('correlation_id', 50)->nullable();
+            $t->timestamp('created_at')->useCurrent();
+        });
         Schema::create('cargo_categories', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->string('name');
@@ -860,6 +875,10 @@ class CampaignIsolationTest extends TestCase
     public function test_excel_export_follows_campaign_visibility_including_observaciones(): void
     {
         $this->candidateNamedLikeC();
+        // Observaciones travel only with export.datos_personales (DescargaGuard, H3).
+        foreach ([$this->userCd, $this->userX, $this->userY] as $user) {
+            $user->update(['permissions' => [...($user->permissions ?? []), 'export.datos_personales']]);
+        }
         $rows = function (User $user) {
             Excel::fake();
             $this->actingAs($user)->get('/exportar/excel?source=mapa-politico&tipo=alcaldia,lideres')->assertOk();

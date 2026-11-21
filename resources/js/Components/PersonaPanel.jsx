@@ -9,7 +9,7 @@ import InfoPoliticaManager from '@/Components/InfoPoliticaManager';
 import TagsPanel from '@/Components/TagsPanel';
 import PersonaEventos from '@/Components/Eventos/PersonaEventos';
 import PersonaOrganizaciones, { canSeeEmpresarios } from '@/Components/Empresarios/PersonaOrganizaciones';
-import CampaignChip, { ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
+import CampaignChip, { NoWritePermissionNotice, ReadOnlyCampaignNotice } from '@/Components/CampaignChip';
 import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
 import ComunaSelector from '@/Components/ComunaSelector';
@@ -113,7 +113,8 @@ function DataRow({ label, value }) {
     );
 }
 
-export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, cargoCategorias = [], fallbackData = null, municipios: pageMunicipios = [] }) {
+// onSaved: called after the ficha is saved on the server (the Reportes list says "Guardado." with it).
+export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo = {}, cargoCategorias = [], fallbackData = null, municipios: pageMunicipios = [] }) {
     // A ficha may live in any municipio of Colombia: Santander's provincias first, then the departamentos.
     const municipios = useAllMunicipios(pageMunicipios);
     const { confirm, Dialog: ConfirmDialog, isOpen: confirmOpen, close: closeConfirm } = useConfirm();
@@ -253,6 +254,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
             .then(res => {
                 setMessage(res.message || 'Guardado');
                 setEditMode(false);
+                onSaved?.();
                 loadData();
                 if (form.partido || form.nombre !== data.nombre) {
                     setTimeout(() => router.reload({ only: ['data'] }), 500);
@@ -573,6 +575,9 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
     const isLider = data.source === 'lider';
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
     const campaignReadOnly = campaign.isOther(data.campaign_id);
+    // Without write.data the server refuses every write (H1): no edit, toggle, contact, nexo or referido controls.
+    const sinPermisoEscritura = !authUser?.canWrite;
+    const readOnly = campaignReadOnly || sinPermisoEscritura;
     const campaignName = campaign.nameOf(data.campaign_id);
     const f = (field) => form[field] ?? '';
     const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
@@ -604,18 +609,18 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
                     {/* Actions bar */}
                     <div className="flex items-center gap-2 px-4 lg:px-8 py-3 border-b border-[var(--color-line)] flex-wrap">
-                        {!campaignReadOnly && (
+                        {!readOnly && (
                             <button onClick={() => { if (!editMode && data) setForm(buildFormFromData(data)); setEditMode(!editMode); }} className="px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
                                 {editMode ? 'Cancelar' : 'Editar'}
                             </button>
                         )}
-                        {editMode && !campaignReadOnly && (
+                        {editMode && !readOnly && (
                             <button onClick={savePersona} disabled={saving} className="px-6 py-2.5 bg-[var(--color-good)] text-white text-[13px] font-bold rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50">
                                 {saving ? 'Guardando...' : 'Guardar cambios'}
                             </button>
                         )}
                         {/* A candidate without ficha is shared electoral data: only who may edit it unites it. */}
-                        {!campaignReadOnly && !editMode && !data._offline && authUser?.canWrite && (isLider || authUser?.canEditElectoral !== false) && (
+                        {!readOnly && !editMode && !data._offline && authUser?.canWrite && (isLider || authUser?.canEditElectoral !== false) && (
                             <button type="button" onClick={() => setShowUnificar(true)} className="px-4 py-2.5 bg-white border border-[var(--color-primary)] text-[var(--color-primary)] text-[13px] font-bold rounded-lg hover:bg-blue-50 transition-colors">
                                 Unificar con otra persona
                             </button>
@@ -633,7 +638,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                             PDF
                         </button>
-                        {!campaignReadOnly && <button onClick={() => {
+                        {!readOnly && <button onClick={() => {
                             const isActive = data.is_active !== false;
                             const title = isActive ? 'Desactivar persona' : 'Activar persona';
                             const msg = isActive
@@ -663,6 +668,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     </div>
 
                     {campaignReadOnly && <ReadOnlyCampaignNotice campaignName={campaignName} className="mx-4 lg:mx-8 mt-3" />}
+                    {!campaignReadOnly && sinPermisoEscritura && <NoWritePermissionNotice className="mx-4 lg:mx-8 mt-3" />}
                     <MigracionAviso migracion={data?.migracion} className="mx-4 lg:mx-8 mt-3" />
 
                     {/* Status message */}
@@ -678,7 +684,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                     )}
                                     <span>{message}</span>
                                 </div>
-                                {duplicado && message === errorMessage && !campaignReadOnly && (
+                                {duplicado && message === errorMessage && !readOnly && (
                                     <div className="mt-3 pl-8 text-[13px] font-normal text-[var(--color-ink)]">
                                         <p>
                                             ¿Es la misma persona? <strong>{duplicado.nombre}</strong>
@@ -711,7 +717,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                     })()}
 
                     {/* Possible duplicates of this person in the same municipio */}
-                    {posibles.length > 0 && !duplicado && !campaignReadOnly && (
+                    {posibles.length > 0 && !duplicado && !readOnly && (
                         <div className="mx-4 lg:mx-8 mt-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-[13px] text-[var(--color-ink)]">
                             <p className="font-bold text-amber-800">¿Esta persona está registrada dos veces?</p>
                             <ul className="mt-2 space-y-2">
@@ -988,7 +994,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             comunas={data.comunas || []}
                                             comunaId={data.comuna_id}
                                             source={data.comuna_source}
-                                            editable={!campaignReadOnly && !data._offline && !!authUser?.canWrite}
+                                            editable={!readOnly && !data._offline && !!authUser?.canWrite}
                                             onSaved={res => setData(d => ({ ...d, comuna_id: res.comuna_id, comuna_source: res.comuna_source, comuna_nombre: res.comuna_nombre }))}
                                         />
                                     )}
@@ -1058,7 +1064,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
                                 {/* Contactos CRUD - only for lideres */}
                                 {isLider ? (
-                                    <ContactosManager personId={targetId} contactos={data.contactos || []} onUpdate={loadData} readOnly={campaignReadOnly} />
+                                    <ContactosManager personId={targetId} contactos={data.contactos || []} onUpdate={loadData} readOnly={readOnly} />
                                 ) : (
                                     <p className="text-[13px] text-[var(--color-ink-faint)] text-center py-3 bg-gray-50 rounded-lg">Guarda los datos para habilitar contactos adicionales.</p>
                                 )}
@@ -1216,7 +1222,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                             <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
                                             Referidos ({Math.max(data.referidos?.length || 0, data.referidos_count || 0)})
                                         </p>
-                                        {!campaignReadOnly && (
+                                        {!readOnly && (
                                             <button
                                                 onClick={() => setShowReferidoSearch(!showReferidoSearch)}
                                                 className="px-3 py-1.5 bg-amber-500 text-white text-[12px] font-bold rounded-lg hover:bg-amber-600 transition-colors"
@@ -1226,7 +1232,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                         )}
                                     </div>
 
-                                    {showReferidoSearch && !campaignReadOnly && (
+                                    {showReferidoSearch && !readOnly && (
                                         <div className="bg-amber-50 rounded-xl p-4 mb-3 border border-amber-200">
                                             <p className="text-[12px] font-bold text-amber-700 mb-2">Buscar persona para agregar como referido</p>
                                             <input
@@ -1285,7 +1291,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                                                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" /></svg>
                                                             </a>
                                                         )}
-                                                        {!campaignReadOnly && (
+                                                        {!readOnly && (
                                                             <button
                                                                 onClick={() => removeReferido(r.id)}
                                                                 className="text-red-400 hover:text-red-600 transition-colors"
@@ -1306,7 +1312,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                 {/* Info Politica CRUD */}
                                 <div className="pt-4 border-t border-[var(--color-line)]">
                                     {isLider ? (
-                                        <InfoPoliticaManager personId={targetId} infoPolitica={data.info_politica || []} onUpdate={loadData} readOnly={campaignReadOnly} />
+                                        <InfoPoliticaManager personId={targetId} infoPolitica={data.info_politica || []} onUpdate={loadData} readOnly={readOnly} />
                                     ) : (
                                         <p className="text-[13px] text-[var(--color-ink-faint)] text-center py-3 bg-gray-50 rounded-lg">Guarda los datos para habilitar historial politico.</p>
                                     )}
@@ -1321,14 +1327,14 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                     <h3 className="text-[14px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)]">
                                         Familia / Nexos ({data.nexos?.length ?? 0})
                                     </h3>
-                                    {!campaignReadOnly && (
+                                    {!readOnly && (
                                         <button onClick={() => setShowNexoForm(!showNexoForm)} className="px-5 py-2.5 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-lg hover:bg-[var(--color-primary-light)] transition-colors">
                                             + Agregar familiar
                                         </button>
                                     )}
                                 </div>
 
-                                {showNexoForm && !campaignReadOnly && (
+                                {showNexoForm && !readOnly && (
                                     <form onSubmit={addNexo} className="bg-blue-50 rounded-xl p-6 mb-4 space-y-4">
                                         <h4 className="text-[14px] font-bold text-[var(--color-primary)]">Nuevo nexo familiar</h4>
                                         <div className="grid grid-cols-2 gap-4">
@@ -1385,7 +1391,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
 
                                 {data.nexos?.map(n => (
                                     <div key={n.id} className="bg-gray-50 rounded-xl p-4 mb-3">
-                                        {editingNexoId === n.id && !campaignReadOnly ? (
+                                        {editingNexoId === n.id && !readOnly ? (
                                             <form onSubmit={saveEditNexo} className="space-y-3">
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                     <div>
@@ -1447,7 +1453,7 @@ export default function PersonaPanel({ personId, onClose, cargosPorTipo = {}, ca
                                                     {n.gustos && <p className="text-[14px] text-[var(--color-ink-soft)] mt-1">Gustos: {n.gustos}</p>}
                                                     {n.observaciones && <p className="text-[14px] text-[var(--color-ink-faint)] mt-1">{n.observaciones}</p>}
                                                 </div>
-                                                {!campaignReadOnly && (
+                                                {!readOnly && (
                                                     <div className="flex gap-1.5 flex-shrink-0">
                                                         <button onClick={() => startEditNexo(n)} className="px-3 py-2 text-[13px] text-blue-600 bg-blue-50 hover:bg-blue-100 font-bold rounded-lg transition-colors">Editar</button>
                                                         <button onClick={() => deleteNexo(n.id)} className="px-3 py-2 text-[13px] text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-lg transition-colors">Eliminar</button>

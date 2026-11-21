@@ -24,6 +24,9 @@ class GenericExport extends DefaultValueBinder implements FromArray, WithHeading
     private array $columns;
     private string $title;
 
+    // A line above the headings (the old exports without personal columns say so); the headings then are row 2.
+    private ?string $notice;
+
     private array $columnLabels = [
         'nombre' => 'NOMBRE',
         'municipio' => 'MUNICIPIO',
@@ -38,8 +41,9 @@ class GenericExport extends DefaultValueBinder implements FromArray, WithHeading
     ];
 
     // $labels: column => heading, for columns outside the default list.
-    public function __construct(array $data, array $columns, string $title, array $labels = [])
+    public function __construct(array $data, array $columns, string $title, array $labels = [], ?string $notice = null)
     {
+        $this->notice = $notice;
         $this->data = $data;
         $this->columns = $columns;
         $this->title = $title;
@@ -64,7 +68,7 @@ class GenericExport extends DefaultValueBinder implements FromArray, WithHeading
 
     public function bindValue(Cell $cell, $value): bool
     {
-        if ($cell->getRow() > 1 && $value !== null && in_array($cell->getColumn(), $this->textColumnLetters(), true)) {
+        if ($cell->getRow() > $this->headingRow() && $value !== null && in_array($cell->getColumn(), $this->textColumnLetters(), true)) {
             $cell->setValueExplicit((string) $value, DataType::TYPE_STRING);
 
             return true;
@@ -92,7 +96,14 @@ class GenericExport extends DefaultValueBinder implements FromArray, WithHeading
 
     public function headings(): array
     {
-        return array_map(fn ($c) => $this->columnLabels[$c] ?? strtoupper($c), $this->columns);
+        $labels = array_map(fn ($c) => $this->columnLabels[$c] ?? strtoupper($c), $this->columns);
+
+        return $this->notice === null ? $labels : [[$this->notice], $labels];
+    }
+
+    private function headingRow(): int
+    {
+        return $this->notice === null ? 1 : 2;
     }
 
     public function title(): string
@@ -103,27 +114,33 @@ class GenericExport extends DefaultValueBinder implements FromArray, WithHeading
     public function styles(Worksheet $sheet): array
     {
         $lastCol = chr(64 + count($this->columns));
-        $lastRow = count($this->data) + 1;
+        $head = $this->headingRow();
+        $lastRow = count($this->data) + $head;
 
         // Auto-size columns
         foreach (range('A', $lastCol) as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
+        // The notice line would stretch column A to its whole length.
+        if ($head === 2) {
+            $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(40);
+        }
         $obsIndex = array_search('observacion', $this->columns, true);
         if ($obsIndex !== false) {
             $obsCol = chr(65 + $obsIndex);
             $sheet->getColumnDimension($obsCol)->setAutoSize(false)->setWidth(60);
-            $sheet->getStyle("{$obsCol}2:{$obsCol}{$lastRow}")->getAlignment()->setWrapText(true)->setVertical('top');
+            $sheet->getStyle("{$obsCol}".($head + 1).":{$obsCol}{$lastRow}")->getAlignment()->setWrapText(true)->setVertical('top');
         }
 
-        return [
-            1 => [
+        return array_filter([
+            1 => $head === 2 ? ['font' => ['bold' => true, 'color' => ['rgb' => 'C00000']]] : null,
+            $head => [
                 'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => 'FFFFFF']],
                 'fill' => ['fillType' => 'solid', 'startColor' => ['rgb' => '003B71']],
             ],
-            "A1:{$lastCol}{$lastRow}" => [
+            "A{$head}:{$lastCol}{$lastRow}" => [
                 'borders' => ['allBorders' => ['borderStyle' => 'thin', 'color' => ['rgb' => 'CCCCCC']]],
             ],
-        ];
+        ]);
     }
 }

@@ -501,6 +501,8 @@ class EventIntegrationTest extends TestCase
         $this->assertSame('s', $this->typeUnder($territorio, 'Asistentes', 'CELULAR'));
         $this->assertSame('@', $territorio->getSheetByName('Asistentes')->getStyle('C2')->getNumberFormat()->getFormatCode());
 
+        // The old exports keep cédula and teléfono only with export.datos_personales (DescargaGuard, H3).
+        $this->cd->update(['permissions' => array_merge(self::PERMS, ['export.datos_personales'])]);
         $mapa = $this->xlsx($this->cd, "/exportar/excel?source=mapa-politico&tipo=lideres&municipio={$this->giron}&columns=nombre,cedula,telefono");
         $this->assertSame('s', $this->typeUnder($mapa, 'Exportacion', 'CEDULA'));
         $this->assertSame('s', $this->typeUnder($mapa, 'Exportacion', 'TELÉFONO'));

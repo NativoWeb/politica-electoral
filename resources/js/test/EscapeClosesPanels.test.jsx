@@ -56,7 +56,7 @@ describe('Escape closes the ficha', () => {
     const originalFetch = globalThis.fetch;
 
     beforeEach(() => {
-        page.props = { auth: { user: { campaign: CD } }, visibleCampaigns: [{ id: 'cd', name: 'Centro Democrático' }] };
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: [{ id: 'cd', name: 'Centro Democrático' }] };
         Element.prototype.scrollIntoView = vi.fn();
         globalThis.fetch = vi.fn((url) => json(url.includes('posibles-duplicados') ? { data: [] } : PERSONA));
     });

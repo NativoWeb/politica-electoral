@@ -359,9 +359,12 @@ async function dropRejectedLocalRecord(change) {
     if (change.type === 'nexo') await db.nexos.delete(id);
 }
 
+export const NO_PERMISSION_TO_EDIT = 'No tienes permiso para editar fichas. Pídeselo a tu administrador.';
+
 async function rejectionReason(res) {
     const body = await res.json().catch(() => null);
-    if (res.status === 403) return forbiddenMessage(body?.message);
+    // The generic refusal of a missing permission (write.data, H1) is told in plain words.
+    if (res.status === 403) return /no tiene permisos? para acceder/i.test(body?.message ?? '') ? NO_PERMISSION_TO_EDIT : forbiddenMessage(body?.message);
     const firstError = body?.errors ? Object.values(body.errors)[0]?.[0] : null;
     return firstError || body?.message || 'El servidor no aceptó el cambio.';
 }

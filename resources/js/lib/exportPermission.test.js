@@ -19,5 +19,7 @@ describe('exportPermission', () => {
         expect(canExportFrom('/mapa-politico', only('view.mapa'))).toBe(true);
         expect(canExportFrom('/votantes', only('view.mapa'))).toBe(false);
         expect(canExportFrom('/camara', only())).toBe(true);
+        // Reportes has its own download; the header would export the Mapa Político.
+        expect(canExportFrom('/reportes', only('view.mapa', 'view.reportes'))).toBe(false);
     });
 });

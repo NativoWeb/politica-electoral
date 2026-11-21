@@ -9,6 +9,8 @@ use App\Services\Eventos\Ocr\OcrClient;
 use App\Services\Geo\BarrioMatcher;
 use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
+use App\Services\Reportes\DescargaGuard;
+use App\Services\Reportes\Fuentes\PersonasFuente;
 use App\Support\CurrentCampaign;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -28,6 +30,8 @@ class AppServiceProvider extends ServiceProvider
         // Per request: the lists and ajustes of the Centro de configuración (cached across requests).
         $this->app->scoped(CatalogoStore::class);
         $this->app->scoped(AjusteStore::class);
+        // Per request: it memoizes the municipios, comunas and referentes the user may filter by.
+        $this->app->scoped(PersonasFuente::class);
         // Tests bind a fake here: they never call the real API.
         $this->app->bind(OcrClient::class, AnthropicOcrClient::class);
     }
@@ -68,6 +72,12 @@ class AppServiceProvider extends ServiceProvider
         // AI reading of printed sheets: one request per photo uploaded and one per page read (each waits for the API).
         RateLimiter::for('eventos-ocr', fn (Request $request) => Limit::perMinute(60)
             ->by('eventos-ocr|'.($request->user()?->id ?? $request->ip())));
+
+        // Reportes: counting and listing follow every chip the user taps (debounced on the screen); downloads are
+        // checked by DescargaGuard (5 per minute and 30 per hour, one at a time), also for the old /exportar/*.
+        RateLimiter::for('reportes-consulta', fn (Request $request) => Limit::perMinute(120)
+            ->by('reportes-consulta|'.($request->user()?->id ?? $request->ip())));
+        RateLimiter::for(DescargaGuard::LIMITADOR, fn (Request $request) => DescargaGuard::limites($request));
 
         // Force HTTPS and correct host when behind ngrok/proxy
         if ($this->app->environment('local') && str_contains(config('app.url'), 'ngrok')) {

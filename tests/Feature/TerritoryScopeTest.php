@@ -176,6 +176,21 @@ class TerritoryScopeTest extends TestCase
             $t->string('metric_type');
             $t->integer('value')->nullable();
         });
+        // Every download writes its audit row (DescargaGuard).
+        Schema::create('audit_logs', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('user_id')->nullable();
+            $t->string('action', 80);
+            $t->string('entity_type', 80)->nullable();
+            $t->uuid('entity_id')->nullable();
+            $t->json('metadata')->nullable();
+            $t->json('before_state')->nullable();
+            $t->json('after_state')->nullable();
+            $t->string('ip_address', 45)->nullable();
+            $t->text('user_agent')->nullable();
+            $t->string('correlation_id', 50)->nullable();
+            $t->timestamp('created_at')->useCurrent();
+        });
     }
 
     private function seedTerritory(): void

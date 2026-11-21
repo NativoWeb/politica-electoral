@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 const page = { props: {}, url: '/empresarios' };
 
@@ -141,5 +141,58 @@ describe('AppLayout without the electoral results (auth.seesElectoralResults)', 
         render(<AppLayout title="t">x</AppLayout>);
         expect(gobernadorLinks().length).toBeGreaterThan(0);
         expect(searchBoxes().length).toBeGreaterThan(0);
+    });
+});
+
+describe('AppLayout "Reportes" entry (view.reportes)', () => {
+    const original = globalThis.fetch;
+    const reportLinks = () => [...document.querySelectorAll('a')].filter(a => a.getAttribute('href') === '/reportes');
+    const exportTab = () => [...document.querySelectorAll('nav button')].find(b => b.textContent.trim() === 'Exportar');
+    const as = (permissions) => {
+        page.props = { auth: { user: { name: 'Ana', permissions, campaign: { id: 'cd', name: 'CD' }, canEditElectoral: true } }, visibleCampaigns: [] };
+    };
+    beforeEach(() => {
+        page.url = '/mapa-politico';
+        globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ data: {} }) }));
+    });
+    afterEach(() => { cleanup(); globalThis.fetch = original; });
+
+    it('is in the sidebar only with the permission', () => {
+        as(['view.mapa']);
+        const { unmount } = render(<AppLayout title="t">x</AppLayout>);
+        expect(reportLinks()).toHaveLength(0);
+        unmount();
+
+        as(['view.mapa', 'view.reportes']);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(reportLinks()).toHaveLength(1);
+        expect(reportLinks()[0]).toHaveTextContent('Reportes');
+    });
+
+    it('on a phone it is inside the Exportar sheet, which opens even where the screen has no export', () => {
+        page.url = '/eventos';
+        as(['view.eventos', 'view.reportes']);
+        render(<AppLayout title="t">x</AppLayout>);
+        // The sidebar one (desktop only, hidden by CSS on a phone) plus the one of the sheet.
+        expect(reportLinks().length).toBe(1);
+        fireEvent.click(exportTab());
+        expect(reportLinks().length).toBe(2);
+        expect(screen.queryByText('Excel')).not.toBeInTheDocument();
+    });
+
+    it('the sheet keeps Excel and PDF of the screen next to Reportes', () => {
+        as(['view.mapa', 'view.reportes']);
+        render(<AppLayout title="t">x</AppLayout>);
+        fireEvent.click(exportTab());
+        expect(screen.getByText('Excel')).toBeInTheDocument();
+        expect(screen.getByText('PDF')).toBeInTheDocument();
+        expect(reportLinks().length).toBe(2);
+    });
+
+    it('without the permission and without export there is no Exportar tab', () => {
+        page.url = '/eventos';
+        as(['view.eventos']);
+        render(<AppLayout title="t">x</AppLayout>);
+        expect(exportTab()).toBeUndefined();
     });
 });

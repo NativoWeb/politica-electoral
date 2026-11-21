@@ -12,6 +12,8 @@ export function exportPermissionFor(path) {
 export function canExportFrom(path, hasPerm) {
     if (path === '/eventos' || path.startsWith('/eventos/')) return false;
     if (path === '/empresarios' || path.startsWith('/empresarios/')) return false;
+    // Reportes downloads its own list (POST /reportes/{fuente}/excel).
+    if (path === '/reportes' || path.startsWith('/reportes/')) return false;
     const needed = exportPermissionFor(path);
 
     return !needed || hasPerm(needed);

@@ -6,12 +6,15 @@ use App\Console\Commands\Gobernacion2023Totales;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\LegislativoController;
 use App\Services\GobernacionResultados;
+use App\Services\Reportes\DescargaGuard;
+use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\Concerns\BuildsElectoralSchema;
@@ -342,6 +345,14 @@ class Gobernacion2023TotalesTest extends TestCase
         $request = Request::create("/exportar/{$format}", 'GET', $query + ['source' => 'gobernador', 'title' => 'Gobernador']);
         $this->app->instance('request', $request);
         $request->setUserResolver(fn () => $user);
+        // The file's content is what these tests check: the download limits and audit row (DescargaGuard) have theirs.
+        $this->app->instance(DescargaGuard::class, new class extends DescargaGuard
+        {
+            public function descargar(Request $request, string $accion, Closure $preparar): Response
+            {
+                return ($preparar()['generar'])();
+            }
+        });
 
         return app(ExportController::class)->{$format}($request);
     }

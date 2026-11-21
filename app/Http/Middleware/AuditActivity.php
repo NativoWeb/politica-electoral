@@ -62,6 +62,10 @@ class AuditActivity
             }
 
             $routeName = $request->route()?->getName();
+            // Reportes: downloads write their own row (DescargaGuard); counting and listing are reads (one per chip tapped).
+            if (str_starts_with((string) $routeName, 'reportes.descargar.') || in_array($routeName, ['reportes.conteo', 'reportes.lista'], true)) {
+                return $response;
+            }
             $action = $request->method().' '.($routeName ?: $request->path());
 
             $entityType = $this->resolveEntityType($routeName, $request->path());

@@ -8,6 +8,7 @@ use App\Exports\StreamedXlsx;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Services\Configuracion\Ajuste;
 use App\Services\GobernacionResultados;
+use App\Services\Reportes\DescargaGuard;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,8 @@ class ExportController extends Controller
     use ScopesTerritory;
 
     public const PDF_MAX_ROWS = 500;
+
+    private const GOBERNADOR_COLUMNS = ['nombre', 'partido', 'cargo', 'votos', 'porcentaje'];
 
     // Votantes Excel: written row by row; past this many rows the file says it was cut (Bucaramanga alone has ~39.000).
     // Default of the ajuste votantes.export_max_filas.
@@ -41,6 +44,12 @@ class ExportController extends Controller
     public function excel(Request $request)
     {
         $this->authorizeSource($request);
+
+        return $this->guarded($request, 'excel', fn () => $this->buildExcel($request));
+    }
+
+    private function buildExcel(Request $request)
+    {
         if ($request->input('source') === 'gobernador') {
             $report = $this->gobernadorReport($request);
             $resumen = array_map(fn ($r) => ['concepto' => $r[0], 'valor' => $r[1]], $report['resumen']);
@@ -52,8 +61,9 @@ class ExportController extends Controller
         }
 
         $title = $request->input('title', 'Exportacion');
-        $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
+        $columns = $this->columns($request);
         $filename = str_replace(' ', '_', $title).'.xlsx';
+        $heading = $this->removedColumns($request) ? [DescargaGuard::AVISO_SIN_DATOS] : [];
 
         if ($request->input('source') === 'votantes') {
             abort_unless($request->user()->hasPermission('view.votantes'), 403);
@@ -63,25 +73,88 @@ class ExportController extends Controller
                 $rows = $this->votantesQuery($request)->limit($max)->cursor()->map(fn ($l) => $this->votanteRow($l));
 
                 return StreamedXlsx::download($rows, $columns, $title, $filename,
-                    notice: $total > $max ? self::cutNotice($max, $total) : null);
+                    notice: $total > $max ? self::cutNotice($max, $total) : null, heading: $heading);
             }
         }
 
         [$data, $total] = $this->getDataWithTotal($request);
         if (count($data) > self::streamAfterRows() || $total > count($data)) {
             return StreamedXlsx::download($data, $columns, $title, $filename,
-                notice: $total > count($data) ? self::cutNotice(count($data), $total) : null);
+                notice: $total > count($data) ? self::cutNotice(count($data), $total) : null, heading: $heading);
         }
 
-        return Excel::download(new GenericExport($data, $columns, $title), $filename);
+        // A file without the personal columns says so above its headings.
+        return Excel::download(new GenericExport($data, $columns, $title, notice: $heading[0] ?? null), $filename);
     }
 
     // Gobernador, Senado, Cámara and Asamblea are only electoral results; the Mapa leaves them out by itself (rows()).
+    // The screen's own permission and the municipio are checked here too, before DescargaGuard writes its audit row.
     private function authorizeSource(Request $request): void
     {
-        if (in_array($request->input('source'), ['gobernador', 'senado', 'camara', 'asamblea'], true)) {
+        $source = $request->input('source', 'mapa-politico');
+        if (in_array($source, ['gobernador', 'senado', 'camara', 'asamblea'], true)) {
             $this->campaign()->abortUnlessSeesElectoralResults();
         }
+        $permission = match ($source) {
+            'votantes' => 'view.votantes',
+            'mapa-politico' => 'view.mapa',
+            'gobernador' => 'view.gobernador',
+            default => null,
+        };
+        abort_if($permission && ! $request->user()->hasPermission($permission), 403);
+        $munId = $request->input('municipio');
+        abort_if($munId !== null && ! is_string($munId), 422);
+        if ($munId && $source !== 'votantes') {
+            $this->authorizeGeo($munId);
+        }
+    }
+
+    // The requested columns without the personal ones when the user lacks export.datos_personales (H3).
+    private function columns(Request $request): array
+    {
+        return DescargaGuard::columnasPermitidas($this->requestedColumns($request), $request->user())[0] ?: ['nombre'];
+    }
+
+    // Personal columns taken out of a file of people (Mapa político, Votantes): the file and the X-Columnas-Quitadas
+    // header say so. Electoral results (Senado, Gobernador...) never had personal data to take out.
+    private function removedColumns(Request $request): array
+    {
+        if (! in_array($request->input('source', 'mapa-politico'), ['mapa-politico', 'votantes'], true)) {
+            return [];
+        }
+
+        return DescargaGuard::columnasPermitidas($this->requestedColumns($request), $request->user())[1];
+    }
+
+    private function requestedColumns(Request $request): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) $request->input('columns', $this->defaultColumns($request))))));
+    }
+
+    // One download at a time, 5 per minute and 30 per hour, and an audit row before the file (DescargaGuard).
+    private function guarded(Request $request, string $format, \Closure $build)
+    {
+        $source = (string) $request->input('source', 'mapa-politico');
+        [$columns, $removed] = DescargaGuard::columnasPermitidas($this->requestedColumns($request), $request->user());
+
+        $response = app(DescargaGuard::class)->descargar($request, "EXPORT exportar.{$source}.{$format}", fn () => [
+            'metadata' => [
+                'fuente' => $source,
+                'formato' => $format,
+                // The columns the file really has: Gobernador has its own, the rest falls back to the name as columns() does.
+                'columnas' => $source === 'gobernador' ? self::GOBERNADOR_COLUMNS : ($columns ?: ['nombre']),
+                'columnas_quitadas' => $removed,
+                'filtros' => array_keys($request->except(['source', 'title', 'columns', 'search'])),
+                'busqueda' => is_string($request->input('search')) ? $request->input('search') : null,
+                'con_datos_personales' => (bool) array_intersect($columns, DescargaGuard::COLUMNAS_SENSIBLES),
+            ],
+            'generar' => $build,
+        ]);
+        if ($shown = $this->removedColumns($request)) {
+            $response->headers->set('X-Columnas-Quitadas', implode(',', $shown));
+        }
+
+        return $response;
     }
 
     private static function cutNotice(int $shown, int $total): string
@@ -93,6 +166,12 @@ class ExportController extends Controller
     public function pdf(Request $request)
     {
         $this->authorizeSource($request);
+
+        return $this->guarded($request, 'pdf', fn () => $this->buildPdf($request));
+    }
+
+    private function buildPdf(Request $request)
+    {
         EventoImportController::raiseMemoryLimit();
         set_time_limit(120);
 
@@ -121,7 +200,7 @@ class ExportController extends Controller
         $isVotantes = $request->input('source') === 'votantes';
         [$data, $mapaTotal] = $this->getDataWithTotal($request, $isVotantes ? self::PDF_MAX_ROWS + 1 : null);
         $title = $request->input('title', 'Exportacion');
-        $columns = explode(',', $request->input('columns', $this->defaultColumns($request)));
+        $columns = $this->columns($request);
 
         $totalCount = $request->input('source') === 'votantes' && count($data) > self::PDF_MAX_ROWS
             ? app(VotanteController::class)->listing($request)->count()
@@ -139,6 +218,7 @@ class ExportController extends Controller
             'date' => now()->format('d/m/Y H:i'),
             'truncated' => $truncated,
             'totalCount' => $totalCount,
+            'aviso' => $this->removedColumns($request) ? DescargaGuard::AVISO_SIN_DATOS : null,
         ])->setPaper('a4', 'landscape')
             ->setOption('isRemoteEnabled', false)
             ->setOption('isPhpEnabled', false);
@@ -340,7 +420,7 @@ class ExportController extends Controller
         return [
             'title' => $title,
             'filename' => str_replace(' ', '_', Str::ascii($title)),
-            'columns' => ['nombre', 'partido', 'cargo', 'votos', 'porcentaje'],
+            'columns' => self::GOBERNADOR_COLUMNS,
             'data' => $data,
             'resumen' => $filas,
             'aviso' => $municipio ? GobernacionResultados::SIN_RESULTADOS_MUNICIPIO : null,

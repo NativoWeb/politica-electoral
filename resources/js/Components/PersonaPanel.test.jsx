@@ -46,13 +46,41 @@ describe('PersonaPanel campaign read-only', () => {
     const originalFetch = globalThis.fetch;
 
     beforeEach(() => {
-        page.props = { auth: { user: { campaign: CD } }, visibleCampaigns: VISIBLE };
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
         // jsdom has no layout: TabBar scrolls the active tab into view.
         Element.prototype.scrollIntoView = vi.fn();
     });
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
+    });
+
+    it('without write.data shows the ficha read-only: no edit, toggle, contact, referido or nexo controls', async () => {
+        page.props = { auth: { user: { campaign: CD, canWrite: false } }, visibleCampaigns: VISIBLE };
+        mockFetch(persona('cd'));
+        render(<PersonaPanel personId="l1" onClose={vi.fn()} />);
+
+        expect(await screen.findByRole('note')).toHaveTextContent('Puedes ver esta ficha, pero no tienes permiso para editarla.');
+        expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+        expect(screen.queryByTitle('Desactivar persona')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Unificar con otra persona' })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Nexos/i }));
+        expect(screen.getByText('Hermana de Beto')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '+ Agregar familiar' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Contactos/i }));
+        expect(screen.queryByRole('button', { name: /Agregar/i })).not.toBeInTheDocument();
+    });
+
+    it('calls onSaved after the server saves the ficha', async () => {
+        mockFetch(persona('cd'));
+        const onSaved = vi.fn();
+        render(<PersonaPanel personId="l1" onClose={vi.fn()} onSaved={onSaved} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+        fireEvent.click(screen.getByRole('button', { name: /Guardar/ }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     });
 
     it('opens a subcampaign lider read-only with the campaign notice', async () => {

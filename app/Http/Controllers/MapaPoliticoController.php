@@ -12,7 +12,6 @@ use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Campaign;
-use App\Models\CargoCategory;
 use App\Models\Lider;
 use App\Models\Person;
 use App\Models\PoliticalOrganization;
@@ -20,6 +19,7 @@ use App\Rules\OpcionDeCatalogo;
 use App\Services\CachedQueries;
 use App\Services\Configuracion\Ajuste;
 use App\Services\Eventos\EventScope;
+use App\Services\FichaCatalogos;
 use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
 use App\Support\Cedula;
@@ -143,38 +143,6 @@ class MapaPoliticoController extends Controller
         return $q;
     }
 
-    // #7: Cached cargos por tipo
-    private function cargosPorTipo(): array
-    {
-        $seesEventos = self::seesEventos();
-        $catalogCargos = CargoCategory::active()->pluck('name')->toArray();
-        $liderCargos = self::uniqueCargos(collect($catalogCargos)
-            ->merge($this->visibleLideres()->select('cargo')->distinct()->pluck('cargo')
-                ->flatMap(fn ($c) => array_map('trim', explode(',', $c)))->filter()))
-            ->values()->toArray();
-
-        return [
-            'alcaldia' => ['Alcalde Electo', 'Candidato Alcaldía'],
-            'concejo' => ['Concejal', 'Candidato Concejo'],
-            'lideres' => $liderCargos,
-            'nuevos_lideres' => $liderCargos,
-            'directorio' => $liderCargos,
-            self::VOTANTES => $liderCargos,
-            ...($seesEventos ? [self::ASISTENTES_EVENTO => $liderCargos] : []),
-            'senado' => ['Senador', 'Candidato Senado'],
-            'camara' => ['Representante', 'Candidato Cámara'],
-            'asamblea' => ['Diputado', 'Candidato Asamblea'],
-            'todos' => self::uniqueCargos(collect(['Alcalde Electo', 'Candidato Alcaldía', 'Concejal', 'Candidato Concejo', 'Senador', 'Candidato Senado', 'Representante', 'Candidato Cámara', 'Diputado', 'Candidato Asamblea'])
-                ->merge($liderCargos))->sort()->values()->toArray(),
-        ];
-    }
-
-    // "Lider" and "Líder" are one option: the first spelling in the list wins (catalog or fixed list first).
-    private static function uniqueCargos(Collection $cargos): Collection
-    {
-        return $cargos->unique(fn ($c) => mb_strtolower(Str::ascii($c)));
-    }
-
     public function index(Request $request)
     {
         [
@@ -211,8 +179,8 @@ class MapaPoliticoController extends Controller
             'provincias' => $provincias,
             'municipioInfo' => $municipioInfo,
             'cargosDisponibles' => $cargosDisponibles,
-            'cargosPorTipo' => $this->cargosPorTipo(),
-            'cargoCategorias' => CargoCategory::active()->get(['id', 'name', 'display_order', 'is_highlighted']),
+            'cargosPorTipo' => app(FichaCatalogos::class)->cargosPorTipo(),
+            'cargoCategorias' => app(FichaCatalogos::class)->cargoCategorias(),
             'barrios' => $barrios,
             'sectionCounts' => $sectionCounts,
             'sectionPaging' => $sectionPaging,

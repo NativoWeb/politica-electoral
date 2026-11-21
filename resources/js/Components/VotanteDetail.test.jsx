@@ -36,7 +36,7 @@ function renderDetail(data, apiFetch = vi.fn(), showToast = vi.fn()) {
 
 describe('VotanteDetail campaign read-only', () => {
     beforeEach(() => {
-        page.props = { auth: { user: { campaign: CD } }, visibleCampaigns: VISIBLE };
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
     });
 
     it('shows a subcampaign record read-only, labelled with its campaign', () => {
@@ -79,7 +79,7 @@ describe('VotanteDetail campaign read-only', () => {
     });
 
     it('labels nothing for a user who only sees their own campaign', () => {
-        page.props = { auth: { user: { campaign: CD } }, visibleCampaigns: [] };
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: [] };
         renderDetail(votante('cd'));
 
         expect(screen.queryByRole('note')).not.toBeInTheDocument();
@@ -103,6 +103,13 @@ describe('VotanteDetail "Unificar con otra persona"', () => {
         page.props = { auth: { user: { campaign: CD, canWrite: false } }, visibleCampaigns: VISIBLE };
         renderDetail(votante('cd'));
         expect(screen.queryByRole('button', { name: 'Unificar con otra persona' })).not.toBeInTheDocument();
+    });
+
+    it('without write permission the whole ficha is read-only with a plain notice', () => {
+        page.props = { auth: { user: { campaign: CD, canWrite: false } }, visibleCampaigns: VISIBLE };
+        renderDetail(votante('cd'));
+        expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+        expect(screen.getByRole('note')).toHaveTextContent('Puedes ver esta ficha, pero no tienes permiso para editarla.');
     });
 });
 

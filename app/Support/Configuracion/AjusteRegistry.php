@@ -6,6 +6,7 @@ use App\Http\Controllers\ExportController;
 use App\Http\Controllers\MapaPoliticoController;
 use App\Http\Requests\Eventos\AttendeeInput;
 use App\Services\Eventos\Actas\CompromisoAlertas;
+use App\Services\Reportes\DescargaGuard;
 
 // Business values the superadmin may change in Centro de configuración (/admin/configuracion/ajustes). The default
 // lives here (or in config, for the ones that already had an env var) and the table ajustes keeps only what was
@@ -60,6 +61,18 @@ class AjusteRegistry
                 'default' => ExportController::VOTANTES_EXCEL_MAX_ROWS, 'unidad' => 'filas',
                 'etiqueta' => 'Máximo de filas al exportar Votantes a Excel',
                 'descripcion' => 'Por encima del máximo el archivo avisa que se cortó.',
+            ],
+            'reportes.excel_max_filas' => [
+                'grupo' => 'exportaciones', 'tipo' => 'int', 'min' => 1000, 'max' => 100000,
+                'default' => DescargaGuard::EXCEL_MAX_FILAS, 'unidad' => 'filas',
+                'etiqueta' => 'Máximo de filas al descargar un reporte en Excel',
+                'descripcion' => 'Módulo Reportes. Por encima del máximo el archivo trae las primeras filas y avisa que se cortó.',
+            ],
+            'reportes.pdf_max_filas' => [
+                'grupo' => 'exportaciones', 'tipo' => 'int', 'min' => 50, 'max' => 2000,
+                'default' => DescargaGuard::PDF_MAX_FILAS, 'unidad' => 'filas',
+                'etiqueta' => 'Máximo de filas al descargar un reporte en PDF',
+                'descripcion' => 'Módulo Reportes. Un PDF con muchas filas tarda y pesa: para más, use Excel.',
             ],
             'whatsapp.max_destinatarios' => [
                 'grupo' => 'whatsapp', 'tipo' => 'int', 'min' => 1, 'max' => 50000,

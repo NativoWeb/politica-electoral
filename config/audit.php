@@ -38,6 +38,8 @@ return [
             'whatsapp_number',
             // The agent's votantes search (a name or a cédula): a cédula keeps its last 4 digits, a name leaves null.
             'q',
+            // The search box of Reportes (a name or a cédula), inside the spec of every download.
+            'busqueda',
         ],
 
         'email' => [

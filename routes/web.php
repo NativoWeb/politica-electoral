@@ -37,6 +37,7 @@ use App\Http\Controllers\PartidoController;
 use App\Http\Controllers\PartidoCrudController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ReportesController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\TerritoryController;
 use App\Http\Controllers\UnificarController;
@@ -371,6 +372,18 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::delete('/perfil/whatsapp', [WhatsAppLinkController::class, 'destroy'])->name('perfil.whatsapp.destroy');
 
     Route::get('/analisis', [ComparadorController::class, 'index'])->name('comparador')->middleware('electoral.results');
+
+    // Reportes (docs/reportes.md): view.reportes lets in; the fuente asks its own view permission and the personal
+    // columns export.datos_personales. Downloads are limited and audited by DescargaGuard, not by a throttle here.
+    Route::prefix('reportes')->name('reportes.')->middleware('permission:view.reportes')->group(function () {
+        Route::get('/', [ReportesController::class, 'index'])->name('index');
+        Route::middleware('throttle:reportes-consulta')->group(function () {
+            Route::get('/opciones/{filtro}', [ReportesController::class, 'opciones'])->name('opciones')->where('filtro', '[a-z_]{1,40}');
+            Route::post('/{fuente}/conteo', [ReportesController::class, 'conteo'])->name('conteo')->where('fuente', '[a-z_]{1,40}');
+            Route::post('/{fuente}/lista', [ReportesController::class, 'lista'])->name('lista')->where('fuente', '[a-z_]{1,40}');
+        });
+        Route::post('/{fuente}/excel', [ReportesController::class, 'excel'])->name('descargar.excel')->where('fuente', '[a-z_]{1,40}');
+    });
 
     // Exports
     Route::get('/exportar/excel', [ExportController::class, 'excel'])->name('export.excel');

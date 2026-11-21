@@ -116,3 +116,22 @@ describe('Mapa Político: secciones por páginas', () => {
         expect(screen.getByRole('button', { name: 'Ver más' })).toBeEnabled();
     });
 });
+
+describe('Mapa Político: "Crear Líder" needs write.data (H1)', () => {
+    beforeEach(() => {
+        globalThis.fetch = vi.fn(() => json({ success: true, has_more: false, data: [] }));
+        window.matchMedia = window.matchMedia || (() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    });
+    afterEach(() => cleanup());
+
+    it('is hidden without canWrite and shown with it', () => {
+        page.props = { auth: { user: { campaign: { id: 'cd', name: 'CD' }, permissions: ['view.mapa'], canWrite: false } }, visibleCampaigns: [] };
+        const { unmount } = renderPage();
+        expect(screen.queryByRole('button', { name: 'Crear Líder' })).not.toBeInTheDocument();
+        unmount();
+
+        page.props = { auth: { user: { campaign: { id: 'cd', name: 'CD' }, permissions: ['view.mapa', 'write.data'], canWrite: true } }, visibleCampaigns: [] };
+        renderPage();
+        expect(screen.getByRole('button', { name: 'Crear Líder' })).toBeInTheDocument();
+    });
+});
