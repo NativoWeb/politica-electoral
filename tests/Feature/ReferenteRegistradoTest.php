@@ -21,7 +21,7 @@ class ReferenteRegistradoTest extends TestCase
     {
         parent::setUp();
         $this->setUpEventos();
-        $this->user = $this->eventUser(Campaign::DEFAULT_ID, ['view.mapa', 'view.votantes']);
+        $this->user = $this->eventUser(Campaign::DEFAULT_ID, ['view.mapa', 'view.votantes', 'write.data']);
     }
 
     public function test_crear_lider_rejects_a_referente_nobody_has(): void

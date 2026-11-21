@@ -120,8 +120,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::get('/votantes/{id}/referidos', [VotanteController::class, 'referidos'])->name('votantes.referidos');
     });
 
-    // Write routes — require can.write middleware (#4 RBAC)
-    Route::middleware('can.write')->group(function () {
+    // Write routes — require can.write middleware (#4 RBAC) and the write.data permission (H1: the role alone is not enough).
+    Route::middleware(['can.write', 'permission:write.data'])->group(function () {
         Route::middleware('permission:view.mapa')->group(function () {
             Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store')->middleware('offline.owner');
             Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update')->middleware(['offline.owner', 'person.resolve']);
