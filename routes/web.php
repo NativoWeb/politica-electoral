@@ -6,8 +6,8 @@ use App\Http\Controllers\Admin\CatalogCrudController;
 use App\Http\Controllers\Admin\ConfiguracionController;
 use App\Http\Controllers\Admin\EleccionCrudController;
 use App\Http\Controllers\Admin\PersonCrudController;
-use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Admin\WhatsAppAnalyticsController;
+use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Admin\WhatsAppTemplateController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
@@ -383,6 +383,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::post('/{fuente}/lista', [ReportesController::class, 'lista'])->name('lista')->where('fuente', '[a-z_]{1,40}');
         });
         Route::post('/{fuente}/excel', [ReportesController::class, 'excel'])->name('descargar.excel')->where('fuente', '[a-z_]{1,40}');
+        Route::post('/{fuente}/pdf', [ReportesController::class, 'pdf'])->name('descargar.pdf')->where('fuente', '[a-z_]{1,40}');
     });
 
     // Exports

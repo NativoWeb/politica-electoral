@@ -390,7 +390,7 @@ export function sinChip(filtros, chip) {
 export const numero = (n) => (Number(n) || 0).toLocaleString('es-CO');
 export const personas = (n) => `${numero(n)} ${Number(n) === 1 ? 'persona' : 'personas'}`;
 
-export function mensajeError(error, accion = 'consulta') {
+export function mensajeError(error, accion = 'consulta', formato = 'excel') {
     const status = error?.status ?? 0;
     if (status === 401 || status === 419) return 'La página estuvo abierta mucho tiempo. Recárgala e intenta de nuevo.';
     if (accion === 'descarga') {
@@ -404,6 +404,11 @@ export function mensajeError(error, accion = 'consulta') {
         }
         if (status === 403) return 'No tienes permiso para descargar estos datos.';
         if (status === 422) return 'No se pudo armar el archivo con estos datos. Revisa los datos elegidos e intenta de nuevo.';
+        if (status >= 500) {
+            return formato === 'pdf'
+                ? 'No pudimos preparar el archivo. Prueba con menos filas o usa el Excel.'
+                : 'No pudimos preparar el archivo. Prueba con menos filas.';
+        }
         return 'No se pudo descargar. Revisa tu conexión e intenta de nuevo.';
     }
     if (status === 403) return 'No tienes permiso para ver estos datos. Pídeselo a tu administrador.';
@@ -465,19 +470,31 @@ export function nombreArchivo(contentDisposition, fallback) {
     return plain ? plain[1] : fallback;
 }
 
-export function nombreSugerido(chips, fecha = new Date()) {
+export const FORMATOS = {
+    excel: { ruta: 'excel', extension: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    pdf: { ruta: 'pdf', extension: 'pdf', mime: 'application/pdf' },
+};
+
+// The PDF only fits this many columns per person (contract B-2); the server keeps the first ones of the spec.
+export const PDF_MAX_COLUMNAS = 8;
+
+export function nombreSugerido(chips, fecha = new Date(), extension = 'xlsx') {
     const partes = chips.slice(0, 3).map(c => c.texto.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '')).filter(Boolean);
     const dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(fecha);
-    return `Reporte_${partes.length ? partes.join('_') : 'Personas'}_${dia}.xlsx`;
+    return `Reporte_${partes.length ? partes.join('_') : 'Personas'}_${dia}.${extension}`;
 }
 
-export async function descargarExcel(spec) {
+export const descargarExcel = (spec) => descargarArchivo(spec, 'excel');
+export const descargarPdf = (spec) => descargarArchivo(spec, 'pdf');
+
+export async function descargarArchivo(spec, formato) {
+    const f = FORMATOS[formato];
     let res;
     try {
-        res = await apiFetch(`/reportes/${encodeURIComponent(spec.fuente)}/excel`, {
+        res = await apiFetch(`/reportes/${encodeURIComponent(spec.fuente)}/${f.ruta}`, {
             method: 'POST',
             body: JSON.stringify({ spec }),
-            headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json' },
+            headers: { Accept: `${f.mime}, application/json` },
         });
     } catch {
         throw { status: 0 };

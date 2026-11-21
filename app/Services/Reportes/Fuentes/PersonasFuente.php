@@ -471,8 +471,11 @@ class PersonasFuente implements Fuente
 
         if ($busqueda !== '') {
             $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $busqueda);
+            // The cédula is personal data: only searched with export.datos_personales.
+            $user = $this->user();
+            $porCedula = $user !== null && ReporteService::puedeDatosPersonales($user);
             $q->where(fn ($w) => $w->where('lideres.nombre', self::like(), "%{$escaped}%")
-                ->orWhere('lideres.cedula', 'like', "%{$escaped}%"));
+                ->when($porCedula, fn ($x) => $x->orWhere('lideres.cedula', 'like', "%{$escaped}%")));
         }
 
         return $q;
@@ -493,6 +496,22 @@ class PersonasFuente implements Fuente
     public function contar(ReportSpec $spec, User $user): int
     {
         return $this->consulta($spec->filtros, $spec->busqueda)->toBase()->count();
+    }
+
+    public function porMunicipio(ReportSpec $spec, User $user, int $primeros): array
+    {
+        $nombre = 'coalesce(gm.canonical_name, lideres.municipio)';
+        $grupos = $this->consulta($spec->filtros, $spec->busqueda)->toBase()
+            ->leftJoin('geographic_units as gm', 'gm.id', '=', 'lideres.geographic_unit_id')
+            ->selectRaw("{$nombre} as nombre, count(*) as total")
+            ->groupBy(DB::raw($nombre))
+            ->orderByDesc('total')->orderBy('nombre')
+            ->limit($primeros)
+            ->get();
+
+        $municipios = $grupos->map(fn ($g) => ['nombre' => self::texto($g->nombre) ?? 'Sin municipio', 'total' => (int) $g->total])->all();
+
+        return ['municipios' => $municipios, 'otros' => max(0, $this->contar($spec, $user) - array_sum(array_column($municipios, 'total')))];
     }
 
     // ---------------------------------------------------------------- rows
@@ -735,10 +754,21 @@ class PersonasFuente implements Fuente
             $partes[] = $nombres($f['grupo'], array_column($this->campaign()->visibleCampaigns(), 'name', 'id'));
         }
         if ($spec->busqueda !== '') {
-            $partes[] = "Búsqueda «{$spec->busqueda}»";
+            $partes[] = self::busquedaEnPalabras($spec->busqueda);
         }
 
         return $partes;
+    }
+
+    // A search that looks like a document (5 or more digits) is never printed whole: file, cover and title.
+    public static function busquedaEnPalabras(string $busqueda): string
+    {
+        $digitos = preg_replace('/\D/', '', $busqueda);
+        if (strlen($digitos) >= 5) {
+            return 'Búsqueda por documento terminado en '.substr($digitos, -4);
+        }
+
+        return "Búsqueda «{$busqueda}»";
     }
 
     // ---------------------------------------------------------------- options

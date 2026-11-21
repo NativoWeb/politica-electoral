@@ -68,8 +68,9 @@ class AjusteRegistry
                 'etiqueta' => 'Máximo de filas al descargar un reporte en Excel',
                 'descripcion' => 'Módulo Reportes. Por encima del máximo el archivo trae las primeras filas y avisa que se cortó.',
             ],
+            // 700: a PDF of 700 rows with 8 long columns peaks near 256 MB (docs/reportes.md, rendimiento).
             'reportes.pdf_max_filas' => [
-                'grupo' => 'exportaciones', 'tipo' => 'int', 'min' => 50, 'max' => 2000,
+                'grupo' => 'exportaciones', 'tipo' => 'int', 'min' => 50, 'max' => DescargaGuard::PDF_MAX_FILAS_TOPE,
                 'default' => DescargaGuard::PDF_MAX_FILAS, 'unidad' => 'filas',
                 'etiqueta' => 'Máximo de filas al descargar un reporte en PDF',
                 'descripcion' => 'Módulo Reportes. Un PDF con muchas filas tarda y pesa: para más, use Excel.',

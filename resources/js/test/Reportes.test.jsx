@@ -141,6 +141,11 @@ describe('lib/reportes: the one adapter to the contract', () => {
         expect(mensajeError({ status: 403 }, 'descarga')).toBe('No tienes permiso para descargar estos datos.');
         expect(mensajeError({ status: 0 }, 'descarga')).toBe('No se pudo descargar. Revisa tu conexión e intenta de nuevo.');
         expect(mensajeError({ status: 0 }, 'conteo')).toBe('No pudimos contar. Revisa tu conexión.');
+        expect(mensajeError({ status: 0 }, 'descarga', 'pdf')).toBe('No se pudo descargar. Revisa tu conexión e intenta de nuevo.');
+        expect(mensajeError({ status: 500 }, 'descarga', 'pdf')).toBe('No pudimos preparar el archivo. Prueba con menos filas o usa el Excel.');
+        expect(mensajeError({ status: 503 }, 'descarga', 'pdf')).toBe('No pudimos preparar el archivo. Prueba con menos filas o usa el Excel.');
+        expect(mensajeError({ status: 500 }, 'descarga', 'excel')).toBe('No pudimos preparar el archivo. Prueba con menos filas.');
+        expect(mensajeError({ status: 504 }, 'descarga')).toBe('No pudimos preparar el archivo. Prueba con menos filas.');
         expect(nombreArchivo("attachment; filename*=UTF-8''Reporte_Gran_elector_2026-11-20.xlsx", 'x.xlsx')).toBe('Reporte_Gran_elector_2026-11-20.xlsx');
     });
 });
@@ -313,6 +318,149 @@ describe('BotonDescarga', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Descargar las primeras 50.000' }));
         expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
+
+    const pdfOk = () => new Response(new Blob(['%PDF']), { status: 200, headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="Reporte_Bucaramanga_2026-11-20.pdf"',
+        'X-Reporte-Filas': '10', 'X-Reporte-Total': '10', 'X-Reporte-Recortado': '0',
+    } });
+    const OCHO = ['Nombre', 'Municipio', 'Barrio', 'Tipo', 'Edad', 'Género', 'Partido', 'Cargo'];
+
+    it('Descargar PDF posts the spec to the pdf endpoint and names the .pdf file', async () => {
+        render(<BotonDescarga spec={spec} total={10} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        const [url, opciones] = globalThis.fetch.mock.calls[0];
+        expect(url).toBe('/reportes/personas/pdf');
+        expect(opciones.method).toBe('POST');
+        expect(new Headers(opciones.headers).get('Accept')).toContain('application/pdf');
+        expect(bodyOf(globalThis.fetch.mock.calls[0])).toEqual({ spec });
+
+        await act(async () => { resolver(pdfOk()); });
+        expect(await screen.findByText('Listo. Se descargó «Reporte_Bucaramanga_2026-11-20.pdf».')).toBeInTheDocument();
+        expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    });
+
+    it('without Content-Disposition the PDF falls back to a .pdf name', async () => {
+        render(<BotonDescarga spec={spec} total={10} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        await act(async () => { resolver(new Response(new Blob(['%PDF']), { status: 200, headers: { 'Content-Type': 'application/pdf' } })); });
+        expect(await screen.findByText(/^Listo\. Se descargó «Reporte_Bucaramanga_\d{4}-\d{2}-\d{2}\.pdf»\.$/)).toBeInTheDocument();
+    });
+
+    it('above the PDF cap asks first, with the PDF, Excel and Volver choices', () => {
+        render(<BotonDescarga spec={spec} total={1646} tope={50000} topePdf={500} columnas={['Nombre', 'Municipio']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        const dialogo = screen.getByRole('dialog');
+        expect(dialogo).toHaveTextContent('Tu lista tiene 1.646 personas. El PDF trae las primeras 500. Para tenerlas todas, descarga el Excel.');
+        expect(dialogo).not.toHaveTextContent('datos por persona');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+
+        fireEvent.click(within(dialogo).getByRole('button', { name: 'Volver' }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF con las primeras 500' }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(globalThis.fetch.mock.calls.map(c => c[0])).toEqual(['/reportes/personas/pdf']);
+    });
+
+    it('with more than 8 columns says which 8 go in the PDF; Descargar Excel downloads the Excel', () => {
+        render(<BotonDescarga spec={spec} total={10} tope={50000} topePdf={500} columnas={[...OCHO, 'Teléfono']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        const dialogo = screen.getByRole('dialog');
+        expect(dialogo).toHaveTextContent(`El PDF solo cabe con 8 datos por persona. Saldrán: ${OCHO.join(', ')}. Para ver todos, usa el Excel.`);
+        expect(dialogo).not.toHaveTextContent('Teléfono');
+        expect(dialogo).not.toHaveTextContent('Tu lista tiene');
+        expect(within(dialogo).getByRole('button', { name: 'Descargar PDF' })).toBeInTheDocument();
+
+        fireEvent.click(within(dialogo).getByRole('button', { name: 'Descargar Excel' }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(globalThis.fetch.mock.calls.map(c => c[0])).toEqual(['/reportes/personas/excel']);
+    });
+
+    it('exactly 8 columns and a list at the cap download the PDF without asking', () => {
+        render(<BotonDescarga spec={spec} total={500} tope={50000} topePdf={500} columnas={OCHO} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(globalThis.fetch.mock.calls.map(c => c[0])).toEqual(['/reportes/personas/pdf']);
+    });
+
+    it('over the cap and over 8 columns shows a single dialog with both notices', () => {
+        render(<BotonDescarga spec={spec} total={1646} tope={50000} topePdf={500} columnas={[...OCHO, 'Teléfono']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        const dialogos = screen.getAllByRole('dialog');
+        expect(dialogos).toHaveLength(1);
+        expect(dialogos[0]).toHaveTextContent('Tu lista tiene 1.646 personas. El PDF trae las primeras 500.');
+        expect(dialogos[0]).toHaveTextContent('El PDF solo cabe con 8 datos por persona.');
+        fireEvent.click(within(dialogos[0]).getByRole('button', { name: 'Descargar PDF con las primeras 500' }));
+        expect(globalThis.fetch.mock.calls.map(c => c[0])).toEqual(['/reportes/personas/pdf']);
+    });
+
+    it('the Excel cap still asks when Descargar Excel is chosen from the PDF dialog', () => {
+        render(<BotonDescarga spec={spec} total={62300} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Descargar Excel' }));
+        const dialogos = screen.getAllByRole('dialog');
+        expect(dialogos).toHaveLength(1);
+        expect(dialogos[0]).toHaveTextContent('El Excel trae las primeras 50.000.');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('one download at a time: while the Excel is prepared the PDF button is disabled and sends nothing', async () => {
+        render(<BotonDescarga spec={spec} total={10} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar Excel/ }));
+        const pdf = screen.getByRole('button', { name: /Descargar PDF/ });
+        expect(pdf).toBeDisabled();
+        fireEvent.click(pdf);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(screen.getAllByRole('button', { name: /Preparando tu archivo…/ })).toHaveLength(1);
+
+        await act(async () => { resolver(new Response(new Blob(['x']), { status: 200, headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } })); });
+        await waitFor(() => expect(screen.getByRole('button', { name: /Descargar PDF/ })).toBeEnabled());
+
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        expect(screen.getByRole('button', { name: /Descargar Excel/ })).toBeDisabled();
+        expect(globalThis.fetch.mock.calls.map(c => c[0])).toEqual(['/reportes/personas/excel', '/reportes/personas/pdf']);
+    });
+
+    it('a 429 on the PDF says it in plain words and lets the user try again', async () => {
+        render(<BotonDescarga spec={spec} total={10} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        await act(async () => { resolver(new Response(JSON.stringify({ success: false, message: 'Demasiadas.', motivo: 'seguidas' }), { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '60' } })); });
+        expect(await screen.findByRole('alert')).toHaveTextContent('Pediste varias descargas seguidas. Espera un minuto y vuelve a intentarlo.');
+        expect(screen.getByRole('button', { name: /Descargar PDF/ })).toBeEnabled();
+        expect(screen.getByRole('button', { name: /Descargar Excel/ })).toBeEnabled();
+    });
+
+    it('a PDF answered as JSON with 200, a 500, a 419 and a network failure are errors, not files', async () => {
+        render(<BotonDescarga spec={spec} total={10} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} />);
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        await act(async () => { resolver(new Response(JSON.stringify({ success: false }), { status: 200, headers: { 'Content-Type': 'application/json' } })); });
+        expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos preparar el archivo. Prueba con menos filas o usa el Excel.');
+
+        fireEvent.click(screen.getByRole('button', { name: /Descargar Excel/ }));
+        await act(async () => { resolver(new Response('<html>Server Error</html>', { status: 500, headers: { 'Content-Type': 'text/html' } })); });
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No pudimos preparar el archivo. Prueba con menos filas.'));
+        expect(screen.getByRole('alert')).not.toHaveTextContent('usa el Excel');
+
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        await act(async () => { resolver(new Response('', { status: 419 })); });
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('La página estuvo abierta mucho tiempo. Recárgala e intenta de nuevo.'));
+
+        globalThis.fetch = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No se pudo descargar. Revisa tu conexión e intenta de nuevo.'));
+        expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    });
+
+    it('an empty list disables both buttons', () => {
+        render(<BotonDescarga spec={spec} total={0} tope={50000} topePdf={500} columnas={['Nombre']} chips={chips} vacia />);
+        expect(screen.getByRole('button', { name: /Descargar Excel/ })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /Descargar PDF/ })).toBeDisabled();
+    });
 });
 
 describe('Reportes page', () => {
@@ -335,6 +483,37 @@ describe('Reportes page', () => {
         expect(router.push).toHaveBeenCalledTimes(1);
         expect(await screen.findByRole('button', { name: 'Persona 0' })).toBeInTheDocument();
         expect(bodyOf(calls('/reportes/personas/lista')[0]).spec.filtros).toEqual({ marcas: ['gran_elector'] });
+    });
+
+    it('step 4 offers the PDF next to the Excel and sends the same spec the list uses', async () => {
+        mockApi();
+        render(<ReportesIndex {...PAGE_PROPS} />);
+        fireEvent.click(screen.getByRole('button', { name: /Grandes electores/ }));
+        expect(await screen.findByRole('button', { name: 'Persona 0' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Descargar Excel/ })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        await waitFor(() => expect(calls('/reportes/personas/pdf')).toHaveLength(1));
+        expect(bodyOf(calls('/reportes/personas/pdf')[0]).spec).toEqual(bodyOf(calls('/reportes/personas/lista')[0]).spec);
+    });
+
+    it('while the list total is still loading both downloads are disabled, so the cap dialog is never skipped', async () => {
+        let soltar;
+        mockApi({ lista: () => new Promise(r => { soltar = r; }) });
+        render(<ReportesIndex {...PAGE_PROPS} topes={{ excel: 50000, pdf: 500 }} />);
+        fireEvent.click(screen.getByRole('button', { name: /Grandes electores/ }));
+        expect(await screen.findByText('Cargando…')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Descargar Excel/ })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /Descargar PDF/ })).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        expect(calls('/pdf')).toHaveLength(0);
+
+        await waitFor(() => expect(soltar).toBeTypeOf('function'), { timeout: 1500 });
+        await act(async () => { soltar(await jsonResponse({ success: true, total: 1646, pagina: 1, por_pagina: 50, filas: filasDe(3) })); });
+        await waitFor(() => expect(screen.getByRole('button', { name: /Descargar PDF/ })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: /Descargar PDF/ }));
+        expect(screen.getByRole('dialog')).toHaveTextContent('Tu lista tiene 1.646 personas. El PDF trae las primeras 500.');
+        expect(calls('/pdf')).toHaveLength(0);
     });
 
     it('the events shortcut sends eventos_min as a number', async () => {

@@ -176,6 +176,7 @@ export default function ReportesIndex({ fuentes: fuentesRaw = [], puedeDatosPers
                             fuente={fuente}
                             chips={chips}
                             tope={Number(topes?.excel) || 0}
+                            topePdf={Number(topes?.pdf) || 0}
                             puedeDatosPersonales={puede}
                             puedeMapa={puedeMapa}
                             fichaProps={{ cargosPorTipo, cargoCategorias, municipios }}

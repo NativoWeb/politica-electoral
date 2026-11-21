@@ -24,6 +24,9 @@ class DescargaGuard
 
     public const PDF_MAX_FILAS = 500;
 
+    // The most the ajuste may be set to: DomPDF keeps every cell in memory.
+    public const PDF_MAX_FILAS_TOPE = 700;
+
     public const LIMITADOR = 'reportes-descarga';
 
     public const POR_MINUTO = 5;
@@ -79,6 +82,9 @@ class DescargaGuard
         if (! $lock->get()) {
             ReporteException::lanzar(429, self::EN_CURSO, [], ['motivo' => 'en_curso']);
         }
+        // A fatal error (out of memory while building a PDF) skips the catch below: free the lock when the script ends.
+        // Releasing twice is harmless, the lock checks its owner.
+        register_shutdown_function(fn () => $lock->release());
 
         try {
             $this->consumirCupo($request);

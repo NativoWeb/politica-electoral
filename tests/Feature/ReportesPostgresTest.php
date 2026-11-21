@@ -9,6 +9,7 @@ use App\Services\Configuracion\Ajuste;
 use App\Services\Reportes\Fuentes\PersonasFuente;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 use OpenSpout\Reader\XLSX\Reader;
@@ -563,6 +564,41 @@ class ReportesPostgresTest extends TestCase
         $rows = $this->excel($this->admin, $this->spec([], ['nombre', 'municipio', 'barrio', 'votos']));
         $datos = collect(array_slice($rows, 4))->keyBy(0);
         $this->assertSame(['Escrito sin tilde', 'Girón Reportes', '', 0], $datos['Escrito sin tilde']);
+    }
+
+    public function test_the_pdf_breaks_down_the_whole_list_by_municipio_and_is_audited(): void
+    {
+        $vista = null;
+        View::composer('reportes.lista', function ($view) use (&$vista) {
+            $vista = $view->getData();
+        });
+        $this->ficha('Ana Girón', ['gran_elector' => true, 'cedula' => '0123']);
+        $this->ficha('Bea Girón', ['gran_elector' => true, 'municipio' => 'Giron a mano']);
+        $this->ficha('Caro Buca', ['gran_elector' => true, 'geographic_unit_id' => $this->buca]);
+        $this->ficha('Dani Sin unidad', ['gran_elector' => true, 'geographic_unit_id' => null, 'municipio' => 'Texto suelto']);
+        $this->ficha('Eva No', ['gran_elector' => false]);
+        $now = now()->toDateTimeString();
+        DB::table('ajustes')->insert(['clave' => 'reportes.pdf_max_filas', 'valor' => json_encode(50), 'tipo' => 'int', 'created_at' => $now, 'updated_at' => $now]);
+        Ajuste::olvidar();
+
+        $response = $this->actingAs($this->admin)->postJson('/reportes/personas/pdf', ['spec' => $this->spec(['marcas' => ['gran_elector']], ['nombre', 'cedula', 'municipio'])])
+            ->assertOk();
+
+        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertSame('4', $response->headers->get('X-Reporte-Filas'));
+        $this->assertSame('Grupo Reportes', $vista['grupo']);
+        $this->assertNull($vista['logo']);
+        $this->assertSame([
+            ['nombre' => 'Girón Reportes', 'total' => 2],
+            ['nombre' => 'Bucaramanga Reportes', 'total' => 1],
+            ['nombre' => 'Texto suelto', 'total' => 1],
+        ], $vista['desglose']['municipios']);
+        $this->assertSame(0, $vista['desglose']['otros']);
+        $this->assertSame(['nombre' => 'Ana Girón', 'cedula' => '0123', 'municipio' => 'Girón Reportes'], $vista['filas'][0]);
+        $log = AuditLog::where('user_id', $this->admin->id)->where('action', 'EXPORT reportes.personas.pdf')->sole();
+        $this->assertSame(4, $log->metadata['total']);
+        $this->assertTrue($log->metadata['con_datos_personales']);
+        $this->assertSame(1, AuditLog::where('user_id', $this->admin->id)->count());
     }
 
     public function test_the_excel_columns_have_readable_widths(): void

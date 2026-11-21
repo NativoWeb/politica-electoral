@@ -41,7 +41,7 @@ function Paginacion({ pagina, total, porPagina, onPagina }) {
 // Step 4: the list itself. The ficha opens on top; closing it reloads the same page of the same spec
 // (the rows stay on screen meanwhile, so the scroll does not jump).
 export default function ListaReporte({
-    spec, estado, fuente, chips, tope, puedeDatosPersonales, puedeMapa, fichaProps, nota = '',
+    spec, estado, fuente, chips, tope, topePdf, puedeDatosPersonales, puedeMapa, fichaProps, nota = '',
     onBusqueda, onOrden, onPagina, onCambiarPaso,
 }) {
     const id = useId();
@@ -158,7 +158,15 @@ export default function ListaReporte({
                     </div>
                 </div>
                 <div>
-                    <BotonDescarga spec={spec} total={total ?? 0} tope={tope} chips={chips} vacia={total === 0} />
+                    <BotonDescarga
+                        spec={spec}
+                        total={total ?? 0}
+                        tope={tope}
+                        topePdf={topePdf}
+                        columnas={columnas.map(c => c.etiqueta)}
+                        chips={chips}
+                        vacia={!total}
+                    />
                     {!puedeDatosPersonales && (
                         <p className="mt-1 text-base text-ink-soft max-w-xs">Tu descarga no incluye cédula, teléfono ni dirección.</p>
                     )}

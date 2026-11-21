@@ -1,6 +1,6 @@
 # Módulo Reportes
 
-Constructor de listas (Etapa B-1): fuente **Personas**, conteo en vivo, lista paginada con ficha editable y descarga Excel en streaming. Siguientes etapas: B-2 PDF institucional; B-3 fuentes Eventos/asistencia, Compromisos/actas y Empresarios/gremios; fase 2 reportes guardados y gráficos.
+Constructor de listas (Etapa B-1): fuente **Personas**, conteo en vivo, lista paginada con ficha editable y descarga Excel en streaming. Etapa B-2: PDF institucional. Siguientes etapas: B-3 fuentes Eventos/asistencia, Compromisos/actas y Empresarios/gremios; fase 2 reportes guardados y gráficos.
 
 ## Permisos
 
@@ -17,6 +17,7 @@ Constructor de listas (Etapa B-1): fuente **Personas**, conteo en vivo, lista pa
 | `POST /reportes/{fuente}/conteo` | `{spec}` | `{success, total}` |
 | `POST /reportes/{fuente}/lista` | `{spec, pagina}` | `{success, total, pagina, por_pagina:50, columnas, filas:[{id, editable, celdas}]}` |
 | `POST /reportes/{fuente}/excel` | `{spec}` | `.xlsx` en streaming; cabeceras `X-Reporte-Filas`, `X-Reporte-Total`, `X-Reporte-Recortado` |
+| `POST /reportes/{fuente}/pdf` | `{spec}` | `application/pdf`; mismas cabeceras que el Excel y, si se pidieron más de 8 columnas, `X-Reporte-Columnas-Omitidas` (claves separadas por coma) |
 | `GET /reportes/opciones/{barrios\|partidos\|profesiones\|referentes\|eventos}?q=&municipios[]=` | — | `{success, opciones:[{valor, etiqueta}]}` (máx. 50) |
 
 `referentes` exige `q` ≥ 2 letras; `valor` es el id de la ficha.
@@ -34,6 +35,7 @@ Errores `{success:false, message}` (+ `errors` en 422, `motivo` en 429): 401 sin
 
 - Filtro desconocido o valor fuera de la lista blanca → se descarta en silencio. Territorio y grupo político siempre se aplican en el servidor.
 - «O» dentro de un filtro, «Y» entre filtros. Fallecidos e inactivos excluidos por defecto.
+- `busqueda` mira el nombre; la cédula solo con `export.datos_personales`. En títulos, filtros en palabras, portada y Excel, una búsqueda con 5 o más dígitos sale como «Búsqueda por documento terminado en 5432» (nunca entera); el nombre del archivo no lleva la búsqueda.
 - El referente se elige por id de ficha; el servidor resuelve la cédula. Un referente fuera del grupo o del territorio del usuario se descarta (ni filtra ni aparece nombrado en el Excel).
 
 ## Props de la página
@@ -74,19 +76,29 @@ Errores `{success:false, message}` (+ `errors` en 422, `motivo` en 429): 401 sin
 | Eventos | `eventos`, `ultimo_evento` |
 | Sistema | `autoriza_datos`, `origen`, `por_completar`, `grupo`, `observacion`🔒 |
 
+## PDF (B-2)
+
+- Vista `resources/views/reportes/lista.blade.php`, A4 horizontal, DejaVu Sans. Portada: banda #003B71 con el mismo título del Excel, grupo político del usuario y logo del Centro Democrático (solo para su grupo y subgrupos, incrustado desde `public/img/partidos`), «Generado por Nombre, 20/11/2026 3:40 p. m.» (hora de Bogotá), filtros en palabras, total, los 10 municipios con más personas + «Otros» (sobre la lista completa, no solo las filas impresas) y el aviso de recorte «Este PDF muestra las primeras N de M personas. Para tenerlas todas, descarga el Excel.».
+- Tabla: máximo 8 columnas en el orden elegido (las demás se nombran en `X-Reporte-Columnas-Omitidas` y en `metadata.columnas_omitidas`), encabezado repetido en cada página, zebra, 9 pt. Se arma en tablas de 50 filas: una sola tabla larga le cuesta a DomPDF ~1,6 veces la memoria.
+- Pie en todas las páginas (canvas `page_text`, sin PHP en la plantilla): «Contiene datos personales: uso exclusivo del grupo político (Ley 1581).» y «Página X de Y». Siempre, también sin columnas sensibles: el nombre ya es dato personal.
+- `isRemoteEnabled`, `isPhpEnabled` e `isJavascriptEnabled` apagados; los datos solo con `{{ }}`.
+- El permiso de columnas sensibles se revisa sobre todo lo pedido (también lo que pasa de la octava columna).
+
 ## Descargas (DescargaGuard)
 
 - Una a la vez por usuario (candado de 180 s); 5 por minuto y 30 por hora, cupo compartido con `/exportar/*`, fijo en código.
-- Fila de auditoría `EXPORT reportes.personas.excel` (`entity_type=reporte`) escrita antes de enviar el archivo, con `metadata` {fuente, formato, spec, columnas, filas, total, recortado, con_datos_personales, ruta}. La búsqueda se guarda solo con sus últimos 4 dígitos. `AuditActivity` no registra la descarga otra vez ni el conteo ni la lista (lecturas, una por chip tocado).
+- Fila de auditoría `EXPORT reportes.personas.excel` o `EXPORT reportes.personas.pdf` (`entity_type=reporte`) escrita antes de enviar el archivo, con `metadata` {fuente, formato, spec, columnas, filas, total, recortado, con_datos_personales, ruta}. La búsqueda se guarda solo con sus últimos 4 dígitos. `AuditActivity` no registra la descarga otra vez ni el conteo ni la lista (lecturas, una por chip tocado).
 - `/exportar/*` audita `EXPORT exportar.{source}.{excel|pdf}` con las columnas que de verdad lleva el archivo (`nombre` si todas eran personales; las de Gobernador si es Gobernador) y `columnas_quitadas`.
 - El Excel de Reportes deja vacías las celdas sin dato (no «—») y trae anchos legibles (nombre 35, el resto según su etiqueta, 12–40). Municipio y provincia salen de la unidad geográfica de la ficha (`geographic_unit_id`), con el texto guardado solo si no tiene unidad; el orden por municipio usa el mismo nombre.
 - `/exportar/*` de Mapa y Votantes sin el permiso: la primera fila del archivo (y el PDF) dice «Este archivo no incluye cédula, teléfono ni dirección: requiere el permiso Descargar datos personales.» y la respuesta trae `X-Columnas-Quitadas: telefono,observacion` (claves quitadas, separadas por coma).
-- Topes en Centro de configuración: `reportes.excel_max_filas` (50.000), `reportes.pdf_max_filas` (500).
+- Topes en Centro de configuración: `reportes.excel_max_filas` (50.000), `reportes.pdf_max_filas` (500; de 50 a 700, ver Bench). El cupo (una a la vez, 5/min, 30/hora) es el mismo para Excel y PDF.
 - Pendiente de pasar por el guardián (fuera de B-1): `/eventos/{id}/asistentes.xlsx`, `/eventos/territorio/excel`, `/eventos/compromisos.xlsx`, `/empresarios/exportar.*`, PDF de ficha.
 
 ## Bench
 
 Solo contra una BD cuyo nombre termine en `_load`: `php artisan reportes:bench --seed=130000` (datos sintéticos); `--purge` borra lo sembrado.
+
+PDF (2026-11-20, datos sintéticos, 8 columnas con textos de 2 líneas, proceso de test con 58 MB de base): 500 filas 3,2 s y 172 MB; 700 filas con observación de ~300 caracteres 6,9 s y 254 MB; 1.000 filas 262 MB (330 MB con observación); 2.000 filas 20 s y 428 MB. Por eso el máximo del ajuste bajó de 2.000 a 700: DomPDF guarda cada celda en memoria y `raiseMemoryLimit()` da 256 MB. Un valor guardado por encima de 700 se ignora (rige el de por defecto, 500).
 
 ## ADR
 

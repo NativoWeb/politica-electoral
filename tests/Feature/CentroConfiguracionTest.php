@@ -211,6 +211,14 @@ class CentroConfiguracionTest extends TestCase
         $this->assertSame(['editar', 'restablecer'], ConfigCambio::orderBy('created_at')->pluck('accion')->all());
     }
 
+    public function test_the_pdf_cap_of_reportes_stops_where_dompdf_still_fits_in_memory(): void
+    {
+        $this->actingAs($this->super)->putJson('/admin/configuracion/ajustes/reportes.pdf_max_filas', ['valor' => 701])
+            ->assertStatus(422)->assertJsonPath('errors.valor.0', 'El valor máximo es 700.');
+        $this->actingAs($this->super)->putJson('/admin/configuracion/ajustes/reportes.pdf_max_filas', ['valor' => 700])->assertOk();
+        $this->assertSame(700, Ajuste::int('reportes.pdf_max_filas'));
+    }
+
     public function test_ajustes_rule_the_code_that_used_constants(): void
     {
         config(['services.n8n.whatsapp_max_recipients' => 1234]);

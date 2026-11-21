@@ -36,6 +36,9 @@ interface Fuente
 
     public function contar(ReportSpec $spec, User $user): int;
 
+    // The $primeros municipios with the most people, over the whole list: {municipios: [{nombre, total}], otros}.
+    public function porMunicipio(ReportSpec $spec, User $user, int $primeros): array;
+
     // [{id, editable, celdas}] of one page, in the spec's order.
     public function pagina(ReportSpec $spec, User $user, int $pagina, int $porPagina): array;
 
