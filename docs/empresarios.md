@@ -11,6 +11,7 @@ rol), la afiliación **empresa ↔ gremio**, las **actas de reunión** con compr
 | `view.empresarios` | Ver el listado, la ficha (datos, miembros, gremios/empresas, actas), descargar actas, ver compromisos de organizaciones y exportar Excel/PDF. |
 | `manage.empresarios` | Todo lo anterior + crear, editar, borrar, miembros, catálogos de sectores, cargar Excel, actas (crear, editar, confirmar, borrar borradores) y seguimiento de sus compromisos. |
 | `delete.actas` | (Existente) junto con `manage.empresarios`, eliminar un acta **confirmada** de una organización. |
+| `edit.actas` | (2026-11-22) junto con `manage.empresarios`, **corregir** un acta confirmada de una organización activa (`PUT /empresarios/{id}/actas/{acta}/correccion`, ver `docs/eventos-api.md` §14). |
 
 Se otorgan como los demás: solo se da lo que se tiene; el superadmin tiene todo (`*`). El ítem de menú aparece con
 `view.empresarios` o `manage.empresarios`. Un usuario cuyo único permiso de vista es este aterriza en `/empresarios`.
@@ -116,6 +117,10 @@ de exactamente uno en PostgreSQL. Las actas de eventos no cambian (mismo contrat
   con ningún rol, como **miembro con rol Otro** (`event_acta_participantes.created_miembro`). No hay asistentes.
   Resumen `{participantes, vinculados, fichas_creadas, miembros_nuevos, compromisos, responsables_vinculados}`.
 - **Eliminar confirmada** (`delete.actas`): quita las membresías que creó y las fichas que creó si no tienen otra actividad.
+- **Corregir confirmada** (`edit.actas`, 2026-11-22): mismas reglas que en §14 de eventos; un participante agregado queda
+  como miembro (rol Otro) si no lo era; uno quitado pierde solo la membresía que creó esta acta (si ninguna otra fila de
+  la misma acta tiene esa ficha); su ficha nunca se borra. Resumen con `miembros_nuevos`/`miembros_quitados`. Una
+  organización inactiva → 422 `organizacion`. Auditoría `ORGANIZACION_ACTA_CORREGIDA`.
 - Archivos en `storage/app/private/empresarios/actas/{organizacion}/`.
 - **Compromisos** (`/eventos/compromisos`, campanita y correo diario): muestran también los de organizaciones a quien tiene
   `view.empresarios`/`manage.empresarios` (los de eventos siguen exigiendo `view.eventos`/`manage.eventos`). Filtro `origen`

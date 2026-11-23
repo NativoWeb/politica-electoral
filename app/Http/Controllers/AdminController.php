@@ -61,6 +61,8 @@ class AdminController extends Controller
         ['key' => 'register.asistentes', 'label' => 'Registrar asistentes (modo operador)', 'group' => 'Eventos'],
         ['key' => 'delete.actas', 'label' => 'Eliminar actas confirmadas', 'group' => 'Eventos',
             'description' => 'Borrar un acta ya confirmada (por ejemplo, confirmada por error) y deshacer lo que creó. Requiere también Gestionar eventos.'],
+        ['key' => 'edit.actas', 'label' => 'Editar actas confirmadas', 'group' => 'Eventos',
+            'description' => 'Corregir un acta ya confirmada. Requiere también Gestionar eventos o Gestionar empresarios.'],
         ['key' => 'view.empresarios', 'label' => 'Ver empresarios y gremios', 'group' => 'Empresarios'],
         ['key' => 'manage.empresarios', 'label' => 'Gestionar empresarios y gremios (crear, editar, borrar, cargar Excel, actas)', 'group' => 'Empresarios'],
         ['key' => 'view.reportes', 'label' => 'Ver y armar reportes', 'group' => 'Reportes',

@@ -114,8 +114,9 @@ class AuditActivity
             return ['campos' => array_keys($data)];
         }
 
-        // Attendee correction: only which fields were sent, never the names, phones or address.
-        if ($request->route()?->getName() === 'eventos.asistentes.update') {
+        // Actas of events (participants' names, what the acta says) and attendee correction: only which fields were sent,
+        // never the names, phones, address or texts. The actas of organizations are covered by empresarios.* above.
+        if (str_starts_with((string) $request->route()?->getName(), 'eventos.actas.') || $request->route()?->getName() === 'eventos.asistentes.update') {
             return ['campos' => array_keys($data)];
         }
 

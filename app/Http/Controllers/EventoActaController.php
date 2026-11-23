@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Eventos\DeleteConfirmedActa;
+use App\Actions\Eventos\EditConfirmedActa;
 use App\Http\Controllers\Concerns\ScopesTerritory;
+use App\Http\Requests\Eventos\ActaCorreccionRequest;
 use App\Http\Requests\Eventos\ActaFileRequest;
 use App\Http\Requests\Eventos\ActaRequest;
 use App\Http\Requests\Eventos\ActaSuggestRequest;
@@ -138,7 +140,7 @@ class EventoActaController extends Controller
         $data = $request->validated();
 
         return response()->json(['success' => true, 'data' => $this->service->suggest(
-            $event, $data['participantes'] ?? [], $data['responsables'] ?? [],
+            $event, $data['participantes'] ?? [], $data['responsables'] ?? [], $data['municipio'] ?? null,
         )]);
     }
 
@@ -149,7 +151,7 @@ class EventoActaController extends Controller
         $acta = $this->service->save($event, null, $request->validated(), $request->user());
         $this->audit($request, 'EVENTO_ACTA_CREADA', $acta, $this->sizes($acta));
 
-        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => $this->payload($acta)], 201);
+        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => ActaPresenter::forPage($acta)], 201);
     }
 
     // PUT /eventos/{id}/actas/{acta}
@@ -160,7 +162,7 @@ class EventoActaController extends Controller
         $model = $this->service->save($event, $model, $request->validated(), $request->user());
         $this->audit($request, 'EVENTO_ACTA_ACTUALIZADA', $model, $this->sizes($model));
 
-        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => $this->payload($model)]);
+        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => ActaPresenter::forPage($model)]);
     }
 
     // POST /eventos/{id}/actas/{acta}/confirmar: writes Votantes and the attendees; the acta becomes read-only.
@@ -173,7 +175,18 @@ class EventoActaController extends Controller
         $this->audit($request, 'EVENTO_ACTA_CONFIRMADA', $model, $counts);
         Cache::forget(EventoCompromisoController::alertsKey($request));
 
-        return response()->json(['success' => true, 'message' => self::summary($counts), 'data' => $this->payload($model), 'resumen' => $counts]);
+        return response()->json(['success' => true, 'message' => self::summary($counts), 'data' => ActaPresenter::forPage($model), 'resumen' => $counts]);
+    }
+
+    // PUT /eventos/{id}/actas/{acta}/correccion: corrects a CONFIRMED acta (manage.eventos + edit.actas, EditConfirmedActa).
+    public function correct(ActaCorreccionRequest $request, string $id, string $acta, EditConfirmedActa $edit): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('edit.actas'), 403, 'No tiene permiso para corregir actas confirmadas.');
+        $event = $this->writableEvent($id);
+        [$model, $resumen] = $edit->handle($event, $this->findActa($event, $acta), $request->validated(), $request->user());
+        Cache::forget(EventoCompromisoController::alertsKey($request));
+
+        return response()->json(['success' => true, 'message' => self::correctedSummary($resumen, 'asistentes'), 'data' => ActaPresenter::forPage($model->fresh()), 'resumen' => $resumen]);
     }
 
     // DELETE /eventos/{id}/actas/{acta}: a borrador (nothing of it reached Votantes or the attendees) with manage.eventos;
@@ -212,7 +225,7 @@ class EventoActaController extends Controller
     {
         $event = $this->writableEvent($id);
         $model = $this->findActa($event, $acta);
-        ActaService::assertDraft($model);
+        $confirmada = self::assertAttachable($model, $request);
         try {
             [$path, $mime, $name] = ActaFiles::store($request->file('archivo'), "eventos/actas/{$event->id}");
         } catch (ActaFileException $e) {
@@ -220,10 +233,28 @@ class EventoActaController extends Controller
         }
         $old = $model->archivo_path;
         $model->forceFill(['archivo_path' => $path, 'archivo_mime' => $mime, 'archivo_nombre' => $name, 'updated_by' => $request->user()->id])->save();
-        ActaFiles::delete($old);
-        $this->audit($request, 'EVENTO_ACTA_ARCHIVO', $model, ['tipo' => ActaFiles::EXTENSIONS[$mime], 'reemplazo' => $old !== null]);
+        // A confirmed acta's previous original stays on disk; the audit keeps where.
+        if (! $confirmada) {
+            ActaFiles::delete($old);
+        }
+        $this->audit($request, 'EVENTO_ACTA_ARCHIVO', $model, ['tipo' => ActaFiles::EXTENSIONS[$mime], 'reemplazo' => $old !== null,
+            ...($confirmada ? ['confirmada' => true, 'archivo_anterior' => $old] : [])]);
 
-        return response()->json(['success' => true, 'message' => 'Archivo del acta guardado.', 'data' => $this->payload($model)]);
+        return response()->json(['success' => true, 'message' => 'Archivo del acta guardado.', 'data' => ActaPresenter::forPage($model)]);
+    }
+
+    // A borrador's original can always be replaced; a confirmed acta's only with edit.actas (otherwise 422, as before).
+    // Returns whether the acta is confirmed.
+    public static function assertAttachable(EventActa $acta, Request $request): bool
+    {
+        if ($acta->isDraft()) {
+            return false;
+        }
+        if (! $request->user()->hasPermission('edit.actas')) {
+            ActaService::assertDraft($acta);
+        }
+
+        return true;
     }
 
     // GET /eventos/{id}/actas/{acta}/archivo
@@ -268,6 +299,7 @@ class EventoActaController extends Controller
     private function page(CampaignEvent $event, ?EventActa $acta): Response
     {
         $editable = (bool) request()->user()?->hasPermission('manage.eventos') && $this->campaign()->isOwn($event->campaign_id);
+        $editConfirmed = $editable && $event->status !== 'cancelado' && $acta !== null && ! $acta->isDraft() && request()->user()->hasPermission('edit.actas');
 
         return Inertia::render('Eventos/Acta', [
             'evento' => [
@@ -277,13 +309,15 @@ class EventoActaController extends Controller
                 'campaign' => $event->campaign ? ['id' => $event->campaign->id, 'nombre' => $event->campaign->name] : null,
                 'municipio' => $event->municipio?->canonical_name,
             ],
-            'acta' => $acta ? $this->payload($acta) : null,
+            'acta' => $acta ? ActaPresenter::forPage($acta) : null,
+            'historial' => $acta ? ActaPresenter::historial($acta) : [],
             'defaults' => $acta ? null : $this->defaults($event),
-            'asistentes' => $editable && (! $acta || $acta->isDraft()) ? $this->attendees($event) : [],
+            'asistentes' => ($editable && (! $acta || $acta->isDraft())) || $editConfirmed ? $this->attendees($event) : [],
             'can' => [
                 'edit' => $editable && $event->status !== 'cancelado' && (! $acta || $acta->isDraft()),
                 'delete' => $editable && $acta !== null && $acta->isDraft(),
                 'delete_confirmed' => $editable && $acta !== null && ! $acta->isDraft() && request()->user()->hasPermission('delete.actas'),
+                'edit_confirmed' => $editConfirmed,
             ],
         ]);
     }
@@ -365,6 +399,26 @@ class EventoActaController extends Controller
         }
         if ($counts['compromisos'] > 0) {
             $parts[] = "{$counts['compromisos']} compromisos.";
+        }
+
+        return implode(' ', $parts);
+    }
+
+    // $quien: 'asistentes' (event) or 'miembros' (organization).
+    public static function correctedSummary(array $r, string $quien): string
+    {
+        if (! empty($r['sin_cambios'])) {
+            return 'No había cambios: el acta queda igual.';
+        }
+        $parts = ['Acta corregida.'];
+        if ($r['participantes_agregados'] || $r['participantes_quitados']) {
+            $parts[] = "{$r['participantes_agregados']} participantes agregados ({$r['fichas_creadas']} fichas nuevas, {$r['vinculados']} ya estaban en Votantes) y {$r['participantes_quitados']} quitados.";
+        }
+        if ($r[$quien.'_quitados']) {
+            $parts[] = 'Se quitaron '.$r[$quien.'_quitados']." {$quien} que había agregado esta acta; sus fichas en Votantes se conservan.";
+        }
+        if ($r['compromisos_agregados'] || $r['compromisos_editados'] || $r['compromisos_quitados']) {
+            $parts[] = "Compromisos: {$r['compromisos_agregados']} nuevos, {$r['compromisos_editados']} editados, {$r['compromisos_quitados']} quitados.";
         }
 
         return implode(' ', $parts);

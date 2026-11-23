@@ -1,13 +1,18 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { sugeridoPorNombre } from '@/lib/actas';
 import useDialogFocus from '@/lib/useDialogFocus';
 
-// "¿Es esta persona?": one question per suggestion (same phone and a word of the name). Yes links the row to the
+// "¿Es esta persona?": one question per suggestion (same phone and a word of the name, or, without cédula nor phone,
+// the same name in the same municipio: «Sugerido por nombre»). Yes links the row to the
 // ficha when the acta is confirmed; No leaves it as a new person (participant) or as text (responsable).
 // allowSkip (saving a borrador): unanswered questions stay pending; otherwise (confirming) all must be answered.
 export default function ActaSugerencias({ items, onDone, onCancel, allowSkip = false, doneLabel = 'Guardar acta' }) {
     const [answers, setAnswers] = useState({});
     const ref = useRef(null);
     useDialogFocus(ref);
+    // The title gets the focus first (read before answering), never «Sí, es esta persona».
+    const titleRef = useRef(null);
+    useEffect(() => { titleRef.current?.focus(); }, []);
     const answered = items.every((_, i) => answers[i] !== undefined);
     const answer = (i, yes) => setAnswers(prev => ({ ...prev, [i]: yes }));
 
@@ -17,14 +22,20 @@ export default function ActaSugerencias({ items, onDone, onCancel, allowSkip = f
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
                 <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="sugerencias-title" onKeyDown={e => { if (e.key === 'Escape') onCancel(); }} className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-[560px] max-h-[90vh] flex flex-col">
                     <div className="px-5 pt-5 pb-3 border-b border-[var(--color-line)]">
-                        <h3 id="sugerencias-title" className="text-[18px] font-extrabold text-[var(--color-ink)]">¿Son estas personas?</h3>
-                        <p className="text-[15px] text-[var(--color-ink-soft)] mt-1">Encontramos fichas en Votantes con el mismo teléfono y parte del nombre. Confirme cada una.{allowSkip ? ' Puede responder después: se le preguntará antes de confirmar el acta.' : ''}</p>
+                        <h3 ref={titleRef} id="sugerencias-title" tabIndex={-1} className="text-[18px] font-extrabold text-[var(--color-ink)] focus:outline-none">¿Son estas personas?</h3>
+                        <p className="text-[15px] text-[var(--color-ink-soft)] mt-1">Encontramos fichas en Votantes que pueden ser la misma persona. Confirme cada una.{allowSkip ? ' Puede responder después: se le preguntará antes de confirmar el acta.' : ''}</p>
                     </div>
                     <ul className="flex-1 overflow-y-auto px-5 py-3 space-y-3" aria-label="Personas para confirmar">
                         {items.map((s, i) => (
                             <li key={`${s.kind}-${s.index ?? s.path.join('-')}`} className="border border-[var(--color-line)] rounded-xl p-3">
                                 <p className="text-[13px] font-bold text-[var(--color-ink-soft)]">{s.kind === 'participante' ? 'Participante' : 'Responsable de un compromiso'}: {s.nombre}</p>
                                 <p className="text-[16px] font-extrabold text-[var(--color-ink)] mt-1">{s.lider?.nombre}</p>
+                                {sugeridoPorNombre(s.lider) && (
+                                    <p className="mt-1">
+                                        <span className="inline-block px-2 py-0.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-[14px] font-bold">Sugerido por nombre</span>
+                                        <span className="block text-[16px] text-[var(--color-ink-soft)] mt-1">Solo coincide el nombre y el municipio. Si no tiene certeza, responda «No es».</span>
+                                    </p>
+                                )}
                                 <p className="text-[14px] text-[var(--color-ink-soft)]">{[s.lider?.cargo, s.lider?.municipio].filter(Boolean).join(' · ')}</p>
                                 <div className="flex gap-2 mt-2" role="group" aria-label={`¿${s.nombre} es ${s.lider?.nombre}?`}>
                                     <button type="button" aria-pressed={answers[i] === true} onClick={() => answer(i, true)} className={`flex-1 min-h-[44px] rounded-xl border-2 text-[15px] font-bold ${answers[i] === true ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-emerald-600 text-emerald-700'}`}>Sí, es esta persona</button>

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Eventos\DeleteConfirmedActa;
+use App\Actions\Eventos\EditConfirmedActa;
+use App\Http\Requests\Empresarios\OrganizacionActaCorreccionRequest;
 use App\Http\Requests\Empresarios\OrganizacionActaFileRequest;
 use App\Http\Requests\Empresarios\OrganizacionActaRequest;
 use App\Http\Requests\Empresarios\OrganizacionActaSuggestRequest;
@@ -107,7 +109,7 @@ class OrganizacionActaController extends Controller
         $org = $this->scope->find($id, true);
         $data = $request->validated();
 
-        return response()->json(['success' => true, 'data' => $this->service->suggest($org, $data['participantes'] ?? [], $data['responsables'] ?? [])]);
+        return response()->json(['success' => true, 'data' => $this->service->suggest($org, $data['participantes'] ?? [], $data['responsables'] ?? [], $data['municipio'] ?? null)]);
     }
 
     // POST /empresarios/{id}/actas
@@ -117,7 +119,7 @@ class OrganizacionActaController extends Controller
         $acta = $this->service->save($org, null, $request->validated(), $request->user());
         $this->audit($request, 'ORGANIZACION_ACTA_CREADA', $acta, $this->sizes($acta));
 
-        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => ActaPresenter::payload($acta)], 201);
+        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => ActaPresenter::forPage($acta)], 201);
     }
 
     // PUT /empresarios/{id}/actas/{acta}
@@ -127,7 +129,7 @@ class OrganizacionActaController extends Controller
         $model = $this->service->save($org, $this->findActa($org, $acta), $request->validated(), $request->user());
         $this->audit($request, 'ORGANIZACION_ACTA_ACTUALIZADA', $model, $this->sizes($model));
 
-        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => ActaPresenter::payload($model)]);
+        return response()->json(['success' => true, 'message' => 'Borrador guardado.', 'data' => ActaPresenter::forPage($model)]);
     }
 
     // POST /empresarios/{id}/actas/{acta}/confirmar
@@ -140,7 +142,21 @@ class OrganizacionActaController extends Controller
         $this->audit($request, 'ORGANIZACION_ACTA_CONFIRMADA', $model, $counts);
         Cache::forget(EventoCompromisoController::alertsKey($request));
 
-        return response()->json(['success' => true, 'message' => self::summary($counts), 'data' => ActaPresenter::payload($model), 'resumen' => $counts]);
+        return response()->json(['success' => true, 'message' => self::summary($counts), 'data' => ActaPresenter::forPage($model), 'resumen' => $counts]);
+    }
+
+    // PUT /empresarios/{id}/actas/{acta}/correccion: corrects a CONFIRMED acta (manage.empresarios + edit.actas).
+    public function correct(OrganizacionActaCorreccionRequest $request, string $id, string $acta, EditConfirmedActa $edit): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('edit.actas'), 403, 'No tiene permiso para corregir actas confirmadas.');
+        $org = $this->scope->find($id, true);
+        if (! $org->is_active) {
+            throw ValidationException::withMessages(['organizacion' => 'La organización está inactiva: sus actas ya no se pueden corregir.']);
+        }
+        [$model, $resumen] = $edit->handle($org, $this->findActa($org, $acta), $request->validated(), $request->user());
+        Cache::forget(EventoCompromisoController::alertsKey($request));
+
+        return response()->json(['success' => true, 'message' => EventoActaController::correctedSummary($resumen, 'miembros'), 'data' => ActaPresenter::forPage($model->fresh()), 'resumen' => $resumen]);
     }
 
     // DELETE /empresarios/{id}/actas/{acta}: a borrador with manage.empresarios; a confirmed one also needs delete.actas.
@@ -178,7 +194,7 @@ class OrganizacionActaController extends Controller
     {
         $org = $this->scope->find($id, true);
         $model = $this->findActa($org, $acta);
-        ActaService::assertDraft($model);
+        $confirmada = EventoActaController::assertAttachable($model, $request);
         try {
             [$path, $mime, $name] = ActaFiles::store($request->file('archivo'), "empresarios/actas/{$org->id}");
         } catch (ActaFileException $e) {
@@ -186,10 +202,14 @@ class OrganizacionActaController extends Controller
         }
         $old = $model->archivo_path;
         $model->forceFill(['archivo_path' => $path, 'archivo_mime' => $mime, 'archivo_nombre' => $name, 'updated_by' => $request->user()->id])->save();
-        ActaFiles::delete($old);
-        $this->audit($request, 'ORGANIZACION_ACTA_ARCHIVO', $model, ['tipo' => ActaFiles::EXTENSIONS[$mime], 'reemplazo' => $old !== null]);
+        // A confirmed acta's previous original stays on disk; the audit keeps where.
+        if (! $confirmada) {
+            ActaFiles::delete($old);
+        }
+        $this->audit($request, 'ORGANIZACION_ACTA_ARCHIVO', $model, ['tipo' => ActaFiles::EXTENSIONS[$mime], 'reemplazo' => $old !== null,
+            ...($confirmada ? ['confirmada' => true, 'archivo_anterior' => $old] : [])]);
 
-        return response()->json(['success' => true, 'message' => 'Archivo del acta guardado.', 'data' => ActaPresenter::payload($model)]);
+        return response()->json(['success' => true, 'message' => 'Archivo del acta guardado.', 'data' => ActaPresenter::forPage($model)]);
     }
 
     // GET /empresarios/{id}/actas/{acta}/archivo
@@ -229,6 +249,7 @@ class OrganizacionActaController extends Controller
     private function page(Organizacion $org, ?EventActa $acta): Response
     {
         $editable = $this->scope->editable($org) && $org->is_active;
+        $editConfirmed = $editable && $acta !== null && ! $acta->isDraft() && request()->user()->hasPermission('edit.actas');
         $municipio = $org->municipio_id ? $org->municipio()->value('canonical_name') : null;
 
         return Inertia::render('Eventos/Acta', [
@@ -246,7 +267,8 @@ class OrganizacionActaController extends Controller
                 'seccion' => ['label' => 'EMPRESARIOS', 'href' => '/empresarios'],
                 'buscar' => '/empresarios/buscar/personas',
             ],
-            'acta' => $acta ? ActaPresenter::payload($acta) : null,
+            'acta' => $acta ? ActaPresenter::forPage($acta) : null,
+            'historial' => $acta ? ActaPresenter::historial($acta) : [],
             'defaults' => $acta ? null : [
                 'titulo' => Str::limit(Str::upper('Acta reunión '.$org->nombre), 255, ''),
                 'fecha' => now('America/Bogota')->toDateString(),
@@ -258,6 +280,7 @@ class OrganizacionActaController extends Controller
                 'edit' => $editable && (! $acta || $acta->isDraft()),
                 'delete' => $editable && $acta !== null && $acta->isDraft(),
                 'delete_confirmed' => $editable && $acta !== null && ! $acta->isDraft() && request()->user()->hasPermission('delete.actas'),
+                'edit_confirmed' => $editConfirmed,
             ],
         ]);
     }

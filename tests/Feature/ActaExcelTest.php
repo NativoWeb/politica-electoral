@@ -174,6 +174,35 @@ class ActaExcelTest extends TestCase
         $this->actingAs($this->manager)->get("/eventos/{$this->event->id}/actas/{$id}/archivo")->assertOk();
     }
 
+    // Datos incompletos (§14): only the título, the participants' names and the compromisos' descriptions are needed to
+    // read, save and confirm; everything else may come empty.
+    public function test_an_excel_with_only_the_minimum_is_read_saved_and_confirmed(): void
+    {
+        $book = $this->templateBook("/eventos/{$this->event->id}/actas/plantilla.xlsx");
+        $acta = $book->getSheetByName('Acta');
+        foreach ($acta->toArray() as $i => $row) {
+            if (($row[0] ?? '') === 'Título') {
+                $acta->setCellValue('B'.($i + 1), 'REUNIÓN MÍNIMA');
+            }
+        }
+        $book->getSheetByName('Participantes')->fromArray([['Persona Solo Nombre'], ['Otra Solo Nombre']], null, 'A2');
+        $book->getSheetByName('Compromisos')->fromArray([['Compromiso sin fecha ni responsable']], null, 'A2');
+
+        $read = $this->actingAs($this->manager)->post("/eventos/{$this->event->id}/actas/leer", ['archivo' => $this->upload($book)], ['Accept' => 'application/json'])
+            ->assertOk()->json('data.acta');
+        $this->assertSame([['nombre' => 'Persona Solo Nombre', 'perfil' => null, 'municipio' => null, 'telefono' => null, 'cedula' => null],
+            ['nombre' => 'Otra Solo Nombre', 'perfil' => null, 'municipio' => null, 'telefono' => null, 'cedula' => null]], $read['participantes']);
+        $this->assertSame([], $read['compromisos'][0]['responsables']);
+        $this->assertNull($read['fecha']);
+
+        unset($read['avisos']);
+        $id = $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/actas", $read)->assertCreated()
+            ->assertJsonPath('data.indicadores', ['participantes_por_completar' => 2, 'compromisos_incompletos' => 1])->json('data.id');
+        $this->actingAs($this->manager)->postJson("/eventos/{$this->event->id}/actas/{$id}/confirmar")->assertOk()
+            ->assertJsonPath('resumen.fichas_creadas', 2)->assertJsonPath('resumen.compromisos', 1);
+        $this->assertSame(2, DB::table('lideres')->whereIn('nombre', ['Persona Solo Nombre', 'Otra Solo Nombre'])->whereNull('cedula')->count());
+    }
+
     public function test_an_organization_acta_is_read_from_an_old_xls(): void
     {
         $manager = $this->eventUser(Campaign::DEFAULT_ID, ['manage.empresarios', 'view.empresarios', 'view.votantes']);

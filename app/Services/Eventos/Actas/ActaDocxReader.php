@@ -348,6 +348,7 @@ class ActaDocxReader
     // [field => column index] from the header row (the first row with a cell "NOMBRE…"), and the rows after it.
     private function columns(array $rows, array $aliases, array $default): array
     {
+        $seen = false;
         foreach ($rows as $index => $row) {
             $keys = array_map(fn ($cell) => ActaFormat::key(implode(' ', $cell)), $row);
             $columns = [];
@@ -362,9 +363,31 @@ class ActaDocxReader
             if (isset($columns[$default[0]]) && count($columns) >= 2) {
                 return [$columns, array_slice($rows, $index + 1)];
             }
+            // A table of one column ("NOMBRE" / "COMPROMISO" alone): the first row is a header when every cell of it is
+            // just a heading word, not a person or a compromiso.
+            if (array_filter($keys) !== []) {
+                if (! $seen && isset($columns[$default[0]]) && self::onlyHeadings($keys, $aliases)) {
+                    return [$columns, array_slice($rows, $index + 1)];
+                }
+                $seen = true;
+            }
         }
 
         return [array_flip($default), $rows];
+    }
+
+    // Every non-empty cell is exactly a heading word ("NOMBRE", "NOMBRES:", "COMPROMISOS").
+    private static function onlyHeadings(array $keys, array $aliases): bool
+    {
+        $words = array_merge(...array_values($aliases));
+        foreach (array_filter($keys) as $key) {
+            $word = rtrim(trim(preg_replace('/[^A-Z ]/', '', $key)), 'S');
+            if (! in_array($word, $words, true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // [[cell lines…]…]: each paragraph of a cell is a line (empty ones kept), a line break inside a paragraph too.

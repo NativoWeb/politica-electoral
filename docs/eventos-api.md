@@ -1302,7 +1302,8 @@ Los compromisos de un borrador no se listan ni reciben avances (404).
 - Archivos (original del acta y adjuntos de avances) en el disco privado `local` (`storage/app/private/eventos/actas/{evento}/`,
   `…/eventos/compromisos/{compromiso}/`), nombre UUID, servidos solo por rutas autenticadas con los mismos chequeos.
 - Auditoría sin datos personales (solo ids y conteos): `EVENTO_ACTA_CREADA`, `EVENTO_ACTA_ACTUALIZADA`, `EVENTO_ACTA_CONFIRMADA`,
-  `EVENTO_ACTA_BORRADA`, `EVENTO_ACTA_CONFIRMADA_BORRADA`, `EVENTO_ACTA_ARCHIVO`, `EVENTO_COMPROMISO_RECORDATORIO`, `EVENTO_COMPROMISO_ARCHIVO_DESCARGADO`,
+  `EVENTO_ACTA_BORRADA`, `EVENTO_ACTA_CONFIRMADA_BORRADA`, `EVENTO_ACTA_CORREGIDA` (2026-11-22), `EVENTO_ACTA_ARCHIVO` (en un acta
+  confirmada además `confirmada` y `archivo_anterior`), `EVENTO_COMPROMISO_RECORDATORIO`, `EVENTO_COMPROMISO_ARCHIVO_DESCARGADO`,
   `EVENTO_ACTA_DESCARGADA` (`formato`: docx/pdf/original), `EVENTO_COMPROMISO_ESTADO` (`de`, `a`), `EVENTO_COMPROMISO_AVANCE`,
   `EVENTO_COMPROMISOS_EXPORTADOS`.
 
@@ -1380,6 +1381,106 @@ los asistentes y de las fichas (el plan se recalcula bajo el bloqueo):
 - Actas confirmadas antes de 2026-11-11 (sin las marcas `created_*`): se trata como "no creó nada"; solo se borra el acta.
 - Respuesta: `{success, message, data: <mismos conteos>}`. Auditoría `EVENTO_ACTA_CONFIRMADA_BORRADA` con `acta_id`, ids de
   asistentes y fichas borrados y conteos (sin nombres ni teléfonos).
+
+### Corregir un acta confirmada (permiso `edit.actas`, 2026-11-22)
+
+Para corregir lo que quedó mal en un acta ya confirmada sin borrarla. Permiso nuevo **`edit.actas`** («Editar actas
+confirmadas»), que se suma a `manage.eventos` (actas de eventos) o `manage.empresarios` (actas de organizaciones); no exige
+`write.data` (igual que confirmar). Mismo grupo político propio y territorio que el resto de escrituras.
+
+**Props de la página** (`Eventos/Acta`, de eventos y de organizaciones):
+
+- `can.edit_confirmed` (bool): acta confirmada + `edit.actas` + `manage.*` en el grupo político propio + evento no cancelado
+  (organización activa). Solo con esto se muestra «Corregir acta» (mismo editor que el borrador).
+- `acta.version` (int, empieza en 0): se manda tal cual en la corrección; cada corrección guardada la sube en 1.
+- `acta.indicadores`: `{participantes_por_completar: N, compromisos_incompletos: M}`.
+- `acta.participantes[i].por_completar`: lista con `'cedula'`, `'telefono'`, `'municipio'` (lo que falta). Si la fila tiene
+  ficha (`lider_id`), se mira la ficha **actual** (cédula; teléfono o algún contacto; municipio); si no, lo escrito en la fila.
+- `acta.compromisos[i].por_completar`: lista con `'fecha_limite'` y/o `'responsable'` (sin responsables).
+- `historial` (máx. 50, el más reciente primero; `[]` en un acta nueva o en borrador sin confirmar):
+  `[{id, accion: 'confirmada'|'corregida'|'archivo', fecha (ISO, Bogotá), usuario: nombre|null, resumen: string}]`.
+  Ejemplo de `resumen`: «Cambió: fecha (12-nov → 14-nov), desarrollo; +2 participantes, −1; 1 compromiso editado».
+- `asistentes` (lista para agregar con un clic) también llega cuando `can.edit_confirmed`.
+
+`version`, `indicadores` y `por_completar` vienen también en `data` de las respuestas JSON de crear, guardar, confirmar,
+adjuntar archivo y corregir. La API del agente (`/api/agent/actas`) no los trae.
+
+**Rutas**
+
+| Método y ruta | Permiso | Qué hace |
+|---|---|---|
+| `PUT /eventos/{id}/actas/{acta}/correccion` | manage.eventos + edit.actas | corrige un acta **confirmada** |
+| `PUT /empresarios/{id}/actas/{acta}/correccion` | manage.empresarios + edit.actas | ídem, acta de organización |
+| `POST …/actas/{acta}/archivo` | manage.* (+ edit.actas si está confirmada) | en un acta confirmada reemplaza el original; el anterior **no** se borra del disco (su ruta queda en la auditoría). No cambia `version` |
+
+Cuerpo: el mismo de `PUT` actas **más `version` (entero, obligatorio)**. Participantes y compromisos se comparan **por `id`**:
+con `id` (de esta acta) = existente; sin `id` = nuevo; el que no llega = quitado.
+
+Respuestas:
+
+- **200** `{success: true, message, data: acta, resumen}`;
+  `resumen = {participantes_agregados, participantes_quitados, participantes_editados, vinculados, fichas_creadas,
+  asistentes_nuevos, asistentes_quitados, compromisos_agregados, compromisos_editados, compromisos_quitados, cambios: [campos]}`
+  (en organizaciones `miembros_nuevos`/`miembros_quitados` en vez de `asistentes_*`), más `sin_cambios` (bool). `cambios`
+  puede traer además `orden_participantes` / `orden_compromisos` si solo cambió el orden. Una corrección que no cambia nada
+  responde 200 «No había cambios: el acta queda igual.» con `sin_cambios: true`: no sube `version`, no escribe historial
+  ni auditoría de corrección (2026-11-23, QA O-7). Los textos se comparan sin el orden de claves del jsonb (BUG-02).
+- **409** `{success: false, code: 'version', message: 'Otra persona cambió esta acta mientras usted la corregía. Recargue la
+  página para ver los cambios; lo suyo no se guardó.'}` cuando `version` no es la actual (también el segundo de un doble
+  envío). No se escribe nada.
+- **422** (errores de Laravel en `errors.<campo>`), sin escribir nada:
+  - `acta`: «El acta no está confirmada: corríjala como borrador.» (para un borrador se usa el `PUT` normal);
+  - `evento`: evento cancelado;
+  - `version`: falta o no es entero; `participantes.N.nombre`: vacío (igual que el borrador);
+  - `participantes.N.id` / `compromisos.N.id`: id que no es de esta acta, o repetido;
+  - `participantes.N.cedula`: «Esa cédula ya pertenece a otra persona en Votantes: corrija la cédula o deje la que tenía.»;
+  - `participantes.N.lider_id`, `participantes.N.attendee_id`, `compromisos.N.responsables.R.lider_id`: ficha o asistente no válido;
+  - `compromisos_quitados.{compromiso_id}`: «Este compromiso tiene N avances: no se puede quitar. Márquelo como No cumplido
+    en Seguimiento.»
+- **403** sin `edit.actas`, sin `manage.*`, acta de un subgrupo (solo lectura) o fuera del territorio del usuario (como el
+  resto de escrituras del módulo); **404** acta o evento de otro grupo político, o acta de otro evento.
+
+Reglas (una transacción con bloqueo del acta; si algo falla no se escribe nada):
+
+- **Datos del acta** (título, fecha, municipio, sitio, horas, introducción, orden del día, desarrollo, cierre): editables.
+- **Participante existente**: se corrige el texto de la fila. Su ficha y su asistencia **no cambian** (se ignoran
+  `lider_id`/`attendee_id` distintos). Lo **vacío** de la ficha (cédula, teléfono, municipio) se llena con lo del acta;
+  nunca se sobrescribe. Si la cédula ya es de otra ficha del grupo político → 422 `participantes.N.cedula`, sin unir fichas.
+- **Participante nuevo**: el mismo paso que confirmar (ficha elegida, asistente elegido, misma cédula o ficha nueva;
+  asistente del evento / miembro de la organización) con sus marcas `created_*`.
+- **Participante quitado**: su asistencia (o membresía) se quita **solo** si la creó esta acta y no tiene `data_consents` ni
+  la usa otra fila u otra acta. **La ficha de Votantes nunca se borra.**
+- **Compromiso existente**: se cambian descripción, fecha límite, recordar el y responsables (se reescriben); conserva `id`,
+  estado y avances. **Nuevo**: `pendiente`. **Quitado**: sin avances se borra con sus responsables; con avances → 422.
+- Se borra la caché de la campanita del usuario.
+- El registro del middleware de auditoría para esta ruta (`PUT eventos.actas.correct`) guarda solo los nombres de los
+  campos enviados, como `empresarios.*`.
+- Auditoría `EVENTO_ACTA_CORREGIDA` / `ORGANIZACION_ACTA_CORREGIDA`: `metadata` con `acta_id`, `version`, `cambios` (nombres
+  de campo), conteos e ids de participantes y compromisos; `before_state`/`after_state` solo con fecha, horas y municipio
+  del acta y `fecha_limite`/`recordar_el` por id de compromiso. Nunca nombres, cédulas, teléfonos ni textos del acta.
+- Eliminar después un acta corregida (`delete.actas`) deshace también lo que creó la corrección y borra del disco los
+  originales que se reemplazaron (los lee de `archivo_anterior` en su auditoría `*_ACTA_ARCHIVO`, solo rutas dentro de la
+  carpeta del acta).
+
+### Datos incompletos (2026-11-22)
+
+Lo único obligatorio sigue siendo: título del acta, nombre de cada participante, descripción de cada compromiso y nombre
+de cada responsable que se agregue. Todo lo demás puede quedar vacío al cargar (Word, Excel o formulario), guardar,
+confirmar y corregir.
+
+- La ficha que se crea desde un acta lleva `migracion_flags.por_completar` con lo que falta (`cedula`, `telefono`,
+  `municipio`); aparece en el filtro «Datos por completar» de Votantes y se limpia sola al completar el campo en la ficha.
+  «Teléfono» también se da por completo con un contacto celular/fijo/whatsapp (al agregarlo o editarlo en Votantes),
+  la misma regla que el indicador del acta.
+- Lectura del Word: en una tabla de una sola columna, una primera fila que es solo un encabezado («NOMBRE»,
+  «COMPROMISOS:») no se toma como participante ni como compromiso.
+- **Sugerencia por nombre**: un participante **sin cédula ni teléfono** se compara por nombre normalizado (sin tildes ni
+  mayúsculas, al menos 2 palabras) con los líderes activos del **mismo municipio** (el escrito; si no hay, el del
+  evento/organización; si tampoco, el `municipio` del acta que `/sugerencias` acepta en la raíz del cuerpo) y del **mismo grupo político**, dentro del territorio del usuario. Una sola coincidencia →
+  sugerencia `{id, nombre, municipio, cargo, por: 'nombre', motivo: 'nombre'}` (etiqueta «Sugerido por nombre»); dos o más
+  → ninguna (se leen como máximo 5000 fichas candidatas por acta, filtradas en PostgreSQL por la palabra más larga de
+  cada nombre; si hubiera más, alguna coincidencia podría no sugerirse). **Nunca se vincula sola**: si el usuario dice «no» o no responde, se crea la ficha nueva con la marca
+  `posible_duplicado` (ids de las fichas parecidas). En las demás sugerencias `motivo` = `por` (`cedula`/`telefono`).
 
 ### Responsables (decisión 3)
 
@@ -1482,5 +1583,8 @@ de hoy a 3 días) y **recordatorios** (`recordar_el` hoy o antes). Cada uno cuen
 
 Sin paquetes nuevos de Composer. `php artisan migrate --force`, `npm run build`, `php artisan optimize:clear && php artisan
 optimize`. El permiso `delete.actas` (2026-11-11) trae la migración aditiva `2026_11_11_000001_add_created_flags_to_event_acta_participantes`
-(dos booleanos con default false; no toca `data_consents` ni las vistas `agent_ro`). Para subir actas o fotos de hasta 10 MB en producción, PHP-FPM necesita `upload_max_filesize ≥ 12M` y
+(dos booleanos con default false; no toca `data_consents` ni las vistas `agent_ro`). Corregir actas confirmadas (2026-11-22)
+trae la migración aditiva `2026_11_22_000001_add_version_to_event_actas` (`event_actas.version int not null default 0`;
+`down()` la quita; ninguna vista `agent_ro` lee `event_actas`) y el permiso `edit.actas`, que se otorga a mano en
+Admin → Usuarios (nadie lo tiene al desplegar, salvo el superadmin con `*`). Para subir actas o fotos de hasta 10 MB en producción, PHP-FPM necesita `upload_max_filesize ≥ 12M` y
 `post_max_size ≥ 16M` (hoy 2M/8M: con eso el límite real es 2 MB y los mensajes lo dicen).

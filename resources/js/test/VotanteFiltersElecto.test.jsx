@@ -34,4 +34,17 @@ describe('VotanteFilters: datos de Electo', () => {
         expect(screen.getByLabelText('Inactivos importados')).toHaveValue('todos');
         expect(screen.getByLabelText('Diferencias con Electo')).toBeChecked();
     });
+
+    it('ofrece Cédula y Teléfono y el select sigue a la URL', () => {
+        const onApply = vi.fn();
+        const { rerender } = render(<VotanteFilters filters={{ por_completar: 'cedula' }} municipios={[]} onApply={onApply} onClear={vi.fn()} />);
+        const select = screen.getByLabelText('Datos por completar');
+        expect(select).toHaveValue('cedula');
+        expect([...select.options].map(o => o.textContent)).toEqual(expect.arrayContaining(['Cédula', 'Teléfono']));
+
+        rerender(<VotanteFilters filters={{ por_completar: 'telefono' }} municipios={[]} onApply={onApply} onClear={vi.fn()} />);
+        expect(screen.getByLabelText('Datos por completar')).toHaveValue('telefono');
+        fireEvent.click(screen.getByRole('button', { name: /aplicar|filtrar/i }));
+        expect(onApply).toHaveBeenLastCalledWith(expect.objectContaining({ por_completar: 'telefono' }));
+    });
 });

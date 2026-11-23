@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Eventos\Actas\ActaFiles;
 use App\Services\Eventos\AttendeeMatcher;
 use App\Services\Eventos\FichaActivity;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -27,27 +28,8 @@ class DeleteConfirmedActa
     // Counts for the confirmation dialog, plus the ids to delete.
     public function plan(EventActa $acta): array
     {
-        $rows = EventActaParticipante::where('acta_id', $acta->id)->get(['id', 'lider_id', 'attendee_id', 'telefono', 'created_lider', 'created_attendee', ...($acta->organizacion_id ? ['created_miembro'] : [])]);
-        // An organization's acta: the memberships (rol 'otro') its confirmation created.
-        $miembroIds = $acta->organizacion_id === null ? [] : OrganizacionMiembro::where('organizacion_id', $acta->organizacion_id)->where('rol', 'otro')
-            ->whereIn('lider_id', $rows->where('created_miembro', true)->pluck('lider_id')->filter()->unique()->values()->all())->pluck('id')->all();
-
-        $createdAttendees = $rows->where('created_attendee', true)->pluck('attendee_id')->filter()->unique()->values()->all();
-        $createdAttendees = FichaActivity::chunked($createdAttendees, fn ($ids) => EventAttendee::whereIn('id', $ids)
-            ->where('event_id', $acta->event_id)->where('source', 'acta')->pluck('id')->all());
-        $kept = [];
-        FichaActivity::chunked($createdAttendees, function ($ids) use ($acta, &$kept) {
-            foreach (DB::table('data_consents')->whereIn('attendee_id', $ids)->distinct()->pluck('attendee_id') as $id) {
-                $kept[$id] = true;
-            }
-            // Picked from the list in another acta: it is that acta's attendance too.
-            foreach (DB::table('event_acta_participantes')->whereIn('attendee_id', $ids)->where('acta_id', '!=', $acta->id)->distinct()->pluck('attendee_id') as $id) {
-                $kept[$id] = true;
-            }
-
-            return [];
-        });
-        $attendeeIds = array_values(array_filter($createdAttendees, fn ($id) => ! isset($kept[$id])));
+        $rows = self::rows($acta);
+        ['attendee_ids' => $attendeeIds, 'miembro_ids' => $miembroIds] = self::removables($acta, $rows);
 
         $created = $rows->where('created_lider', true)->pluck('lider_id')->filter()->unique()->values()->all();
         $created = FichaActivity::chunked($created, fn ($ids) => DB::table('lideres')->whereIn('id', $ids)
@@ -79,6 +61,65 @@ class DeleteConfirmedActa
         ];
     }
 
+    public static function rows(EventActa $acta): Collection
+    {
+        return EventActaParticipante::where('acta_id', $acta->id)->get(['id', 'lider_id', 'attendee_id', 'telefono', 'created_lider', 'created_attendee', ...($acta->organizacion_id ? ['created_miembro'] : [])]);
+    }
+
+    // The attendees and memberships that $rows (participants of $acta) brought in and nothing else holds: an attendee
+    // the confirmation created (source 'acta') without data_consents that no other participant row uses (of another
+    // acta, or of this one outside $rows); a membership (rol 'otro') the confirmation created whose ficha no other row
+    // of this acta keeps. Deleting the acta passes all its rows; correcting it, the rows it removes (EditConfirmedActa).
+    public static function removables(EventActa $acta, Collection $rows): array
+    {
+        $rowIds = $rows->pluck('id')->all();
+        $others = $acta->organizacion_id === null ? collect() : EventActaParticipante::where('acta_id', $acta->id)->whereNotIn('id', $rowIds)->pluck('lider_id');
+        // An organization's acta: the memberships (rol 'otro') its confirmation created.
+        $miembroIds = $acta->organizacion_id === null ? [] : OrganizacionMiembro::where('organizacion_id', $acta->organizacion_id)->where('rol', 'otro')
+            ->whereIn('lider_id', $rows->where('created_miembro', true)->pluck('lider_id')->filter()->diff($others->filter())->unique()->values()->all())->pluck('id')->all();
+
+        $createdAttendees = $rows->where('created_attendee', true)->pluck('attendee_id')->filter()->unique()->values()->all();
+        $createdAttendees = FichaActivity::chunked($createdAttendees, fn ($ids) => EventAttendee::whereIn('id', $ids)
+            ->where('event_id', $acta->event_id)->where('source', 'acta')->pluck('id')->all());
+        $kept = [];
+        FichaActivity::chunked($createdAttendees, function ($ids) use ($acta, $rowIds, &$kept) {
+            foreach (DB::table('data_consents')->whereIn('attendee_id', $ids)->distinct()->pluck('attendee_id') as $id) {
+                $kept[$id] = true;
+            }
+            // Picked from the list in another acta (or kept by another row of this one): it is that row's attendance too.
+            $usedElsewhere = DB::table('event_acta_participantes')->whereIn('attendee_id', $ids)
+                ->where(fn ($q) => $q->where('acta_id', '!=', $acta->id)->when($rowIds !== [], fn ($w) => $w->orWhereNotIn('id', $rowIds)));
+            foreach ($usedElsewhere->distinct()->pluck('attendee_id') as $id) {
+                $kept[$id] = true;
+            }
+
+            return [];
+        });
+
+        return [
+            'attendee_ids' => array_values(array_filter($createdAttendees, fn ($id) => ! isset($kept[$id]))),
+            'miembro_ids' => $miembroIds,
+        ];
+    }
+
+    // The originals a correction replaced (kept on disk while the acta lived; the audit of the replacement says where).
+    // Only paths inside the acta's own folder are trusted.
+    public static function replacedFiles(EventActa $acta): array
+    {
+        $organizacion = $acta->organizacion_id !== null;
+        $folder = $organizacion ? "empresarios/actas/{$acta->organizacion_id}/" : "eventos/actas/{$acta->event_id}/";
+
+        return DB::table('audit_logs')
+            ->where('entity_type', $organizacion ? 'organizacion' : 'evento')
+            ->where('entity_id', $organizacion ? $acta->organizacion_id : $acta->event_id)
+            ->where('action', $organizacion ? 'ORGANIZACION_ACTA_ARCHIVO' : 'EVENTO_ACTA_ARCHIVO')
+            ->where('metadata->acta_id', $acta->id)
+            ->pluck('metadata')
+            ->map(fn ($m) => json_decode((string) $m, true)['archivo_anterior'] ?? null)
+            ->filter(fn ($path) => is_string($path) && str_starts_with($path, $folder) && ! str_contains($path, '..'))
+            ->values()->all();
+    }
+
     public function handle(EventActa $acta, User $user): array
     {
         [$plan, $paths] = DB::transaction(function () use ($acta) {
@@ -95,6 +136,7 @@ class DeleteConfirmedActa
             $compromisos = DB::table('event_compromisos')->where('acta_id', $locked->id)->pluck('id')->all();
             $paths = array_merge(
                 [$locked->archivo_path],
+                self::replacedFiles($locked),
                 $compromisos === [] ? [] : DB::table('event_compromiso_avances')->whereIn('compromiso_id', $compromisos)->whereNotNull('archivo_path')->pluck('archivo_path')->all(),
             );
 

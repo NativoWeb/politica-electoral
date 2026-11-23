@@ -89,7 +89,11 @@ describe('Actas components', () => {
         const onChange = vi.fn();
         const c = { ...emptyCompromiso(), id: 'c1', descripcion: 'Con historia', avances: 2 };
         render(<ActaCompromisos items={[c]} onChange={onChange} />);
-        expect(screen.queryByLabelText('Quitar el compromiso 1')).toBeNull();
+        const quitar = screen.getByLabelText('Quitar el compromiso 1');
+        expect(quitar.disabled).toBe(true);
+        expect(document.getElementById(quitar.getAttribute('aria-describedby')).textContent).toMatch(/Tiene 2 avances: no se puede quitar\. Si ya no aplica, márquelo como «No cumplido» en Seguimiento/);
+        fireEvent.click(quitar);
+        expect(onChange).not.toHaveBeenCalled();
         fireEvent.click(screen.getByText('Agregar otro responsable'));
         expect(onChange.mock.calls[0][0][0].responsables).toHaveLength(2);
     });

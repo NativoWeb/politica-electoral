@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Models\LiderContacto;
+use App\Support\MigracionFlags;
 
 class AddContacto
 {
@@ -25,11 +26,17 @@ class AddContacto
 
     public function handle(Lider $lider, array $data): LiderContacto
     {
-        return $lider->contactos()->create([
+        $contacto = $lider->contactos()->create([
             'tipo' => $data['tipo'],
             'valor' => $data['valor'],
             'principal' => $data['principal'] ?? false,
             'estado' => $data['estado'] ?? 'activo',
         ]);
+        // A phone completes the ficha's pending "Teléfono" (an acta's ficha, an Electo import).
+        if (in_array($contacto->tipo, MigracionFlags::PHONE_CONTACTS, true)) {
+            MigracionFlags::clearCompleted($lider->id);
+        }
+
+        return $contacto;
     }
 }

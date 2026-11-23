@@ -10,7 +10,8 @@ use Illuminate\Support\Facades\Schema;
 // inactive. The Votantes filters, the notice of the ficha and the clean-up after saving all read it from here.
 class MigracionFlags
 {
-    // Filter value => label. Catalog fields Electo did not send, plus the municipio and the birth date it had wrong.
+    // Filter value => label. Catalog fields Electo did not send, plus the municipio and the birth date it had wrong, and
+    // what an acta did not bring of a participant whose ficha it created (cédula, teléfono, municipio; docs §14).
     public const POR_COMPLETAR = [
         'barrio' => 'Barrio',
         'nivel_confianza' => 'Nivel de confianza',
@@ -18,7 +19,12 @@ class MigracionFlags
         'tipo_hoja_vida' => 'Tipo de hoja de vida',
         'municipio' => 'Municipio',
         'fecha_nacimiento' => 'Fecha de nacimiento',
+        'cedula' => 'Cédula',
+        'telefono' => 'Teléfono',
     ];
+
+    // Contact kinds that hold a phone: a ficha with one of them has its teléfono (also for the acta's indicators).
+    public const PHONE_CONTACTS = ['celular', 'fijo', 'telefono', 'whatsapp'];
 
     // Imported inactive on purpose (Ley 1581 for minors).
     public const INACTIVOS = [
@@ -58,7 +64,8 @@ class MigracionFlags
         $col = 'lideres.migracion_flags';
         $porCompletar = $filters['por_completar'] ?? null;
         if ($porCompletar === 'municipio') {
-            $query->whereRaw("{$col} @> ?::jsonb", ['{"sin_municipio": true}']);
+            $query->where(fn ($q) => $q->whereRaw("{$col} @> ?::jsonb", ['{"sin_municipio": true}'])
+                ->orWhereRaw("{$col} @> ?::jsonb", ['{"por_completar": ["municipio"]}']));
         } elseif ($porCompletar === 'fecha_nacimiento') {
             $query->whereRaw("{$col} @> ?::jsonb", ['{"fecha_invalida": ["fecha_nacimiento"]}']);
         } elseif ($porCompletar === 'cualquiera') {
@@ -135,8 +142,7 @@ class MigracionFlags
     // birth date). Everything else in the flags stays.
     public static function clearCompleted(string $liderId): void
     {
-        self::$hasColumn ??= Schema::hasColumn('lideres', 'migracion_flags');
-        if (! self::$hasColumn) {
+        if (! self::hasColumn()) {
             return;
         }
         $row = DB::table('lideres')->where('id', $liderId)->first();
@@ -167,9 +173,18 @@ class MigracionFlags
         }
     }
 
+    public static function hasColumn(): bool
+    {
+        return self::$hasColumn ??= Schema::hasColumn('lideres', 'migracion_flags');
+    }
+
     private static function filled(object $row, string $campo): bool
     {
         $value = $row->{$campo} ?? null;
+        if ($campo === 'telefono' && ($value === null || trim((string) $value) === '')) {
+            return DB::table('lider_contactos')->where('lider_id', $row->id)->whereIn('tipo', self::PHONE_CONTACTS)
+                ->whereRaw("trim(coalesce(valor, '')) <> ''")->exists();
+        }
         if ($campo === 'nivel_confianza') {
             return is_string($value) && $value !== '' && $value !== 'sin_llamar';
         }

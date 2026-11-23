@@ -219,6 +219,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/{id}/actas/{acta}/eliminar', [OrganizacionActaController::class, 'deletePreview'])->name('actas.delete-preview')->whereUuid(['id', 'acta'])
                 ->middleware('permission:delete.actas');
             Route::post('/{id}/actas/{acta}/confirmar', [OrganizacionActaController::class, 'confirm'])->name('actas.confirm')->whereUuid(['id', 'acta']);
+            Route::put('/{id}/actas/{acta}/correccion', [OrganizacionActaController::class, 'correct'])->name('actas.correct')->whereUuid(['id', 'acta'])
+                ->middleware('permission:edit.actas');
             Route::post('/{id}/actas/{acta}/archivo', [OrganizacionActaController::class, 'attach'])->name('actas.attach')->whereUuid(['id', 'acta'])
                 ->middleware('throttle:eventos-importar');
         });
@@ -283,6 +285,8 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/{id}/actas/{acta}/eliminar', [EventoActaController::class, 'deletePreview'])->name('actas.delete-preview')->whereUuid(['id', 'acta'])
                 ->middleware('permission:delete.actas');
             Route::post('/{id}/actas/{acta}/confirmar', [EventoActaController::class, 'confirm'])->name('actas.confirm')->whereUuid(['id', 'acta']);
+            Route::put('/{id}/actas/{acta}/correccion', [EventoActaController::class, 'correct'])->name('actas.correct')->whereUuid(['id', 'acta'])
+                ->middleware('permission:edit.actas');
             Route::post('/{id}/actas/{acta}/archivo', [EventoActaController::class, 'attach'])->name('actas.attach')->whereUuid(['id', 'acta'])
                 ->middleware('throttle:eventos-importar');
         });

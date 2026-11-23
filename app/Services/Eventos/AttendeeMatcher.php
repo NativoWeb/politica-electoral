@@ -13,6 +13,9 @@ class AttendeeMatcher
     // Words that say nothing about who the person is.
     private const STOPWORDS = ['del', 'las', 'los', 'san', 'don', 'dona', 'sra', 'senor', 'senora'];
 
+    // Fichas read at most by byName() (an acta has at most 300 participants).
+    private const BY_NAME_LIMIT = 5000;
+
     // Every phone number in a cell: mobiles (3xx…, spaces, dots or hyphens inside allowed, +57 in front) and,
     // when there is none, the last 10 digits of each group of 7 or more digits.
     public static function phones(?string $text): array
@@ -114,6 +117,56 @@ class AttendeeMatcher
             // Two fichas equally likely: suggesting one would be a guess.
             if ($best !== null && ! $tie) {
                 $result[$key] = $best;
+            }
+        }
+
+        return $result;
+    }
+
+    // The words of a name without accents, case or punctuation, sorted ("PÉREZ  Juan" = "juan perez"); null with fewer
+    // than 2 words: one word says too little to suggest anybody.
+    public static function nameKey(?string $name): ?string
+    {
+        $words = preg_split('/[^a-z]+/', Str::lower(Str::ascii((string) $name)), -1, PREG_SPLIT_NO_EMPTY);
+        if (count($words) < 2) {
+            return null;
+        }
+        sort($words);
+
+        return implode(' ', $words);
+    }
+
+    // Who a row WITHOUT cédula nor phone may be, by name only: [key => [lider ids]] of the active lideres of the campaign
+    // in the row's municipio whose nameKey() is the row's. $rows: [key => ['name' => nameKey(), 'geo' => municipio id]].
+    // It only suggests (one id) or marks a possible duplicate: nobody is linked by name without the user saying so.
+    public function byName(string $campaignId, array $rows): array
+    {
+        $rows = array_filter($rows, fn ($r) => $r['name'] !== null && $r['geo'] !== null);
+        if ($rows === []) {
+            return [];
+        }
+        $query = DB::table('lideres')->where('campaign_id', $campaignId)->where('is_active', true)
+            ->whereIn('geographic_unit_id', array_values(array_unique(array_column($rows, 'geo'))));
+        // PostgreSQL reads only the fichas holding the longest word of some row (a city has tens of thousands); the
+        // comparison below decides.
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            $longest = array_map(fn ($r) => collect(explode(' ', $r['name']))->sortByDesc(fn ($w) => strlen($w))->first(), $rows);
+            $patterns = '{'.implode(',', array_map(fn ($w) => '"%'.$w.'%"', array_unique($longest))).'}';
+            $query->whereRaw("translate(lower(nombre), 'áéíóúüñàèìòù', 'aeiouunaeiou') LIKE ANY (?::text[])", [$patterns]);
+        }
+
+        $byPlace = [];
+        foreach ($query->orderBy('id')->limit(self::BY_NAME_LIMIT)->get(['id', 'nombre', 'geographic_unit_id']) as $lider) {
+            $key = self::nameKey($lider->nombre);
+            if ($key !== null) {
+                $byPlace[$lider->geographic_unit_id.'|'.$key][] = $lider->id;
+            }
+        }
+
+        $result = [];
+        foreach ($rows as $key => $row) {
+            if (isset($byPlace[$row['geo'].'|'.$row['name']])) {
+                $result[$key] = $byPlace[$row['geo'].'|'.$row['name']];
             }
         }
 

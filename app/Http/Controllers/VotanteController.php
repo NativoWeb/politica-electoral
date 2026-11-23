@@ -451,6 +451,9 @@ class VotanteController extends Controller
         ]);
 
         $contacto->update($data);
+        if (in_array($contacto->tipo, MigracionFlags::PHONE_CONTACTS, true)) {
+            MigracionFlags::clearCompleted($contacto->lider_id);
+        }
 
         return response()->json(['success' => true, 'message' => 'Contacto actualizado.', 'data' => $contacto->fresh()]);
     }

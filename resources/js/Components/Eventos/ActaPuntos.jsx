@@ -37,7 +37,7 @@ export function OrdenDia({ items, onChange, disabled }) {
                 ))}
             </ol>
             {!disabled && (
-                <button type="button" onClick={() => onChange([...items, { key: newKey(), texto: '' }])} className="min-h-[44px] px-4 py-2 rounded-xl border-2 border-[var(--color-primary)] text-[15px] font-bold text-[var(--color-primary)]">
+                <button type="button" onClick={() => onChange([...items, { key: newKey(), texto: '' }])} className="min-h-[48px] px-4 py-2 rounded-xl border-2 border-[var(--color-primary)] text-[16px] font-bold text-[var(--color-primary)]">
                     Agregar punto
                 </button>
             )}
@@ -51,7 +51,7 @@ export function Desarrollo({ items, onChange, orden = [], disabled }) {
     return (
         <div className="space-y-3">
             {!disabled && items.length === 0 && orden.some(o => o.texto.trim()) && (
-                <button type="button" onClick={fromOrden} className="min-h-[44px] px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-[15px] font-bold text-[var(--color-primary)]">
+                <button type="button" onClick={fromOrden} className="min-h-[48px] px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-[16px] font-bold text-[var(--color-primary)]">
                     Crear un texto por cada punto del orden del día
                 </button>
             )}
@@ -69,7 +69,7 @@ export function Desarrollo({ items, onChange, orden = [], disabled }) {
                 </div>
             ))}
             {!disabled && (
-                <button type="button" onClick={() => onChange([...items, { key: newKey(), titulo: '', texto: '' }])} className="min-h-[44px] px-4 py-2 rounded-xl border-2 border-[var(--color-primary)] text-[15px] font-bold text-[var(--color-primary)]">
+                <button type="button" onClick={() => onChange([...items, { key: newKey(), titulo: '', texto: '' }])} className="min-h-[48px] px-4 py-2 rounded-xl border-2 border-[var(--color-primary)] text-[16px] font-bold text-[var(--color-primary)]">
                     Agregar texto
                 </button>
             )}

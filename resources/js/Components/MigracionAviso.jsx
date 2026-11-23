@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-// Electo import notice of a ficha: what the team still has to complete, where Electo said something else and why it
+// Notice of a ficha with marks (lideres.migracion_flags) from the Electo import or created by an acta: what the team still has to complete, where Electo said something else and why it
 // came in as it did. Discreet and folded: the fields stay editable in the form, and saving a completed field clears
 // its mark.
 export default function MigracionAviso({ migracion, className = '' }) {
@@ -10,6 +10,9 @@ export default function MigracionAviso({ migracion, className = '' }) {
     const total = pendientes.length + diferencias.length + marcas.length;
     if (total === 0) return null;
 
+    // «Datos de Electo» only for what Electo brought (its codes, differences or marks that name it); a ficha created by an
+    // acta only lacks data (its «posible duplicado» mark does not come from Electo).
+    const deElecto = migracion.origen ? migracion.origen === 'electo' : (diferencias.length > 0 || pendientes.some(p => p.codigo_electo) || marcas.some(m => /Electo/.test(m)));
     const resumen = [
         pendientes.length > 0 && `${pendientes.length} por completar`,
         diferencias.length > 0 && `${diferencias.length} ${diferencias.length === 1 ? 'diferencia' : 'diferencias'} con Electo`,
@@ -19,7 +22,7 @@ export default function MigracionAviso({ migracion, className = '' }) {
     return (
         <div className={`rounded-lg border border-amber-200 bg-amber-50 text-[13px] text-[var(--color-ink)] ${className}`}>
             <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left">
-                <span><span className="font-bold">Datos de Electo:</span> {resumen}</span>
+                <span><span className="font-bold">{deElecto ? 'Datos de Electo' : 'Datos por completar'}:</span> {resumen}</span>
                 <span className="text-[12px] font-semibold text-amber-800 underline flex-shrink-0">{open ? 'Ocultar' : 'Ver'}</span>
             </button>
             {open && (

@@ -5,10 +5,12 @@ import { eventOptionLabel } from '@/lib/eventosIntegracion';
 import { catalogoDe, useCatalogos } from '@/lib/catalogos';
 
 
-// Electo import (lideres.migracion_flags).
+// lideres.migracion_flags: the Electo import and the fichas created by an acta (cédula, teléfono, municipio).
 const POR_COMPLETAR_OPTIONS = [
     { value: '', label: 'Sin filtro' },
     { value: 'cualquiera', label: 'Cualquier dato' },
+    { value: 'cedula', label: 'Cédula' },
+    { value: 'telefono', label: 'Teléfono' },
     { value: 'barrio', label: 'Barrio' },
     { value: 'nivel_confianza', label: 'Nivel de confianza' },
     { value: 'convenio', label: 'Convenio' },
@@ -69,6 +71,8 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     const [evento, setEvento] = useState(filters.evento || '');
     const [asistentesEventos, setAsistentesEventos] = useState(filters.asistentes_eventos === '1' || filters.asistentes_eventos === true);
     const [porCompletar, setPorCompletar] = useState(filters.por_completar || '');
+    // The select follows the URL (back/forward, a link with ?por_completar=…).
+    useEffect(() => { setPorCompletar(filters.por_completar || ''); }, [filters.por_completar]);
     const [diferencias, setDiferencias] = useState(filters.diferencias === '1' || filters.diferencias === true);
     const [importadosInactivos, setImportadosInactivos] = useState(filters.importados_inactivos || '');
     const porCompletarId = `${uid}-por-completar`;

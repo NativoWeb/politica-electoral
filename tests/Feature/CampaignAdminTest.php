@@ -701,7 +701,7 @@ class CampaignAdminTest extends TestCase
             ->assertInertia(function (AssertableInertia $page) use (&$keys) {
                 $props = $page->toArray()['props'];
                 $keys = collect($props['availablePermissions'])->pluck('key')->sort()->values()->all();
-                $this->assertCount(18, $props['permissionLabels'], 'Every permission keeps a label (9 base + 4 of Eventos + 2 of Empresarios + 2 of Reportes + WhatsApp)');
+                $this->assertCount(19, $props['permissionLabels'], 'Every permission keeps a label (9 base + 5 of Eventos + 2 of Empresarios + 2 of Reportes + WhatsApp)');
             });
 
         return $keys;
@@ -713,7 +713,7 @@ class CampaignAdminTest extends TestCase
 
         $this->assertSame($sorted(self::CAMPAIGN_ADMIN_PERMS), $this->offeredPermissions($this->adminX));
         $this->assertSame($sorted(self::ADMIN_PERMS), $this->offeredPermissions($this->adminCd));
-        $this->assertSame($sorted([...self::ADMIN_PERMS, 'view.eventos', 'manage.eventos', 'register.asistentes', 'delete.actas', 'view.empresarios', 'manage.empresarios', 'view.reportes', 'export.datos_personales', 'use.whatsapp']), $this->offeredPermissions($this->superadmin));
+        $this->assertSame($sorted([...self::ADMIN_PERMS, 'view.eventos', 'manage.eventos', 'register.asistentes', 'delete.actas', 'edit.actas', 'view.empresarios', 'manage.empresarios', 'view.reportes', 'export.datos_personales', 'use.whatsapp']), $this->offeredPermissions($this->superadmin));
 
         // Everything offered is accepted; the hidden ones are still refused.
         $this->actingAs($this->adminX)->post('/admin/usuarios', $this->newUserPayload(['permissions' => self::CAMPAIGN_ADMIN_PERMS]))

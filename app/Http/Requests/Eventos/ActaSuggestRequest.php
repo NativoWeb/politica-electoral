@@ -12,10 +12,12 @@ class ActaSuggestRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'municipio' => ['nullable', 'string', 'max:120'],
             'participantes' => ['nullable', 'array', 'max:300'],
             'participantes.*.nombre' => ['nullable', 'string', 'max:200'],
             'participantes.*.telefono' => ['nullable', 'string', 'max:60'],
             'participantes.*.cedula' => ['nullable', 'string', 'max:20'],
+            'participantes.*.municipio' => ['nullable', 'string', 'max:120'],
             'responsables' => ['nullable', 'array', 'max:500'],
             'responsables.*.nombre' => ['nullable', 'string', 'max:200'],
             'responsables.*.telefono' => ['nullable', 'string', 'max:60'],

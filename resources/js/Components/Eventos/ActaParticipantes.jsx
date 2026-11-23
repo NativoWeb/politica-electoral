@@ -1,14 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
-import { emptyParticipante, participanteFromAsistente } from '@/lib/actas';
+import { FALTANTES, emptyParticipante, fieldId, participanteFaltantes, participanteFromAsistente } from '@/lib/actas';
 import { apiFetch } from '@/lib/api';
 
 export const inputCls = 'w-full min-w-0 px-3 py-2.5 border border-[var(--color-line-strong)] rounded-lg text-[15px] bg-white focus:outline-none focus:border-[var(--color-primary)] disabled:bg-gray-50';
+export const invalidCls = 'border-red-500 ring-2 ring-red-200';
+
+// Id, aria-invalid and style of a field; error = {key, field, message} of the row the server refused (rowError).
+export function fieldProps(error, rowKey, field, extra = '') {
+    const bad = error?.key === rowKey && error.field === field;
+    return {
+        id: fieldId(rowKey, field),
+        'aria-invalid': bad || undefined,
+        'aria-describedby': bad ? fieldId(rowKey, 'error') : undefined,
+        className: [inputCls, extra, bad ? invalidCls : ''].filter(Boolean).join(' '),
+    };
+}
+
+export function RowError({ error, rowKey }) {
+    if (error?.key !== rowKey) return null;
+    return <p id={fieldId(rowKey, 'error')} className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[16px] font-semibold text-red-700">{error.message}</p>;
+}
 
 const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // Participants of the acta: written by hand or added with one click from the event's attendees.
 // searchUrl: where people already in Votantes are searched (an organization's acta uses /empresarios/buscar/personas).
-export default function ActaParticipantes({ items, onChange, asistentes = [], municipio, disabled, confirmed = false, searchUrl = '/eventos/buscar/organizadores' }) {
+export default function ActaParticipantes({ items, onChange, asistentes = [], municipio, disabled, confirmed = false, searchUrl = '/eventos/buscar/organizadores', error = null }) {
     const [q, setQ] = useState('');
     const [found, setFound] = useState([]);
     const [searching, setSearching] = useState(false);
@@ -46,47 +63,62 @@ export default function ActaParticipantes({ items, onChange, asistentes = [], mu
         setQ('');
     };
 
-    // Changing the name, phone or cédula drops a chosen ficha: it may be another person now.
+    // Changing the name, phone or cédula drops a chosen ficha: it may be another person now. A participant of a
+    // confirmed acta keeps its ficha (a correction only fixes the text and fills what the ficha lacks).
+    const linked = p => confirmed && !!p.id;
     const set = (key, field, value) => onChange(items.map(p => (p.key === key
-        ? { ...p, [field]: value, ...(['nombre', 'telefono', 'cedula'].includes(field) ? { lider_id: null, sugerencia_rechazada: null } : {}) }
+        ? { ...p, [field]: value, ...(['nombre', 'telefono', 'cedula'].includes(field) && !linked(p) ? { lider_id: null, sugerencia_rechazada: null, por_completar: undefined } : {}) }
         : p)));
+    const incompletos = items.filter(p => p.nombre.trim() && participanteFaltantes(p).length > 0).length;
 
     return (
         <div className="space-y-3">
             {items.length === 0 && <p className="text-[15px] text-[var(--color-ink-faint)]">Todavía no hay participantes.</p>}
+            {incompletos > 0 && (
+                <p className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[16px] font-semibold text-amber-900">
+                    {incompletos === 1 ? '1 participante con datos por completar' : `${incompletos} participantes con datos por completar`}
+                </p>
+            )}
             <ol className="space-y-3" aria-label="Participantes">
-                {items.map((p, i) => (
+                {items.map((p, i) => {
+                    const faltan = p.nombre.trim() ? participanteFaltantes(p) : [];
+                    return (
                     <li key={p.key} className="border border-[var(--color-line)] rounded-xl p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                            <span className="text-[14px] font-extrabold text-[var(--color-ink-soft)]">
+                            <span className="flex flex-wrap items-center gap-2 text-[14px] font-extrabold text-[var(--color-ink-soft)]">
                                 Participante {i + 1}
-                                {(p.lider_id || p.attendee_id) && <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px]">{p.lider_id ? (confirmed ? 'En Votantes' : 'Ficha elegida') : 'Asistente del evento'}</span>}
+                                {linked(p)
+                                    ? <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[14px]">Vinculado a su ficha</span>
+                                    : (p.lider_id || p.attendee_id) && <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px]">{p.lider_id ? 'Ficha elegida' : 'Asistente del evento'}</span>}
+                                {faltan.length > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-[14px]">Falta: {faltan.map(k => FALTANTES[k]).join(', ')}</span>}
                             </span>
                             {!disabled && (
-                                <button type="button" onClick={() => onChange(items.filter(x => x.key !== p.key))} className="min-h-[44px] px-3 text-[14px] font-bold text-red-700" aria-label={`Quitar a ${p.nombre || `participante ${i + 1}`}`}>
+                                <button type="button" onClick={() => onChange(items.filter(x => x.key !== p.key))} className="min-h-[48px] px-3 text-[16px] font-bold text-red-700" aria-label={`Quitar a ${p.nombre || `participante ${i + 1}`}`}>
                                     Quitar
                                 </button>
                             )}
                         </div>
                         <div className="grid sm:grid-cols-2 gap-2">
                             <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Nombre
-                                <input className={inputCls} value={p.nombre} disabled={disabled} maxLength={200} onChange={e => set(p.key, 'nombre', e.target.value)} />
+                                <input {...fieldProps(error, p.key, 'nombre')} value={p.nombre} disabled={disabled} maxLength={200} onChange={e => set(p.key, 'nombre', e.target.value)} />
                             </label>
                             <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Perfil
-                                <input className={inputCls} value={p.perfil} disabled={disabled} maxLength={200} placeholder="Líder, presidente JAC…" onChange={e => set(p.key, 'perfil', e.target.value)} />
+                                <input {...fieldProps(error, p.key, 'perfil')} value={p.perfil} disabled={disabled} maxLength={200} placeholder="Líder, presidente JAC…" onChange={e => set(p.key, 'perfil', e.target.value)} />
                             </label>
                             <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Municipio
-                                <input className={inputCls} value={p.municipio} disabled={disabled} maxLength={120} onChange={e => set(p.key, 'municipio', e.target.value)} />
+                                <input {...fieldProps(error, p.key, 'municipio')} value={p.municipio} disabled={disabled} maxLength={120} onChange={e => set(p.key, 'municipio', e.target.value)} />
                             </label>
                             <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Teléfono
-                                <input className={inputCls} value={p.telefono} disabled={disabled} maxLength={60} inputMode="tel" onChange={e => set(p.key, 'telefono', e.target.value)} />
+                                <input {...fieldProps(error, p.key, 'telefono')} value={p.telefono} disabled={disabled} maxLength={60} inputMode="tel" onChange={e => set(p.key, 'telefono', e.target.value)} />
                             </label>
                             <label className="block text-[14px] font-semibold text-[var(--color-ink)]">Cédula (si la tiene)
-                                <input className={inputCls} value={p.cedula} disabled={disabled} maxLength={20} inputMode="numeric" onChange={e => set(p.key, 'cedula', e.target.value)} />
+                                <input {...fieldProps(error, p.key, 'cedula')} value={p.cedula} disabled={disabled} maxLength={20} inputMode="numeric" onChange={e => set(p.key, 'cedula', e.target.value)} />
                             </label>
                         </div>
+                        <RowError error={error} rowKey={p.key} />
                     </li>
-                ))}
+                    );
+                })}
             </ol>
             {!disabled && (
                 <div className="border border-[var(--color-line)] rounded-xl p-3 space-y-2">
