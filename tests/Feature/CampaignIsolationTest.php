@@ -1183,7 +1183,7 @@ class CampaignIsolationTest extends TestCase
         $this->assertSame($all, $this->votanteIds($super));
 
         $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campX])
-            ->assertOk()->assertJson(['success' => true, 'selected' => $this->campX]);
+            ->assertOk()->assertJson(['success' => true, 'selected' => [$this->campX]]);
 
         $this->assertSame([$this->liderB], $this->votanteIds($super));
         $this->assertSame(['Beto Campaña X'], $this->mapaLideres($super));
@@ -1193,7 +1193,7 @@ class CampaignIsolationTest extends TestCase
         $this->actingAs($super)->getJson("/votantes/{$this->liderA}")->assertNotFound();
         $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page
             ->where('counters.total', 1)
-            ->where('grupoVista.selected', $this->campX)
+            ->where('grupoVista.selected', [$this->campX])
             ->where('grupoVista.options', fn ($o) => collect($o)->pluck('id')->sort()->values()->all()
                 === collect([Campaign::DEFAULT_ID, $this->campX, $this->campY])->sort()->values()->all())
             ->where('grupoVista.options.0.id', Campaign::DEFAULT_ID));
@@ -1205,7 +1205,7 @@ class CampaignIsolationTest extends TestCase
         $this->assertSame(2, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->where('user_id', $super->id)->count());
         $last = DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->get()
             ->first(fn ($row) => json_decode($row->after_state, true)['grupo'] === 'Todos los grupos');
-        $this->assertSame(['grupo' => 'Alejandro'], json_decode($last->before_state, true));
+        $this->assertSame(['grupo' => 'Alejandro', 'ids' => [$this->campX]], json_decode($last->before_state, true));
     }
 
     public function test_only_the_superadmin_can_change_the_grupo_politico_of_the_header(): void
@@ -1248,7 +1248,7 @@ class CampaignIsolationTest extends TestCase
     {
         $super = $this->superadmin();
         $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campX])->assertOk();
-        $message = 'Estás viendo «Alejandro». Para crear, elige tu grupo o «Todos los grupos» arriba.';
+        $message = 'Estás viendo «Alejandro». Para crear, incluye tu grupo o elige «Todos los grupos» arriba.';
         $before = DB::table('lideres')->count();
 
         $this->actingAs($super)->postJson('/votantes', ['nombre' => 'Nueva Fuera De Vista', 'cedula' => '7001', 'municipio_id' => $this->mun])
@@ -1268,6 +1268,119 @@ class CampaignIsolationTest extends TestCase
             $this->actingAs($super)->postJson('/votantes', ['nombre' => "Nueva En Vista {$i}", 'cedula' => "700{$i}2", 'municipio_id' => $this->mun])->assertSuccessful();
         }
         $this->assertSame(2, DB::table('lideres')->where('nombre', 'like', 'Nueva En Vista%')->where('campaign_id', Campaign::DEFAULT_ID)->count());
+    }
+
+    // --- Several grupos políticos marked in the header ---
+
+    private function vista(User $user, array $ids)
+    {
+        return $this->actingAs($user)->postJson('/grupo-politico/vista', ['campaign_ids' => $ids]);
+    }
+
+    private static function sortedIds(iterable $ids): array
+    {
+        return collect($ids)->sort()->values()->all();
+    }
+
+    public function test_the_superadmin_marks_one_or_two_groups_and_every_screen_follows(): void
+    {
+        $super = $this->superadmin();
+
+        $this->vista($super, [$this->campX])->assertOk()->assertJson(['success' => true, 'selected' => [$this->campX]]);
+        $this->assertSame([$this->liderB], $this->votanteIds($super));
+        $this->assertSame(['Beto Campaña X'], $this->mapaLideres($super));
+
+        $this->vista($super, [$this->campY, $this->campX])->assertOk();
+        $this->assertSame(self::sortedIds([$this->liderB, $this->liderC]), $this->votanteIds($super));
+        $this->assertSame(['Beto Campaña X', 'Ceci Campaña Y'], $this->mapaLideres($super));
+        $this->actingAs($super)->getJson("/votantes/{$this->liderA}")->assertNotFound();
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('grupoVista.selected', fn ($s) => self::sortedIds($s) === self::sortedIds([$this->campX, $this->campY]))
+            // Two groups in sight: the screens label and filter by group, only between those two.
+            ->where('visibleCampaigns', fn ($v) => self::sortedIds(collect($v)->pluck('id')) === self::sortedIds([$this->campX, $this->campY])));
+        // A ?campana= outside the marked groups never widens them.
+        $this->assertSame(self::sortedIds([$this->liderB, $this->liderC]), $this->votanteIds($super, '?campana='.Campaign::DEFAULT_ID));
+
+        $audit = DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->orderBy('created_at')->get()
+            ->map(fn ($r) => json_decode($r->after_state, true)['grupo'])->sort()->values()->all();
+        $this->assertSame(['Alejandro', 'Alejandro, Otra'], $audit);
+    }
+
+    public function test_marking_every_group_or_none_is_every_group(): void
+    {
+        $super = $this->superadmin();
+        $all = self::sortedIds([$this->liderA, $this->liderB, $this->liderC]);
+
+        $this->vista($super, [$this->campX])->assertOk();
+        $this->vista($super, [Campaign::DEFAULT_ID, $this->campX, $this->campY])->assertOk()->assertJson(['selected' => null]);
+        $this->assertSame($all, $this->votanteIds($super));
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page->where('grupoVista.selected', null));
+
+        $this->vista($super, [$this->campX])->assertOk();
+        $this->vista($super, [])->assertOk()->assertJson(['selected' => null]);
+        $this->assertSame($all, $this->votanteIds($super));
+        $this->assertSame(4, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->count());
+        // The same choice again writes no audit row.
+        $this->vista($super, [])->assertOk();
+        $this->assertSame(4, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->count());
+    }
+
+    public function test_a_list_with_a_group_out_of_sight_or_not_an_id_is_refused_and_keeps_the_choice(): void
+    {
+        $super = $this->superadmin();
+        $this->vista($super, [$this->campX])->assertOk();
+
+        $this->vista($super, [$this->campY, (string) Str::uuid()])
+            ->assertUnprocessable()->assertJson(['success' => false, 'message' => 'No puedes ver ese grupo político.']);
+        $this->vista($super, [$this->campY, 'no-es-uuid'])->assertUnprocessable()->assertJsonValidationErrors('campaign_ids.1');
+        $this->vista($super, [$this->campY, $this->campY])->assertUnprocessable()->assertJsonValidationErrors('campaign_ids.0');
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_ids' => $this->campY])->assertUnprocessable()->assertJsonValidationErrors('campaign_ids');
+
+        $this->assertSame([$this->liderB], $this->votanteIds($super));
+        $this->assertSame(1, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->count());
+    }
+
+    public function test_only_the_superadmin_can_mark_groups(): void
+    {
+        $this->vista($this->userCd, [$this->campX])->assertForbidden();
+        $this->vista($this->userX, [$this->campX])->assertForbidden();
+        $this->assertSame(2, count($this->votanteIds($this->userCd)));
+        $this->assertSame(0, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->count());
+    }
+
+    public function test_creating_needs_the_own_group_among_the_marked_ones(): void
+    {
+        $super = $this->superadmin();
+        $message = 'Estás viendo «Alejandro, Otra». Para crear, incluye tu grupo o elige «Todos los grupos» arriba.';
+
+        $this->vista($super, [$this->campX, $this->campY])->assertOk();
+        $this->actingAs($super)->postJson('/votantes', ['nombre' => 'Fuera De Los Marcados', 'cedula' => '7201', 'municipio_id' => $this->mun])
+            ->assertUnprocessable()->assertJsonPath('errors.grupo.0', $message);
+        $this->actingAs($super)->postJson('/eventos', ['nombre' => 'X'])->assertUnprocessable()->assertJsonPath('errors.grupo.0', $message);
+        $this->assertDatabaseMissing('lideres', ['nombre' => 'Fuera De Los Marcados']);
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page->where('grupoVista.createBlocked', $message));
+
+        $this->vista($super, [Campaign::DEFAULT_ID, $this->campX])->assertOk();
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page->where('grupoVista.createBlocked', null));
+        $this->actingAs($super)->postJson('/votantes', ['nombre' => 'Con El Propio Marcado', 'cedula' => '7202', 'municipio_id' => $this->mun])->assertSuccessful();
+        $this->assertDatabaseHas('lideres', ['nombre' => 'Con El Propio Marcado', 'campaign_id' => Campaign::DEFAULT_ID]);
+    }
+
+    public function test_a_session_saved_with_a_single_group_still_narrows_the_app(): void
+    {
+        $super = $this->superadmin();
+
+        $this->actingAs($super)->withSession([CurrentCampaign::VISTA_SESSION_KEY => $this->campX]);
+        $this->assertSame([$this->liderB], $this->votanteIds($super));
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('grupoVista.selected', [$this->campX])
+            ->where('grupoVista.createBlocked', 'Estás viendo «Alejandro». Para crear, incluye tu grupo o elige «Todos los grupos» arriba.'));
+
+        // A page loaded before the change still sends campaign_id: it keeps working.
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campY])->assertOk()->assertJson(['selected' => [$this->campY]]);
+        $this->assertSame([$this->liderC], $this->votanteIds($super));
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => null])->assertOk()->assertJson(['selected' => null]);
+        $this->assertSame(3, count($this->votanteIds($super)));
     }
 
     public function test_the_create_guard_never_applies_to_other_users(): void

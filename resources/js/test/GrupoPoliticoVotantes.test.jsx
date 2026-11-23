@@ -37,59 +37,153 @@ beforeEach(() => {
 afterEach(() => { cleanup(); globalThis.fetch = originalFetch; vi.restoreAllMocks(); });
 
 describe('Header selector of grupo político', () => {
+    const TRES = { options: [...GRUPOS.options, { id: 'ot', name: 'Otro Grupo' }], selected: null };
+    const boton = () => screen.getByRole('button', { name: /^Grupo político:/ });
+    const panel = () => screen.queryByRole('dialog', { name: 'Ver grupos políticos' });
+    const casilla = (name) => screen.getByRole('checkbox', { name });
+    const asSuper = (vista) => {
+        page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: vista };
+        return render(<AppLayout title="t">x</AppLayout>);
+    };
+    const enviado = () => JSON.parse(globalThis.fetch.mock.calls.find(([u]) => u === '/grupo-politico/vista')[1].body);
+
     it('is a selector only for the superadmin; anyone else keeps the informative chip', () => {
         page.props = { auth: { user: user() }, visibleCampaigns: [], grupoVista: null };
         const { unmount } = render(<AppLayout title="t">x</AppLayout>);
         expect(screen.getByTitle('Grupo político: Centro Democrático')).toBeInTheDocument();
-        expect(screen.queryByLabelText('Grupo político:')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Grupo político:/ })).not.toBeInTheDocument();
         unmount();
 
-        page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: GRUPOS };
-        render(<AppLayout title="t">x</AppLayout>);
-        const select = screen.getByLabelText('Grupo político:');
-        expect(select).toHaveValue('');
-        expect([...select.options].map(o => o.textContent)).toEqual(['Todos los grupos', 'Centro Democrático', 'Alejandro Cárdenas']);
+        asSuper(GRUPOS);
+        expect(boton()).toHaveTextContent('Todos los grupos');
+        expect(boton()).toHaveAttribute('aria-expanded', 'false');
+        expect(panel()).not.toBeInTheDocument();
         expect(screen.queryByTitle('Grupo político: Centro Democrático')).not.toBeInTheDocument();
     });
 
-    it('saves the choice, forgets the prefetched pages and reloads the current page', async () => {
-        page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: GRUPOS };
-        globalThis.fetch = vi.fn(() => okJson({ success: true, selected: 'ac' }));
-        render(<AppLayout title="t">x</AppLayout>);
+    it('shows the name of one group, «N grupos» for several, and reads a single id of an old session', () => {
+        const { unmount } = asSuper({ ...TRES, selected: ['ac'] });
+        expect(boton()).toHaveTextContent('Alejandro Cárdenas');
+        unmount();
+        const second = asSuper({ ...TRES, selected: ['ac', 'ot'] });
+        expect(boton()).toHaveTextContent('2 grupos');
+        expect(boton()).toHaveAccessibleName('Grupo político: Alejandro Cárdenas, Otro Grupo');
+        second.unmount();
+        asSuper({ ...TRES, selected: 'ot' });
+        expect(boton()).toHaveTextContent('Otro Grupo');
+    });
 
-        fireEvent.change(screen.getByLabelText('Grupo político:'), { target: { value: 'ac' } });
+    it('opens a panel with big boxes, every one marked under «Todos los grupos»', () => {
+        asSuper(TRES);
+        fireEvent.click(boton());
+
+        expect(panel()).toBeInTheDocument();
+        expect(boton()).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getAllByRole('checkbox').map(c => c.closest('label').textContent)).toEqual(['Todos los grupos', 'Centro Democrático', 'Alejandro Cárdenas', 'Otro Grupo']);
+        expect(screen.getAllByRole('checkbox').every(c => c.checked)).toBe(true);
+        expect(casilla('Todos los grupos')).toHaveFocus();
+        expect(casilla('Alejandro Cárdenas').closest('label').className).toMatch(/min-h-\[48px\].*text-\[16px\]/);
+    });
+
+    it('marks two groups and applies them: saves the list, forgets the prefetched pages and reloads', async () => {
+        asSuper(TRES);
+        globalThis.fetch = vi.fn((u) => okJson(u === '/grupo-politico/vista' ? { success: true, selected: ['ac', 'ot'] } : { data: {} }));
+        fireEvent.click(boton());
+        fireEvent.click(casilla('Todos los grupos'));
+        expect(screen.getAllByRole('checkbox').some(c => c.checked)).toBe(false);
+        fireEvent.click(casilla('Otro Grupo'));
+        fireEvent.click(casilla('Alejandro Cárdenas'));
+        expect(casilla('Todos los grupos').indeterminate).toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
 
         await waitFor(() => expect(routerMock.reload).toHaveBeenCalled());
-        const [url, options] = globalThis.fetch.mock.calls.find(([u]) => u === '/grupo-politico/vista');
-        expect(url).toBe('/grupo-politico/vista');
-        expect(options.method).toBe('POST');
-        expect(JSON.parse(options.body)).toEqual({ campaign_id: 'ac' });
+        expect(enviado()).toEqual({ campaign_ids: ['ac', 'ot'] });
+        expect(globalThis.fetch.mock.calls.find(([u]) => u === '/grupo-politico/vista')[1].method).toBe('POST');
         expect(routerMock.flushAll).toHaveBeenCalled();
+        expect(panel()).not.toBeInTheDocument();
+    });
 
-        globalThis.fetch.mockClear();
-        fireEvent.change(screen.getByLabelText('Grupo político:'), { target: { value: '' } });
-        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
-        expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({ campaign_id: null });
+    it('«Todos los grupos» marks them all again and sends the empty list', async () => {
+        asSuper({ ...TRES, selected: ['ac'] });
+        globalThis.fetch = vi.fn((u) => okJson(u === '/grupo-politico/vista' ? { success: true, selected: null } : { data: {} }));
+        fireEvent.click(boton());
+        expect(casilla('Alejandro Cárdenas')).toBeChecked();
+        expect(casilla('Centro Democrático')).not.toBeChecked();
+
+        fireEvent.click(casilla('Todos los grupos'));
+        expect(screen.getAllByRole('checkbox').every(c => c.checked)).toBe(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+
+        await waitFor(() => expect(routerMock.reload).toHaveBeenCalled());
+        expect(enviado()).toEqual({ campaign_ids: [] });
+    });
+
+    it('with nothing marked Aplicar is off and says what to do', () => {
+        asSuper(TRES);
+        fireEvent.click(boton());
+        fireEvent.click(casilla('Todos los grupos'));
+
+        expect(screen.getByRole('button', { name: 'Aplicar' })).toBeDisabled();
+        expect(screen.getByText('Marca al menos un grupo o «Todos los grupos».')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+        expect(globalThis.fetch.mock.calls.some(([u]) => u === '/grupo-politico/vista')).toBe(false);
+    });
+
+    it('Cancelar and Escape close without saving, forget the marks and give the focus back', () => {
+        asSuper({ ...TRES, selected: ['ac'] });
+        fireEvent.click(boton());
+        fireEvent.click(casilla('Otro Grupo'));
+        fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+        expect(panel()).not.toBeInTheDocument();
+        expect(boton()).toHaveFocus();
+
+        fireEvent.click(boton());
+        expect(casilla('Otro Grupo')).not.toBeChecked();
+        fireEvent.keyDown(casilla('Centro Democrático'), { key: 'Escape' });
+        expect(panel()).not.toBeInTheDocument();
+        expect(boton()).toHaveFocus();
+        expect(globalThis.fetch.mock.calls.some(([u]) => u === '/grupo-politico/vista')).toBe(false);
+        expect(routerMock.reload).not.toHaveBeenCalled();
+    });
+
+    it('applying the same groups only closes the panel', () => {
+        asSuper({ ...TRES, selected: ['ac'] });
+        fireEvent.click(boton());
+        fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+        expect(panel()).not.toBeInTheDocument();
+        expect(globalThis.fetch.mock.calls.some(([u]) => u === '/grupo-politico/vista')).toBe(false);
     });
 
     it('says why when the server refuses, and does not reload', async () => {
-        page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: GRUPOS };
+        asSuper(TRES);
         globalThis.fetch = vi.fn((u) => (u === '/grupo-politico/vista'
             ? okJson({ success: false, message: 'No puedes ver ese grupo político.' }, 422)
             : okJson({ data: {} })));
-        render(<AppLayout title="t">x</AppLayout>);
-
-        fireEvent.change(screen.getByLabelText('Grupo político:'), { target: { value: 'ac' } });
+        fireEvent.click(boton());
+        fireEvent.click(casilla('Centro Democrático'));
+        fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
 
         await waitFor(() => expect(toastMock).toHaveBeenCalledWith('No puedes ver ese grupo político.', 'error'));
         expect(routerMock.reload).not.toHaveBeenCalled();
-        expect(screen.getByLabelText('Grupo político:')).not.toBeDisabled();
-        // Controlled by the server's choice: the select goes back to it.
-        expect(screen.getByLabelText('Grupo político:')).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Aplicar' })).not.toBeDisabled();
+        expect(boton()).toHaveTextContent('Todos los grupos');
+    });
+
+    it('without connection it says so and keeps the panel', async () => {
+        asSuper(TRES);
+        globalThis.fetch = vi.fn((u) => (u === '/grupo-politico/vista' ? Promise.reject(new TypeError('offline')) : okJson({ data: {} })));
+        fireEvent.click(boton());
+        fireEvent.click(casilla('Centro Democrático'));
+        fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+
+        await waitFor(() => expect(toastMock).toHaveBeenCalledWith('Sin conexión: no se pudo cambiar el grupo político.', 'error'));
+        expect(panel()).toBeInTheDocument();
+        expect(routerMock.reload).not.toHaveBeenCalled();
     });
 
     it('keeps the group names when the choice leaves a single visible group', () => {
-        const ctx = campaignContext({ campaign: { id: 'cd', name: 'Centro Democrático' } }, [], { ...GRUPOS, selected: 'ac' });
+        const ctx = campaignContext({ campaign: { id: 'cd', name: 'Centro Democrático' } }, [], { ...GRUPOS, selected: ['ac'] });
         expect(ctx.hasMultiple).toBe(false);
         expect(ctx.nameOf('ac')).toBe('Alejandro Cárdenas');
         expect(ctx.isOther('ac')).toBe(true);
@@ -188,12 +282,12 @@ describe('Votantes KPI cards filter the table', () => {
 });
 
 describe('Creating while the header shows another group', () => {
-    const BLOQUEO = 'Estás viendo «Alejandro Cárdenas». Para crear, elige tu grupo o «Todos los grupos» arriba.';
+    const BLOQUEO = 'Estás viendo «Alejandro Cárdenas». Para crear, incluye tu grupo o elige «Todos los grupos» arriba.';
     const votantes = { data: [], current_page: 1, last_page: 1, links: [], from: 0, to: 0, total: 0 };
     const counters = { total: 5, gran_elector: 2, con_referidos: 1 };
 
     it('hides Nuevo votante and says why', () => {
-        page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: { ...GRUPOS, selected: 'ac', createBlocked: BLOQUEO } };
+        page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: { ...GRUPOS, selected: ['ac'], createBlocked: BLOQUEO } };
         render(<Votantes votantes={votantes} counters={counters} municipios={[]} filters={{}} />);
         expect(screen.queryByRole('button', { name: /Nuevo Votante/ })).not.toBeInTheDocument();
         expect(screen.getByRole('status')).toHaveTextContent(BLOQUEO);
@@ -203,7 +297,9 @@ describe('Creating while the header shows another group', () => {
         page.props = { auth: { user: user({ isSuperadmin: true }) }, visibleCampaigns: [], grupoVista: { ...GRUPOS, createBlocked: null } };
         render(<Votantes votantes={votantes} counters={counters} municipios={[]} filters={{}} />);
         expect(screen.getByRole('button', { name: /Nuevo Votante/ })).toBeInTheDocument();
-        expect(screen.queryByText(/Para crear, elige/)).not.toBeInTheDocument();
-        expect(screen.getByLabelText('Grupo político:').className).toMatch(/text-\[16px\].*min-h-\[44px\]|min-h-\[44px\].*text-\[16px\]/);
+        expect(screen.queryByText(/Para crear, incluye/)).not.toBeInTheDocument();
+        const selector = screen.getByRole('button', { name: /^Grupo político:/ });
+        expect(selector.className).toMatch(/min-h-\[44px\]/);
+        expect(selector.querySelector('.font-semibold').className).toMatch(/text-\[16px\]/);
     });
 });

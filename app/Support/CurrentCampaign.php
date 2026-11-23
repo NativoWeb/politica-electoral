@@ -21,9 +21,11 @@ class CurrentCampaign
 
     public const VISTA_SESSION_KEY = 'grupo_politico_vista';
 
-    public const CREAR_EN_OTRO_GRUPO = 'Estás viendo «%s». Para crear, elige tu grupo o «Todos los grupos» arriba.';
+    public const CREAR_EN_OTRO_GRUPO = 'Estás viendo «%s». Para crear, incluye tu grupo o elige «Todos los grupos» arriba.';
 
     public const SIN_RESULTADOS = 'Tu grupo político no tiene acceso a los resultados electorales.';
+
+    public const SIN_RESULTADOS_VISTA = 'Los grupos políticos elegidos arriba no tienen acceso a los resultados electorales. Elige «Todos los grupos» o uno que los tenga.';
 
     public function user(): ?User
     {
@@ -62,42 +64,47 @@ class CurrentCampaign
         ] : null;
     }
 
-    // null = unrestricted (no authenticated user). The superadmin's header choice narrows it to one grupo político.
+    // null = unrestricted (no authenticated user). The superadmin's header choice narrows it to the groups it marked.
     public function visibleIds(): ?array
     {
         $user = $this->user();
         if (! $user) {
             return null;
         }
-        $selected = $this->selectedId();
 
-        return $selected ? [$selected] : $this->visibleIdsFor($user);
+        return $this->selectedIds() ?? $this->visibleIdsFor($user);
     }
 
-    // The grupo político the superadmin picked in the header (kept in the session); null = every group.
-    // It can only narrow what the user already sees: a value outside visibleIdsFor() is ignored.
-    public function selectedId(): ?string
+    // The grupos políticos the superadmin marked in the header (kept in the session); null = every group.
+    // It can only narrow what the user already sees: ids outside visibleIdsFor() are dropped, and when none is left
+    // (or every group is marked) it is every group. A session saved before the list kept a single id: it still counts.
+    public function selectedIds(): ?array
     {
         $user = $this->user();
         if (! $user || $user->role?->code !== 'R01_SUPERADMIN' || ! request()->hasSession()) {
             return null;
         }
-        $id = request()->session()->get(self::VISTA_SESSION_KEY);
+        $stored = request()->session()->get(self::VISTA_SESSION_KEY);
         $all = $this->visibleIdsFor($user);
-
-        return is_string($id) && $all !== null && in_array($id, $all, true) ? $id : null;
-    }
-
-    // The superadmin's header shows a group that is not its own: new records would land out of sight (in the own
-    // group), so creating is refused until the header shows the own group or every group.
-    public function createBlockedMessage(): ?string
-    {
-        $selected = $this->selectedId();
-        if ($selected === null || $selected === $this->ownId()) {
+        if ($all === null) {
             return null;
         }
+        $ids = array_values(array_unique(array_filter(is_array($stored) ? $stored : [$stored], fn ($id) => is_string($id) && in_array($id, $all, true))));
 
-        return sprintf(self::CREAR_EN_OTRO_GRUPO, DB::table('campaigns')->where('id', $selected)->value('name') ?? 'otro grupo');
+        return $ids === [] || count($ids) === count($all) ? null : $ids;
+    }
+
+    // The superadmin's header leaves out its own group: new records would land out of sight (in the own group), so
+    // creating is refused until the header includes the own group or shows every group.
+    public function createBlockedMessage(): ?string
+    {
+        $selected = $this->selectedIds();
+        if ($selected === null || in_array($this->ownId(), $selected, true)) {
+            return null;
+        }
+        $names = DB::table('campaigns')->whereIn('id', $selected)->orderBy('name')->pluck('name')->all();
+
+        return sprintf(self::CREAR_EN_OTRO_GRUPO, $names ? implode(', ', $names) : 'otro grupo');
     }
 
     // 422 with the reason (JSON: {message, errors.grupo}; Inertia: back with the error).
@@ -125,7 +132,7 @@ class CurrentCampaign
             ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])
             ->values()->all();
 
-        return ['options' => $options, 'selected' => $this->selectedId(), 'createBlocked' => $this->createBlockedMessage()];
+        return ['options' => $options, 'selected' => $this->selectedIds(), 'createBlocked' => $this->createBlockedMessage()];
     }
 
     // The same rule for a given user, also one who is not the authenticated one (the agent's whoami by phone).
@@ -204,13 +211,29 @@ class CurrentCampaign
     }
 
     // The single rule for the shared electoral results (candidates, votes and parties of Alcaldía, Concejo, Senado,
-    // Cámara, Asamblea and Gobernación): the superadmin always, anyone else only when their own grupo político has
-    // ve_resultados_electorales on. Without an authenticated user (artisan commands) nothing is restricted.
+    // Cámara, Asamblea and Gobernación): anyone only when their own grupo político has ve_resultados_electorales on;
+    // the superadmin always, unless the header narrows the app to groups of which none has it: then it sees the app as
+    // those groups do. Without an authenticated user (artisan commands) nothing is restricted.
     public function seesElectoralResults(): bool
     {
         $user = $this->user();
+        if ($user === null) {
+            return true;
+        }
+        $selected = $this->selectedIds();
 
-        return $user === null || $this->seesElectoralResultsFor($user);
+        return $selected === null ? $this->seesElectoralResultsFor($user) : $this->selectionSeesElectoralResults($selected);
+    }
+
+    private function selectionSeesElectoralResults(array $selected): bool
+    {
+        $cache = request()->attributes;
+        $key = 'sees_electoral_results:vista:'.implode(',', $selected);
+        if (! $cache->has($key)) {
+            $cache->set($key, DB::table('campaigns')->whereIn('id', $selected)->where('ve_resultados_electorales', true)->exists());
+        }
+
+        return $cache->get($key);
     }
 
     // The same rule for a given user (the agent's whoami by phone). Cached on the request, never longer: the switch
@@ -237,11 +260,12 @@ class CurrentCampaign
     // 403 with the reason: {success: false, message} for JSON (AJAX convention), the Spanish 403 page otherwise.
     public static function denyElectoralResults(): never
     {
+        $message = app(self::class)->selectedIds() !== null ? self::SIN_RESULTADOS_VISTA : self::SIN_RESULTADOS;
         if (request()->expectsJson()) {
-            throw new HttpResponseException(response()->json(['success' => false, 'message' => self::SIN_RESULTADOS], 403));
+            throw new HttpResponseException(response()->json(['success' => false, 'message' => $message], 403));
         }
 
-        abort(403, self::SIN_RESULTADOS);
+        abort(403, $message);
     }
 
     public function scope($query, string $column = 'campaign_id')

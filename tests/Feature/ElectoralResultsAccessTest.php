@@ -274,4 +274,55 @@ class ElectoralResultsAccessTest extends TestCase
         $this->actingAs($super)->get('/mapa-politico?municipio='.$this->giron.'&tipo='.self::TIPOS)
             ->assertInertia(fn (AssertableInertia $page) => $page->where('auth.user.seesElectoralResults', true));
     }
+
+    // The superadmin's header marks only groups without the results: the app looks as those groups see it.
+    public function test_superadmin_viewing_only_groups_without_results_sees_the_map_as_they_do(): void
+    {
+        $super = $this->superadmin($this->campY);
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_ids' => [$this->campX]])->assertOk();
+
+        $mapa = $this->mapa($super);
+        $this->assertArrayNotHasKey('Pedro Candidato Electo', $mapa);
+        $this->assertArrayNotHasKey('Diego Diputado', $mapa);
+        $this->assertArrayNotHasKey('Ana Lider CD', $mapa);
+        $this->assertSame('Líderes, Alcaldía', $mapa['Laura Aspirante']);
+        $this->assertSame('Asamblea', $mapa['Dora Diputada X']);
+        $this->actingAs($super)->get('/mapa-politico?'.http_build_query(['municipio' => $this->giron, 'tipo' => self::TIPOS]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('partyTotals', [])
+                ->where('auth.user.seesElectoralResults', false));
+
+        // Gobernador, the global search and the reports follow too, with the reason and the way back.
+        $this->actingAs($super)->get('/gobernador')->assertForbidden()->assertSee(CurrentCampaign::SIN_RESULTADOS_VISTA, false);
+        $this->actingAs($super)->getJson("/persona/{$this->pedro}")->assertForbidden()->assertJson(['message' => CurrentCampaign::SIN_RESULTADOS_VISTA]);
+        $this->actingAs($super)->getJson('/api/search?q=Pedro')->assertOk()->assertExactJson(['results' => []]);
+
+        // Two groups without the results (X and its own Y): still none.
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_ids' => [$this->campX, $this->campY]])->assertOk();
+        $this->assertArrayNotHasKey('Pedro Candidato Electo', $this->mapa($super));
+    }
+
+    public function test_superadmin_viewing_a_group_with_results_among_the_marked_ones_sees_them(): void
+    {
+        $super = $this->superadmin($this->campY);
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_ids' => [$this->campX, Campaign::DEFAULT_ID]])->assertOk();
+
+        $mapa = $this->mapa($super);
+        $this->assertSame('Alcaldía', $mapa['Pedro Candidato Electo']);
+        $this->assertSame('Asamblea', $mapa['Diego Diputado']);
+        $this->assertSame('Líderes', $mapa['Ana Lider CD']);
+        $this->actingAs($super)->get('/mapa-politico?'.http_build_query(['municipio' => $this->giron, 'tipo' => self::TIPOS]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('auth.user.seesElectoralResults', true)
+                ->where('partyTotals.Asamblea.0.votos', 870));
+        // The test schema has no Gobernación tables (500 here): what matters is that the gate lets it through.
+        $this->assertNotSame(403, $this->actingAs($super)->get('/gobernador')->status());
+
+        // A group whose switch is on counts by itself, and «Todos los grupos» gives everything back.
+        $this->switchOn($this->campX);
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_ids' => [$this->campX]])->assertOk();
+        $this->assertSame('Alcaldía', $this->mapa($super)['Pedro Candidato Electo']);
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_ids' => []])->assertOk();
+        $this->assertSame('Alcaldía', $this->mapa($super)['Pedro Candidato Electo']);
+    }
 }
