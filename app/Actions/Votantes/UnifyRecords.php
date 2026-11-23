@@ -54,7 +54,7 @@ class UnifyRecords
             ->where('id', '!=', $id)
             ->when($sameFicha, fn ($w) => $w->where('id', '!=', $sameFicha))
             ->where(function ($w) use ($like, $digits, $byNumber) {
-                $w->whereRaw("LOWER(nombre) LIKE ? ESCAPE '\\'", [$like]);
+                $w->whereRaw("LOWER(nombre) LIKE ? ESCAPE '!'", [$like]);
                 if ($byNumber) {
                     $w->orWhere('cedula', 'like', "%{$digits}%")->orWhere('telefono', 'like', "%{$digits}%");
                 }
@@ -74,8 +74,8 @@ class UnifyRecords
                 ->whereNull('p.merged_into_id')
                 ->where('p.id', '!=', $id)
                 ->whereNotIn('p.id', $sameFicha)
-                ->where(fn ($w) => $w->whereRaw("LOWER(p.full_name) LIKE ? ESCAPE '\\'", [$like])
-                    ->orWhereRaw("p.normalized_name LIKE ? ESCAPE '\\'", [$normalized]))
+                ->where(fn ($w) => $w->whereRaw("LOWER(p.full_name) LIKE ? ESCAPE '!'", [$like])
+                    ->orWhereRaw("p.normalized_name LIKE ? ESCAPE '!'", [$normalized]))
                 ->orderBy('p.full_name')
                 ->limit(10)
                 ->get(['p.id', 'p.full_name'])
@@ -328,8 +328,10 @@ class UnifyRecords
             ->all();
     }
 
+    // '!' escapes, not a backslash: PDO (pgsql, PHP 8.3) reads '\' inside a quoted literal as an escaped quote and
+    // miscounts the placeholders of a query with two LIKEs (HY093).
     private static function escapeLike(string $value): string
     {
-        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
     }
 }
