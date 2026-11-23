@@ -12,7 +12,7 @@ import PersonaPanel from '@/Components/PersonaPanel';
 import CrearLiderModal from '@/Components/CrearLiderModal';
 import SearchableDropdown from '@/Components/SearchableDropdown';
 import CampaignChip from '@/Components/CampaignChip';
-import { useCampaign } from '@/lib/campaign';
+import { useCampaign, useCreateBlocked } from '@/lib/campaign';
 
 const TIPO_COLORS = {
     'Alcaldía': 'bg-blue-100 text-blue-700',
@@ -349,6 +349,8 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
     const [selectedProv, setSelectedProv] = useState(serverFilters.provincia ?? '');
     const [selectedPerson, setSelectedPerson] = useState(null);
     const [showCrearLider, setShowCrearLider] = useState(false);
+    // Not while the superadmin's header shows another group (the server refuses it too).
+    const createBlocked = useCreateBlocked();
     const [selectedCargos, setSelectedCargos] = useState(serverFilters.cargo ? serverFilters.cargo.split(',') : []);
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [offlineStatus, setOfflineStatus] = useState('idle');
@@ -636,7 +638,7 @@ export default function MapaPolitico({ data: serverData = [], municipios = [], p
                     <h1 className="text-[16px] lg:text-[22px] font-extrabold">MAPA POLITICO</h1>
                     <p className="hidden lg:block text-[11px] text-white/40 mt-0.5 truncate">Directorio unificado · Alcaldías, Concejos, Líderes, Nuevos Líderes, Senado, Cámara y Asamblea</p>
                 </div>
-                {canWrite && <button onClick={() => setShowCrearLider(true)} aria-label="Crear Líder" className="px-3 lg:px-5 py-1.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
+                {canWrite && !createBlocked && <button onClick={() => setShowCrearLider(true)} aria-label="Crear Líder" className="px-3 lg:px-5 py-1.5 lg:py-3 bg-white/15 hover:bg-white/25 text-white text-[13px] lg:text-[15px] font-bold rounded-lg transition-colors border border-white/20 flex items-center gap-2 flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                     <span className="hidden sm:inline">Crear Líder</span>
                 </button>}

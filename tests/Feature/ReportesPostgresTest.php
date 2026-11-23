@@ -118,10 +118,11 @@ class ReportesPostgresTest extends TestCase
             ->assertOk()->assertJson(['success' => true])->json('total');
     }
 
+    // The rows of the Votantes table (counters.total leaves out the card filters gran_elector and con_referidos).
     private function votantesTotal(User $user, string $query = ''): int
     {
         return $this->actingAs($user)->get('/votantes'.($query !== '' ? '?'.$query : ''))->assertOk()
-            ->viewData('page')['props']['counters']['total'];
+            ->viewData('page')['props']['votantes']['total'];
     }
 
     // [heading rows..., header, data...] of the downloaded file.

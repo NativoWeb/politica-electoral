@@ -2,10 +2,13 @@ import { usePage } from '@inertiajs/react';
 
 // Campaign context for the shared props: auth.user.campaign is the user's own campaign and visibleCampaigns
 // lists every campaign they can see, only when there is more than one (subcampaigns).
-export function campaignContext(user, visibleCampaigns) {
+// grupoVista (superadmin only) lists every group of the header selector: it keeps the names when the selector narrows
+// the visible groups to one.
+export function campaignContext(user, visibleCampaigns, grupoVista = null) {
     const own = user?.campaign ?? null;
     const list = Array.isArray(visibleCampaigns) ? visibleCampaigns : [];
-    const names = Object.fromEntries(list.map(c => [c.id, c.name]));
+    const extra = Array.isArray(grupoVista?.options) ? grupoVista.options : [];
+    const names = Object.fromEntries([...extra, ...list].map(c => [c.id, c.name]));
 
     return {
         own,
@@ -20,7 +23,12 @@ export function campaignContext(user, visibleCampaigns) {
 export function useCampaign() {
     const { props } = usePage();
 
-    return campaignContext(props.auth?.user, props.visibleCampaigns);
+    return campaignContext(props.auth?.user, props.visibleCampaigns, props.grupoVista);
+}
+
+// Superadmin viewing a group that is not its own: why creating is off (null when it is not).
+export function useCreateBlocked() {
+    return usePage().props.grupoVista?.createBlocked ?? null;
 }
 
 export function readOnlyMessage(campaignName) {

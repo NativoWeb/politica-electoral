@@ -38,7 +38,9 @@ class VotanteController extends Controller
     }
 
     // The Votantes listing with the screen's filters and scope, unpaginated: the screen and its export share it.
-    public function listing(Request $request): Builder
+    // Without $cardFilters it leaves out the two filters of the KPI cards (gran_elector, con_referidos): the cards
+    // count on that base, so their numbers do not change when one of them is pressed.
+    public function listing(Request $request, bool $cardFilters = true): Builder
     {
         $referidosCount = $this->scopeToTerritory(DB::table('lideres as r'), 'r.geographic_unit_id')
             ->selectRaw('count(*)')
@@ -102,8 +104,12 @@ class VotanteController extends Controller
             $query->where('verificado', filter_var($request->input('verificado'), FILTER_VALIDATE_BOOLEAN));
         }
 
-        if ($request->has('gran_elector') && $request->input('gran_elector') !== null) {
+        if ($cardFilters && $request->has('gran_elector') && $request->input('gran_elector') !== null) {
             $query->where('gran_elector', filter_var($request->input('gran_elector'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if ($cardFilters && filter_var($request->input('con_referidos'), FILTER_VALIDATE_BOOLEAN)) {
+            $query->whereExists(fn ($q) => $this->referidosExist($q));
         }
 
         if ($request->has('militante') && $request->input('militante') !== null) {
@@ -120,20 +126,13 @@ class VotanteController extends Controller
         $paginated = $this->listing($request)->orderBy('nombre')->orderBy('lideres.id')->paginate(20)->withQueryString()
             ->through(fn (Lider $l) => $l->setAttribute('tipo', EventScope::visibleTipo($l->tipo, $user)));
 
-        // Counters count the same rows as the listing: every active filter, territory and campaign.
-        $counterBase = $this->listing($request);
+        // Counters count the rows of the listing with every active filter, territory and campaign, except the two
+        // card filters: Total is the base, and each card is the base with its own filter (what the table shows
+        // when that card alone is pressed).
+        $counterBase = $this->listing($request, false);
         $total = (clone $counterBase)->count();
         $granElectorCount = (clone $counterBase)->where('gran_elector', true)->count();
-        // A referente's cédula only refers inside the referente's own campaign.
-        $conReferidos = (clone $counterBase)->whereExists(function ($q) {
-            $this->scopeToTerritory($q, 'r.geographic_unit_id');
-            $q->selectRaw('1')
-                ->from('lideres as r')
-                ->whereColumn('r.referente_documento', 'lideres.cedula')
-                ->whereColumn('r.campaign_id', 'lideres.campaign_id')
-                ->where('r.referente_documento', '!=', '')
-                ->where('r.is_active', true);
-        })->count();
+        $conReferidos = (clone $counterBase)->whereExists(fn ($q) => $this->referidosExist($q))->count();
 
         $municipios = CachedQueries::filterMunicipios($this->campaign()->visibleIds());
         $allowedGeoIds = $user?->allowedGeoIds();
@@ -155,6 +154,7 @@ class VotanteController extends Controller
             'filters' => array_merge(
                 $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado',
                     'por_completar', 'diferencias', 'importados_inactivos']),
+                filter_var($request->input('con_referidos'), FILTER_VALIDATE_BOOLEAN) ? ['con_referidos' => '1'] : [],
                 $campana ? ['campana' => $campana] : [],
                 $evento ? ['evento' => $evento] : [],
                 $anyEvent ? ['asistentes_eventos' => '1'] : [],
@@ -162,6 +162,19 @@ class VotanteController extends Controller
             'canViewEventos' => $canSeeEventos,
             'eventos' => $canSeeEventos ? app(EventScope::class)->options() : [],
         ]);
+    }
+
+    // Someone active refers to this lider: their referente_documento is the lider's cédula, inside the same campaign
+    // (a referente's cédula only refers inside its own campaign) and the user's territory.
+    private function referidosExist($q): void
+    {
+        $this->scopeToTerritory($q, 'r.geographic_unit_id');
+        $q->selectRaw('1')
+            ->from('lideres as r')
+            ->whereColumn('r.referente_documento', 'lideres.cedula')
+            ->whereColumn('r.campaign_id', 'lideres.campaign_id')
+            ->where('r.referente_documento', '!=', '')
+            ->where('r.is_active', true);
     }
 
     // [visible event id | null, any attendance]: only for who can see event attendees; anything else is ignored.

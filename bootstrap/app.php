@@ -12,6 +12,7 @@ use App\Http\Middleware\EnsureEventosOcrEnabled;
 use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureHasPermission;
 use App\Http\Middleware\EnsureOfflineOwner;
+use App\Http\Middleware\EnsureOwnGrupoVista;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsureSeesElectoralResults;
 use App\Http\Middleware\EnsureSuperadmin;
@@ -61,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'password.changed' => EnsurePasswordChanged::class,
             'permission' => EnsureHasPermission::class,
             'superadmin' => EnsureSuperadmin::class,
+            'grupo.propio' => EnsureOwnGrupoVista::class,
             'audit' => AuditActivity::class,
             'agent.hmac' => VerifyAgentHmac::class,
             'agent.user' => EnsureAgentUserEligible::class,

@@ -4,6 +4,8 @@ import { useState, useCallback } from 'react';
 import VotanteFilters, { EventFilterChips } from '@/Components/VotanteFilters';
 import VotanteTable from '@/Components/VotanteTable';
 import VotanteDetail from '@/Components/VotanteDetail';
+import { isOn, withCardFilters } from '@/lib/votantesFiltros';
+import { useCreateBlocked } from '@/lib/campaign';
 
 function getCsrf() {
     const cookie = document.cookie.split('; ').find(c => c.startsWith('XSRF-TOKEN='));
@@ -28,29 +30,44 @@ async function apiFetch(url, options = {}) {
     return data;
 }
 
-function KpiCard({ icon, label, value, accent }) {
+// A KPI card is also a filter button: pressed, the table shows only its rows. Its number does not change when it is
+// pressed: the server counts the cards on the filters without the card filters.
+function KpiCard({ icon, label, value, accent, pressed, onClick, hint }) {
     return (
-        <div className={`flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-[var(--color-line)] shadow-sm ${accent ? 'ring-1 ring-amber-200' : ''}`}>
+        <button
+            type="button"
+            onClick={onClick}
+            aria-pressed={pressed}
+            title={hint}
+            className={`w-full text-left flex items-center gap-3 px-4 py-3 min-h-[72px] rounded-xl border-2 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 ${
+                pressed
+                    ? 'bg-blue-50 border-[var(--color-primary)]'
+                    : `bg-white border-[var(--color-line)] hover:border-[var(--color-primary)]/50 ${accent ? 'ring-1 ring-amber-200' : ''}`
+            }`}
+        >
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${accent ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-[var(--color-primary)]'}`}>
                 {icon}
             </div>
-            <div>
+            <div className="min-w-0">
                 <p className="text-[22px] lg:text-[26px] font-extrabold text-[var(--color-ink)] leading-none">{(value ?? 0).toLocaleString('es-CO')}</p>
-                <p className="text-[11px] font-semibold text-[var(--color-ink-faint)] uppercase tracking-wider mt-0.5">{label}</p>
+                <p className={`text-[13px] font-semibold uppercase tracking-wider mt-0.5 ${pressed ? 'text-[var(--color-primary)]' : 'text-[var(--color-ink-faint)]'}`}>{label}</p>
             </div>
-        </div>
+            {pressed && (
+                <svg className="w-5 h-5 ml-auto text-[var(--color-primary)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+            )}
+        </button>
     );
 }
 
 export default function Votantes({ votantes, counters, municipios, filters, eventos = [], canViewEventos = false }) {
     // Creating a votante needs write.data on the server (H1).
-    const canWrite = !!usePage().props.auth?.user?.canWrite;
+    // Not while the superadmin's header shows another group: the new ficha would land out of sight.
+    const canWrite = !!usePage().props.auth?.user?.canWrite && !useCreateBlocked();
     const [selectedId, setSelectedId] = useState(null);
     const [detailData, setDetailData] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [toast, setToast] = useState(null);
-    const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
     const showToast = useCallback((message, type = 'success') => {
@@ -116,13 +133,17 @@ export default function Votantes({ votantes, counters, municipios, filters, even
             }
         });
         router.get('/votantes', params, { preserveState: true, preserveScroll: true });
-        setMobileFiltersOpen(false);
     }, []);
 
     const handleClearFilters = useCallback(() => {
         router.get('/votantes', {}, { preserveState: false });
-        setMobileFiltersOpen(false);
     }, []);
+
+    const granElectorOn = isOn(filters.gran_elector);
+    const conReferidosOn = isOn(filters.con_referidos);
+    const applyCard = useCallback((changes) => {
+        router.get('/votantes', withCardFilters(filters, changes), { preserveState: true, preserveScroll: true });
+    }, [filters]);
 
     const detailOpen = selectedId || creating;
 
@@ -149,13 +170,6 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                         <p className="text-[13px] text-[var(--color-ink-faint)] mt-0.5">Gestion y consulta de votantes registrados</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setMobileFiltersOpen(true)}
-                            className="lg:hidden flex items-center gap-1.5 px-3 py-2 bg-white border border-[var(--color-line)] rounded-lg text-[13px] font-semibold text-[var(--color-ink-soft)] active:bg-gray-100"
-                        >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
-                            Filtros
-                        </button>
                         {canWrite && <button
                             onClick={handleCreate}
                             className="flex items-center gap-1.5 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg text-[13px] font-bold hover:bg-[var(--color-primary-light)] active:bg-[var(--color-primary-dark)] transition-colors"
@@ -167,8 +181,11 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                 </div>
 
                 {/* KPI Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-5">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-4" role="group" aria-label="Filtrar por tarjeta">
                     <KpiCard
+                        pressed={!granElectorOn && !conReferidosOn}
+                        onClick={() => applyCard({ gran_elector: null, con_referidos: null })}
+                        hint="Ver todos los votantes de los filtros"
                         icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
                         label="Total Votantes"
                         value={counters.total}
@@ -178,27 +195,33 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                         label="Gran Elector"
                         value={counters.gran_elector}
                         accent
+                        pressed={granElectorOn}
+                        onClick={() => applyCard({ gran_elector: granElectorOn ? null : '1' })}
+                        hint={granElectorOn ? 'Quitar el filtro Gran elector' : 'Ver solo los gran elector'}
                     />
                     <KpiCard
                         icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
                         label="Con Referidos"
                         value={counters.con_referidos}
+                        pressed={conReferidosOn}
+                        onClick={() => applyCard({ con_referidos: conReferidosOn ? null : '1' })}
+                        hint={conReferidosOn ? 'Quitar el filtro Con referidos' : 'Ver solo quienes tienen referidos'}
                     />
                 </div>
 
-                {/* Main layout: filters | table | detail */}
+                {/* Filter bar on top (as in Mapa Político and Eventos), then table | detail */}
+                <div className="mb-4">
+                    <VotanteFilters
+                        filters={filters}
+                        municipios={municipios}
+                        onApply={handleApplyFilters}
+                        onClear={handleClearFilters}
+                        eventos={eventos}
+                        canViewEventos={canViewEventos}
+                    />
+                </div>
+
                 <div className="flex gap-4 items-start">
-                    {/* Desktop Filters */}
-                    <div className="hidden lg:block w-[260px] flex-shrink-0 sticky top-4">
-                        <VotanteFilters
-                            filters={filters}
-                            municipios={municipios}
-                            onApply={handleApplyFilters}
-                            onClear={handleClearFilters}
-                            eventos={eventos}
-                            canViewEventos={canViewEventos}
-                        />
-                    </div>
 
                     {/* Table */}
                     <div className="flex-1 min-w-0">
@@ -237,29 +260,6 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                     )}
                 </div>
             </div>
-
-            {/* Mobile Filters Overlay */}
-            {mobileFiltersOpen && (
-                <>
-                    <div className="fixed inset-0 bg-black/50 z-50 lg:hidden" onClick={() => setMobileFiltersOpen(false)} />
-                    <div className="fixed left-0 top-0 bottom-0 w-[300px] bg-white z-50 overflow-y-auto lg:hidden shadow-2xl">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-line)] bg-gray-50">
-                            <h3 className="text-[16px] font-bold text-[var(--color-ink)]">Filtros</h3>
-                            <button onClick={() => setMobileFiltersOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200">
-                                <svg className="w-5 h-5 text-[var(--color-ink-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                        <VotanteFilters
-                            filters={filters}
-                            municipios={municipios}
-                            onApply={handleApplyFilters}
-                            onClear={handleClearFilters}
-                            eventos={eventos}
-                            canViewEventos={canViewEventos}
-                        />
-                    </div>
-                </>
-            )}
 
             {/* Mobile Detail Overlay */}
             {mobileDetailOpen && detailOpen && (

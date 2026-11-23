@@ -6,7 +6,7 @@ import { StatusBadge } from '@/Components/Eventos/EventoBadges';
 import EventoFormModal from '@/Components/Eventos/EventoFormModal';
 import PlanillaLink from '@/Components/Eventos/PlanillaLink';
 import Pagination from '@/Components/Eventos/Pagination';
-import { useCampaign } from '@/lib/campaign';
+import { useCampaign, useCreateBlocked } from '@/lib/campaign';
 import { EVENT_STATUS, canManageEventos, formatEventRange } from '@/lib/eventos';
 import { precacheExtraPagesOnce } from '@/lib/swSession';
 
@@ -70,7 +70,8 @@ function EventCard({ e, canView, canOperate }) {
 export default function Index({ eventos, filters = {}, provincias = [], tipos = [], statuses = [], can = {} }) {
     const { props } = usePage();
     const success = props.flash?.success;
-    const canCreate = (can.manage ?? true) && canManageEventos(props.auth?.user);
+    const createBlocked = useCreateBlocked();
+    const canCreate = (can.manage ?? true) && canManageEventos(props.auth?.user) && !createBlocked;
     const { isOther, list: campaigns, hasMultiple } = useCampaign();
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [creating, setCreating] = useState(false);

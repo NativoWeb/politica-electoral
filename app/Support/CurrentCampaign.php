@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 // Campaign isolation for the authenticated user (web session or WhatsApp agent token).
 // Visible = the user's campaign plus every subcampaign below it; editable = only the user's own campaign.
@@ -17,6 +18,10 @@ class CurrentCampaign
     private array $descendants = [];
 
     private ?array $allIds = null;
+
+    public const VISTA_SESSION_KEY = 'grupo_politico_vista';
+
+    public const CREAR_EN_OTRO_GRUPO = 'Estás viendo «%s». Para crear, elige tu grupo o «Todos los grupos» arriba.';
 
     public const SIN_RESULTADOS = 'Tu grupo político no tiene acceso a los resultados electorales.';
 
@@ -57,12 +62,70 @@ class CurrentCampaign
         ] : null;
     }
 
-    // null = unrestricted (no authenticated user).
+    // null = unrestricted (no authenticated user). The superadmin's header choice narrows it to one grupo político.
     public function visibleIds(): ?array
     {
         $user = $this->user();
+        if (! $user) {
+            return null;
+        }
+        $selected = $this->selectedId();
 
-        return $user ? $this->visibleIdsFor($user) : null;
+        return $selected ? [$selected] : $this->visibleIdsFor($user);
+    }
+
+    // The grupo político the superadmin picked in the header (kept in the session); null = every group.
+    // It can only narrow what the user already sees: a value outside visibleIdsFor() is ignored.
+    public function selectedId(): ?string
+    {
+        $user = $this->user();
+        if (! $user || $user->role?->code !== 'R01_SUPERADMIN' || ! request()->hasSession()) {
+            return null;
+        }
+        $id = request()->session()->get(self::VISTA_SESSION_KEY);
+        $all = $this->visibleIdsFor($user);
+
+        return is_string($id) && $all !== null && in_array($id, $all, true) ? $id : null;
+    }
+
+    // The superadmin's header shows a group that is not its own: new records would land out of sight (in the own
+    // group), so creating is refused until the header shows the own group or every group.
+    public function createBlockedMessage(): ?string
+    {
+        $selected = $this->selectedId();
+        if ($selected === null || $selected === $this->ownId()) {
+            return null;
+        }
+
+        return sprintf(self::CREAR_EN_OTRO_GRUPO, DB::table('campaigns')->where('id', $selected)->value('name') ?? 'otro grupo');
+    }
+
+    // 422 with the reason (JSON: {message, errors.grupo}; Inertia: back with the error).
+    public function abortIfCreateBlocked(): void
+    {
+        if ($message = $this->createBlockedMessage()) {
+            throw ValidationException::withMessages(['grupo' => $message]);
+        }
+    }
+
+    // The header selector: only for the superadmin with more than one group, every group it can pick (own first).
+    public function selector(): ?array
+    {
+        $user = $this->user();
+        if (! $user || ! $this->isSuperadmin()) {
+            return null;
+        }
+        $all = $this->visibleIdsFor($user);
+        if ($all === null || count($all) < 2) {
+            return null;
+        }
+        $own = $this->ownId();
+        $options = DB::table('campaigns')->whereIn('id', $all)->orderBy('name')->get(['id', 'name'])
+            ->sortBy(fn ($c) => $c->id === $own ? 0 : 1)
+            ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])
+            ->values()->all();
+
+        return ['options' => $options, 'selected' => $this->selectedId(), 'createBlocked' => $this->createBlockedMessage()];
     }
 
     // The same rule for a given user, also one who is not the authenticated one (the agent's whoami by phone).

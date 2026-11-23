@@ -64,7 +64,7 @@ function MunicipioSelector({ selected, provincias, onChange }) {
         <div>
             <div className="flex items-center justify-between mb-1">
                 <label className="block text-[12px] font-bold text-[var(--color-ink-faint)]">
-                    Municipios permitidos <span className="font-normal">(sin ninguno: todo el territorio)</span>
+                    Municipios que puede ver
                 </label>
                 {selected.length > 0 && (
                     <button type="button" onClick={() => onChange([])} className="text-[10px] text-red-500 font-bold hover:text-red-700">
@@ -72,10 +72,10 @@ function MunicipioSelector({ selected, provincias, onChange }) {
                     </button>
                 )}
             </div>
-            <p className="text-[11px] text-[var(--color-ink-faint)] mb-2">
+            <p className="text-[13px] text-[var(--color-ink-soft)] mb-2">
                 {selected.length === 0
-                    ? 'Sin restricción — ve todos los municipios'
-                    : `${selected.length} municipio${selected.length > 1 ? 's' : ''} seleccionado${selected.length > 1 ? 's' : ''}`}
+                    ? 'Ninguno marcado: ve todos los municipios. Marque municipios solo si debe ver únicamente esos.'
+                    : `Ve solo ${selected.length === 1 ? 'el municipio marcado' : `los ${selected.length} municipios marcados`}. Para que vea todos, use «Quitar todos».`}
             </p>
             <input
                 type="text"

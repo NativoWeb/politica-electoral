@@ -25,6 +25,7 @@ use App\Http\Controllers\EventoOcrController;
 use App\Http\Controllers\EventoPublicoController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\GeoController;
+use App\Http\Controllers\GrupoPoliticoVistaController;
 use App\Http\Controllers\LegislativoController;
 use App\Http\Controllers\LiderController;
 use App\Http\Controllers\MapaPoliticoController;
@@ -124,7 +125,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     // Write routes — require can.write middleware (#4 RBAC) and the write.data permission (H1: the role alone is not enough).
     Route::middleware(['can.write', 'permission:write.data'])->group(function () {
         Route::middleware('permission:view.mapa')->group(function () {
-            Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store')->middleware('offline.owner');
+            Route::post('/mapa-politico/crear-lider', [MapaPoliticoController::class, 'storeLider'])->name('mapa-politico.lider.store')->middleware(['offline.owner', 'grupo.propio']);
             Route::put('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'updatePersona'])->name('mapa-politico.persona.update')->middleware(['offline.owner', 'person.resolve']);
             Route::post('/mapa-politico/persona/{id}/nexos', [MapaPoliticoController::class, 'storeNexo'])->name('mapa-politico.nexo.store')->middleware(['offline.owner', 'person.resolve']);
             Route::put('/mapa-politico/nexos/{id}', [MapaPoliticoController::class, 'updateNexo'])->name('mapa-politico.nexo.update');
@@ -163,7 +164,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         });
 
         Route::middleware('permission:view.votantes')->group(function () {
-            Route::post('/votantes', [VotanteController::class, 'store'])->name('votantes.store');
+            Route::post('/votantes', [VotanteController::class, 'store'])->name('votantes.store')->middleware('grupo.propio');
             Route::put('/votantes/{id}', [VotanteController::class, 'update'])->name('votantes.update');
             Route::delete('/votantes/{id}', [VotanteController::class, 'destroy'])->name('votantes.destroy');
         });
@@ -194,17 +195,17 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
 
         Route::middleware('permission:manage.empresarios')->group(function () {
             Route::get('/buscar/personas', [OrganizacionController::class, 'searchPersonas'])->name('buscar.personas');
-            Route::post('/', [OrganizacionController::class, 'store'])->name('store');
+            Route::post('/', [OrganizacionController::class, 'store'])->name('store')->middleware('grupo.propio');
             Route::put('/{id}', [OrganizacionController::class, 'update'])->name('update')->whereUuid('id');
             Route::delete('/{id}', [OrganizacionController::class, 'destroy'])->name('destroy')->whereUuid('id');
-            Route::post('/{id}/miembros', [OrganizacionController::class, 'storeMember'])->name('miembros.store')->whereUuid('id');
+            Route::post('/{id}/miembros', [OrganizacionController::class, 'storeMember'])->name('miembros.store')->whereUuid('id')->middleware('grupo.propio');
             Route::put('/miembros/{miembro}', [OrganizacionController::class, 'updateMember'])->name('miembros.update')->whereUuid('miembro');
             Route::delete('/miembros/{miembro}', [OrganizacionController::class, 'destroyMember'])->name('miembros.destroy')->whereUuid('miembro');
-            Route::post('/catalogos', [OrganizacionController::class, 'storeCatalog'])->name('catalogos.store');
+            Route::post('/catalogos', [OrganizacionController::class, 'storeCatalog'])->name('catalogos.store')->middleware('grupo.propio');
             Route::put('/catalogos/{catalogo}', [OrganizacionController::class, 'updateCatalog'])->name('catalogos.update')->whereUuid('catalogo');
 
             Route::get('/plantilla.xlsx', [OrganizacionImportController::class, 'template'])->name('carga.plantilla');
-            Route::post('/carga', [OrganizacionImportController::class, 'store'])->name('carga.subir')->middleware('throttle:eventos-importar');
+            Route::post('/carga', [OrganizacionImportController::class, 'store'])->name('carga.subir')->middleware(['throttle:eventos-importar', 'grupo.propio']);
             Route::get('/carga/{import}', [OrganizacionImportController::class, 'show'])->name('carga.ver')->whereUuid('import');
             Route::patch('/carga/{import}/filas/{fila}', [OrganizacionImportController::class, 'updateRow'])->name('carga.fila')->whereUuid(['import', 'fila'])
                 ->middleware('throttle:eventos-importar-fila');
@@ -301,12 +302,12 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/{id}/operador', [EventoController::class, 'operador'])->name('operador')->whereUuid('id');
             Route::get('/{id}/planilla.pdf', [EventoController::class, 'planilla'])->name('planilla')->whereUuid('id')
                 ->middleware('throttle:eventos-planilla');
-            Route::post('/{id}/asistentes', [EventoController::class, 'registerAttendee'])->name('asistentes.store')->whereUuid('id')->middleware('offline.owner');
+            Route::post('/{id}/asistentes', [EventoController::class, 'registerAttendee'])->name('asistentes.store')->whereUuid('id')->middleware(['offline.owner', 'grupo.propio']);
         });
 
         Route::middleware('permission:manage.eventos')->group(function () {
-            Route::post('/', [EventoController::class, 'store'])->name('store');
-            Route::post('/tipos', [EventoController::class, 'storeType'])->name('tipos.store');
+            Route::post('/', [EventoController::class, 'store'])->name('store')->middleware('grupo.propio');
+            Route::post('/tipos', [EventoController::class, 'storeType'])->name('tipos.store')->middleware('grupo.propio');
             Route::put('/tipos/{id}', [EventoController::class, 'updateType'])->name('tipos.update')->whereUuid('id');
             Route::delete('/tipos/{id}', [EventoController::class, 'destroyType'])->name('tipos.destroy')->whereUuid('id');
             Route::put('/{id}', [EventoController::class, 'update'])->name('update')->whereUuid('id');
@@ -401,6 +402,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
     Route::get('/reporte/persona/{id}', [ReportController::class, 'persona'])->name('reporte.persona')->whereUuid('id')->middleware('electoral.results');
     Route::get('/reporte/municipio/{id}', [ReportController::class, 'municipio'])->name('reporte.municipio')->whereUuid('id')->middleware('electoral.results');
 
+    // The superadmin's header selector of grupo político (all or one), kept in the session.
+    Route::post('/grupo-politico/vista', [GrupoPoliticoVistaController::class, 'update'])->name('grupo-politico.vista')->middleware('superadmin');
+
     // Campaigns: superadmin only, outside view.admin so any other role gets a 403 and not a redirect
     Route::prefix('admin/campanas')->name('admin.campaigns.')->middleware('superadmin')->group(function () {
         Route::get('/', [CampaignController::class, 'index'])->name('index');
@@ -441,7 +445,7 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         // Barrio → comuna of the user's own grupo político and territory (not a platform screen: each group settles its
         // own barrio texts; docs/geografia.md).
         Route::get('/territorio/barrios-sin-comuna', [ComunaController::class, 'pendientes'])->name('territory.barrios.pendientes');
-        Route::post('/territorio/barrios/alias', [ComunaController::class, 'storeAlias'])->name('territory.barrios.alias')->middleware('can.write');
+        Route::post('/territorio/barrios/alias', [ComunaController::class, 'storeAlias'])->name('territory.barrios.alias')->middleware(['can.write', 'grupo.propio']);
 
         // Platform screens (shared electoral data): read and write only for whoever edits it, the rest get a 403.
         Route::get('/territorio', [TerritoryController::class, 'index'])->name('territory')->middleware('electoral.platform');

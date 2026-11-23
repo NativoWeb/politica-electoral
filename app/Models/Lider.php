@@ -79,6 +79,7 @@ class Lider extends Model
 
         static::creating(function (Lider $lider) {
             if (! $lider->campaign_id) {
+                app(CurrentCampaign::class)->abortIfCreateBlocked();
                 $own = app(CurrentCampaign::class)->ownId();
                 if ($own) {
                     $lider->campaign_id = $own;

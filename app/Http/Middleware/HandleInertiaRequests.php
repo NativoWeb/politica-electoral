@@ -97,6 +97,8 @@ class HandleInertiaRequests extends Middleware
             'opcionesListas' => fn () => $user ? Catalogo::paraFrontend() : [],
             'ajustesPublicos' => fn () => Ajuste::publicos(),
             'visibleCampaigns' => fn () => $user ? $campaign->visibleCampaigns() : [],
+            // Superadmin only: the header selector of grupo político ({options, selected}); null for everyone else.
+            'grupoVista' => fn () => $user ? $campaign->selector() : null,
             'partyLogos' => fn () => $user ? PartyLogos::map() : [],
             'agent' => $user ? [
                 'whatsappNumber' => (string) config('agent.whatsapp_number', ''),

@@ -4,6 +4,7 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { FullScreenSpinner } from '@/Components/Spinner';
 import { OfflineIndicator } from '@/Components/OfflineManager';
 import CompromisosCampana from '@/Components/Eventos/CompromisosCampana';
+import GrupoPoliticoSelector from '@/Components/GrupoPoliticoSelector';
 import { logout } from '@/lib/logout';
 import { canExportFrom } from '@/lib/exportPermission';
 import { descargarExportacion } from '@/lib/exportDownload';
@@ -324,6 +325,23 @@ const ICONS_EXTRA = {
     ),
 };
 
+const SIDEBAR_KEY = 'sidebar-plegado';
+
+// The desktop side menu folded to its icons, remembered in this browser (storage may be blocked: then it opens).
+export function useSidebarCollapsed() {
+    const [collapsed, setCollapsed] = useState(() => {
+        try { return window.localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { return false; }
+    });
+    function toggle() {
+        setCollapsed(prev => {
+            const next = !prev;
+            try { window.localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0'); } catch { /* not remembered, still folds */ }
+            return next;
+        });
+    }
+    return [collapsed, toggle];
+}
+
 /* ── Password Change Modal ── */
 function PasswordModal({ open, onClose }) {
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -488,6 +506,8 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const [offlineAlert, setOfflineAlert] = useState(false);
     const [mobileUserMenu, setMobileUserMenu] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
+    const grupoVista = props.grupoVista;
 
     useEffect(() => {
         let navTimeout;
@@ -518,7 +538,9 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 <p className="text-[8px] lg:text-[9px] text-white/50 tracking-[0.2em] hidden lg:block">SANTANDER</p>
                             </div>
                         </Link>
-                        <CampaignBadge campaign={auth?.campaign} className="max-w-[46vw] md:max-w-[220px] lg:max-w-[260px]" />
+                        {grupoVista?.options?.length > 1
+                            ? <GrupoPoliticoSelector vista={grupoVista} className="max-w-[52vw] md:max-w-[260px] lg:max-w-[320px]" />
+                            : <CampaignBadge campaign={auth?.campaign} className="max-w-[46vw] md:max-w-[220px] lg:max-w-[260px]" />}
                     </div>
 
                     {/* Every search result is an electoral page: no search for a group without the results. */}
@@ -574,7 +596,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
                 {/* Breadcrumb — desktop only */}
                 {breadcrumb && (
-                    <div className="hidden lg:flex bg-black/15 px-4 lg:pl-[calc(200px+1.5rem)] py-1.5 text-[11px] items-center gap-1.5 text-white/60">
+                    <div className={`hidden lg:flex bg-black/15 px-4 ${sidebarCollapsed ? 'lg:pl-[calc(64px+1.5rem)]' : 'lg:pl-[calc(200px+1.5rem)]'} py-1.5 text-[11px] items-center gap-1.5 text-white/60`}>
                         {breadcrumb.map((item, i) => (
                             <span key={i} className="flex items-center gap-1.5">
                                 {i > 0 && <span className="text-white/25">/</span>}
@@ -594,6 +616,12 @@ export default function AppLayout({ children, title, breadcrumb }) {
                     </div>
                 )}
             </header>
+
+            {grupoVista?.createBlocked && (
+                <div role="status" className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 lg:px-6 py-2.5 text-[15px] font-semibold">
+                    {grupoVista.createBlocked}
+                </div>
+            )}
 
             {/* Mobile user menu (bottom sheet) */}
             {mobileUserMenu && (
@@ -631,8 +659,24 @@ export default function AppLayout({ children, title, breadcrumb }) {
 
             <div className="flex">
                 {/* Sidebar — desktop only */}
-                <aside className="hidden lg:flex fixed lg:sticky top-0 left-0 z-30 lg:z-0 w-[200px] bg-[#002244] h-screen overflow-y-auto overflow-x-hidden flex-col">
-                    <div className="h-14 flex-shrink-0" />
+                <aside
+                    aria-label="Menú principal"
+                    className={`hidden lg:flex fixed lg:sticky top-0 left-0 z-30 lg:z-0 ${sidebarCollapsed ? 'w-[64px]' : 'w-[200px]'} bg-[#002244] h-screen overflow-y-auto overflow-x-hidden flex-col transition-[width] duration-200`}
+                >
+                    <div className={`h-14 flex-shrink-0 flex items-end px-2 ${sidebarCollapsed ? 'justify-center' : 'justify-end'}`}>
+                        <button
+                            type="button"
+                            onClick={toggleSidebar}
+                            aria-expanded={!sidebarCollapsed}
+                            aria-label={sidebarCollapsed ? 'Mostrar el menú' : 'Ocultar el menú'}
+                            title={sidebarCollapsed ? 'Mostrar el menú' : 'Ocultar el menú'}
+                            className="w-11 h-11 flex items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 transition-colors"
+                        >
+                            <svg className={`w-5 h-5 transition-transform ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M19 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                    </div>
                     <nav className="flex flex-col py-3 gap-0.5 px-2">
                         {visibleItems.map((item) => {
                             const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));
@@ -641,8 +685,10 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                     key={item.name}
                                     href={item.href}
                                     prefetch="hover"
+                                    title={sidebarCollapsed ? item.label : undefined}
+                                    aria-label={sidebarCollapsed ? item.label : undefined}
                                     className={`
-                                        relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-[13px] font-semibold tracking-wide
+                                        relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-[13px] font-semibold tracking-wide ${sidebarCollapsed ? 'justify-center' : ''}
                                         ${isActive
                                             ? 'bg-white/15 text-white shadow-sm'
                                             : 'text-white/50 hover:text-white/90 hover:bg-white/8'
@@ -653,7 +699,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[var(--color-accent)] rounded-r-full" />
                                     )}
                                     <span className="flex-shrink-0">{ICONS[item.icon ?? item.name] || ICONS_EXTRA[item.icon ?? item.name]}</span>
-                                    <span>{item.label}</span>
+                                    {!sidebarCollapsed && <span>{item.label}</span>}
                                 </Link>
                             );
                         })}

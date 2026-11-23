@@ -3,6 +3,7 @@ import { useCampaign } from '@/lib/campaign';
 import { formatEventDate } from '@/lib/eventos';
 import { eventOptionLabel } from '@/lib/eventosIntegracion';
 import { catalogoDe, useCatalogos } from '@/lib/catalogos';
+import { isOn } from '@/lib/votantesFiltros';
 
 
 // lideres.migracion_flags: the Electo import and the fichas created by an acta (cédula, teléfono, municipio).
@@ -27,7 +28,13 @@ const IMPORTADOS_INACTIVOS_OPTIONS = [
     { value: 'sin_municipio', label: 'Sin municipio' },
 ];
 
-const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
+// The same filter bar as Mapa Político and Eventos (search always at hand, the rest folds on a phone), with big
+// controls: 16px text and 48px high for older users.
+const inputCls = 'w-full min-h-[48px] border border-[var(--color-line)] rounded-lg px-3 py-2.5 text-[16px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white';
+const labelCls = 'block text-[14px] font-bold text-[var(--color-ink-soft)] mb-1';
+const checkCls = 'w-5 h-5 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)] flex-shrink-0';
+const checkLabelCls = 'flex items-center gap-2.5 min-h-[48px] px-3 rounded-lg border border-[var(--color-line)] bg-white cursor-pointer';
+const checkTextCls = 'text-[16px] text-[var(--color-ink)]';
 
 // The active event filter as a chip, visible even with the (mobile) filters panel closed.
 export function EventFilterChips({ filters, eventos = [], onRemove }) {
@@ -55,28 +62,29 @@ export function EventFilterChips({ filters, eventos = [], onRemove }) {
 }
 
 export default function VotanteFilters({ filters, municipios, onApply, onClear, eventos = [], canViewEventos = false }) {
-    // The panel is rendered twice (desktop and mobile): ids must be unique per instance.
     const uid = useId();
-    const eventoId = `${uid}-evento`;
-    const campanaId = `${uid}-campana`;
+    const id = (name) => `${uid}-${name}`;
+    const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(filters.search || '');
     const [municipio, setMunicipio] = useState(filters.municipio || '');
     const [partido, setPartido] = useState(filters.partido || '');
     const [nivelConfianza, setNivelConfianza] = useState(filters.nivel_confianza || '');
     const [estado, setEstado] = useState(filters.estado || 'activos');
-    const [verificado, setVerificado] = useState(filters.verificado === '1' || filters.verificado === true);
-    const [granElector, setGranElector] = useState(filters.gran_elector === '1' || filters.gran_elector === true);
-    const [militante, setMilitante] = useState(filters.militante === '1' || filters.militante === true);
+    const [verificado, setVerificado] = useState(isOn(filters.verificado));
+    const [granElector, setGranElector] = useState(isOn(filters.gran_elector));
+    const [conReferidos, setConReferidos] = useState(isOn(filters.con_referidos));
+    // The KPI cards change these two from outside the bar: the checkboxes follow the URL.
+    useEffect(() => { setGranElector(isOn(filters.gran_elector)); }, [filters.gran_elector]);
+    useEffect(() => { setConReferidos(isOn(filters.con_referidos)); }, [filters.con_referidos]);
+    const [militante, setMilitante] = useState(isOn(filters.militante));
     const [campana, setCampana] = useState(filters.campana || '');
     const [evento, setEvento] = useState(filters.evento || '');
-    const [asistentesEventos, setAsistentesEventos] = useState(filters.asistentes_eventos === '1' || filters.asistentes_eventos === true);
+    const [asistentesEventos, setAsistentesEventos] = useState(isOn(filters.asistentes_eventos));
     const [porCompletar, setPorCompletar] = useState(filters.por_completar || '');
     // The select follows the URL (back/forward, a link with ?por_completar=…).
     useEffect(() => { setPorCompletar(filters.por_completar || ''); }, [filters.por_completar]);
-    const [diferencias, setDiferencias] = useState(filters.diferencias === '1' || filters.diferencias === true);
+    const [diferencias, setDiferencias] = useState(isOn(filters.diferencias));
     const [importadosInactivos, setImportadosInactivos] = useState(filters.importados_inactivos || '');
-    const porCompletarId = `${uid}-por-completar`;
-    const importadosId = `${uid}-importados-inactivos`;
     const campaign = useCampaign();
     // Every nivel, also the switched off ones: old fichas may still have them.
     const nivelOptions = [{ value: '', label: 'Todos' }, ...catalogoDe(useCatalogos(), 'nivel_confianza').map(o => ({ value: o.valor, label: o.etiqueta }))];
@@ -114,6 +122,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
             ...(campaign.hasMultiple && campana ? { campana } : {}),
             ...(verificado ? { verificado: '1' } : {}),
             ...(granElector ? { gran_elector: '1' } : {}),
+            ...(conReferidos ? { con_referidos: '1' } : {}),
             ...(militante ? { militante: '1' } : {}),
             ...(canViewEventos && evento ? { evento } : {}),
             ...(canViewEventos && !evento && asistentesEventos ? { asistentes_eventos: '1' } : {}),
@@ -123,6 +132,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
             ...overrides,
         };
         onApply(vals);
+        setOpen(false);
     }
 
     function handleClear() {
@@ -133,6 +143,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
         setEstado('activos');
         setVerificado(false);
         setGranElector(false);
+        setConReferidos(false);
         setMilitante(false);
         setCampana('');
         setEvento('');
@@ -140,6 +151,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
         setPorCompletar('');
         setDiferencias(false);
         setImportadosInactivos('');
+        setOpen(false);
         onClear();
     }
 
@@ -149,182 +161,203 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
 
     const selectedMunName = municipios.find(m => m.name === municipio)?.name || '';
 
-    return (
-        <div className="bg-white rounded-xl border border-[var(--color-line)] p-4 space-y-4">
-            <h3 className="text-[13px] font-bold text-[var(--color-ink)] uppercase tracking-wider">Filtros</h3>
+    // What the URL filters by (the search has its own box), for the badge of the folded Filtros button.
+    const activeCount = ['municipio', 'partido', 'nivel_confianza', 'campana', 'evento', 'asistentes_eventos', 'por_completar',
+        'importados_inactivos', 'diferencias', 'verificado', 'gran_elector', 'con_referidos', 'militante'].filter(k => filters[k]).length
+        + (filters.estado && filters.estado !== 'activos' ? 1 : 0);
 
-            {/* Search */}
-            <div>
-                <label className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Buscar</label>
-                <div className="relative">
-                    <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" /></svg>
+    return (
+        <div className="bg-white rounded-xl border border-[var(--color-line)] px-3 lg:px-4 py-3 space-y-3">
+            <form onSubmit={e => { e.preventDefault(); handleApply(); }} className="flex items-center gap-2" role="search">
+                <button
+                    type="button"
+                    onClick={() => setOpen(!open)}
+                    aria-expanded={open}
+                    aria-controls={id('panel')}
+                    className="lg:hidden flex items-center gap-2 px-3 min-h-[48px] bg-[var(--color-primary)] text-white rounded-lg text-[16px] font-bold flex-shrink-0"
+                >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+                    Filtros
+                    {activeCount > 0 && <span className="min-w-[22px] h-[22px] px-1.5 bg-amber-400 text-[var(--color-primary)] rounded-full text-[13px] font-extrabold flex items-center justify-center">{activeCount}</span>}
+                    <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                <label htmlFor={id('search')} className="sr-only">Buscar por nombre o cédula</label>
+                <div className="relative flex-1 min-w-0 lg:max-w-[440px]">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" /></svg>
                     <input
+                        id={id('search')}
                         type="text"
                         value={search}
                         onChange={e => setSearch(e.target.value)}
-                        placeholder="Nombre o cedula..."
-                        className={inputCls + ' pl-8'}
+                        placeholder="Nombre o cédula"
+                        className={inputCls + ' pl-10'}
                     />
                 </div>
-            </div>
+            </form>
 
-            {/* Municipio searchable */}
-            <div ref={munRef} className="relative">
-                <label className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Municipio</label>
-                <button
-                    type="button"
-                    onClick={() => setMunOpen(!munOpen)}
-                    className={inputCls + ' text-left flex items-center justify-between'}
-                >
-                    <span className={selectedMunName ? 'text-[var(--color-ink)]' : 'text-gray-400'}>
-                        {selectedMunName || 'Todos'}
-                    </span>
-                    <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-                {munOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[var(--color-line)] rounded-lg shadow-xl z-30 max-h-60 overflow-hidden">
-                        <div className="p-2 border-b border-[var(--color-line)]">
-                            <input
-                                type="text"
-                                value={munSearch}
-                                onChange={e => setMunSearch(e.target.value)}
-                                placeholder="Buscar municipio..."
-                                className={inputCls}
-                                autoFocus
-                            />
-                        </div>
-                        <div className="max-h-48 overflow-y-auto">
-                            <button
-                                onClick={() => { setMunicipio(''); setMunOpen(false); setMunSearch(''); }}
-                                className="w-full text-left px-3 py-2 text-[13px] text-gray-400 hover:bg-gray-50"
-                            >
-                                Todos
-                            </button>
-                            {filteredMunicipios.map(m => (
+            <div id={id('panel')} className={`${open ? 'grid' : 'hidden'} lg:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-end`}>
+                {/* Municipio, with its own search: there are 87 and more outside Santander */}
+                <div ref={munRef} className="relative">
+                    <span id={id('mun-label')} className={labelCls}>Municipio</span>
+                    <button
+                        type="button"
+                        onClick={() => setMunOpen(!munOpen)}
+                        aria-haspopup="listbox"
+                        aria-expanded={munOpen}
+                        aria-labelledby={id('mun-label')}
+                        className={inputCls + ' text-left flex items-center justify-between gap-2'}
+                    >
+                        <span className={`truncate ${selectedMunName ? 'text-[var(--color-ink)]' : 'text-gray-500'}`}>
+                            {selectedMunName || 'Todos'}
+                        </span>
+                        <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    {munOpen && (
+                        <div className="absolute left-0 right-0 lg:right-auto lg:w-[320px] top-full mt-1 bg-white border border-[var(--color-line)] rounded-xl shadow-xl z-30 overflow-hidden">
+                            <div className="p-2 border-b border-[var(--color-line)]">
+                                <input
+                                    type="text"
+                                    value={munSearch}
+                                    onChange={e => setMunSearch(e.target.value)}
+                                    placeholder="Buscar municipio"
+                                    aria-label="Buscar municipio"
+                                    className={inputCls}
+                                />
+                            </div>
+                            <div className="max-h-64 overflow-y-auto" role="listbox" aria-labelledby={id('mun-label')}>
                                 <button
-                                    key={m.id}
-                                    onClick={() => { setMunicipio(m.name); setMunOpen(false); setMunSearch(''); }}
-                                    className={`w-full text-left px-3 py-2 text-[13px] hover:bg-blue-50 transition-colors ${municipio === m.name ? 'bg-blue-50 text-[var(--color-primary)] font-semibold' : 'text-[var(--color-ink)]'}`}
+                                    type="button"
+                                    onClick={() => { setMunicipio(''); setMunOpen(false); setMunSearch(''); }}
+                                    className="w-full text-left px-4 min-h-[44px] text-[16px] text-gray-500 hover:bg-gray-50"
                                 >
-                                    {m.name}
-                                    {m.provincia && <span className="text-[11px] text-[var(--color-ink-faint)] ml-1">({m.provincia})</span>}
+                                    Todos
                                 </button>
-                            ))}
+                                {filteredMunicipios.map(m => (
+                                    <button
+                                        type="button"
+                                        key={m.id}
+                                        onClick={() => { setMunicipio(m.name); setMunOpen(false); setMunSearch(''); }}
+                                        className={`w-full text-left px-4 min-h-[44px] text-[16px] hover:bg-blue-50 transition-colors ${municipio === m.name ? 'bg-blue-50 text-[var(--color-primary)] font-semibold' : 'text-[var(--color-ink)]'}`}
+                                    >
+                                        {m.name}
+                                        {m.provincia && <span className="text-[14px] text-[var(--color-ink-faint)] ml-1">({m.provincia})</span>}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
+                </div>
 
-            {/* Partido */}
-            <div>
-                <label className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Partido</label>
-                <input
-                    type="text"
-                    value={partido}
-                    onChange={e => setPartido(e.target.value)}
-                    placeholder="Nombre del partido..."
-                    className={inputCls}
-                />
-            </div>
-
-            {/* Nivel de confianza */}
-            <div>
-                <label className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Nivel de confianza</label>
-                <select
-                    value={nivelConfianza}
-                    onChange={e => setNivelConfianza(e.target.value)}
-                    className={inputCls}
-                >
-                    {nivelOptions.map(o => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                </select>
-            </div>
-
-            {/* Estado */}
-            <div>
-                <label className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Estado</label>
-                <select value={estado} onChange={e => setEstado(e.target.value)} className={inputCls}>
-                    <option value="activos">Activos</option>
-                    <option value="inactivos">Inactivos</option>
-                    <option value="todos">Todos</option>
-                </select>
-            </div>
-
-            {campaign.hasMultiple && (
                 <div>
-                    <label htmlFor={campanaId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Grupo político</label>
-                    <select id={campanaId} value={campana} onChange={e => setCampana(e.target.value)} className={inputCls}>
-                        <option value="">Todas</option>
-                        {campaign.list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    <label htmlFor={id('partido')} className={labelCls}>Partido</label>
+                    <input
+                        id={id('partido')}
+                        type="text"
+                        value={partido}
+                        onChange={e => setPartido(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleApply(); }}
+                        placeholder="Nombre del partido"
+                        className={inputCls}
+                    />
+                </div>
+
+                <div>
+                    <label htmlFor={id('nivel')} className={labelCls}>Nivel de confianza</label>
+                    <select id={id('nivel')} value={nivelConfianza} onChange={e => setNivelConfianza(e.target.value)} className={inputCls}>
+                        {nivelOptions.map(o => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                     </select>
                 </div>
-            )}
 
-            {canViewEventos && (
-                <div className="space-y-2">
+                <div>
+                    <label htmlFor={id('estado')} className={labelCls}>Estado</label>
+                    <select id={id('estado')} value={estado} onChange={e => setEstado(e.target.value)} className={inputCls}>
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+
+                {campaign.hasMultiple && (
                     <div>
-                        <label htmlFor={eventoId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Asistió al evento…</label>
-                        <select id={eventoId} value={evento} onChange={e => setEvento(e.target.value)} className={inputCls}>
+                        <label htmlFor={id('campana')} className={labelCls}>Grupo político</label>
+                        <select id={id('campana')} value={campana} onChange={e => setCampana(e.target.value)} className={inputCls}>
+                            <option value="">Todas</option>
+                            {campaign.list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                )}
+
+                {canViewEventos && (
+                    <div>
+                        <label htmlFor={id('evento')} className={labelCls}>Asistió al evento…</label>
+                        <select id={id('evento')} value={evento} onChange={e => setEvento(e.target.value)} className={inputCls}>
                             <option value="">Cualquiera o ninguno</option>
                             {eventos.map(e => <option key={e.id} value={e.id}>{eventOptionLabel(e, iso => formatEventDate(iso, { withTime: false }))}</option>)}
                         </select>
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={asistentesEventos || !!evento} disabled={!!evento} onChange={e => setAsistentesEventos(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
-                        <span className="text-[13px] text-[var(--color-ink)]">Asistentes a eventos (cualquiera)</span>
-                    </label>
+                )}
+
+                {/* Electo import */}
+                <div>
+                    <label htmlFor={id('por-completar')} className={labelCls}>Datos por completar</label>
+                    <select id={id('por-completar')} value={porCompletar} onChange={e => setPorCompletar(e.target.value)} className={inputCls}>
+                        {POR_COMPLETAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
                 </div>
-            )}
+                <div>
+                    <label htmlFor={id('importados-inactivos')} className={labelCls}>Inactivos importados</label>
+                    <select id={id('importados-inactivos')} value={importadosInactivos} onChange={e => setImportadosInactivos(e.target.value)} className={inputCls}>
+                        {IMPORTADOS_INACTIVOS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                </div>
 
-            {/* Electo import */}
-            <div>
-                <label htmlFor={porCompletarId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Datos por completar</label>
-                <select id={porCompletarId} value={porCompletar} onChange={e => setPorCompletar(e.target.value)} className={inputCls}>
-                    {POR_COMPLETAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-            </div>
-            <div>
-                <label htmlFor={importadosId} className="block text-[11px] font-semibold text-[var(--color-ink-faint)] mb-1">Inactivos importados</label>
-                <select id={importadosId} value={importadosInactivos} onChange={e => setImportadosInactivos(e.target.value)} className={inputCls}>
-                    {IMPORTADOS_INACTIVOS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-            </div>
+                <div className="col-span-full flex flex-wrap items-center gap-2">
+                    {canViewEventos && (
+                        <label className={checkLabelCls}>
+                            <input type="checkbox" checked={asistentesEventos || !!evento} disabled={!!evento} onChange={e => setAsistentesEventos(e.target.checked)} className={checkCls} />
+                            <span className={checkTextCls}>Asistentes a eventos (cualquiera)</span>
+                        </label>
+                    )}
+                    <label className={checkLabelCls}>
+                        <input type="checkbox" checked={diferencias} onChange={e => setDiferencias(e.target.checked)} className={checkCls} />
+                        <span className={checkTextCls}>Diferencias con Electo</span>
+                    </label>
+                    <label className={checkLabelCls}>
+                        <input type="checkbox" checked={verificado} onChange={e => setVerificado(e.target.checked)} className={checkCls} />
+                        <span className={checkTextCls}>Verificado</span>
+                    </label>
+                    <label className={checkLabelCls}>
+                        <input type="checkbox" checked={granElector} onChange={e => setGranElector(e.target.checked)} className={checkCls} />
+                        <span className={checkTextCls}>Gran Elector</span>
+                    </label>
+                    <label className={checkLabelCls}>
+                        <input type="checkbox" checked={conReferidos} onChange={e => setConReferidos(e.target.checked)} className={checkCls} />
+                        <span className={checkTextCls}>Con referidos</span>
+                    </label>
+                    <label className={checkLabelCls}>
+                        <input type="checkbox" checked={militante} onChange={e => setMilitante(e.target.checked)} className={checkCls} />
+                        <span className={checkTextCls}>Militante</span>
+                    </label>
 
-            {/* Checkboxes */}
-            <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={diferencias} onChange={e => setDiferencias(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
-                    <span className="text-[13px] text-[var(--color-ink)]">Diferencias con Electo</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={verificado} onChange={e => setVerificado(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
-                    <span className="text-[13px] text-[var(--color-ink)]">Verificado</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={granElector} onChange={e => setGranElector(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
-                    <span className="text-[13px] text-[var(--color-ink)]">Gran Elector</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={militante} onChange={e => setMilitante(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]" />
-                    <span className="text-[13px] text-[var(--color-ink)]">Militante</span>
-                </label>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-2 pt-2">
-                <button
-                    onClick={() => handleApply()}
-                    className="flex-1 px-3 py-2 bg-[var(--color-primary)] text-white rounded-lg text-[13px] font-bold hover:bg-[var(--color-primary-light)] transition-colors"
-                >
-                    Aplicar
-                </button>
-                <button
-                    onClick={handleClear}
-                    className="px-3 py-2 border border-[var(--color-line)] rounded-lg text-[13px] font-semibold text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors"
-                >
-                    Limpiar
-                </button>
+                    <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
+                        <button
+                            type="button"
+                            onClick={() => handleApply()}
+                            className="flex-1 sm:flex-initial min-h-[48px] px-6 bg-[var(--color-primary)] text-white rounded-lg text-[16px] font-bold hover:bg-[var(--color-primary-light)] transition-colors"
+                        >
+                            Aplicar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleClear}
+                            className="flex-1 sm:flex-initial min-h-[48px] px-5 border border-[var(--color-line)] rounded-lg text-[16px] font-semibold text-[var(--color-ink-soft)] hover:bg-gray-50 transition-colors"
+                        >
+                            Limpiar
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );

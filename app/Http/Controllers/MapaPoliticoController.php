@@ -1517,6 +1517,7 @@ class MapaPoliticoController extends Controller
                             ->join('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
                             ->where('g.id', $geoId)->value('prov.canonical_name') : '';
 
+                        $this->campaign()->abortIfCreateBlocked();
                         $newLiderId = (string) Str::uuid();
                         DB::table('lideres')->insert([
                             'id' => $newLiderId,

@@ -7,6 +7,7 @@ use App\Exports\GenericExport;
 use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\CurrentCampaign;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
@@ -1138,5 +1139,164 @@ class CampaignIsolationTest extends TestCase
         foreach (['observacion' => 'Es cafetero.', 'genero' => 'Masculino', 'tipo_documento' => 'CC', 'estado_civil' => 'Soltero/a', 'direccion' => 'Cra 5', 'zona' => 'urbana'] as $k => $v) {
             $this->assertSame($v, $json[$k] ?? null, $k);
         }
+    }
+
+    // --- Header selector of grupo político (superadmin) ---
+
+    private function superadmin(): User
+    {
+        $superRole = Role::firstOrCreate(['code' => 'R01_SUPERADMIN'], ['name' => 'Superadmin', 'level' => 10]);
+        // The superadmin sees event attendees: Votantes counts them and lists the events.
+        Schema::create('events', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('campaign_id');
+            $t->uuid('municipio_id')->nullable();
+            $t->string('nombre');
+            $t->timestamp('starts_at')->nullable();
+            $t->timestamp('deleted_at')->nullable();
+        });
+        Schema::create('event_attendees', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->uuid('event_id');
+            $t->uuid('lider_id')->nullable();
+        });
+
+        return $this->user('super', Campaign::DEFAULT_ID, $superRole->id);
+    }
+
+    private function votanteIds(User $user, string $query = ''): array
+    {
+        return collect($this->actingAs($user)->get('/votantes'.$query)->assertOk()->viewData('page')['props']['votantes']['data'])
+            ->pluck('id')->sort()->values()->all();
+    }
+
+    private function mapaLideres(User $user): array
+    {
+        return collect($this->actingAs($user)->get('/mapa-politico?tipo=lideres')->assertOk()->viewData('page')['props']['data'])
+            ->pluck('nombre')->sort()->values()->all();
+    }
+
+    public function test_the_superadmin_picks_one_grupo_politico_for_the_whole_app_and_back_to_all(): void
+    {
+        $super = $this->superadmin();
+        $all = collect([$this->liderA, $this->liderB, $this->liderC])->sort()->values()->all();
+        $this->assertSame($all, $this->votanteIds($super));
+
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campX])
+            ->assertOk()->assertJson(['success' => true, 'selected' => $this->campX]);
+
+        $this->assertSame([$this->liderB], $this->votanteIds($super));
+        $this->assertSame(['Beto Campaña X'], $this->mapaLideres($super));
+        // A leftover ?campana= of another group never widens the choice.
+        $this->assertSame([$this->liderB], $this->votanteIds($super, '?campana='.Campaign::DEFAULT_ID));
+        // Fichas outside the chosen group are not reachable while it is chosen.
+        $this->actingAs($super)->getJson("/votantes/{$this->liderA}")->assertNotFound();
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('counters.total', 1)
+            ->where('grupoVista.selected', $this->campX)
+            ->where('grupoVista.options', fn ($o) => collect($o)->pluck('id')->sort()->values()->all()
+                === collect([Campaign::DEFAULT_ID, $this->campX, $this->campY])->sort()->values()->all())
+            ->where('grupoVista.options.0.id', Campaign::DEFAULT_ID));
+
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => null])->assertOk()->assertJson(['selected' => null]);
+        $this->assertSame($all, $this->votanteIds($super));
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $this->mapaLideres($super));
+
+        $this->assertSame(2, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->where('user_id', $super->id)->count());
+        $last = DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->get()
+            ->first(fn ($row) => json_decode($row->after_state, true)['grupo'] === 'Todos los grupos');
+        $this->assertSame(['grupo' => 'Alejandro'], json_decode($last->before_state, true));
+    }
+
+    public function test_only_the_superadmin_can_change_the_grupo_politico_of_the_header(): void
+    {
+        $this->actingAs($this->userCd)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campX])->assertForbidden();
+        // Nothing narrowed for that user, and no selector in the props.
+        $this->actingAs($this->userCd)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('counters.total', 2)
+            ->where('grupoVista', null));
+        $this->assertSame(0, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->count());
+    }
+
+    public function test_the_grupo_politico_of_the_header_must_be_a_real_visible_group(): void
+    {
+        $super = $this->superadmin();
+
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => 'no-es-uuid'])
+            ->assertUnprocessable()->assertJsonValidationErrors('campaign_id');
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => (string) Str::uuid()])
+            ->assertUnprocessable()->assertJson(['success' => false, 'message' => 'No puedes ver ese grupo político.']);
+
+        $this->assertSame(3, count($this->votanteIds($super)));
+        $this->assertSame(0, DB::table('audit_logs')->where('action', 'GRUPO_POLITICO_VISTA')->count());
+    }
+
+    public function test_a_stale_choice_in_the_session_is_ignored(): void
+    {
+        $super = $this->superadmin();
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campY])->assertOk();
+        $this->assertSame([$this->liderC], $this->votanteIds($super));
+
+        // The group disappears: the app goes back to every group instead of showing nothing.
+        DB::table('lideres')->where('campaign_id', $this->campY)->delete();
+        DB::table('campaigns')->where('id', $this->campY)->delete();
+        app()->forgetInstance(CurrentCampaign::class);
+        $this->assertSame(collect([$this->liderA, $this->liderB])->sort()->values()->all(), $this->votanteIds($super));
+    }
+
+    public function test_nothing_is_created_while_the_header_shows_another_group(): void
+    {
+        $super = $this->superadmin();
+        $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $this->campX])->assertOk();
+        $message = 'Estás viendo «Alejandro». Para crear, elige tu grupo o «Todos los grupos» arriba.';
+        $before = DB::table('lideres')->count();
+
+        $this->actingAs($super)->postJson('/votantes', ['nombre' => 'Nueva Fuera De Vista', 'cedula' => '7001', 'municipio_id' => $this->mun])
+            ->assertUnprocessable()->assertJsonPath('errors.grupo.0', $message);
+        $this->actingAs($super)->postJson('/mapa-politico/crear-lider', ['nombre' => 'Otra Fuera De Vista', 'municipio_id' => $this->mun])
+            ->assertUnprocessable()->assertJsonPath('errors.grupo.0', $message);
+        foreach (['/eventos', '/eventos/tipos', '/empresarios', '/empresarios/catalogos'] as $uri) {
+            $this->actingAs($super)->postJson($uri, ['nombre' => 'X'])->assertUnprocessable()->assertJsonPath('errors.grupo.0', $message);
+        }
+        $this->assertSame($before, DB::table('lideres')->count());
+        $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page->where('grupoVista.createBlocked', $message));
+
+        // The own group or every group: creating works again.
+        foreach ([Campaign::DEFAULT_ID, null] as $i => $grupo) {
+            $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $grupo])->assertOk();
+            $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page->where('grupoVista.createBlocked', null));
+            $this->actingAs($super)->postJson('/votantes', ['nombre' => "Nueva En Vista {$i}", 'cedula' => "700{$i}2", 'municipio_id' => $this->mun])->assertSuccessful();
+        }
+        $this->assertSame(2, DB::table('lideres')->where('nombre', 'like', 'Nueva En Vista%')->where('campaign_id', Campaign::DEFAULT_ID)->count());
+    }
+
+    public function test_the_create_guard_never_applies_to_other_users(): void
+    {
+        $this->actingAs($this->userX)->postJson('/votantes', ['nombre' => 'De Alejandro', 'cedula' => '7101', 'municipio_id' => $this->mun])->assertSuccessful();
+        $this->assertDatabaseHas('lideres', ['nombre' => 'De Alejandro', 'campaign_id' => $this->campX]);
+    }
+
+    // --- KPI cards of Votantes as filters ---
+
+    public function test_the_votantes_cards_filter_the_table_and_keep_their_numbers(): void
+    {
+        DB::table('lideres')->where('id', $this->liderA)->update(['gran_elector' => true, 'municipio' => 'Lebrija']);
+        // Two people refer to Beto (cédula 222), one inactive: Beto has referidos; Ana does not.
+        $this->lider($this->campX, 'Referida de Beto', '901', ['referente_documento' => '222']);
+        $this->lider($this->campX, 'Inactiva de Beto', '902', ['referente_documento' => '222', 'is_active' => false]);
+        $counters = ['counters.total' => 3, 'counters.gran_elector' => 1, 'counters.con_referidos' => 1];
+
+        $page = fn (string $query) => $this->actingAs($this->userCd)->get('/votantes'.$query)->assertOk();
+
+        $page('')->assertInertia(fn (AssertableInertia $p) => $p->whereAll($counters)->where('votantes.total', 3)->missing('filters.con_referidos'));
+        $page('?gran_elector=1')->assertInertia(fn (AssertableInertia $p) => $p->whereAll($counters)
+            ->where('votantes.total', 1)->where('votantes.data.0.id', $this->liderA)->where('filters.gran_elector', '1'));
+        $page('?con_referidos=1')->assertInertia(fn (AssertableInertia $p) => $p->whereAll($counters)
+            ->where('votantes.total', 1)->where('votantes.data.0.id', $this->liderB)->where('filters.con_referidos', '1'));
+        // Combined with each other (nobody is both) and with the other filters (the cards follow those).
+        $page('?gran_elector=1&con_referidos=1')->assertInertia(fn (AssertableInertia $p) => $p->where('votantes.total', 0));
+        $page('?con_referidos=1&municipio=Lebrija')->assertInertia(fn (AssertableInertia $p) => $p
+            ->where('votantes.total', 0)->where('counters.total', 1)->where('counters.con_referidos', 0)->where('counters.gran_elector', 1));
+        $page('?con_referidos=0')->assertInertia(fn (AssertableInertia $p) => $p->where('votantes.total', 3)->missing('filters.con_referidos'));
     }
 }

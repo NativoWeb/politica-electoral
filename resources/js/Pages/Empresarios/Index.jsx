@@ -8,13 +8,15 @@ import EnlaceDescarga from '@/Components/EnlaceDescarga';
 import CatalogosModal from '@/Components/Empresarios/CatalogosModal';
 import { failure, request } from '@/lib/actas';
 import { filtersQuery } from '@/lib/empresarios';
-import { useCampaign } from '@/lib/campaign';
+import { useCampaign, useCreateBlocked } from '@/lib/campaign';
 
 const AREA_METROPOLITANA = ['Bucaramanga', 'Floridablanca', 'Piedecuesta', 'Girón', 'Rionegro', 'Lebrija'];
 
 // Empresarios y gremios: filters on top, results grouped by tipo and sector económico, ficha in a modal.
 export default function EmpresariosIndex({ data = [], truncated, filters = {}, municipios = [], provincias = [], catalogos: initialCatalogos = {}, gremios = [], roles = [], rangos = [], can = {} }) {
     const campaign = useCampaign();
+    // Not while the superadmin's header shows another group (the server refuses it too).
+    const createBlocked = useCreateBlocked();
     const [search, setSearch] = useState(filters.buscar ?? '');
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [open, setOpen] = useState(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('abrir')));
@@ -76,7 +78,7 @@ export default function EmpresariosIndex({ data = [], truncated, filters = {}, m
                     <div className="flex flex-wrap gap-2">
                         <EnlaceDescarga href={`/empresarios/exportar.xlsx${filtersQuery(filters)}`} nombre="Empresarios" className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">Excel</EnlaceDescarga>
                         <EnlaceDescarga href={`/empresarios/exportar.pdf${filtersQuery(filters)}`} nombre="Empresarios" className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">PDF</EnlaceDescarga>
-                        {can.manage && (
+                        {can.manage && !createBlocked && (
                             <>
                                 <button type="button" onClick={() => setShowCatalogos(true)} className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold">Sectores</button>
                                 <a href="/empresarios/plantilla.xlsx" className="min-h-[44px] px-3 py-2 bg-white/15 border border-white/20 rounded-lg text-[14px] font-bold flex items-center">Plantilla</a>

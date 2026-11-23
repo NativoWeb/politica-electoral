@@ -627,9 +627,13 @@ class EventIntegrationTest extends TestCase
         $this->assertSame([$this->dora], array_column($props['votantes']['data'], 'id'));
         $this->assertSame(['total' => 1, 'gran_elector' => 1, 'con_referidos' => 0], $props['counters']);
 
+        // The Gran elector card filter narrows the table, not the cards: Total stays the municipio's count.
+        $base = $this->votantes($this->cd, '?municipio=Girón');
         $props = $this->votantes($this->cd, '?municipio=Girón&gran_elector=1');
-        $this->assertSame(0, $props['counters']['total']);
+        $this->assertSame([], $props['votantes']['data']);
+        $this->assertSame($base['counters'], $props['counters']);
         $this->assertSame(0, $props['counters']['gran_elector']);
+        $this->assertGreaterThan(0, $props['counters']['total']);
     }
 
     public function test_without_view_eventos_only_the_attendee_tipo_falls_back_to_todos(): void
