@@ -300,7 +300,7 @@ class MapaPoliticoPagingPostgresTest extends TestCase
         $this->assertSame(['barrio', 'convenio'], array_column($ficha['por_completar'], 'campo'));
         $this->assertSame('77', $ficha['por_completar'][0]['codigo_electo']);
         $diff = $this->actingAs($this->user)->getJson("/mapa-politico/persona/{$diferente}")->assertOk()->json('migracion.diferencias');
-        $this->assertSame([['campo' => 'telefono', 'label' => 'Telefono', 'electo' => '3109998888', 'actual' => '3001112222']], $diff);
+        $this->assertSame([['campo' => 'telefono', 'label' => 'Teléfono', 'electo' => '3109998888', 'actual' => '3001112222', 'usar_electo' => true]], $diff);
 
         $this->actingAs($this->user)->putJson("/mapa-politico/persona/{$pendiente}", ['barrio' => 'Centro'])->assertOk();
         $flags = json_decode(DB::table('lideres')->where('id', $pendiente)->value('migracion_flags'), true);

@@ -669,7 +669,23 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
 
                     {campaignReadOnly && <ReadOnlyCampaignNotice campaignName={campaignName} className="mx-4 lg:mx-8 mt-3" />}
                     {!campaignReadOnly && sinPermisoEscritura && <NoWritePermissionNotice className="mx-4 lg:mx-8 mt-3" />}
-                    <MigracionAviso migracion={data?.migracion} className="mx-4 lg:mx-8 mt-3" />
+                    <MigracionAviso
+                        migracion={data?.migracion}
+                        className="mx-4 lg:mx-8 mt-3"
+                        liderId={isLider ? data.id : null}
+                        puedeResolver={isLider && !readOnly && !data._offline}
+                        onResuelta={r => {
+                            if (r.warning) showGlobalToast(r.warning);
+                            if (r.valor === null) {
+                                setData(prev => ({ ...prev, migracion: r.migracion }));
+                                return;
+                            }
+                            // Electo's value is now the ficha's: also in an open form, so saving it does not write the old one back.
+                            setForm(prev => ({ ...prev, [r.campo]: r.valor }));
+                            loadData();
+                            if (r.campo === 'nombre') setTimeout(() => router.reload({ only: ['data'] }), 500);
+                        }}
+                    />
 
                     {/* Status message */}
                     {message && (() => {

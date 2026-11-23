@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const page = { props: {} };
@@ -135,5 +135,83 @@ describe('VotanteDetail comuna', () => {
         fireEvent.click(screen.getByRole('button', { name: /Ubicacion/i }));
 
         expect(screen.queryByText(/Comuna/)).not.toBeInTheDocument();
+    });
+});
+
+describe('VotanteDetail: diferencias con Electo', () => {
+    const MIGRACION = { por_completar: [], marcas: [], diferencias: [{ campo: 'fecha_nacimiento', label: 'Fecha de nacimiento', electo: '1990-09-16', actual: '1990-09-15', usar_electo: true }] };
+    const originalFetch = globalThis.fetch;
+
+    beforeEach(() => {
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
+    });
+    afterEach(() => { globalThis.fetch = originalFetch; });
+
+    function renderConAviso(campaignId, onSaved = vi.fn()) {
+        render(
+            <VotanteDetail
+                data={{ ...votante(campaignId), fecha_nacimiento: '1990-09-15', migracion: MIGRACION }}
+                loading={false} creating={false} onClose={vi.fn()} onSaved={onSaved} onDeleted={vi.fn()}
+                apiFetch={vi.fn()} municipios={[]} showToast={vi.fn()}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: /Datos de Electo/ }));
+        return onSaved;
+    }
+
+    it('en una ficha de otro grupo político solo muestra la diferencia', () => {
+        renderConAviso('x');
+        expect(screen.getByText('1990-09-16')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Dejar el de aquí' })).not.toBeInTheDocument();
+    });
+
+    it('sin write.data tampoco ofrece resolverla', () => {
+        page.props.auth.user.canWrite = false;
+        renderConAviso('cd');
+        expect(screen.queryByRole('button', { name: 'Usar el de Electo' })).not.toBeInTheDocument();
+    });
+
+    it('al usar el de Electo la ficha muestra el valor nuevo y se recarga', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ success: true, campo: 'fecha_nacimiento', valor: '1990-09-16', migracion: null }), { status: 200 })));
+        const onSaved = renderConAviso('cd');
+        expect(screen.queryAllByText('1990-09-16')).toHaveLength(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Usar el de Electo' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, cambiar' }));
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+        expect(screen.queryByText(/Datos de Electo/)).not.toBeInTheDocument();
+        expect(screen.getByText('1990-09-16')).toBeInTheDocument();
+        expect(screen.queryByText('1990-09-15')).not.toBeInTheDocument();
+    });
+});
+
+describe('VotanteDetail: el aviso sigue abierto tras resolver', () => {
+    beforeEach(() => {
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
+    });
+
+    it('si quedan diferencias tras recargar la ficha, el aviso no se pliega', async () => {
+        const dif = (campo, label, electo, actual) => ({ campo, label, electo, actual, usar_electo: true });
+        const antes = { por_completar: [], marcas: [], diferencias: [dif('nombre', 'Nombre', 'BETO PEREZ', 'Beto Pérez'), dif('genero', 'Género', 'Femenino', 'Masculino')] };
+        const despues = { ...antes, diferencias: [antes.diferencias[1]] };
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ success: true, campo: 'nombre', valor: 'BETO PEREZ', migracion: despues }), { status: 200 })));
+        const props = { creating: false, onClose: vi.fn(), onDeleted: vi.fn(), apiFetch: vi.fn(), municipios: [], showToast: vi.fn() };
+        const onSaved = vi.fn();
+        const { rerender } = render(<VotanteDetail {...props} data={{ ...votante('cd'), migracion: antes }} loading={false} onSaved={onSaved} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Datos de Electo/ }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Usar el de Electo' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, cambiar' }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+
+        // The page reloads the ficha: spinner, then the new data.
+        rerender(<VotanteDetail {...props} data={{ ...votante('cd'), migracion: antes }} loading onSaved={onSaved} />);
+        rerender(<VotanteDetail {...props} data={{ ...votante('cd'), nombre: 'BETO PEREZ', migracion: despues }} loading={false} onSaved={onSaved} />);
+
+        expect(screen.getByRole('button', { name: /Datos de Electo/ })).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText('Femenino')).toBeInTheDocument();
+        globalThis.fetch = originalFetch;
     });
 });

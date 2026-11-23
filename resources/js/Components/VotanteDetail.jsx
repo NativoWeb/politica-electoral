@@ -132,6 +132,8 @@ export default function VotanteDetail({
     const canSeeEventos = canSeeEventAttendees(authUser);
     const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
+    // The Electo notice stays open while the ficha reloads after resolving a difference.
+    const [avisoAbierto, setAvisoAbierto] = useState(false);
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
     const campaignReadOnly = !creating && campaign.isOther(data?.campaign_id);
     const campaignName = campaignReadOnly ? campaign.nameOf(data?.campaign_id) : null;
@@ -156,6 +158,7 @@ export default function VotanteDetail({
             if (data.id !== prevIdRef.current) {
                 setForm(buildInitialForm(data));
                 setEditing(false);
+                setAvisoAbierto(false);
                 prevIdRef.current = data.id;
             }
             setLocalContacts(data.contactos || []);
@@ -334,7 +337,23 @@ export default function VotanteDetail({
             <div className="flex-1 overflow-y-auto px-4">
                 {campaignReadOnly && <ReadOnlyCampaignNotice campaignName={campaignName} className="mt-3" />}
                 {!campaignReadOnly && sinPermisoEscritura && <NoWritePermissionNotice className="mt-3" />}
-                {!creating && <MigracionAviso migracion={data?.migracion} className="mt-3" />}
+                {!creating && (
+                    <MigracionAviso
+                        migracion={data?.migracion}
+                        className="mt-3"
+                        liderId={data?.id}
+                        puedeResolver={!soloLectura}
+                        abierto={avisoAbierto}
+                        onAbiertoChange={setAvisoAbierto}
+                        onResuelta={r => {
+                            if (r.warning) showToast(r.warning);
+                            if (r.valor === null) return;
+                            // Electo's value is now the ficha's: also in an open form, so saving it does not write the old one back.
+                            setForm(prev => ({ ...prev, [r.campo]: r.valor }));
+                            onSaved();
+                        }}
+                    />
+                )}
                 {!creating && !editing && !soloLectura && authUser?.canWrite && (
                     <div className="pt-3">
                         <button type="button" onClick={() => setShowUnificar(true)} className="px-3 py-1.5 text-[12px] font-bold text-[var(--color-primary)] border border-[var(--color-primary)] rounded-lg hover:bg-blue-50 transition-colors">

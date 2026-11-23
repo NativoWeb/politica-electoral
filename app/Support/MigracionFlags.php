@@ -2,6 +2,11 @@
 
 namespace App\Support;
 
+use App\Actions\Votantes\UpdateVotante;
+use App\Services\Configuracion\Catalogo;
+use App\Services\Electo\Normalizer;
+use DateTimeInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -32,6 +37,24 @@ class MigracionFlags
         'fallecido' => 'Fallecido',
         'sin_municipio' => 'Sin municipio',
     ];
+
+    // Fields the Electo import can leave in contradicciones (PersonasImporter::COMPARE, its municipio and autorización,
+    // and the telefono/email of ContactosImporter) => label. A difference of any other field cannot be resolved.
+    public const DIFERENCIAS = [
+        'nombre' => 'Nombre',
+        'tipo_documento' => 'Tipo de documento',
+        'fecha_nacimiento' => 'Fecha de nacimiento',
+        'fecha_expedicion_doc' => 'Fecha de expedición',
+        'genero' => 'Género',
+        'estado_civil' => 'Estado civil',
+        'telefono' => 'Teléfono',
+        'email' => 'Correo',
+        'municipio' => 'Municipio',
+        'autoriza_datos' => 'Autoriza datos',
+    ];
+
+    // Taking Electo's value of these changes the territory or the data authorization: only by editing the ficha.
+    public const SOLO_EDITANDO = ['municipio', 'autoriza_datos'];
 
     private const MARCAS = [
         'menor' => 'Llegó de Electo como menor de edad: quedó inactiva y sin autorización de datos.',
@@ -120,8 +143,8 @@ class MigracionFlags
 
         $diferencias = [];
         foreach ($flags['contradicciones'] ?? [] as $campo => $electo) {
-            $diferencias[] = ['campo' => $campo, 'label' => self::label($campo), 'electo' => is_scalar($electo) ? (string) $electo : json_encode($electo),
-                'actual' => isset($lider->{$campo}) && is_scalar($lider->{$campo}) ? (string) $lider->{$campo} : null];
+            $diferencias[] = ['campo' => $campo, 'label' => self::DIFERENCIAS[$campo] ?? self::label($campo), 'electo' => self::texto($campo, $electo),
+                'actual' => self::texto($campo, $lider->{$campo} ?? null), 'usar_electo' => self::valorElecto($campo, $electo) !== null];
         }
 
         $marcas = [];
@@ -173,6 +196,41 @@ class MigracionFlags
         }
     }
 
+    // Electo's value of a difference as the ficha stores it, or null when it cannot be written as it is: a field that
+    // is only changed by editing the ficha, an impossible date, a value outside the list, an empty name.
+    public static function valorElecto(string $campo, mixed $electo): ?string
+    {
+        if (! isset(self::DIFERENCIAS[$campo]) || in_array($campo, self::SOLO_EDITANDO, true) || ! is_scalar($electo) || is_bool($electo)) {
+            return null;
+        }
+        $electo = trim((string) $electo);
+
+        return match ($campo) {
+            'nombre' => ($nombre = UpdateVotante::normalizeName($electo)) !== '' && mb_strlen($nombre) <= 255 ? $nombre : null,
+            'fecha_nacimiento', 'fecha_expedicion_doc' => self::fecha($electo),
+            'tipo_documento', 'genero', 'estado_civil' => self::opcion($campo, $electo),
+            'telefono' => Normalizer::phone($electo),
+            'email' => Normalizer::email($electo),
+            default => null,
+        };
+    }
+
+    // Removes one difference; whether it was there. The caller holds the row lock.
+    public static function quitarDiferencia(string $liderId, string $campo): bool
+    {
+        $flags = self::decode(DB::table('lideres')->where('id', $liderId)->value('migracion_flags'));
+        if (! is_array($flags['contradicciones'] ?? null) || ! array_key_exists($campo, $flags['contradicciones'])) {
+            return false;
+        }
+        unset($flags['contradicciones'][$campo]);
+        if ($flags['contradicciones'] === []) {
+            unset($flags['contradicciones']);
+        }
+        DB::table('lideres')->where('id', $liderId)->update(['migracion_flags' => $flags === [] ? null : json_encode($flags, JSON_UNESCAPED_UNICODE)]);
+
+        return true;
+    }
+
     public static function hasColumn(): bool
     {
         return self::$hasColumn ??= Schema::hasColumn('lideres', 'migracion_flags');
@@ -190,6 +248,55 @@ class MigracionFlags
         }
 
         return $value !== null && trim((string) $value) !== '';
+    }
+
+    // A value of the notice as the screens show it: dates Y-m-d (the model casts them to Carbon), booleans Sí/No.
+    private static function texto(string $campo, mixed $value): ?string
+    {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        if (is_bool($value) || $campo === 'autoriza_datos') {
+            return $value === null || $value === '' ? null : (filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'Sí' : 'No');
+        }
+        if (! is_scalar($value)) {
+            return $value === null ? null : json_encode($value, JSON_UNESCAPED_UNICODE);
+        }
+        $value = (string) $value;
+        if (str_starts_with($campo, 'fecha_') && preg_match('/^\d{4}-\d{2}-\d{2}[ T]/', $value)) {
+            return substr($value, 0, 10);
+        }
+
+        return $value === '' ? null : $value;
+    }
+
+    private static function fecha(string $value): ?string
+    {
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return null;
+        }
+        $date = Carbon::createFromFormat('!Y-m-d', $value);
+        if (! $date || $date->format('Y-m-d') !== $value || $date->year < 1900 || $date->isAfter(today())) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    // An active option of the list, matched without case or accents on its value or its label ("SOLTERO/A").
+    private static function opcion(string $catalogo, string $value): ?string
+    {
+        $key = Normalizer::key($value);
+        if ($key === '') {
+            return null;
+        }
+        foreach (Catalogo::opciones($catalogo) as $opcion) {
+            if (Normalizer::key($opcion['valor']) === $key || Normalizer::key($opcion['etiqueta']) === $key) {
+                return $opcion['valor'];
+            }
+        }
+
+        return null;
     }
 
     private static function label(string $campo): string

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Votantes\AddContacto;
 use App\Actions\Votantes\CreateVotante;
 use App\Actions\Votantes\DeactivateVotante;
+use App\Actions\Votantes\ResolveElectoDiferencia;
 use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
@@ -396,6 +397,27 @@ class VotanteController extends Controller
         return response()->json(array_filter([
             'success' => true, 'message' => 'Votante actualizado.', 'warning' => $updateVotante->warning,
         ], fn ($v) => $v !== null));
+    }
+
+    // "Dejar el de aquí" / "Usar el de Electo" on a difference of the ficha's notice (Mapa and Votantes).
+    public function resolverDiferenciaElecto(Request $request, string $id, string $campo, ResolveElectoDiferencia $resolve)
+    {
+        if (! Str::isUuid($id)) {
+            abort(404);
+        }
+        $data = $request->validate(['accion' => 'required|string|in:'.implode(',', ResolveElectoDiferencia::ACCIONES)]);
+
+        [$resuelta, $valor] = $resolve->handle($id, $campo, $data['accion']);
+
+        return response()->json([
+            'success' => true,
+            'message' => ! $resuelta ? 'Esta diferencia ya estaba resuelta.' : ($valor !== null ? 'Se usó el dato de Electo.' : 'Se dejó el dato de aquí.'),
+            'campo' => $campo,
+            'valor' => $valor,
+            // The notice as the ficha shows it now: null when nothing is left.
+            'migracion' => $resolve->aviso($id),
+            'warning' => $resolve->warning,
+        ]);
     }
 
     public function destroy(string $id, DeactivateVotante $deactivateVotante)

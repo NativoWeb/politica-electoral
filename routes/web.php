@@ -157,6 +157,9 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::delete('/votantes/info-politica/{id}', [VotanteController::class, 'destroyInfoPolitica'])->name('votantes.info-politica.destroy');
             // The comuna chosen by hand in the ficha (persona panel of the map and VotanteDetail): never overwritten.
             Route::patch('/votantes/{id}/comuna', [ComunaController::class, 'updateFicha'])->name('votantes.comuna.update')->whereUuid('id');
+            // "Diferente en Electo" of the ficha's notice: keep ours or take Electo's value.
+            Route::post('/votantes/{id}/electo/diferencias/{campo}', [VotanteController::class, 'resolverDiferenciaElecto'])
+                ->name('votantes.electo.diferencia')->whereUuid('id')->where('campo', '[a-z_]{1,40}');
         });
 
         Route::middleware('permission:view.votantes')->group(function () {
