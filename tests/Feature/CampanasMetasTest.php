@@ -267,6 +267,33 @@ class CampanasMetasTest extends TestCase
             ->where('es_lider', true)->count(), $d['totales']['avance']['lideres']);
     }
 
+    public function test_progress_counts_by_comuna_origin_and_comunas_plus_sin_comuna_add_up_to_the_municipio(): void
+    {
+        $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => $this->comuna1, 'comuna_source' => 'auto']);
+        $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => $this->comuna1, 'comuna_source' => 'puesto', 'es_lider' => true]);
+        $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => $this->comuna1, 'comuna_source' => 'puesto']);
+        $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => $this->comuna2, 'comuna_source' => 'texto']);
+        $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => $this->corregimiento1, 'comuna_source' => 'manual']);
+        // Two kinds of "no comuna": a manual "none" and never assigned; both are counted once each in sin_comuna.
+        $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => null, 'comuna_source' => 'manual']);
+        $this->ficha($this->cd, $this->bucaramanga, ['es_lider' => true]);
+        $c = $this->campana(['name' => 'Gob']);
+
+        $d = $this->detalle($c);
+        $c1 = $this->fila($d, $this->comuna1);
+        $this->assertSame(['votantes' => 3, 'lideres' => 1], $c1['avance']);
+        $this->assertSame(['auto' => 1, 'texto' => 0, 'direccion' => 0, 'puesto' => 2, 'manual' => 0], $c1['avance_por_origen']);
+        $this->assertSame(1, $this->fila($d, $this->comuna2)['avance_por_origen']['texto']);
+        $this->assertSame(1, $this->fila($d, $this->corregimiento1)['avance_por_origen']['manual']);
+
+        $bga = $this->fila($d, $this->bucaramanga);
+        $this->assertSame(['votantes' => 7, 'lideres' => 2], $bga['avance']);
+        $this->assertSame(['votantes' => 2, 'lideres' => 1], $bga['sin_comuna']);
+        $this->assertSame(2, $bga['avance_por_origen']['puesto']);
+        $comunas = array_filter($d['filas'], fn ($f) => $f['padre_id'] === $this->bucaramanga);
+        $this->assertSame($bga['avance']['votantes'], array_sum(array_map(fn ($f) => $f['avance']['votantes'], $comunas)) + $bga['sin_comuna']['votantes']);
+    }
+
     // ---------------------------------------------------------------- batch
 
     public function test_batch_saves_keeps_missing_keys_clears_nulls_and_audits_each_cell(): void

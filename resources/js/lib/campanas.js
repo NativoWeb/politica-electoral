@@ -139,6 +139,8 @@ function filaPlana(r) {
         sinSugerencia: texto(r.sin_sugerencia),
         avance: { votantes: num(r.avance?.votantes) ?? 0, lideres: num(r.avance?.lideres) ?? 0 },
         sinComuna: r.sin_comuna ? { votantes: num(r.sin_comuna.votantes) ?? 0, lideres: num(r.sin_comuna.lideres) ?? 0 } : null,
+        // Votantes whose comuna came from their polling station (docs/geografia.md): "incluye N por puesto de votación".
+        porPuesto: num(r.avance_por_origen?.puesto) ?? 0,
         hijos: [],
     };
 }

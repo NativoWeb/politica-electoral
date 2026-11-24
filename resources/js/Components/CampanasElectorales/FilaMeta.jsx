@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Boton, IconoChevron, focoCls } from '@/Components/Reportes/ui';
+import { FUENTE_PUESTOS } from '@/lib/comunas';
 import { CAMPOS_META, contarComunas, modoMunicipio, numero, plural, sugerenciaDe, validarMeta, valorMunicipio } from '@/lib/campanas';
 
 // One territory of the goals grid. A single DOM for every width: a card on the phone, a table row from lg up
@@ -75,10 +76,24 @@ function Avance({ fila }) {
     return (
         <div className="flex items-center justify-between gap-3 lg:block">
             <span className="text-lg text-ink-soft lg:sr-only">Avance</span>
-            <p className="text-base text-ink tabular-nums lg:min-h-14 lg:flex lg:items-center">
-                Votantes {numero(fila.avance.votantes)} · Líderes {numero(fila.avance.lideres)}
-            </p>
+            <div className="text-right lg:text-left lg:min-h-14 lg:flex lg:flex-col lg:justify-center">
+                <p className="text-base text-ink tabular-nums">
+                    Votantes {numero(fila.avance.votantes)} · Líderes {numero(fila.avance.lideres)}
+                </p>
+                {fila.porPuesto > 0 && (
+                    <p className="text-sm text-ink-soft tabular-nums">incluye {numero(fila.porPuesto)} por puesto de votación</p>
+                )}
+            </div>
         </div>
+    );
+}
+
+// Below the goals table, once, when some count includes fichas placed by their puesto de votación.
+export function FuentePuestos() {
+    return (
+        <p data-testid="fuente-puestos" className="mt-3 text-sm text-ink-soft">
+            Comunas según el puesto de votación. {FUENTE_PUESTOS}
+        </p>
     );
 }
 

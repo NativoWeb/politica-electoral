@@ -71,13 +71,20 @@ Alternativa revisada: capa "Municipios de Santander" del AMB
 | `bucaramanga_barrios_amb.geojson` | 220 polígonos de barrio con `NOMBRE_BAR` y `COD_COMUNA` | **Área Metropolitana de Bucaramanga (AMB)**, capa de barrios (mapa.amb.gov.co) |
 | `bucaramanga_barrios_planeacion.csv` | 250 filas oficiales comuna/corregimiento → barrio/vereda | **Planeación Bucaramanga – lista de barrios** |
 | `bucaramanga_barrios_datosgov.csv` | 263 barrios con comuna, categoría y población 2024 | **datos.gov.co, conjunto kn95-8dei, licencia CC BY-SA 4.0** |
+| `bucaramanga_puestos_2023.csv` | 88 puestos de votación de Bucaramanga con comuna, dirección y latitud/longitud (sin datos personales), más la columna `alias` curada a mano | **Registraduría Nacional del Estado Civil – «Divipole Elecciones Territoriales 2023 con georreferenciación», datos.gov.co conjunto mv2e-prx5, licencia CC BY-SA 4.0** (descargado el 2026-11-24 de `https://www.datos.gov.co/resource/mv2e-prx5.json?departamento=SANTANDER&municipio=BUCARAMANGA`) |
 
 Toda pantalla, exportación o reporte que muestre estos polígonos o cifras debe citar:
 
 > Fuente: Área Metropolitana de Bucaramanga (AMB) – LIMITES_COMUNAS; Alcaldía de Bucaramanga – Subsecretaría de Medio
 > Ambiente (veredas); Planeación Bucaramanga – lista de barrios; datos.gov.co kn95-8dei (CC BY-SA 4.0).
 
-CC BY-SA 4.0 exige atribución y compartir igual las obras derivadas de ese conjunto (la población por barrio).
+Y lo que muestre la comuna obtenida por puesto de votación, o los puestos mismos:
+
+> Fuente: Registraduría Nacional del Estado Civil – Divipole Elecciones Territoriales 2023 con georreferenciación,
+> datos.gov.co mv2e-prx5 (CC BY-SA 4.0).
+
+CC BY-SA 4.0 exige atribución y compartir igual las obras derivadas de esos conjuntos (la población por barrio; la
+lista de puestos con su comuna y sus alias, que se comparte con la misma licencia).
 
 ### Modelo
 
@@ -89,8 +96,14 @@ CC BY-SA 4.0 exige atribución y compartir igual las obras derivadas de ese conj
   `pg_trgm`), `fuente` (`amb|planeacion|datosgov`), `poblacion`, `geom` (solo AMB).
 - `barrio_aliases`: texto normalizado → barrio o comuna, **por grupo político** (`campaign_id`), con `created_by`.
 - `lideres`, `event_attendees`, `organizaciones`: `comuna_id` (FK `geographic_units`) y `comuna_source`
-  (`auto|manual`), añadidas con `ADD COLUMN` (las vistas `agent_ro.*` no se tocan). Un asistente está donde está su
-  evento (`events.municipio_id`).
+  (`auto|texto|direccion|puesto|manual`, ver la cascada), añadidas con `ADD COLUMN` (las vistas `agent_ro.*` no se
+  tocan; la migración 2026_11_24_000001 solo reemplaza el CHECK). Un asistente está donde está su evento
+  (`events.municipio_id`).
+- `puestos_votacion`: `municipio_id`, `nombre`, `nombre_normalizado` (único por municipio, GIN `pg_trgm`),
+  `comuna_unit_id`, `comuna_origen` (`dataset|poligono`), `direccion`, `geom` (POINT 4326), `fuente`, `anio`, `alias`
+  (jsonb).
+- `comuna_cambios`: cada cambio de `geo:asignar-comunas` (`lote`, `tabla`, `registro_id`, antes y después de
+  `comuna_id`/`comuna_source`), para revertir por lote.
 
 Un municipio sin comunas (cualquier otro, también los creados fuera de Santander) funciona igual que antes: sin
 selector y sin comuna.
@@ -116,7 +129,78 @@ izquierda (`05 DE ENERO` = `5 DE ENERO`); se quita el propio municipio (`BUCARAM
   reescribe si cambió (la simplificación no es repetible byte a byte). Transacción; `--dry-run` en transacción de
   solo lectura. Idempotente. Audita `geo.import_comunas` (archivos con sha256) y limpia la caché del endpoint.
 
+### Cascada (una sola regla: `ComunaAssigner::changesFor`)
+
+Prioridad, de más fuerte a más débil: **manual > auto (barrio) > texto > dirección (fase B, sin activar) > puesto**.
+La señal más fuerte presente gana y reemplaza a una automática más débil; si desaparece (se borra el barrio, cambia el
+puesto) toma su lugar la siguiente: una ficha con barrio C05 y puesto C12 queda C05/`auto`; sin barrio, C12/`puesto`.
+`manual` nunca se toca (con comuna o sin ella). La usan el guardado de la ficha (`Lider`: barrio, municipio, dirección,
+puesto y municipio de votación), el refresco del Mapa (`refreshRow`), «volver a automática» del PATCH y el comando.
+
+- **auto**: el barrio (sección «Barrio» más abajo).
+- **texto**: «COMUNA N» escrito en el barrio o la dirección (`COMUNA 5`, `COMUNA NO. 5`, `COMUNA #05`), si nombra un
+  solo número que existe como comuna del municipio y ese texto no menciona otro municipio (`COMUNA 5 FLORIDABLANCA` y
+  `COMUNA 25` no asignan; barrio «COMUNA 3» con dirección «COMUNA 5» tampoco).
+- **direccion**: reservado para la fase B (geocodificación por malla vial del AMB); hoy no asigna nada.
+- **puesto** (solo fichas): si `municipio_votacion` es el municipio de la ficha (nombre, abreviatura o código DANE;
+  vacío = no se usa) y la ficha vive en un municipio con comunas. El puesto se busca entre los `puestos_votacion` del
+  municipio por nombre normalizado o alias exacto; si no, por similitud de trigramas ≥ 0,6 que le saque ≥ 0,1 al mejor
+  puesto **de otra comuna** (dos sedes de la misma comuna no son ambiguas). Ambiguo, sin coincidencia, vacío o «0» →
+  no asigna y va al reporte. La similitud se calcula en PHP (`Trigram`, igual a `pg_trgm.similarity`, comprobado en
+  ComunaCascadaPostgresTest): la lista es corta (88) y así el resultado es el mismo en SQLite y PostgreSQL.
+  Normalización (`PuestoNormalizer`): sin tildes, puntuación como espacio, iniciales unidas (`I.E.` = `IE`),
+  `INSTITUCION EDUCATIVA` = `IE`, `COLEGIO` = `COL`, `ESCUELA` = `ESC`, `UNIVERSIDAD` = `UNIV`, sin prefijo `PUESTO`.
+
+### Carga de puestos: `php artisan geo:import-puestos --municipio=68001 [--archivo=] [--dry-run]`
+
+- Lee `database/data/geo/bucaramanga_puestos_2023.csv` (columnas `departamento, municipio, puesto, comuna, direccion,
+  latitud, longitud, alias`; alias separados por `|`). Aborta sin escribir si falta una columna, un puesto es de otro
+  municipio, dos puestos se escriben igual o un alias ya es nombre o alias de otro puesto. Necesita PostGIS.
+- Comuna: la del dataset (`03COMUNA 3 SAN FRANCISCO` → C03, `18CORREGIMIENTO 1` → R1); si viene vacía, el polígono de
+  comuna que contiene el punto (`comuna_origen = poligono`: las dos cárceles). Si el polígono contradice al dataset gana
+  el dataset y se reporta: con el archivo actual 6 discrepancias (Bosconia: dataset C02, polígono R2; Colegio Santander
+  sede C: C03 / C02; 4 puntos fuera de toda comuna); 80 coinciden.
+- Alias curados: siglas y nombres de uso (`UTS`, `UIS`, `UNAB`, `INEM SEDE A`…, `CARCEL MODELO`). **«INEM» a secas no
+  es alias**: hay sedes del INEM en las comunas 8, 9, 10 y 11, así que queda sin asignar. Tampoco «SENA», «DAMASO
+  ZAPATA» ni «AURELIO MARTINEZ MUTIS» (sedes en comunas distintas).
+- Upsert por nombre normalizado, nunca borra (reporta los que están en la BD y no en el archivo). Transacción;
+  `--dry-run` de solo lectura. Idempotente: la segunda corrida da 88 sin cambio. Audita `geo.import_puestos` con el
+  sha256 del archivo.
+
 ### Asignación: `php artisan geo:asignar-comunas --municipio=68001 [--tabla=lideres] [--dry-run]`
+
+Aplica la cascada a las fichas, asistentes y organizaciones del municipio, de a 500 registros. Reporte por tabla:
+registros, manual respetada, por barrio, por texto, por puesto, sin señal, cambian y sin cambio; los cambios por origen
+(`sin comuna → puesto: 2200`); los puestos no usados (ambiguo, sin coincidencia, vota en otro municipio) y los textos
+de barrio y de puesto que no cruzaron. `--dry-run` corre en una transacción de solo lectura: cero escrituras.
+
+La corrida real guarda **solo los cambios** en `comuna_cambios` con un `lote` (UUID que imprime y queda en la
+auditoría `geo.asignar_comunas`); sin cambios no hay lote. Medido en local con 39.000 fichas sintéticas (transacción
+revertida): 36 s y 82 MB la primera corrida (27.000 cambios, uno por uno: cada UPDATE exige la comuna y el origen leídos, así una ficha cambiada mientras se leía no se pisa ni se registra), 1,3 s la siguiente sin cambios.
+
+### Reversa: `php artisan geo:revertir-comunas --lote=<uuid> [--dry-run]`
+
+Devuelve cada registro del lote a la comuna y el origen que tenía antes, salvo los que cambiaron después (a mano o por
+otra corrida), que se dejan y se cuentan como omitidos. Lote inexistente → error (código ≠ 0). Audita
+`geo.revertir_comunas`.
+
+Rollback de la migración 2026_11_24_000001: aborta con mensaje mientras quede algún registro con origen `texto`,
+`direccion` o `puesto` (revertir antes los lotes); luego borra `puestos_votacion` y `comuna_cambios` y deja el CHECK
+como antes (`auto|manual`).
+
+### Barrios de Electo: `php artisan data:electo-barrios {csv} [--dry-run] [--revertir]`
+
+Con el catálogo de barrios de Electo (CSV con `;` o `,`: código `codigo|id|idbarrio…`, nombre `nombre|barrio…` y
+municipio DANE `municipio|fkmunicipio…`) llena `lideres.barrio` **solo si está vacío**, en las fichas que guardaron el
+código en `migracion_flags.electo_codigos.barrio`, si el código es del mismo municipio de la ficha. Marca
+`migracion_flags.barrio_desde_electo {codigo, valor}` y quita `barrio` de `por_completar`. Omite los nombres vacíos o de
+relleno (`SIN BARRIO`, `NO REGISTRA`…) y los códigos «sin barrio» de `config/geo.php`
+(`GEO_ELECTO_BARRIO_SIN_BARRIO`, por defecto `1404`, 13.841 fichas en prod) salvo que el catálogo los nombre como un
+barrio real del municipio. Luego corre `geo:asignar-comunas --tabla=lideres` en cada municipio con comunas tocado.
+`--revertir` vacía el barrio solo donde sigue siendo el que se escribió, devuelve `barrio` a `por_completar` y vuelve a
+correr la cascada. Pendiente: que Marly entregue el archivo del catálogo.
+
+### Barrio (señal `auto`)
 
 Orden: alias del grupo político para ese texto exacto → nombre normalizado exacto → si el texto menciona otro municipio
 (`LA PAZ, FLORIDABLANCA`, `…, PIEDECUESTA`, `BOGOTA`) no se asigna → `pg_trgm` ≥ 0,6 que le saque ≥ 0,1 al mejor
@@ -126,8 +210,8 @@ municipio. Nunca sobrescribe `manual`; limpia la comuna de un registro que ya es
 asignados / ambiguos / sin match / otro municipio / sin barrio con sus textos; audita `geo.asignar_comunas`.
 
 Además, al crear o editar una ficha (`Lider` por Eloquent y las escrituras del Mapa por query builder), un asistente
-(`EventAttendee`) o una organización (`Organizacion`) cuyo barrio o municipio cambió, la comuna se recalcula sola (sin
-pisar `manual`). Las cargas masivas por query builder (comandos de importación, inserción en lote de asistentes) no
+(`EventAttendee`) o una organización (`Organizacion`) cuyo barrio, dirección o municipio (y en la ficha el puesto o el
+municipio de votación) cambió, la comuna se recalcula sola con la cascada (sin pisar `manual`). Las cargas masivas por query builder (comandos de importación, inserción en lote de asistentes) no
 la calculan: correr `geo:asignar-comunas` después.
 
 Con los 64 textos de barrio de las fichas de Bucaramanga en prod (copia local, solo barrio + municipio): 50 con barrio
@@ -146,11 +230,19 @@ Con los 64 textos de barrio de las fichas de Bucaramanga en prod (copia local, s
   texto normalizado, salvo los `manual`. Audita `geo.barrio_alias`. No es pantalla de plataforma: cada grupo resuelve
   sus textos (la pestaña de UI vive en Admin → Territorio, que hoy solo abre la plataforma).
 - `PATCH /votantes/{id}/comuna` (`view.mapa|view.votantes` + rol de escritura; grupo propio y territorio)
-  `{comuna_id: uuid|null}` → `comuna_source = 'manual'`; `{automatica: true}` → vuelve a la del barrio.
+  `{comuna_id: uuid|null}` → `comuna_source = 'manual'`; `{automatica: true}` → vuelve a la de la cascada (barrio,
+  texto o puesto).
 
 ### UI
 
 - Admin → Territorio → pestaña **Barrios y comunas** (`?tab=barrios`): la cola y la acción Asignar (barrio o solo
   comuna).
 - Ficha (panel del Mapa y `VotanteDetail`, sección Ubicación): selector **Comuna / corregimiento** solo si el municipio
-  tiene comunas; se guarda al elegir, muestra si fue automática o manual y permite volver a automática.
+  tiene comunas; se guarda al elegir, muestra el origen («Por barrio», «Escrita», «Por puesto de votación», «Por
+  dirección», «Manual»; `ComunaCatalog::ORIGENES` y `resources/js/lib/comunas.js`) y, si es manual, permite volver a
+  automática.
+- Votantes: filtro **Comuna** solo cuando el municipio elegido tiene comunas (`comunasPorMunicipio`), con «Sin comuna»
+  (`comuna=sin_comuna`) y las comunas/corregimientos. Sin municipio o con un valor que no es UUID se ignora. La
+  exportación del encabezado usa el mismo listing.
+- Reportes (Personas): opción «Sin comuna» por municipio con comunas (`sin_comuna:{municipio_id}`, «O» con las comunas
+  elegidas) y columna **Origen de la comuna**.

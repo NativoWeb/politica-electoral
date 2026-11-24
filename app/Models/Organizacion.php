@@ -27,7 +27,7 @@ class Organizacion extends Model
 
     protected static function booted(): void
     {
-        static::saving(fn (Organizacion $org) => app(ComunaAssigner::class)->applyToModel($org, $org->municipio_id, ['barrio', 'municipio_id']));
+        static::saving(fn (Organizacion $org) => app(ComunaAssigner::class)->applyToModel($org, $org->municipio_id, ['barrio', 'municipio_id', 'direccion']));
     }
 
     public function miembros(): HasMany

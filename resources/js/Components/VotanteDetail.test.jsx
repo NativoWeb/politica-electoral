@@ -68,6 +68,26 @@ describe('VotanteDetail campaign read-only', () => {
         ));
     });
 
+    it('a saved ficha leaves the edit mode; a rejected one stays in it', async () => {
+        const onSaved = vi.fn();
+        const apiFetch = vi.fn().mockResolvedValue({ success: true });
+        render(<VotanteDetail data={votante('cd')} loading={false} creating={false} onClose={vi.fn()} onSaved={onSaved} onDeleted={vi.fn()} apiFetch={apiFetch} municipios={[]} showToast={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar Cambios' }));
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+        expect(apiFetch).toHaveBeenCalledWith('/votantes/v1', expect.objectContaining({ method: 'PUT' }));
+        expect(screen.queryByRole('button', { name: 'Guardar Cambios' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument();
+
+        apiFetch.mockRejectedValueOnce({ status: 500 });
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar Cambios' }));
+        await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(2));
+        expect(await screen.findByRole('button', { name: 'Guardar Cambios' })).toBeInTheDocument();
+    });
+
     it('keeps the server reason for a 403 outside the territory', async () => {
         const apiFetch = vi.fn().mockRejectedValue({ status: 403, message: 'Este registro está fuera de tu territorio.' });
         const { showToast } = renderDetail(votante('cd'), apiFetch);

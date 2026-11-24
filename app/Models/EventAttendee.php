@@ -28,11 +28,11 @@ class EventAttendee extends Model
     protected static function booted(): void
     {
         static::saving(function (EventAttendee $attendee) {
-            if ($attendee->exists && ! $attendee->isDirty(['barrio', 'event_id']) && $attendee->comuna_id === null) {
+            if ($attendee->exists && ! $attendee->isDirty(['barrio', 'event_id', 'direccion']) && $attendee->comuna_id === null) {
                 return;
             }
             $municipioId = app(ComunaCatalog::class)->municipioOfEvent($attendee->event_id) ?: null;
-            app(ComunaAssigner::class)->applyToModel($attendee, $municipioId, ['barrio', 'event_id']);
+            app(ComunaAssigner::class)->applyToModel($attendee, $municipioId, ['barrio', 'event_id', 'direccion']);
         });
     }
 

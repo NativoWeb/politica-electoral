@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\CachedQueries;
 use App\Services\Configuracion\Catalogo;
 use App\Services\Eventos\EventScope;
+use App\Services\Geo\ComunaCatalog;
 use App\Services\Reportes\Catalogo\Columna;
 use App\Services\Reportes\Catalogo\Filtro;
 use App\Services\Reportes\ReporteService;
@@ -55,6 +56,8 @@ class PersonasFuente implements Fuente
     ];
 
     private const ZONAS = ['urbana' => 'Urbana', 'rural' => 'Rural'];
+
+    private const SIN_COMUNA = 'sin_comuna:';
 
     private const EDADES = [
         ['desde' => 18, 'hasta' => 25, 'etiqueta' => '18 a 25'],
@@ -127,7 +130,7 @@ class PersonasFuente implements Fuente
             ], $municipios), placeholder: 'Buscar municipio…'),
             ...($this->comunasVisibles() ? [new Filtro('comuna', 'Comuna', 'chips', array_map(fn ($c) => [
                 'valor' => $c['id'], 'etiqueta' => $c['nombre'], 'municipio' => $c['municipio_id'],
-            ], array_values($this->comunasVisibles())), ayuda: 'Solo para los municipios que tienen comunas.')] : []),
+            ], array_values($this->opcionesComuna())), ayuda: 'Solo para los municipios que tienen comunas.')] : []),
             new Filtro('barrio', 'Barrio', 'buscar', opcionesDe: 'barrios', placeholder: 'Buscar barrio…'),
             new Filtro('zona', 'Zona', 'chips', self::lista(self::ZONAS)),
         ], abierto: true);
@@ -215,6 +218,7 @@ class PersonasFuente implements Fuente
             new Columna('municipio', 'Municipio', 'Ubicación', ordenable: true),
             new Columna('provincia', 'Provincia', 'Ubicación'),
             ...(self::tieneColumna('comuna_id') ? [new Columna('comuna', 'Comuna', 'Ubicación')] : []),
+            ...(self::tieneColumna('comuna_source') ? [new Columna('comuna_origen', 'Origen de la comuna', 'Ubicación')] : []),
             new Columna('barrio', 'Barrio', 'Ubicación', ordenable: true),
             new Columna('zona', 'Zona', 'Ubicación'),
             new Columna('puesto_votacion', 'Puesto de votación', 'Votación'),
@@ -318,7 +322,7 @@ class PersonasFuente implements Fuente
 
         $municipios = $this->municipiosVisibles();
         $provincias = array_flip(array_column($this->opcionesProvincia(), 'valor'));
-        $comunas = $this->comunasVisibles();
+        $comunas = $this->opcionesComuna();
         $tipos = $eventos ? self::TIPOS : array_diff_key(self::TIPOS, [ApproveAttendees::TIPO => true]);
 
         $out['provincia'] = self::enLista($filtros['provincia'] ?? null, $provincias);
@@ -383,7 +387,18 @@ class PersonasFuente implements Fuente
             $q->whereIn('lideres.geographic_unit_id', $f['municipio']);
         }
         if (isset($f['comuna'])) {
-            $q->whereIn('lideres.comuna_id', $f['comuna']);
+            // «Sin comuna» of a municipio: its fichas without comuna. "O" with the comunas chosen next to it.
+            $sin = array_values(array_filter($f['comuna'], fn ($v) => str_starts_with($v, self::SIN_COMUNA)));
+            $ids = array_values(array_diff($f['comuna'], $sin));
+            $municipiosSin = array_map(fn ($v) => substr($v, strlen(self::SIN_COMUNA)), $sin);
+            $q->where(function ($w) use ($ids, $municipiosSin) {
+                if ($ids) {
+                    $w->orWhereIn('lideres.comuna_id', $ids);
+                }
+                if ($municipiosSin) {
+                    $w->orWhere(fn ($n) => $n->whereNull('lideres.comuna_id')->whereIn('lideres.geographic_unit_id', $municipiosSin));
+                }
+            });
         }
         if (isset($f['barrio'])) {
             $q->whereIn('lideres.barrio', $f['barrio']);
@@ -509,6 +524,18 @@ class PersonasFuente implements Fuente
         return $this->consulta($spec->filtros, $spec->busqueda)->toBase()->count();
     }
 
+    // Citations the file must carry: the source of the comunas found by polling station, when the list shows the
+    // comuna (or its origin) and one of its rows got it that way.
+    public function atribuciones(ReportSpec $spec, User $user): array
+    {
+        if (! array_intersect(['comuna', 'comuna_origen'], $spec->columnas) || ! self::tieneColumna('comuna_source')) {
+            return [];
+        }
+
+        return $this->consulta($spec->filtros, $spec->busqueda)->toBase()->where('lideres.comuna_source', 'puesto')->exists()
+            ? [ComunaCatalog::ATRIBUCION_PUESTOS] : [];
+    }
+
     public function porMunicipio(ReportSpec $spec, User $user, int $primeros): array
     {
         $nombre = 'coalesce(gm.canonical_name, lideres.municipio)';
@@ -579,6 +606,7 @@ class PersonasFuente implements Fuente
             'partido' => ['partido'], 'nivel_confianza' => ['nivel_confianza'], 'marcas' => array_keys(self::marcasDisponibles()), 'votos' => ['votos'],
             'referente' => ['referente_nombre', 'referente_apellido', 'referente_documento'], 'referente_documento' => ['referente_documento'],
             'autoriza_datos' => ['autoriza_datos'], 'origen' => ['origen', 'tipo'], 'por_completar' => ['migracion_flags'],
+            'comuna_origen' => ['comuna_source'],
             'observacion' => ['observacion'],
         ];
         foreach ($directas as $clave => $campos) {
@@ -658,6 +686,7 @@ class PersonasFuente implements Fuente
                 'municipio' => $row->municipio_nombre ?? null,
                 'provincia' => Provincias::display($row->provincia_nombre ?? null),
                 'comuna' => $row->comuna_nombre ?? null,
+                'comuna_origen' => ComunaCatalog::ORIGENES[$row->comuna_source ?? ''] ?? null,
                 'zona' => self::ZONAS[$row->zona ?? ''] ?? ($row->zona ?? null),
                 'genero' => Catalogo::etiqueta('genero', $row->genero ?? null),
                 'edad' => self::edadDe($row->fecha_nacimiento ?? null),
@@ -705,7 +734,7 @@ class PersonasFuente implements Fuente
             $partes[] = $nombres($f['municipio'], array_column($this->municipiosVisibles(), 'name', 'id'));
         }
         if (isset($f['comuna'])) {
-            $partes[] = $nombres($f['comuna'], array_column($this->comunasVisibles(), 'nombre', 'id'));
+            $partes[] = $nombres($f['comuna'], array_map(fn ($c) => $c['descripcion'] ?? $c['nombre'], $this->opcionesComuna()));
         }
         if (isset($f['barrio'])) {
             $partes[] = 'Barrio '.implode(' o ', $f['barrio']);
@@ -880,6 +909,26 @@ class PersonasFuente implements Fuente
                 ?: strnatcasecmp($a->canonical_name, $b->canonical_name))
             ->mapWithKeys(fn ($c) => [$c->id => ['id' => $c->id, 'nombre' => $c->canonical_name, 'municipio_id' => $c->parent_id]])
             ->all();
+    }
+
+    // The comunas plus one «Sin comuna» per municipio with comunas (value sin_comuna:{municipio id}), last. With more
+    // than one such municipio visible, each «Sin comuna» says which.
+    private function opcionesComuna(): array
+    {
+        $comunas = $this->comunasVisibles();
+        $municipios = array_values(array_unique(array_column($comunas, 'municipio_id')));
+        $nombres = array_column($this->municipiosVisibles(), 'name', 'id');
+        foreach ($municipios as $id) {
+            $nombre = $nombres[$id] ?? '';
+            $comunas[self::SIN_COMUNA.$id] = [
+                'id' => self::SIN_COMUNA.$id,
+                'nombre' => count($municipios) > 1 ? "Sin comuna ({$nombre})" : 'Sin comuna',
+                'municipio_id' => $id,
+                'descripcion' => trim("Sin comuna en {$nombre}"),
+            ];
+        }
+
+        return $comunas;
     }
 
     // Referente filter: ids of fichas the user can see (grupo and territory); the server resolves their cédula.

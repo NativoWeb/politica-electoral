@@ -59,7 +59,7 @@ function KpiCard({ icon, label, value, accent, pressed, onClick, hint }) {
     );
 }
 
-export default function Votantes({ votantes, counters, municipios, filters, eventos = [], canViewEventos = false, campanasActivas = false }) {
+export default function Votantes({ votantes, counters, municipios, comunasPorMunicipio = {}, filters, eventos = [], canViewEventos = false, campanasActivas = false }) {
     // Creating a votante needs write.data on the server (H1).
     // Not while the superadmin's header shows another group: the new ficha would land out of sight.
     const canWrite = !!usePage().props.auth?.user?.canWrite && !useCreateBlocked();
@@ -225,6 +225,7 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                     <VotanteFilters
                         filters={filters}
                         municipios={municipios}
+                        comunasPorMunicipio={comunasPorMunicipio}
                         onApply={handleApplyFilters}
                         onClear={handleClearFilters}
                         eventos={eventos}

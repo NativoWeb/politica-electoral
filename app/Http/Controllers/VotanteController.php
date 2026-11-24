@@ -30,6 +30,8 @@ class VotanteController extends Controller
     // Referidos listed in a ficha: a referente from Electo has thousands; the count is always the real one.
     public const REFERIDOS_LIMIT = 200;
 
+    public const SIN_COMUNA = 'sin_comuna';
+
     private array $eventFilters = [];
 
     private function escapeLike(string $value): string
@@ -89,7 +91,19 @@ class VotanteController extends Controller
         }
 
         if ($municipio = $request->input('municipio')) {
-            $query->where('municipio', $municipio);
+            // The ficha's geographic unit decides (as in Reportes: «BUCARAMANGA» typed in capitals is still Bucaramanga);
+            // the text keeps the fichas that have no unit.
+            $unitIds = DB::table('geographic_units')->where('type', 'municipality')->where('canonical_name', $municipio)->pluck('id')->all();
+            $query->where(fn ($q) => $q->where('municipio', $municipio)
+                ->when($unitIds !== [], fn ($q) => $q->orWhereIn('lideres.geographic_unit_id', $unitIds)));
+
+            // Comuna only inside a chosen municipio: «Sin comuna» alone would mean every other municipio too.
+            $comuna = $request->input('comuna');
+            if ($comuna === self::SIN_COMUNA) {
+                $query->whereNull('lideres.comuna_id');
+            } elseif (is_string($comuna) && Str::isUuid($comuna)) {
+                $query->where('lideres.comuna_id', $comuna);
+            }
         }
 
         if ($partido = $request->input('partido')) {
@@ -148,6 +162,7 @@ class VotanteController extends Controller
 
         $canSeeEventos = EventScope::canSeeAttendees($user);
         [$evento, $anyEvent] = $this->eventFilters($request);
+        $comunasPorMunicipio = $this->comunasPorMunicipio($municipios);
 
         return Inertia::render('Votantes', [
             'votantes' => $paginated,
@@ -157,8 +172,9 @@ class VotanteController extends Controller
                 'con_referidos' => $conReferidos,
             ] + ($esLider ? ['es_lider' => (clone $counterBase)->where('lideres.es_lider', true)->count()] : []),
             'municipios' => $municipios,
+            'comunasPorMunicipio' => $comunasPorMunicipio,
             'filters' => array_merge(
-                $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado',
+                $request->only(['search', 'municipio', 'comuna', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado',
                     'por_completar', 'diferencias', 'importados_inactivos']),
                 $esLider && filter_var($request->input('es_lider'), FILTER_VALIDATE_BOOLEAN) ? ['es_lider' => '1'] : [],
                 filter_var($request->input('con_referidos'), FILTER_VALIDATE_BOOLEAN) ? ['con_referidos' => '1'] : [],
@@ -170,6 +186,27 @@ class VotanteController extends Controller
             'eventos' => $canSeeEventos ? app(EventScope::class)->options() : [],
             'campanasActivas' => $esLider,
         ]);
+    }
+
+    // {municipio name => [{id, nombre, tipo}]} for the municipios of the filter that have comunas (the municipio filter
+    // is by name). Most have none: one query finds the few that do.
+    private function comunasPorMunicipio(array $municipios): array
+    {
+        $ids = array_column($municipios, 'id');
+        if (! $ids) {
+            return [];
+        }
+        $conComunas = array_flip(DB::table('geographic_units')->whereIn('type', ComunaCatalog::TYPES)
+            ->whereIn('parent_id', $ids)->distinct()->pluck('parent_id')->all());
+        $catalog = app(ComunaCatalog::class);
+        $out = [];
+        foreach ($municipios as $m) {
+            if (isset($conComunas[$m['id']])) {
+                $out[$m['name']] = array_map(fn ($c) => ['id' => $c['id'], 'nombre' => $c['nombre'], 'tipo' => $c['tipo']], $catalog->comunasOf($m['id']));
+            }
+        }
+
+        return $out;
     }
 
     // Someone active refers to this lider: their referente_documento is the lider's cédula, inside the same campaign

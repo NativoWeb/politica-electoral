@@ -163,7 +163,7 @@ class RegisterAttendee
                 'updated_at' => $now,
             ];
             if ($withComuna) {
-                $attendees[array_key_last($attendees)] += $assigner->changesFor($municipioId, $event->campaign_id, $data['barrio'] ?? null, null, null)
+                $attendees[array_key_last($attendees)] += $assigner->changesFor($municipioId, $event->campaign_id, $data['barrio'] ?? null, null, null, ['direccion' => $data['direccion'] ?? null])
                     ?? ['comuna_id' => null, 'comuna_source' => null];
             }
             $results[$key] = ['attendee_id' => $id, 'created' => true, 'conflict' => false];

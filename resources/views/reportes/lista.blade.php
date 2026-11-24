@@ -57,6 +57,9 @@
 
     <div class="datos">
         <div class="generado">{{ $generado }}</div>
+        @foreach($atribuciones ?? [] as $atribucion)
+            <div class="generado">{{ $atribucion }}</div>
+        @endforeach
 
         <div class="total">{{ number_format($total, 0, ',', '.') }} <span>{{ $total === 1 ? ($unidad['singular'] ?? 'persona') : ($unidad['plural'] ?? 'personas') }}</span></div>
 

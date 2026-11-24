@@ -9,6 +9,19 @@ class ComunaCatalog
 {
     public const TYPES = ['comuna', 'corregimiento'];
 
+    // How a record got its comuna (comuna_source), as the screens and reports say it.
+    // CC BY-SA 4.0 (docs/geografia.md): every screen or file that shows a comuna found by polling station cites it.
+    public const ATRIBUCION_PUESTOS = 'Fuente de las comunas por puesto de votación: Registraduría Nacional del Estado Civil – '
+        .'Divipole Elecciones Territoriales 2023 (datos.gov.co mv2e-prx5), CC BY-SA 4.0.';
+
+    public const ORIGENES = [
+        'auto' => 'Por barrio',
+        'texto' => 'Escrita',
+        'direccion' => 'Por dirección',
+        'puesto' => 'Por puesto de votación',
+        'manual' => 'Manual',
+    ];
+
     // Other spellings of a municipio that people add to a barrio ("SAN ALONSO, B/MANGA"), by DANE code.
     private const MUNICIPIO_ABBREVIATIONS = [
         '68001' => ['B MANGA', 'BMANGA', 'BGA', 'BUCARAMANGA SANTANDER'],

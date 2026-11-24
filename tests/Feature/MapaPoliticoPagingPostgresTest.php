@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exports\GenericExport;
 use App\Http\Controllers\MapaPoliticoController;
 use App\Http\Controllers\OfflineController;
 use App\Http\Controllers\VotanteController;
@@ -9,10 +10,13 @@ use App\Models\Campaign;
 use App\Models\Lider;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Reportes\DescargaGuard;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\TestCase;
 
@@ -278,6 +282,51 @@ class MapaPoliticoPagingPostgresTest extends TestCase
 
         $this->assertSame(MapaPoliticoController::EXPORT_MAX_ROWS + 50, $pdfTotal);
         $this->assertStringContainsString('de 10.050 registros', $sheet);
+    }
+
+    // The header "Exportar" from /votantes: the Excel has the rows of the table for the filters that need PostgreSQL
+    // (ILIKE search and partido, the Electo marks) and the Líderes card.
+    public function test_the_votantes_export_has_the_rows_of_the_table_with_search_and_electo_marks(): void
+    {
+        config(['features.campanas_electorales.enabled' => true, 'features.campanas_electorales.beta_users' => []]);
+        [$pendiente, $diferente, $menor, $lider, $otro] = $this->fichas(5, Lider::TIPO_VOTANTE, 'Zzpag Export');
+        DB::table('lideres')->where('id', $pendiente)->update(['partido' => 'Partido Verde', 'migracion_flags' => json_encode(['por_completar' => ['barrio']])]);
+        DB::table('lideres')->where('id', $diferente)->update(['cedula' => '7788991', 'migracion_flags' => json_encode(['contradicciones' => ['telefono' => '3109998888']])]);
+        DB::table('lideres')->where('id', $menor)->update(['is_active' => false, 'migracion_flags' => json_encode(['menor' => true])]);
+        DB::table('lideres')->where('id', $lider)->update(['es_lider' => true, 'nombre' => 'Zzpag Export Líder Ñandú']);
+        $municipio = rawurlencode(self::MUNICIPIO);
+        $nombres = fn (array $ids) => DB::table('lideres')->whereIn('id', $ids)->orderBy('nombre')->pluck('nombre')->all();
+
+        $cases = [
+            'search=export' => [$pendiente, $diferente, $lider, $otro],
+            'search=EXPORT+L%C3%8DDER' => [$lider],
+            'search=778899' => [$diferente],
+            'partido=verde' => [$pendiente],
+            'por_completar=barrio' => [$pendiente],
+            'por_completar=cualquiera&search=export' => [$pendiente],
+            'diferencias=1' => [$diferente],
+            'importados_inactivos=menor' => [$menor],
+            'importados_inactivos=todos' => [$menor],
+            'es_lider=1' => [$lider],
+            'es_lider=1&diferencias=1' => [],
+        ];
+        foreach ($cases as $query => $ids) {
+            $props = $this->actingAs($this->user)->get("/votantes?municipio={$municipio}&{$query}")->assertOk()->viewData('page')['props'];
+            $table = array_column($props['votantes']['data'], 'nombre');
+            $this->assertSame($nombres($ids), $table, "table ?{$query}");
+            $this->assertSame(count($ids), $props['votantes']['total']);
+
+            Excel::fake();
+            $this->actingAs($this->user)->get("/exportar/excel?municipio={$municipio}&{$query}&source=votantes&title=Votantes")->assertOk();
+            $exported = null;
+            Excel::assertDownloaded('Votantes.xlsx', function (GenericExport $export) use (&$exported) {
+                $exported = $export->array();
+
+                return true;
+            });
+            $this->assertSame($table, array_column($exported, 0), "Excel ?{$query}");
+            RateLimiter::clear(DescargaGuard::LIMITADOR.'|min|'.$this->user->id);
+        }
     }
 
     public function test_electo_filters_the_notice_and_completing_a_field_clears_its_mark(): void

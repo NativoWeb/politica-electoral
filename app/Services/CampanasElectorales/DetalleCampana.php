@@ -106,7 +106,9 @@ class DetalleCampana
                 $row['sugerencia'] = $this->sugerido($c, $sug['filas'][$f['id']] ?? null, $votosMeta);
                 $row['sin_sugerencia'] = $row['sugerencia'] === null ? ($sug['filas'][$f['id']]['texto'] ?? null) : null;
             }
-            $row['avance'] = $avance['unidades'][$f['id']] ?? ['votantes' => 0, 'lideres' => 0];
+            $unidad = $avance['unidades'][$f['id']] ?? ['votantes' => 0, 'lideres' => 0, 'por_origen' => null];
+            $row['avance'] = ['votantes' => $unidad['votantes'], 'lideres' => $unidad['lideres']];
+            $row['avance_por_origen'] = $unidad['por_origen'];
             $row['sin_comuna'] = $avance['sin_comuna'][$f['id']] ?? (isset($hijas[$f['id']]) ? ['votantes' => 0, 'lideres' => 0] : null);
             $out[] = $row;
         }

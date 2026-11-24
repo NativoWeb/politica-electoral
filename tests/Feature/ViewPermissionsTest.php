@@ -134,6 +134,16 @@ class ViewPermissionsTest extends TestCase
             $t->string('correlation_id', 50)->nullable();
             $t->timestamp('created_at')->useCurrent();
         });
+        // The Votantes municipio filter looks the municipio up by name (real schema: always there).
+        if (! Schema::hasTable('geographic_units')) {
+            Schema::create('geographic_units', function (Blueprint $t) {
+                $t->uuid('id')->primary();
+                $t->uuid('parent_id')->nullable();
+                $t->string('type', 30);
+                $t->string('canonical_name', 150);
+                $t->timestamps();
+            });
+        }
         Schema::create('lideres', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->uuid('campaign_id')->nullable();

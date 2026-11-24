@@ -207,13 +207,15 @@ territorio de una campaña con metas.
                      "texto": "Sugerido: 1.100 (1.000 votos de Centro Democrático a Asamblea 2023 × 1,10) (no hay Gobernación por municipio)"},
       "sin_sugerencia": null,
       "avance": {"votantes": 38821, "lideres": 0},
+      "avance_por_origen": {"auto": 30, "texto": 4, "direccion": 0, "puesto": 2200, "manual": 5},
       "sin_comuna": {"votantes": 12, "lideres": 0}
     },
     {
       "id": "uuid", "nombre": "Comuna 1 Norte", "tipo": "comuna", "codigo": "68001-C01", "padre_id": "uuid de Bucaramanga",
       "comunas": 0, "meta": null, "editable": true, "suma_comunas": null,
       "sugerencia": null, "sin_sugerencia": "Sin sugerencia: los resultados solo existen por municipio",
-      "avance": {"votantes": 3, "lideres": 0}, "sin_comuna": null
+      "avance": {"votantes": 3, "lideres": 0},
+      "avance_por_origen": {"auto": 1, "texto": 0, "direccion": 0, "puesto": 2, "manual": 0}, "sin_comuna": null
     }
   ],
   "totales": {"votos_meta": 1000, "lideres_meta": 0, "votantes_meta": 0, "avance": {"votantes": 38833, "lideres": 0},
@@ -227,7 +229,11 @@ territorio de una campaña con metas.
   `aviso` dice «Tu grupo no tiene acceso a resultados electorales: escribe las metas a mano»). Con acceso, es null
   cuando no hay sugerencia y `sin_sugerencia` dice por qué. `lideres` y `votantes` se calculan con la meta de votos
   escrita si la hay, si no con los votos sugeridos.
-- `sin_comuna`: solo en municipios que tienen comunas (fichas sin comuna asignada).
+- `sin_comuna`: solo en municipios que tienen comunas (fichas sin comuna asignada). Las comunas más `sin_comuna`
+  suman el `avance.votantes` del municipio.
+- `avance_por_origen`: los votantes de la unidad que tienen comuna, por cómo se encontró (`auto` = barrio, `texto` =
+  «COMUNA N» escrito, `direccion` = fase B, `puesto` = puesto de votación, `manual`; docs/geografia.md). La pantalla
+  muestra «incluye N por puesto de votación».
 - `totales`: suma de los municipios (meta propia o suma de comunas); `totales.sugerencia` igual que `sugerencia`.
 - `soloLectura`: null o `{"motivo": "subgrupo" | "territorio" | "archivada" | "permiso", "texto": "Solo lectura: …"}`
   (`subgrupo` = la campaña es de otro grupo político, también el superadmin fuera del suyo).

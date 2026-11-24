@@ -206,6 +206,7 @@ export default function VotanteDetail({
                     method: 'PUT',
                     body: JSON.stringify(payload),
                 });
+                setEditing(false);
                 onSaved();
             }
         } catch (err) {

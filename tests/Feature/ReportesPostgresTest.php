@@ -493,7 +493,10 @@ class ReportesPostgresTest extends TestCase
         $props = $this->actingAs($this->admin)->get('/reportes')->viewData('page')['props']['fuentes'][0];
         $comuna = collect($props['filtros'])->pluck('filtros')->flatten(1)->firstWhere('clave', 'comuna');
         $deBuca = array_values(array_filter($comuna['opciones'], fn ($o) => $o['municipio'] === $this->buca));
-        $this->assertSame(['Comuna 1', 'Comuna 2', 'Comuna 13', 'Corregimiento 1'], array_column($deBuca, 'etiqueta'));
+        $this->assertSame(['Comuna 1', 'Comuna 2', 'Comuna 13', 'Corregimiento 1'], array_slice(array_column($deBuca, 'etiqueta'), 0, 4));
+        $this->assertSame('sin_comuna:'.$this->buca, $deBuca[4]['valor']);
+        $this->assertStringStartsWith('Sin comuna', $deBuca[4]['etiqueta']);
+        $this->assertCount(5, $deBuca);
         $this->assertSame(['nombre', 'municipio', 'barrio', 'tipo', 'referidos'], array_column(array_filter($props['columnas'], fn ($c) => $c['ordenable']), 'clave'));
         foreach (array_filter($props['columnas'], fn ($c) => $c['ordenable']) as $c) {
             $this->assertContains($c['clave'], array_column($props['ordenes'], 'clave'));

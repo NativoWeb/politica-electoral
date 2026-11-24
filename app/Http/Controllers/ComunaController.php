@@ -173,7 +173,7 @@ class ComunaController extends Controller
         ]);
     }
 
-    // PATCH /votantes/{id}/comuna {comuna_id: uuid|null} → manual; {automatica: true} → back to the barrio's.
+    // PATCH /votantes/{id}/comuna {comuna_id: uuid|null} → manual; {automatica: true} → back to the cascade's.
     public function updateFicha(Request $request, string $id): JsonResponse
     {
         abort_unless(Str::isUuid($id), 404);
@@ -191,7 +191,8 @@ class ComunaController extends Controller
         }
 
         if ($request->boolean('automatica')) {
-            $values = $this->assigner->changesFor($municipioId, $lider->campaign_id, $lider->barrio, null, null)
+            $values = $this->assigner->changesFor($municipioId, $lider->campaign_id, $lider->barrio, null, null,
+                ['direccion' => $lider->direccion, 'puesto_votacion' => $lider->puesto_votacion, 'municipio_votacion' => $lider->municipio_votacion])
                 ?? ['comuna_id' => null, 'comuna_source' => null];
         } else {
             $comunaId = $data['comuna_id'] ?? null;

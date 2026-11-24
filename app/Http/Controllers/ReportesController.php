@@ -87,6 +87,7 @@ class ReportesController extends Controller
                 self::titulo($f->etiqueta(), $partes),
                 'Filtros: '.($partes ? implode(' · ', $partes) : 'ninguno ('.$unidad['todos'].')'),
                 'Generado por '.$user->name.' el '.$ahora->format('d/m/Y').' a las '.$ahora->format('H:i').' (hora de Bogotá)',
+                ...self::atribuciones($f, $spec, $user),
             ];
             $aviso = $recortado
                 ? 'Tu lista tiene '.self::numero($total).' '.$unidad['plural'].'. Este archivo trae '.self::primeras($unidad).' '.self::numero($tope)
@@ -158,6 +159,12 @@ class ReportesController extends Controller
         return $response;
     }
 
+    // Sources the file must cite (only Personas has them: the comunas found by polling station).
+    private static function atribuciones(Fuente $f, ReportSpec $spec, User $user): array
+    {
+        return method_exists($f, 'atribuciones') ? $f->atribuciones($spec, $user) : [];
+    }
+
     private function generarPdf(Fuente $f, ReportSpec $spec, User $user, int $filas, int $total, bool $recortado): HttpResponse
     {
         // 700 rows with long texts measured 254 MB: give the PDF its own room instead of the shared 256M.
@@ -175,6 +182,7 @@ class ReportesController extends Controller
             'grupo' => $grupo['name'] ?? null,
             'logo' => self::logo($grupo['id'] ?? null),
             'generado' => 'Generado por '.$user->name.', '.self::fechaHora($ahora),
+            'atribuciones' => self::atribuciones($f, $spec, $user),
             'filtros' => $partes,
             'total' => $total,
             'unidad' => $unidad,

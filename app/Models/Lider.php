@@ -90,8 +90,10 @@ class Lider extends Model
             }
         });
 
-        // After campaign_id is set: the comuna comes from the barrio, and the grupo politico's aliases count.
-        $comuna = fn (Lider $lider) => app(ComunaAssigner::class)->applyToModel($lider, $lider->geographic_unit_id, ['barrio', 'geographic_unit_id']);
+        // After campaign_id is set: the comuna comes from the cascade (barrio with the grupo politico's aliases, "COMUNA N"
+        // written, polling station), so any of those fields can change it.
+        $comuna = fn (Lider $lider) => app(ComunaAssigner::class)->applyToModel($lider, $lider->geographic_unit_id,
+            ['barrio', 'geographic_unit_id', 'direccion', 'puesto_votacion', 'municipio_votacion']);
         static::creating($comuna);
         static::updating($comuna);
     }

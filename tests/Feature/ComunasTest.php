@@ -41,6 +41,7 @@ class ComunasTest extends TestCase
         $this->addCampaignColumns();
         (require database_path('migrations/2026_11_14_000001_create_barrios_and_comunas.php'))->up();
         (require database_path('migrations/2026_11_14_000002_add_comuna_to_fichas.php'))->up();
+        (require database_path('migrations/2026_11_24_000001_add_comuna_cascade.php'))->up();
         $this->seedGeo();
     }
 
@@ -556,8 +557,8 @@ class ComunasTest extends TestCase
         $this->assertSame([null, null], $this->comunaOf('lideres', $none));
         $this->assertSame([null, null], $this->comunaOf('lideres', $moved));
         $resumen = json_decode(DB::table('audit_logs')->where('action', 'geo.asignar_comunas')->value('metadata'), true)['resumen']['lideres'];
-        $this->assertSame(['registros' => 4, 'asignadas' => 1, 'manual' => 1, 'otro_municipio' => 1, 'vacio' => 1, 'limpiadas_otro_municipio' => 1],
-            array_intersect_key($resumen, array_flip(['registros', 'asignadas', 'manual', 'otro_municipio', 'vacio', 'limpiadas_otro_municipio'])));
+        $this->assertSame(['registros' => 4, 'manual' => 1, 'auto' => 1, 'sin_senal' => 2, 'limpiadas_otro_municipio' => 1],
+            array_intersect_key($resumen, array_flip(['registros', 'manual', 'auto', 'sin_senal', 'limpiadas_otro_municipio'])));
 
         $after = $snapshot();
         $this->artisan('geo:asignar-comunas', ['--municipio' => '68001'])->assertSuccessful();

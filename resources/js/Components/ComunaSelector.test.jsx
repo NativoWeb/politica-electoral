@@ -29,11 +29,46 @@ describe('ComunaSelector', () => {
         expect(container).toBeEmptyDOMElement();
     });
 
-    it('shows the comuna read-only and whether it was automatic', () => {
+    it('shows the comuna read-only and where it came from', () => {
         render(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId="c8" source="auto" />);
         expect(screen.getByTestId('comuna-readonly')).toHaveTextContent('Comuna 8 - Suroccidente');
-        expect(screen.getByText('automática')).toBeInTheDocument();
+        expect(screen.getByTestId('comuna-origen')).toHaveTextContent('Por barrio');
         expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['texto', 'Escrita', 'escrita en el barrio o la dirección'],
+        ['puesto', 'Por puesto de votación', 'Calculada por el puesto de votación'],
+        ['direccion', 'Por dirección', 'Calculada por la dirección'],
+    ])('names the origin %s and offers no way back while it is automatic', (source, etiqueta, detalle) => {
+        render(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId="c8" source={source} editable />);
+        expect(screen.getByTestId('comuna-origen')).toHaveTextContent(etiqueta);
+        expect(screen.getByText(new RegExp(detalle))).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Volver a automática' })).not.toBeInTheDocument();
+    });
+
+    it('a comuna by puesto de votación names its source, read-only and editable; other origins do not', () => {
+        const fuente = 'Comuna según el puesto de votación. Fuente: Registraduría – Divipole 2023 (datos.gov.co), CC BY-SA 4.0.';
+        const { rerender } = render(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId="c8" source="puesto" />);
+        expect(screen.getByTestId('comuna-fuente')).toHaveTextContent(fuente);
+        expect(screen.getByTestId('comuna-fuente').className).toContain('text-[14px]');
+
+        rerender(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId="c8" source="puesto" editable />);
+        expect(screen.getByTestId('comuna-fuente')).toHaveTextContent(fuente);
+
+        rerender(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId="c8" source="auto" editable />);
+        expect(screen.queryByTestId('comuna-fuente')).not.toBeInTheDocument();
+        rerender(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId={null} source="puesto" />);
+        expect(screen.queryByTestId('comuna-fuente')).not.toBeInTheDocument();
+    });
+
+    it('a comuna removed by hand says Manual; an automatic empty one says nothing', () => {
+        const { rerender } = render(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId={null} source="manual" />);
+        expect(screen.getByTestId('comuna-readonly')).toHaveTextContent('Sin comuna');
+        expect(screen.getByTestId('comuna-origen')).toHaveTextContent('Manual');
+
+        rerender(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId={null} source="puesto" />);
+        expect(screen.queryByTestId('comuna-origen')).not.toBeInTheDocument();
     });
 
     it('saves a comuna chosen by hand as manual', async () => {
@@ -45,18 +80,19 @@ describe('ComunaSelector', () => {
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled());
         expect(apiFetch).toHaveBeenCalledWith('/votantes/l1/comuna', { method: 'PATCH', body: JSON.stringify({ comuna_id: 'c1' }) });
-        expect(screen.getByText('manual')).toBeInTheDocument();
+        expect(screen.getByTestId('comuna-origen')).toHaveTextContent('Manual');
         expect(screen.getByRole('button', { name: 'Volver a automática' })).toBeInTheDocument();
         expect(showGlobalToast).toHaveBeenCalledWith('Comuna actualizada.');
     });
 
-    it('goes back to the automatic comuna', async () => {
-        apiFetch.mockReturnValue(reply(200, { success: true, comuna_id: 'c8', comuna_source: 'auto' }));
+    it('goes back to the automatic comuna, here the one of the puesto de votación', async () => {
+        apiFetch.mockReturnValue(reply(200, { success: true, comuna_id: 'c8', comuna_source: 'puesto' }));
         render(<ComunaSelector liderId="l1" comunas={COMUNAS} comunaId="c1" source="manual" editable />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Volver a automática' }));
 
-        await waitFor(() => expect(screen.getByText('automática')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId('comuna-origen')).toHaveTextContent('Por puesto de votación'));
+        expect(screen.queryByRole('button', { name: 'Volver a automática' })).not.toBeInTheDocument();
         expect(apiFetch).toHaveBeenCalledWith('/votantes/l1/comuna', { method: 'PATCH', body: JSON.stringify({ automatica: true }) });
         expect(screen.getByLabelText(/Comuna \/ corregimiento/)).toHaveValue('c8');
     });

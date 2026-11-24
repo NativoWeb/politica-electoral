@@ -119,6 +119,8 @@ describe('«Es líder» in the Votantes ficha (VotanteDetail)', () => {
         await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(1));
         expect(JSON.parse(apiFetch.mock.calls[0][1].body)).not.toHaveProperty('es_lider');
 
+        // A saved ficha leaves the edit mode: edit it again to untick.
+        fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
         fireEvent.click(screen.getByLabelText(ETIQUETA));
         fireEvent.click(screen.getByRole('button', { name: 'Guardar Cambios' }));
         await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(2));

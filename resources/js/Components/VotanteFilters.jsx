@@ -4,6 +4,7 @@ import { formatEventDate } from '@/lib/eventos';
 import { eventOptionLabel } from '@/lib/eventosIntegracion';
 import { catalogoDe, useCatalogos } from '@/lib/catalogos';
 import { isOn } from '@/lib/votantesFiltros';
+import { SIN_COMUNA, gruposComunas } from '@/lib/comunas';
 
 
 // lideres.migracion_flags: the Electo import and the fichas created by an acta (cédula, teléfono, municipio).
@@ -61,12 +62,13 @@ export function EventFilterChips({ filters, eventos = [], onRemove }) {
     );
 }
 
-export default function VotanteFilters({ filters, municipios, onApply, onClear, eventos = [], canViewEventos = false, campanasActivas = false }) {
+export default function VotanteFilters({ filters, municipios, comunasPorMunicipio = {}, onApply, onClear, eventos = [], canViewEventos = false, campanasActivas = false }) {
     const uid = useId();
     const id = (name) => `${uid}-${name}`;
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(filters.search || '');
     const [municipio, setMunicipio] = useState(filters.municipio || '');
+    const [comuna, setComuna] = useState(filters.comuna || '');
     const [partido, setPartido] = useState(filters.partido || '');
     const [nivelConfianza, setNivelConfianza] = useState(filters.nivel_confianza || '');
     const [estado, setEstado] = useState(filters.estado || 'activos');
@@ -95,6 +97,15 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     const [munOpen, setMunOpen] = useState(false);
     const munRef = useRef(null);
     const debounceRef = useRef(null);
+    // Only a municipio with comunas (Bucaramanga) offers the filter; another municipio drops the chosen comuna.
+    const comunasDelMunicipio = (municipio && comunasPorMunicipio[municipio]) || [];
+
+    function elegirMunicipio(nombre) {
+        if (nombre !== municipio) setComuna('');
+        setMunicipio(nombre);
+        setMunOpen(false);
+        setMunSearch('');
+    }
 
     useEffect(() => {
         function handleClick(e) {
@@ -120,6 +131,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     function handleApply(overrides = {}) {
         const vals = {
             search, municipio, partido,
+            ...(comuna && comunasDelMunicipio.length ? { comuna } : {}),
             nivel_confianza: nivelConfianza,
             estado,
             ...(campaign.hasMultiple && campana ? { campana } : {}),
@@ -142,6 +154,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     function handleClear() {
         setSearch('');
         setMunicipio('');
+        setComuna('');
         setPartido('');
         setNivelConfianza('');
         setEstado('activos');
@@ -167,7 +180,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     const selectedMunName = municipios.find(m => m.name === municipio)?.name || '';
 
     // What the URL filters by (the search has its own box), for the badge of the folded Filtros button.
-    const activeCount = ['municipio', 'partido', 'nivel_confianza', 'campana', 'evento', 'asistentes_eventos', 'por_completar',
+    const activeCount = ['municipio', 'comuna', 'partido', 'nivel_confianza', 'campana', 'evento', 'asistentes_eventos', 'por_completar',
         'importados_inactivos', 'diferencias', 'verificado', 'gran_elector', 'con_referidos', 'es_lider', 'militante'].filter(k => filters[k]).length
         + (filters.estado && filters.estado !== 'activos' ? 1 : 0);
 
@@ -232,7 +245,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
                             <div className="max-h-64 overflow-y-auto" role="listbox" aria-labelledby={id('mun-label')}>
                                 <button
                                     type="button"
-                                    onClick={() => { setMunicipio(''); setMunOpen(false); setMunSearch(''); }}
+                                    onClick={() => elegirMunicipio('')}
                                     className="w-full text-left px-4 min-h-[44px] text-[16px] text-gray-500 hover:bg-gray-50"
                                 >
                                     Todos
@@ -241,7 +254,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
                                     <button
                                         type="button"
                                         key={m.id}
-                                        onClick={() => { setMunicipio(m.name); setMunOpen(false); setMunSearch(''); }}
+                                        onClick={() => elegirMunicipio(m.name)}
                                         className={`w-full text-left px-4 min-h-[44px] text-[16px] hover:bg-blue-50 transition-colors ${municipio === m.name ? 'bg-blue-50 text-[var(--color-primary)] font-semibold' : 'text-[var(--color-ink)]'}`}
                                     >
                                         {m.name}
@@ -252,6 +265,21 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
                         </div>
                     )}
                 </div>
+
+                {comunasDelMunicipio.length > 0 && (
+                    <div>
+                        <label htmlFor={id('comuna')} className={labelCls}>Comuna</label>
+                        <select id={id('comuna')} value={comuna} onChange={e => setComuna(e.target.value)} className={inputCls}>
+                            <option value="">Todas</option>
+                            <option value={SIN_COMUNA}>Sin comuna</option>
+                            {gruposComunas(comunasDelMunicipio).map(([label, list]) => (
+                                <optgroup key={label} label={label}>
+                                    {list.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                </optgroup>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
                 <div>
                     <label htmlFor={id('partido')} className={labelCls}>Partido</label>

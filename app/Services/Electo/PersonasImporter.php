@@ -13,8 +13,8 @@ use Illuminate\Support\Str;
 // inactive and flagged. Electo's authorization is kept (decision of Marly) and its weak evidence is recorded in
 // data_consents with channel 'migracion_electo'. A field that depends on a catalog Electo did not send stays empty,
 // with the Electo code in migracion_flags.electo_codigos and the field listed in migracion_flags.por_completar. Rows
-// are written with the query builder in bulk, without the Lider model events (comuna assignment needs a barrio, which
-// Electo does not give: no catalog).
+// are written with the query builder in bulk, without the Lider model events: the comuna (by polling station, and by
+// barrio once data:electo-barrios has the catalog) comes from geo:asignar-comunas afterwards (docs/geografia.md).
 class PersonasImporter
 {
     public const ENTIDAD = 'votante';

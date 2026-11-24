@@ -364,6 +364,29 @@ describe('Detalle de campaña', () => {
         expect(within(totales).getByText('Votos meta').parentElement).toHaveTextContent('1.000');
     });
 
+    it('a comuna says how many of its votantes came by polling station, only when there are any', () => {
+        const conPuesto = { ...C1, avance: { votantes: 3, lideres: 0 }, avance_por_origen: { auto: 1, texto: 0, direccion: 0, puesto: 2, manual: 0 } };
+        render(<Detalle {...detalleProps({ filas: [BGA, conPuesto, C2, GIRON] })} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Ver por comunas (1 + 1 corregimiento)' }));
+
+        expect(screen.getAllByText('incluye 2 por puesto de votación')).toHaveLength(1);
+    });
+
+    it('names the source of the polling stations once below the table, only when some count uses them', () => {
+        const conPuesto = { ...C1, avance: { votantes: 3, lideres: 0 }, avance_por_origen: { auto: 1, texto: 0, direccion: 0, puesto: 2, manual: 0 } };
+        const otraConPuesto = { ...C2, avance_por_origen: { puesto: 5 } };
+        render(<Detalle {...detalleProps({ filas: [BGA, conPuesto, otraConPuesto, GIRON] })} />);
+
+        const fuente = screen.getAllByTestId('fuente-puestos');
+        expect(fuente).toHaveLength(1);
+        expect(fuente[0]).toHaveTextContent('Fuente: Registraduría – Divipole 2023 (datos.gov.co), CC BY-SA 4.0.');
+        expect(within(screen.getByRole('group', { name: 'Totales' })).getByTestId('fuente-puestos')).toBeInTheDocument();
+        cleanup();
+
+        render(<Detalle {...detalleProps()} />);
+        expect(screen.queryByTestId('fuente-puestos')).not.toBeInTheDocument();
+    });
+
     it('read-only: a band with the reason and no inputs, no save bar, no upload', () => {
         render(<Detalle {...detalleProps({ can: { edit: false, archive: false, reactivate: false, plantilla: false }, soloLectura: { motivo: 'subgrupo', texto: 'Solo lectura: esta campaña es de Centro Democrático.' } })} />);
         expect(screen.getByRole('note')).toHaveTextContent('Solo lectura. Esta campaña es de Centro Democrático.');

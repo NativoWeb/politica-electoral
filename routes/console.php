@@ -40,6 +40,7 @@ Schedule::command('eventos:limpiar-importaciones')->dailyAt('03:30');
 Schedule::command('compromisos:resumen-diario --programado')->everyFifteenMinutes()->timezone('America/Bogota')
     ->when(fn () => CompromisosResumenDiario::toca());
 
-// Comunas of the records that arrived by bulk loads that skip the model hooks (docs/geografia.md); never overwrites a
-// manual comuna.
+// Comunas of the records that arrived by bulk loads that skip the model hooks, with the whole cascade (barrio, written
+// comuna, polling station; docs/geografia.md): never overwrites a manual comuna nor drops one found by polling station
+// or text, and a night without changes creates no batch.
 Schedule::command('geo:asignar-comunas --municipio=68001')->dailyAt('02:30')->timezone('America/Bogota')->withoutOverlapping();

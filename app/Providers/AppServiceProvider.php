@@ -9,6 +9,7 @@ use App\Services\Eventos\Ocr\OcrClient;
 use App\Services\Geo\BarrioMatcher;
 use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
+use App\Services\Geo\PuestoMatcher;
 use App\Services\Reportes\DescargaGuard;
 use App\Services\Reportes\Fuentes\AsistenciasFuente;
 use App\Services\Reportes\Fuentes\CompromisosFuente;
@@ -29,6 +30,7 @@ class AppServiceProvider extends ServiceProvider
         // Per request: they memoize the comunas, barrios and matches they read.
         $this->app->scoped(ComunaCatalog::class);
         $this->app->scoped(BarrioMatcher::class);
+        $this->app->scoped(PuestoMatcher::class);
         $this->app->scoped(ComunaAssigner::class);
         // Per request: the lists and ajustes of the Centro de configuración (cached across requests).
         $this->app->scoped(CatalogoStore::class);

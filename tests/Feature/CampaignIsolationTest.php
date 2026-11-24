@@ -7,16 +7,21 @@ use App\Exports\GenericExport;
 use App\Models\Campaign;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Configuracion\AjusteStore;
+use App\Services\Reportes\DescargaGuard;
 use App\Support\CurrentCampaign;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 use Maatwebsite\Excel\Facades\Excel;
 use Mockery;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -1411,5 +1416,151 @@ class CampaignIsolationTest extends TestCase
         $page('?con_referidos=1&municipio=Lebrija')->assertInertia(fn (AssertableInertia $p) => $p
             ->where('votantes.total', 0)->where('counters.total', 1)->where('counters.con_referidos', 0)->where('counters.gran_elector', 1));
         $page('?con_referidos=0')->assertInertia(fn (AssertableInertia $p) => $p->where('votantes.total', 3)->missing('filters.con_referidos'));
+    }
+
+    // --- The header "Exportar" from /votantes: the same rows as the table ---
+
+    private bool $pdfMocked = false;
+
+    private ?array $pdfData = null;
+
+    // Names of the table and of the Excel and the PDF for the same query (the scenario fits in one page).
+    private function tableAndExports(User $user, string $query): array
+    {
+        RateLimiter::for(DescargaGuard::LIMITADOR, fn () => Limit::none());
+        $props = $this->actingAs($user)->get('/votantes'.($query === '' ? '' : '?'.$query))->assertOk()->viewData('page')['props'];
+        $table = collect($props['votantes']['data'])->pluck('nombre')->sort()->values()->all();
+
+        Excel::fake();
+        $this->actingAs($user)->get('/exportar/excel?'.$query.'&source=votantes&title=Votantes')->assertOk();
+        $excel = null;
+        Excel::assertDownloaded('Votantes.xlsx', function (GenericExport $export) use (&$excel) {
+            $excel = $export->array();
+
+            return true;
+        });
+
+        if (! $this->pdfMocked) {
+            $this->pdfMocked = true;
+            $pdf = Mockery::mock(\Barryvdh\DomPDF\PDF::class);
+            $pdf->shouldReceive('setPaper')->andReturnSelf();
+            $pdf->shouldReceive('setOption')->andReturnSelf();
+            $pdf->shouldReceive('download')->andReturn(response('pdf'));
+            Pdf::shouldReceive('loadView')->andReturnUsing(function ($view, $data) use ($pdf) {
+                $this->pdfData = $data;
+
+                return $pdf;
+            });
+        }
+        $this->pdfData = null;
+        $this->actingAs($user)->get('/exportar/pdf?'.$query.'&source=votantes&title=Votantes')->assertOk();
+        $pdfData = $this->pdfData;
+        $this->assertSame($props['votantes']['total'], $pdfData['totalCount'], "PDF total ?{$query}");
+
+        return [
+            $table,
+            collect($excel)->pluck(0)->sort()->values()->all(),
+            collect($pdfData['data'])->pluck('nombre')->sort()->values()->all(),
+        ];
+    }
+
+    public function test_the_votantes_export_has_exactly_the_rows_of_the_table_with_its_filters_and_cards(): void
+    {
+        DB::table('lideres')->where('id', $this->liderA)->update(['gran_elector' => true, 'municipio' => 'Lebrija', 'militante' => true]);
+        $this->lider($this->campX, 'Referida de Beto', '901', ['referente_documento' => '222', 'partido' => 'Partido Azul']);
+        $this->lider($this->campX, 'Inactiva de Beto', '902', ['referente_documento' => '222', 'is_active' => false]);
+        $this->lider(Campaign::DEFAULT_ID, 'Dora Confirmada', '903', ['nivel_confianza' => 'confirmado', 'verificado' => true]);
+
+        $cases = [
+            '' => ['Ana Campaña CD', 'Beto Campaña X', 'Dora Confirmada', 'Referida de Beto'],
+            'gran_elector=1' => ['Ana Campaña CD'],
+            'con_referidos=1' => ['Beto Campaña X'],
+            'gran_elector=1&con_referidos=1' => [],
+            'municipio=Lebrija' => ['Ana Campaña CD'],
+            'nivel_confianza=confirmado&verificado=1' => ['Dora Confirmada'],
+            'militante=1' => ['Ana Campaña CD'],
+            'estado=inactivos' => ['Inactiva de Beto'],
+            'estado=todos' => ['Ana Campaña CD', 'Beto Campaña X', 'Dora Confirmada', 'Inactiva de Beto', 'Referida de Beto'],
+            "campana={$this->campX}" => ['Beto Campaña X', 'Referida de Beto'],
+            "campana={$this->campX}&con_referidos=1" => ['Beto Campaña X'],
+            // The page of the table and a group the user cannot see change nothing.
+            'page=2&gran_elector=1' => ['Ana Campaña CD'],
+            "campana={$this->campY}&gran_elector=1" => ['Ana Campaña CD'],
+        ];
+        foreach ($cases as $query => $expected) {
+            [$table, $excel, $pdf] = $this->tableAndExports($this->userCd, $query);
+            if (! str_starts_with($query, 'page=')) {
+                $this->assertSame($expected, $table, "table ?{$query}");
+            }
+            $this->assertSame($expected, $excel, "Excel ?{$query}");
+            $this->assertSame($expected, $pdf, "PDF ?{$query}");
+        }
+    }
+
+    public function test_the_votantes_export_follows_the_groups_marked_in_the_header(): void
+    {
+        $super = $this->superadmin();
+        DB::table('lideres')->whereIn('id', [$this->liderB, $this->liderC])->update(['gran_elector' => true]);
+
+        $this->vista($super, [$this->campX, $this->campY])->assertOk();
+        [$table, $excel, $pdf] = $this->tableAndExports($super, '');
+        $this->assertSame(['Beto Campaña X', 'Ceci Campaña Y'], $table);
+        $this->assertSame($table, $excel);
+        $this->assertSame($table, $pdf);
+
+        // The groups of the header and the filters of the screen together.
+        [$table, $excel, $pdf] = $this->tableAndExports($super, "gran_elector=1&campana={$this->campY}");
+        $this->assertSame(['Ceci Campaña Y'], $table);
+        $this->assertSame($table, $excel);
+        $this->assertSame($table, $pdf);
+
+        $this->vista($super, [])->assertOk();
+        [$table, $excel] = $this->tableAndExports($super, '');
+        $this->assertSame(['Ana Campaña CD', 'Beto Campaña X', 'Ceci Campaña Y'], $table);
+        $this->assertSame($table, $excel);
+    }
+
+    public function test_a_votantes_export_over_the_setting_is_cut_and_says_so(): void
+    {
+        RateLimiter::for(DescargaGuard::LIMITADOR, fn () => Limit::none());
+        config(['exports.stream_after_rows' => 50]);
+        $this->mock(AjusteStore::class)->shouldReceive('guardados')->andReturn(['votantes.export_max_filas' => 1000]);
+        $rows = [];
+        for ($i = 0; $i < 1004; $i++) {
+            $rows[] = ['id' => (string) Str::uuid(), 'campaign_id' => Campaign::DEFAULT_ID, 'geographic_unit_id' => $this->mun,
+                'nombre' => sprintf('Masivo %04d', $i), 'municipio' => 'Masivo', 'is_active' => true, 'gran_elector' => $i % 2 === 0];
+        }
+        foreach (array_chunk($rows, 200) as $chunk) {
+            DB::table('lideres')->insert($chunk);
+        }
+
+        $total = fn (string $query) => $this->actingAs($this->userCd)->get('/votantes?'.$query)->viewData('page')['props']['votantes']['total'];
+        $this->assertSame(1004, $total('municipio=Masivo'));
+        // Without export.datos_personales the file says so first and leaves the locked columns out.
+        $sheet = $this->streamedSheet($this->userCd, '/exportar/excel?municipio=Masivo&source=votantes&title=Votantes');
+        $this->assertSame(DescargaGuard::AVISO_SIN_DATOS, $sheet[0][0]);
+        $this->assertSame('Archivo recortado: 1.000 de 1.004 registros. Filtra por municipio, tipo o barrio para exportar el resto.', $sheet[1][0]);
+        $this->assertSame(['NOMBRE', 'MUNICIPIO', 'TIPO', 'CARGO', 'PARTIDO', 'VOTOS'], array_values(array_filter($sheet[2])));
+        $this->assertCount(1000, array_slice($sheet, 3));
+        $this->assertSame('Masivo 0000', $sheet[3][0]);
+
+        // Under the setting: every row of the table and no cut notice (the Gran Elector card keeps half).
+        $this->assertSame(502, $total('municipio=Masivo&gran_elector=1'));
+        $sheet = $this->streamedSheet($this->userCd, '/exportar/excel?municipio=Masivo&gran_elector=1&source=votantes&title=Votantes');
+        $this->assertSame(DescargaGuard::AVISO_SIN_DATOS, $sheet[0][0]);
+        $this->assertSame('NOMBRE', $sheet[1][0]);
+        $this->assertCount(502, array_slice($sheet, 2));
+    }
+
+    private function streamedSheet(User $user, string $url): array
+    {
+        $response = $this->actingAs($user)->get($url)->assertOk()->assertHeader('X-Columnas-Quitadas', 'telefono,observacion');
+        $file = tempnam(sys_get_temp_dir(), 'xlsx');
+        file_put_contents($file, $response->streamedContent());
+        try {
+            return IOFactory::load($file)->getActiveSheet()->toArray();
+        } finally {
+            unlink($file);
+        }
     }
 }

@@ -3,7 +3,8 @@ import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/Layouts/AppLayout';
 import { AvisoError, Boton, Dialogo, Girando, IconoAlerta } from '@/Components/Reportes/ui';
 import { Estado, FranjaSoloLectura, IconoReloj, LinkBoton } from '@/Components/CampanasElectorales/ui';
-import FilaMeta, { COLUMNAS } from '@/Components/CampanasElectorales/FilaMeta';
+import FilaMeta, { COLUMNAS, FuentePuestos } from '@/Components/CampanasElectorales/FilaMeta';
+import { usaPuestos } from '@/lib/comunas';
 import ExcelMetas from '@/Components/CampanasElectorales/ExcelMetas';
 import Historial from '@/Components/CampanasElectorales/Historial';
 import { showGlobalToast } from '@/lib/api';
@@ -304,6 +305,7 @@ export default function CampanaDetalle(props) {
                                     </p>
                                 </div>
                                 {detalle.totalSugerido?.texto && <p className="mt-3 text-base text-ink-soft">Para toda la campaña: {detalle.totalSugerido.texto}</p>}
+                                {usaPuestos(filas) && <FuentePuestos />}
                             </div>
                         </div>
                     )}

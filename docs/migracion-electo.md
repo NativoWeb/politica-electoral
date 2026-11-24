@@ -37,6 +37,8 @@ ni a los logs. El reporte del importador solo lleva conteos, nombres de campos, 
     `migracion_flags.por_completar [campos]` para que el equipo lo complete con los filtros
     (`WHERE migracion_flags @> '{"por_completar": ["barrio"]}'`, índice GIN). Código vacío o `0` = Electo no tenía
     dato (no se marca). Origen del dato y usuario creador/editor no tienen campo nuestro: solo quedan en `electo_codigos`.
+    Cuando llegue el catálogo de barrios, `data:electo-barrios {csv}` llena los barrios vacíos desde esos códigos y
+    asigna la comuna (docs/geografia.md); el puesto de votación ya da comuna con `geo:asignar-comunas`.
   - Género: 1 = Femenino, 2 = Masculino, 3 = Otro (**inferido** en el diagnóstico), marca `genero_inferido` y código
     original en `electo_codigos.genero`.
   - **No se migra** `clavegl`.
