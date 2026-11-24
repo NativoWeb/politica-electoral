@@ -9,6 +9,8 @@ import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
 import ComunaSelector from '@/Components/ComunaSelector';
 import MigracionAviso from '@/Components/MigracionAviso';
+import CasillaEsLider from '@/Components/CampanasElectorales/CasillaEsLider';
+import { muestraEsLider } from '@/lib/campanas';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
@@ -108,7 +110,7 @@ function buildInitialForm(data) {
 
 export default function VotanteDetail({
     data, loading, creating, onClose, onSaved, onDeleted,
-    apiFetch, municipios: pageMunicipios = [], showToast,
+    apiFetch, municipios: pageMunicipios = [], showToast, campanasActivas = false,
 }) {
     // A new ficha may live in any municipio of Colombia; the page only lists Santander and the ones with fichas.
     const municipios = useAllMunicipios(pageMunicipios, creating);
@@ -674,6 +676,13 @@ export default function VotanteDetail({
                             </label>
                         ))}
                     </div>
+                    {(creating ? campanasActivas : muestraEsLider(data)) && (
+                        <CasillaEsLider
+                            checked={form.es_lider ?? !!data?.es_lider}
+                            disabled={!editing}
+                            onChange={value => setField('es_lider', value)}
+                        />
+                    )}
                 </Accordion>
 
                 {/* Eventos: loaded when the section is opened */}

@@ -100,6 +100,8 @@ class CampanasFeatureFlagTest extends TestCase
             $t->uuid('parent_id')->nullable();
             $t->timestamps();
         });
+        // The list reads the module's own tables (docs/campanas-electorales.md).
+        (require database_path('migrations/2026_11_23_000001_create_electoral_campaigns_tables.php'))->up();
     }
 
     private function user(string $key, string $role, ?array $permissions): User

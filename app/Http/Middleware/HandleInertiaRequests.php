@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Configuracion\Ajuste;
 use App\Services\Configuracion\Catalogo;
 use App\Support\CurrentCampaign;
+use App\Support\EsLider;
 use App\Support\Features;
 use App\Support\PartyLogos;
 use Closure;
@@ -92,6 +93,8 @@ class HandleInertiaRequests extends Middleware
             'features' => [
                 'campanas' => Features::enabledFor('campanas', $user)
                     && ($user->hasPermission('view.campanas') || $user->hasPermission('manage.campanas')),
+                // The "Es líder" box of the fichas: whoever edits fichas sees it while the module is on, no campaigns permission.
+                'esLider' => EsLider::activo($user),
             ],
             // Lists of the forms and the public ajustes (Centro de configuración); both cached, a few KB.
             'opcionesListas' => fn () => $user ? Catalogo::paraFrontend() : [],

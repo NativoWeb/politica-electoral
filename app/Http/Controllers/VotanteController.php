@@ -15,6 +15,7 @@ use App\Rules\OpcionDeCatalogo;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
 use App\Services\Geo\ComunaCatalog;
+use App\Support\EsLider;
 use App\Support\MigracionFlags;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -38,7 +39,7 @@ class VotanteController extends Controller
     }
 
     // The Votantes listing with the screen's filters and scope, unpaginated: the screen and its export share it.
-    // Without $cardFilters it leaves out the two filters of the KPI cards (gran_elector, con_referidos): the cards
+    // Without $cardFilters it leaves out the filters of the KPI cards (gran_elector, con_referidos, es_lider): the cards
     // count on that base, so their numbers do not change when one of them is pressed.
     public function listing(Request $request, bool $cardFilters = true): Builder
     {
@@ -116,6 +117,10 @@ class VotanteController extends Controller
             $query->where('militante', filter_var($request->input('militante'), FILTER_VALIDATE_BOOLEAN));
         }
 
+        if ($cardFilters && EsLider::activo($request->user()) && filter_var($request->input('es_lider'), FILTER_VALIDATE_BOOLEAN)) {
+            $query->where('lideres.es_lider', true);
+        }
+
         return $query;
     }
 
@@ -123,8 +128,9 @@ class VotanteController extends Controller
     {
         $campana = $this->campaign()->filterId($request->input('campana'));
         $user = $request->user();
+        $esLider = EsLider::activo($user);
         $paginated = $this->listing($request)->orderBy('nombre')->orderBy('lideres.id')->paginate(20)->withQueryString()
-            ->through(fn (Lider $l) => $l->setAttribute('tipo', EventScope::visibleTipo($l->tipo, $user)));
+            ->through(fn (Lider $l) => ($esLider ? $l : $l->makeHidden('es_lider'))->setAttribute('tipo', EventScope::visibleTipo($l->tipo, $user)));
 
         // Counters count the rows of the listing with every active filter, territory and campaign, except the two
         // card filters: Total is the base, and each card is the base with its own filter (what the table shows
@@ -149,11 +155,12 @@ class VotanteController extends Controller
                 'total' => $total,
                 'gran_elector' => $granElectorCount,
                 'con_referidos' => $conReferidos,
-            ],
+            ] + ($esLider ? ['es_lider' => (clone $counterBase)->where('lideres.es_lider', true)->count()] : []),
             'municipios' => $municipios,
             'filters' => array_merge(
                 $request->only(['search', 'municipio', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado',
                     'por_completar', 'diferencias', 'importados_inactivos']),
+                $esLider && filter_var($request->input('es_lider'), FILTER_VALIDATE_BOOLEAN) ? ['es_lider' => '1'] : [],
                 filter_var($request->input('con_referidos'), FILTER_VALIDATE_BOOLEAN) ? ['con_referidos' => '1'] : [],
                 $campana ? ['campana' => $campana] : [],
                 $evento ? ['evento' => $evento] : [],
@@ -161,6 +168,7 @@ class VotanteController extends Controller
             ),
             'canViewEventos' => $canSeeEventos,
             'eventos' => $canSeeEventos ? app(EventScope::class)->options() : [],
+            'campanasActivas' => $esLider,
         ]);
     }
 
@@ -214,6 +222,9 @@ class VotanteController extends Controller
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
         }
         $this->authorizeLiderRow($lider);
+        if (! EsLider::activo()) {
+            $lider->makeHidden('es_lider');
+        }
 
         $nexos = $this->campaign()->scope(DB::table('nexos_familiares'))
             ->where('person_id', $id)
@@ -335,6 +346,7 @@ class VotanteController extends Controller
             'funcionario' => 'nullable|boolean',
             'exfuncionario' => 'nullable|boolean',
             'gran_elector' => 'nullable|boolean',
+            'es_lider' => 'nullable|boolean',
             'nivel_confianza' => 'nullable|string|max:30',
             'convenio' => 'nullable|string|max:200',
             'escolaridad' => 'nullable|string|max:50',
@@ -345,7 +357,7 @@ class VotanteController extends Controller
             'instagram' => 'nullable|string|max:255',
         ]));
 
-        $lider = $createVotante->handle($data);
+        $lider = $createVotante->handle(EsLider::filtrar($data));
 
         return response()->json(['success' => true, 'message' => 'Votante creado.', 'id' => $lider->id], 201);
     }
@@ -395,6 +407,7 @@ class VotanteController extends Controller
             'funcionario' => 'nullable|boolean',
             'exfuncionario' => 'nullable|boolean',
             'gran_elector' => 'nullable|boolean',
+            'es_lider' => 'nullable|boolean',
             'nivel_confianza' => 'nullable|string|max:30',
             'convenio' => 'nullable|string|max:200',
             'escolaridad' => 'nullable|string|max:50',
@@ -405,7 +418,7 @@ class VotanteController extends Controller
             'instagram' => 'nullable|string|max:255',
         ], DB::table('lideres')->where('id', $id)->get()));
 
-        $updateVotante->handle($id, $data);
+        $updateVotante->handle($id, EsLider::filtrar($data));
 
         return response()->json(array_filter([
             'success' => true, 'message' => 'Votante actualizado.', 'warning' => $updateVotante->warning,

@@ -44,6 +44,8 @@ class Lider extends Model
         // Tags booleanos
         'militante', 'autoriza_datos', 'verificado', 'fallecido',
         'empresario', 'reservista', 'funcionario', 'exfuncionario', 'gran_elector',
+        // Campañas electorales: only through App\Support\EsLider (module on, key sent)
+        'es_lider',
         // Confianza y convenio
         'nivel_confianza', 'convenio',
         // Hoja de vida
@@ -67,6 +69,7 @@ class Lider extends Model
         'funcionario' => 'boolean',
         'exfuncionario' => 'boolean',
         'gran_elector' => 'boolean',
+        'es_lider' => 'boolean',
         'votos' => 'integer',
     ];
 

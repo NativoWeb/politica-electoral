@@ -61,7 +61,7 @@ export function EventFilterChips({ filters, eventos = [], onRemove }) {
     );
 }
 
-export default function VotanteFilters({ filters, municipios, onApply, onClear, eventos = [], canViewEventos = false }) {
+export default function VotanteFilters({ filters, municipios, onApply, onClear, eventos = [], canViewEventos = false, campanasActivas = false }) {
     const uid = useId();
     const id = (name) => `${uid}-${name}`;
     const [open, setOpen] = useState(false);
@@ -76,6 +76,9 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
     // The KPI cards change these two from outside the bar: the checkboxes follow the URL.
     useEffect(() => { setGranElector(isOn(filters.gran_elector)); }, [filters.gran_elector]);
     useEffect(() => { setConReferidos(isOn(filters.con_referidos)); }, [filters.con_referidos]);
+    // «Marcados como líder» (Campañas electorales module): also a KPI card.
+    const [esLider, setEsLider] = useState(isOn(filters.es_lider));
+    useEffect(() => { setEsLider(isOn(filters.es_lider)); }, [filters.es_lider]);
     const [militante, setMilitante] = useState(isOn(filters.militante));
     const [campana, setCampana] = useState(filters.campana || '');
     const [evento, setEvento] = useState(filters.evento || '');
@@ -123,6 +126,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
             ...(verificado ? { verificado: '1' } : {}),
             ...(granElector ? { gran_elector: '1' } : {}),
             ...(conReferidos ? { con_referidos: '1' } : {}),
+            ...(campanasActivas && esLider ? { es_lider: '1' } : {}),
             ...(militante ? { militante: '1' } : {}),
             ...(canViewEventos && evento ? { evento } : {}),
             ...(canViewEventos && !evento && asistentesEventos ? { asistentes_eventos: '1' } : {}),
@@ -144,6 +148,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
         setVerificado(false);
         setGranElector(false);
         setConReferidos(false);
+        setEsLider(false);
         setMilitante(false);
         setCampana('');
         setEvento('');
@@ -163,7 +168,7 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
 
     // What the URL filters by (the search has its own box), for the badge of the folded Filtros button.
     const activeCount = ['municipio', 'partido', 'nivel_confianza', 'campana', 'evento', 'asistentes_eventos', 'por_completar',
-        'importados_inactivos', 'diferencias', 'verificado', 'gran_elector', 'con_referidos', 'militante'].filter(k => filters[k]).length
+        'importados_inactivos', 'diferencias', 'verificado', 'gran_elector', 'con_referidos', 'es_lider', 'militante'].filter(k => filters[k]).length
         + (filters.estado && filters.estado !== 'activos' ? 1 : 0);
 
     return (
@@ -336,6 +341,12 @@ export default function VotanteFilters({ filters, municipios, onApply, onClear, 
                         <input type="checkbox" checked={conReferidos} onChange={e => setConReferidos(e.target.checked)} className={checkCls} />
                         <span className={checkTextCls}>Con referidos</span>
                     </label>
+                    {campanasActivas && (
+                        <label className={checkLabelCls}>
+                            <input type="checkbox" checked={esLider} onChange={e => setEsLider(e.target.checked)} className={checkCls} />
+                            <span className={checkTextCls}>Marcados como líder</span>
+                        </label>
+                    )}
                     <label className={checkLabelCls}>
                         <input type="checkbox" checked={militante} onChange={e => setMilitante(e.target.checked)} className={checkCls} />
                         <span className={checkTextCls}>Militante</span>

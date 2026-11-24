@@ -158,6 +158,7 @@ return [
     'custom' => [],
 
     'attributes' => [
+        'es_lider' => 'Es líder',
         'name' => 'nombre',
         'email' => 'correo electrónico',
         'password' => 'contraseña',

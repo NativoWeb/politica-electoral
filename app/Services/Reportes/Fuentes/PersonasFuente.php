@@ -14,6 +14,7 @@ use App\Services\Reportes\Catalogo\Columna;
 use App\Services\Reportes\Catalogo\Filtro;
 use App\Services\Reportes\ReporteService;
 use App\Services\Reportes\ReportSpec;
+use App\Support\EsLider;
 use App\Support\MigracionFlags;
 use App\Support\Provincias;
 use Carbon\CarbonImmutable;
@@ -134,7 +135,7 @@ class PersonasFuente implements Fuente
         $tipos = $eventos ? self::TIPOS : array_diff_key(self::TIPOS, [ApproveAttendees::TIPO => true]);
         $grupos[] = $this->grupo('que_son', '¿Qué son?', [
             new Filtro('tipo', 'Tipo', 'chips', self::lista($tipos)),
-            new Filtro('marcas', 'Marcas', 'chips', self::lista(self::MARCAS)),
+            new Filtro('marcas', 'Marcas', 'chips', self::lista(self::marcasDisponibles())),
             new Filtro('nivel_confianza', 'Nivel de confianza', 'chips', $this->opcionesCatalogo('nivel_confianza')),
             new Filtro('partido', 'Partido', 'buscar', opcionesDe: 'partidos', placeholder: 'Buscar partido…'),
         ]);
@@ -326,7 +327,7 @@ class PersonasFuente implements Fuente
         $out['barrio'] = self::textos($filtros['barrio'] ?? null);
         $out['zona'] = self::enLista($filtros['zona'] ?? null, self::ZONAS);
         $out['tipo'] = self::enLista($filtros['tipo'] ?? null, $tipos);
-        $out['marcas'] = self::enLista($filtros['marcas'] ?? null, self::MARCAS);
+        $out['marcas'] = self::enLista($filtros['marcas'] ?? null, self::marcasDisponibles());
         $out['nivel_confianza'] = self::enLista($filtros['nivel_confianza'] ?? null, array_flip(Catalogo::valores('nivel_confianza', true)));
         $out['partido'] = self::textos($filtros['partido'] ?? null);
         $referentes = $this->referentesVisibles(self::textos($filtros['referente'] ?? null));
@@ -575,7 +576,7 @@ class PersonasFuente implements Fuente
             'puesto_votacion' => ['puesto_votacion'], 'mesa_votacion' => ['mesa_votacion'], 'municipio_votacion' => ['municipio_votacion'],
             'genero' => ['genero'], 'edad' => ['fecha_nacimiento'], 'fecha_nacimiento' => ['fecha_nacimiento'], 'profesion' => ['profesion'],
             'escolaridad' => ['escolaridad'], 'estado_civil' => ['estado_civil'], 'tipo' => ['tipo'], 'cargo' => ['cargo'],
-            'partido' => ['partido'], 'nivel_confianza' => ['nivel_confianza'], 'marcas' => array_keys(self::MARCAS), 'votos' => ['votos'],
+            'partido' => ['partido'], 'nivel_confianza' => ['nivel_confianza'], 'marcas' => array_keys(self::marcasDisponibles()), 'votos' => ['votos'],
             'referente' => ['referente_nombre', 'referente_apellido', 'referente_documento'], 'referente_documento' => ['referente_documento'],
             'autoriza_datos' => ['autoriza_datos'], 'origen' => ['origen', 'tipo'], 'por_completar' => ['migracion_flags'],
             'observacion' => ['observacion'],
@@ -695,7 +696,7 @@ class PersonasFuente implements Fuente
             $partes[] = $nombres($f['tipo'], self::TIPOS);
         }
         if (isset($f['marcas'])) {
-            $partes[] = $nombres($f['marcas'], self::MARCAS);
+            $partes[] = $nombres($f['marcas'], self::marcasDisponibles());
         }
         if (isset($f['provincia'])) {
             $partes[] = $nombres($f['provincia'], array_column($this->opcionesProvincia(), 'etiqueta', 'valor'));
@@ -1045,12 +1046,20 @@ class PersonasFuente implements Fuente
         return $tipo === null ? null : (self::TIPOS[$tipo] ?? Str::ucfirst(str_replace('_', ' ', $tipo)));
     }
 
+    // The marks of the catalog: "Marcados como líder" only while Campañas electorales is on for the user.
+    private static function marcasDisponibles(): array
+    {
+        return EsLider::activo() && self::tieneColumna(EsLider::CAMPO)
+            ? self::MARCAS + [EsLider::CAMPO => EsLider::ETIQUETA]
+            : self::MARCAS;
+    }
+
     private static function marcas(object $row): ?string
     {
         $out = [];
-        foreach (self::MARCAS as $campo => $etiqueta) {
+        foreach (self::marcasDisponibles() as $campo => $etiqueta) {
             if (self::si($row->{$campo} ?? null)) {
-                $out[] = $etiqueta;
+                $out[] = $campo === EsLider::CAMPO ? EsLider::ETIQUETA_FICHA : $etiqueta;
             }
         }
 

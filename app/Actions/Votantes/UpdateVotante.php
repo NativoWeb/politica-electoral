@@ -35,7 +35,8 @@ class UpdateVotante
         'exfuncionario' => false, 'gran_elector' => false,
     ];
 
-    private const NOT_CLEARABLE = ['nombre', 'municipio'];
+    // es_lider: null means "not sent", never "unmark" (App\Support\EsLider).
+    private const NOT_CLEARABLE = ['nombre', 'municipio', 'es_lider'];
 
     public static function withoutNulls(array $data): array
     {

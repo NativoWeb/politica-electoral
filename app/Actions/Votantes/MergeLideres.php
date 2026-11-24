@@ -43,7 +43,7 @@ class MergeLideres
 
     // Yes/no attributes: true on either record stays true.
     private const FLAGS = ['destacado', 'militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario',
-        'reservista', 'funcionario', 'exfuncionario', 'gran_elector'];
+        'reservista', 'funcionario', 'exfuncionario', 'gran_elector', 'es_lider'];
 
     public function __construct(private readonly UpdateVotante $updateVotante) {}
 

@@ -88,7 +88,8 @@ class CreateVotante
                 'facebook' => $data['facebook'] ?? null,
                 'twitter' => $data['twitter'] ?? null,
                 'instagram' => $data['instagram'] ?? null,
-            ]), fn (Lider $lider) => $lider->forceFill(['campaign_id' => $campaignId])->save()));
+            ] + (array_key_exists('es_lider', $data) ? ['es_lider' => (bool) $data['es_lider']] : [])),
+                fn (Lider $lider) => $lider->forceFill(['campaign_id' => $campaignId])->save()));
         } catch (UniqueConstraintViolationException) {
             // Same cedula inserted concurrently between the check above and the insert.
             throw new BusinessRuleException("Ya existe un líder con cédula {$cedula}.");

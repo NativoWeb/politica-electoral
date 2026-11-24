@@ -23,6 +23,7 @@ use App\Services\FichaCatalogos;
 use App\Services\Geo\ComunaAssigner;
 use App\Services\Geo\ComunaCatalog;
 use App\Support\Cedula;
+use App\Support\EsLider;
 use App\Support\GeoTerritory;
 use App\Support\MigracionFlags;
 use Closure;
@@ -1026,6 +1027,7 @@ class MapaPoliticoController extends Controller
             'funcionario' => 'nullable|boolean',
             'exfuncionario' => 'nullable|boolean',
             'gran_elector' => 'nullable|boolean',
+            'es_lider' => 'nullable|boolean',
             'nivel_confianza' => 'nullable|string|max:30',
             'convenio' => 'nullable|string|max:200',
             'escolaridad' => 'nullable|string|max:50',
@@ -1037,7 +1039,7 @@ class MapaPoliticoController extends Controller
             // Reusing an electoral person's id would make authorizePersonOrLider treat it as this lider.
             'client_id' => 'nullable|uuid|unique:persons,id',
         ]));
-        $data = Cedula::normalizeFields($data);
+        $data = EsLider::filtrar(Cedula::normalizeFields($data));
         $this->authorizeGeo($data['municipio_id']);
 
         // Offline creates carry the id generated on the device: a repeated send must not create a second lider.
@@ -1116,6 +1118,9 @@ class MapaPoliticoController extends Controller
         $booleanFields = ['militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario', 'reservista', 'funcionario', 'exfuncionario', 'gran_elector'];
         foreach ($booleanFields as $field) {
             $insertData[$field] = $data[$field] ?? false;
+        }
+        if (array_key_exists('es_lider', $data)) {
+            $insertData['es_lider'] = $data['es_lider'];
         }
 
         try {
@@ -1302,6 +1307,9 @@ class MapaPoliticoController extends Controller
             $response['funcionario'] = $liderModel->funcionario;
             $response['exfuncionario'] = $liderModel->exfuncionario;
             $response['gran_elector'] = $liderModel->gran_elector;
+            if (EsLider::activo()) {
+                $response['es_lider'] = (bool) $liderModel->es_lider;
+            }
             $response['nivel_confianza'] = $liderModel->nivel_confianza;
             $response['convenio'] = $liderModel->convenio;
             $response['escolaridad'] = $liderModel->escolaridad;
@@ -1388,6 +1396,7 @@ class MapaPoliticoController extends Controller
             'funcionario' => 'nullable|boolean',
             'exfuncionario' => 'nullable|boolean',
             'gran_elector' => 'nullable|boolean',
+            'es_lider' => 'nullable|boolean',
             'nivel_confianza' => 'nullable|string|max:30',
             'convenio' => 'nullable|string|max:200',
             'escolaridad' => 'nullable|string|max:50',
@@ -1397,7 +1406,7 @@ class MapaPoliticoController extends Controller
             'twitter' => 'nullable|string|max:255',
             'instagram' => 'nullable|string|max:255',
         ], $this->storedFichas($id)));
-        $data = Cedula::normalizeFields(UpdateVotante::withoutNulls($data));
+        $data = EsLider::filtrar(Cedula::normalizeFields(UpdateVotante::withoutNulls($data)));
 
         $cedula = $data['cedula'] ?? null;
         if ($cedula !== null && $cedula !== '') {
@@ -1542,7 +1551,7 @@ class MapaPoliticoController extends Controller
                             'nivel_confianza' => $data['nivel_confianza'] ?? 'sin_llamar',
                             'created_at' => now(),
                             'updated_at' => now(),
-                        ]);
+                        ] + (array_key_exists('es_lider', $data) ? ['es_lider' => $data['es_lider']] : []));
                         app(ComunaAssigner::class)->refreshRow('lideres', $newLiderId);
                         // Don't return — continue to update candidacy endorsement below
                     }
@@ -1606,7 +1615,7 @@ class MapaPoliticoController extends Controller
                     'militante', 'autoriza_datos', 'verificado', 'fallecido', 'empresario', 'reservista',
                     'funcionario', 'exfuncionario', 'gran_elector', 'nivel_confianza', 'convenio',
                     'escolaridad', 'tipo_hoja_vida', 'fecha_registro_hv',
-                    'facebook', 'twitter', 'instagram',
+                    'facebook', 'twitter', 'instagram', 'es_lider',
                 ];
                 foreach ($extendedFields as $field) {
                     if (array_key_exists($field, $data)) {

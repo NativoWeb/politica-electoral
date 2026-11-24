@@ -170,9 +170,26 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         });
     });
 
-    // Campañas electorales: hidden (404) until CAMPANAS_ELECTORALES_ENABLED, also for the superadmin.
-    Route::middleware(['feature:campanas', 'permission:view.campanas|manage.campanas'])->group(function () {
-        Route::get('/campanas-electorales', [ElectoralCampaignController::class, 'index'])->name('campanas-electorales.index');
+    // Campañas electorales (docs/campanas-electorales.md): hidden (404) until the module is on, also for the superadmin.
+    // Group, territory and status of each campaign are checked by ElectoralCampaignAccess.
+    Route::middleware('feature:campanas')->prefix('campanas-electorales')->name('campanas-electorales.')->group(function () {
+        Route::middleware('permission:manage.campanas')->group(function () {
+            Route::get('/nueva', [ElectoralCampaignController::class, 'create'])->name('create');
+            Route::get('/opciones/candidatos', [ElectoralCampaignController::class, 'candidateOptions'])->name('candidatos');
+            Route::post('/', [ElectoralCampaignController::class, 'store'])->name('store')->middleware('grupo.propio');
+            Route::get('/{id}/editar', [ElectoralCampaignController::class, 'edit'])->name('edit')->whereUuid('id');
+            Route::put('/{id}', [ElectoralCampaignController::class, 'update'])->name('update')->whereUuid('id');
+            Route::post('/{id}/archivar', [ElectoralCampaignController::class, 'archive'])->name('archive')->whereUuid('id');
+            Route::post('/{id}/reactivar', [ElectoralCampaignController::class, 'reactivate'])->name('reactivate')->whereUuid('id');
+            Route::put('/{id}/metas', [ElectoralCampaignController::class, 'updateGoals'])->name('metas.update')->whereUuid('id');
+            Route::get('/{id}/metas/plantilla', [ElectoralCampaignController::class, 'template'])->name('metas.plantilla')->whereUuid('id');
+            Route::post('/{id}/metas/importar', [ElectoralCampaignController::class, 'import'])->name('metas.importar')->whereUuid('id');
+        });
+        Route::middleware('permission:view.campanas|manage.campanas')->group(function () {
+            Route::get('/', [ElectoralCampaignController::class, 'index'])->name('index');
+            Route::get('/{id}', [ElectoralCampaignController::class, 'show'])->name('show')->whereUuid('id');
+            Route::get('/{id}/historial', [ElectoralCampaignController::class, 'history'])->name('historial')->whereUuid('id');
+        });
     });
 
     // Empresarios y gremios (docs/empresarios.md): seen with view.empresarios, written with manage.empresarios;

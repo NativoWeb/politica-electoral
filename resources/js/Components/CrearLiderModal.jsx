@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { offlineCreateLider } from '@/lib/offlineDb';
 import { apiFetch, showGlobalToast } from '@/lib/api';
 import SearchableDropdown from '@/Components/SearchableDropdown';
@@ -8,6 +8,8 @@ import { useAllMunicipios } from '@/lib/useAllMunicipios';
 import { isSantanderMunicipio } from '@/lib/mapaPoliticoConstants';
 import { TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES } from '@/lib/mapaPoliticoConstants';
 import CatalogoOptions from '@/Components/CatalogoOptions';
+import CasillaEsLider from '@/Components/CampanasElectorales/CasillaEsLider';
+import { moduloLideresActivo } from '@/lib/campanas';
 
 function VoiceButton({ onResult, label }) {
     const [listening, setListening] = useState(false);
@@ -106,6 +108,7 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
     const [successMsg, setSuccessMsg] = useState('');
+    const esLiderVisible = moduloLideresActivo(usePage().props);
 
     if (!open) return null;
 
@@ -283,6 +286,11 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                                 })()}
                             </div>
                         </div>
+
+                        {/* es_lider stays out of the form until the box is touched: only a ticked box is sent. */}
+                        {esLiderVisible && (
+                            <CasillaEsLider checked={!!form.es_lider} disabled={false} onChange={value => set('es_lider', value)} />
+                        )}
 
                         {/* ── Collapsible: Informacion Personal (contact and identity data, closed by default) ── */}
                         <CollapsibleSection title="Informacion Personal" fields={SECTION_FIELDS.personal} errors={errors}>

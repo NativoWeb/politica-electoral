@@ -14,6 +14,8 @@ import UnificarModal from '@/Components/UnificarModal';
 import ReferenteFields from '@/Components/ReferenteFields';
 import ComunaSelector from '@/Components/ComunaSelector';
 import MigracionAviso from '@/Components/MigracionAviso';
+import CasillaEsLider from '@/Components/CampanasElectorales/CasillaEsLider';
+import { muestraEsLider } from '@/lib/campanas';
 import { forbiddenMessage, useCampaign } from '@/lib/campaign';
 import useEscapeKey from '@/lib/useEscapeKey';
 import { useAllMunicipios } from '@/lib/useAllMunicipios';
@@ -1509,6 +1511,13 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                                         disabled={!editMode}
                                     />
                                 </div>
+                                {muestraEsLider(data) && (
+                                    <CasillaEsLider
+                                        checked={editMode ? (form.es_lider ?? !!data.es_lider) : !!data.es_lider}
+                                        disabled={!editMode}
+                                        onChange={value => set('es_lider', value)}
+                                    />
+                                )}
                             </div>
                         )}
                     </div>

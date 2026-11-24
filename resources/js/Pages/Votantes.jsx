@@ -59,7 +59,7 @@ function KpiCard({ icon, label, value, accent, pressed, onClick, hint }) {
     );
 }
 
-export default function Votantes({ votantes, counters, municipios, filters, eventos = [], canViewEventos = false }) {
+export default function Votantes({ votantes, counters, municipios, filters, eventos = [], canViewEventos = false, campanasActivas = false }) {
     // Creating a votante needs write.data on the server (H1).
     // Not while the superadmin's header shows another group: the new ficha would land out of sight.
     const canWrite = !!usePage().props.auth?.user?.canWrite && !useCreateBlocked();
@@ -141,6 +141,7 @@ export default function Votantes({ votantes, counters, municipios, filters, even
 
     const granElectorOn = isOn(filters.gran_elector);
     const conReferidosOn = isOn(filters.con_referidos);
+    const esLiderOn = campanasActivas && isOn(filters.es_lider);
     const applyCard = useCallback((changes) => {
         router.get('/votantes', withCardFilters(filters, changes), { preserveState: true, preserveScroll: true });
     }, [filters]);
@@ -181,10 +182,10 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                 </div>
 
                 {/* KPI Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-4" role="group" aria-label="Filtrar por tarjeta">
+                <div className={`grid grid-cols-2 ${campanasActivas ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-3 lg:gap-4 mb-4`} role="group" aria-label="Filtrar por tarjeta">
                     <KpiCard
-                        pressed={!granElectorOn && !conReferidosOn}
-                        onClick={() => applyCard({ gran_elector: null, con_referidos: null })}
+                        pressed={!granElectorOn && !conReferidosOn && !esLiderOn}
+                        onClick={() => applyCard({ gran_elector: null, con_referidos: null, ...(campanasActivas ? { es_lider: null } : {}) })}
                         hint="Ver todos los votantes de los filtros"
                         icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
                         label="Total Votantes"
@@ -207,6 +208,16 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                         onClick={() => applyCard({ con_referidos: conReferidosOn ? null : '1' })}
                         hint={conReferidosOn ? 'Quitar el filtro Con referidos' : 'Ver solo quienes tienen referidos'}
                     />
+                    {campanasActivas && (
+                        <KpiCard
+                            icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7l7-4z" /></svg>}
+                            label="Marcados como líder"
+                            value={counters.es_lider ?? 0}
+                            pressed={esLiderOn}
+                            onClick={() => applyCard({ es_lider: esLiderOn ? null : '1' })}
+                            hint={esLiderOn ? 'Quitar el filtro Marcados como líder' : 'Ver solo los marcados como líder'}
+                        />
+                    )}
                 </div>
 
                 {/* Filter bar on top (as in Mapa Político and Eventos), then table | detail */}
@@ -218,6 +229,7 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                         onClear={handleClearFilters}
                         eventos={eventos}
                         canViewEventos={canViewEventos}
+                        campanasActivas={campanasActivas}
                     />
                 </div>
 
@@ -255,6 +267,7 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                                 apiFetch={apiFetch}
                                 municipios={municipios}
                                 showToast={showToast}
+                                campanasActivas={campanasActivas}
                             />
                         </div>
                     )}
@@ -274,6 +287,7 @@ export default function Votantes({ votantes, counters, municipios, filters, even
                         apiFetch={apiFetch}
                         municipios={municipios}
                         showToast={showToast}
+                        campanasActivas={campanasActivas}
                     />
                 </div>
             )}

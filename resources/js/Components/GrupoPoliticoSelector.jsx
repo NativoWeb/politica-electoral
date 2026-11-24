@@ -12,6 +12,12 @@ function appliedIds(selected, options) {
     return known.length === 0 || known.length === options.length ? null : known;
 }
 
+// The list of the section of a path: /campanas-electorales/{id} → /campanas-electorales.
+export function seccionDe(path) {
+    const primero = String(path || '').split('/').filter(Boolean)[0];
+    return primero ? `/${primero}` : '/';
+}
+
 export function resumenGrupos(selected, options) {
     const ids = appliedIds(selected, options);
     if (!ids) return TODOS;
@@ -101,7 +107,16 @@ export default function GrupoPoliticoSelector({ vista, className = '' }) {
             }
             close();
             router.flushAll?.();
-            router.reload({ onFinish: () => setSaving(false) });
+            // The page open may not exist for the new groups (a campaign of a group now hidden: 404). Then go to its
+            // section's list instead of painting the error page over it; the header comes back with the new groups.
+            router.reload({
+                onHttpException: (response) => {
+                    if (response?.status !== 404) return undefined;
+                    router.visit(seccionDe(window.location.pathname));
+                    return false;
+                },
+                onFinish: () => setSaving(false),
+            });
         } catch {
             showGlobalToast('Sin conexión: no se pudo cambiar el grupo político.', 'error');
             setSaving(false);
