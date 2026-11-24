@@ -76,7 +76,10 @@ class UpdateVotante
             $existente = DB::table('lideres')->where('campaign_id', $lider->campaign_id)
                 ->where('cedula', $cedula)->where('id', '!=', $id)->first();
             if ($existente) {
-                throw new BusinessRuleException($this->duplicateCedulaMessage($cedula, $existente));
+                // UnifyRecords needs this class: resolved here, not injected.
+                $clash = app(UnifyRecords::class)->cedulaClash($id, $existente);
+
+                throw new BusinessRuleException($clash['message'], 422, ['duplicado' => $clash['duplicado']]);
             }
         }
 

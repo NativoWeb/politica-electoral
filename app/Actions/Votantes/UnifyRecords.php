@@ -9,8 +9,10 @@ use App\Models\AuditLog;
 use App\Services\CachedQueries;
 use App\Services\Import\TextNormalizer;
 use App\Support\Cedula;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 // "Unificar con otra persona" in the ficha: the record being viewed and any other one the user can edit become one.
 //   lideres:  lider + lider of the same campaign -> MergeLideres (the user picks the cédula when both differ).
@@ -90,6 +92,57 @@ class UnifyRecords
         }
 
         return $lideres->concat($candidatos)->values()->all();
+    }
+
+    // A save of the ficha $id clashed with the cédula of $existente (a lider of the same campaign). A lider the user
+    // cannot see only says where it is, never who; one they can see says whether "Unificar" may join them.
+    public function cedulaClash(string $id, object $existente): array
+    {
+        if (! $this->allows(fn () => $this->authorizeLiderRow($existente))) {
+            $donde = $existente->municipio ?: 'otro municipio';
+
+            return [
+                'message' => "Esa cédula ya la tiene otra persona registrada en {$donde}, fuera de tu territorio. Pídele a un administrador que unifique las dos fichas.",
+                'duplicado' => ['puede_unificar' => false, 'fuera_de_territorio' => true, 'municipio' => $existente->municipio ?: null],
+            ];
+        }
+        $donde = $existente->municipio ? " ({$existente->municipio})" : '';
+
+        return [
+            'message' => "Esa cédula ya la tiene {$existente->nombre}{$donde}.",
+            'duplicado' => [
+                'id' => $existente->id,
+                'nombre' => $existente->nombre,
+                'municipio' => $existente->municipio,
+                'puede_unificar' => $this->canUnify($id, $existente->id),
+            ],
+        ];
+    }
+
+    // The checks run() makes before merging: write.data, both records writable by the user, candidates only for
+    // who may edit electoral data.
+    public function canUnify(string $id, string $otherId): bool
+    {
+        if ($id === $otherId || ! request()->user()?->hasPermission('write.data')) {
+            return false;
+        }
+        $kinds = [];
+        $ok = $this->allows(function () use ($id, $otherId, &$kinds) {
+            $kinds = [$this->record($id)[0], $this->record($otherId)[0]];
+        });
+
+        return $ok && ($kinds === ['lider', 'lider'] || $this->campaign()->canEditElectoral());
+    }
+
+    private function allows(callable $check): bool
+    {
+        try {
+            $check();
+
+            return true;
+        } catch (HttpExceptionInterface|HttpResponseException|BusinessRuleException) {
+            return false;
+        }
     }
 
     // What the merge would leave, computed by running it and rolling back. A merge that cannot be done throws.

@@ -128,6 +128,9 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
     const canSeeEventos = canSeeEventAttendees(authUser);
     const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
+    // The record a cédula clash named: "Unificar" opens on it, already chosen.
+    const [unificarCon, setUnificarCon] = useState(null);
+    const cedulaRef = useRef(null);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
@@ -293,9 +296,9 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
             .finally(() => setSaving(false));
     }
 
-    // Merges `dup` with this record. In edit mode the pending changes are saved first so nothing typed is lost.
+    // Merges `dup` (a possible duplicate) with this record. In edit mode the pending changes are saved first so nothing typed is lost.
     // cedulaElegida: when the two records have almost the same cédula, the one the user says is right.
-    function mergeDuplicado(dup = duplicado, cedulaElegida = null) {
+    function mergeDuplicado(dup, cedulaElegida = null) {
         const actual = form.nombre || data?.nombre;
         confirm(
             'Unificar registros',
@@ -312,34 +315,9 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                             : (res.message || 'No se pudo unificar. Intenta de nuevo.'));
                 };
                 try {
-                    if (dup.vincular) {
-                        // A candidate with no lider record: link it to the lider that holds the cédula, then save
-                        // the pending edits on that lider (the cédula is already its own, so nothing clashes).
-                        const linked = await apiFetch(`/mapa-politico/persona/${targetId}/unificar`, {
-                            method: 'POST',
-                            body: JSON.stringify({ duplicado_id: dup.id }),
-                        });
-                        if (!linked.ok) return failFrom(linked);
-                        if (editMode) {
-                            const payload = { ...form, nombre: dup.nombre, votos: form.votos ? parseInt(form.votos, 10) : 0 };
-                            const saved = await apiFetch(`/mapa-politico/persona/${dup.id}`, { method: 'PUT', body: JSON.stringify(payload) });
-                            if (!saved.ok) return failFrom(saved);
-                        }
-                        setDuplicado(null);
-                        setMessage('Registros unificados');
-                        setErrorMessage('');
-                        showGlobalToast('Registros unificados.');
-                        setEditMode(false);
-                        loadData(targetId);
-                        setTimeout(() => router.reload({ only: ['data'] }), 500);
-                        setTimeout(() => setMessage(''), 4000);
-                        return;
-                    }
                     if (editMode) {
-                        // 1) Keep the pending edits. After a cédula clash the typed cédula still belongs to the
-                        // duplicate, so the old one is sent and the merge moves it over.
-                        const fromClash = dup === duplicado;
-                        const payload = { ...form, cedula: fromClash ? (data?.cedula ?? '') : (form.cedula ?? ''), votos: form.votos ? parseInt(form.votos, 10) : 0 };
+                        // 1) Keep the pending edits.
+                        const payload = { ...form, cedula: form.cedula ?? '', votos: form.votos ? parseInt(form.votos, 10) : 0 };
                         const saved = await apiFetch(`/mapa-politico/persona/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) });
                         if (!saved.ok) return failFrom(saved);
                     }
@@ -369,6 +347,37 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
             },
             false,
         );
+    }
+
+    // "Unificar" from a cédula clash: whatever else was typed is saved first under the ficha's own cédula, so it is
+    // not lost when the ficha reloads after the merge. A failed save keeps the modal closed and shows why.
+    async function unificarDesdeChoque() {
+        const elegido = { id: duplicado.id, nombre: duplicado.nombre };
+        const sinCedula = (f) => JSON.stringify({ ...f, cedula: '' });
+        if (sinCedula(form) !== sinCedula(buildFormFromData(data))) {
+            const fail = (msg) => { setMessage(msg); setErrorMessage(msg); showGlobalToast(msg, 'error'); };
+            setMerging(true);
+            try {
+                const payload = { ...form, cedula: data?.cedula ?? '', votos: form.votos ? parseInt(form.votos, 10) : 0 };
+                const r = await apiFetch(`/mapa-politico/persona/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) });
+                if (!r.ok) {
+                    const body = (await r.json().catch(() => null)) || {};
+                    const firstError = body.errors ? Object.values(body.errors)[0]?.[0] : null;
+                    return fail(r.status === 401 || r.status === 419
+                        ? 'Tu sesión expiró. Recarga la página e inicia sesión de nuevo.'
+                        : r.status === 403
+                            ? deniedMessage(body)
+                            : `No se pudieron guardar tus otros cambios antes de unificar: ${firstError || body.message || 'intenta de nuevo.'}`);
+                }
+                onSaved?.();
+            } catch {
+                return fail('No se pudieron guardar tus otros cambios antes de unificar. Revisa tu conexión e intenta de nuevo.');
+            } finally {
+                setMerging(false);
+            }
+        }
+        setUnificarCon(elegido);
+        setShowUnificar(true);
     }
 
     function addNexo(e) {
@@ -702,30 +711,24 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                                     )}
                                     <span>{message}</span>
                                 </div>
-                                {duplicado && message === errorMessage && !readOnly && (
-                                    <div className="mt-3 pl-8 text-[13px] font-normal text-[var(--color-ink)]">
-                                        <p>
-                                            ¿Es la misma persona? <strong>{duplicado.nombre}</strong>
-                                            {[duplicado.municipio, duplicado.cargo, duplicado.telefono].filter(Boolean).length > 0 && (
-                                                <span className="text-[var(--color-ink-faint)]"> · {[duplicado.municipio, duplicado.cargo, duplicado.telefono].filter(Boolean).join(' · ')}</span>
-                                            )}
-                                        </p>
+                                {duplicado?.puede_unificar && message === errorMessage && !readOnly && (
+                                    <div className="mt-3 pl-8 text-[var(--color-ink)]">
+                                        <p className="text-[14px] font-bold">¿Es la misma persona?</p>
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             <button
                                                 type="button"
-                                                onClick={() => mergeDuplicado()}
-                                                disabled={merging || saving}
-                                                className="px-4 py-2 bg-[var(--color-primary)] text-white text-[13px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
+                                                onClick={unificarDesdeChoque}
+                                                disabled={saving || merging}
+                                                className="px-5 py-3 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
                                             >
-                                                {merging ? 'Unificando...' : 'Sí, unificar en este registro'}
+                                                {merging ? 'Guardando tus cambios...' : `Unificar con ${duplicado.nombre}`}
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => { setDuplicado(null); setMessage(''); }}
-                                                disabled={merging}
-                                                className="px-4 py-2 bg-white border border-[var(--color-line-strong)] text-[13px] font-semibold rounded-lg hover:bg-gray-50"
+                                                onClick={() => { setDuplicado(null); setMessage(''); setErrorMessage(''); setActiveTab('basicos'); setTimeout(() => cedulaRef.current?.focus(), 0); }}
+                                                className="px-5 py-3 bg-white border border-[var(--color-line-strong)] text-[14px] font-semibold rounded-lg hover:bg-gray-50"
                                             >
-                                                No, corregir la cédula
+                                                Revisar la cédula
                                             </button>
                                         </div>
                                     </div>
@@ -797,7 +800,7 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div>
                                             <label className={labelCls}>Cedula</label>
-                                            <input className={fieldCls} value={f('cedula')} onChange={e => set('cedula', e.target.value)} placeholder="Numero de cedula" />
+                                            <input ref={cedulaRef} className={fieldCls} value={f('cedula')} onChange={e => set('cedula', e.target.value)} placeholder="Numero de cedula" />
                                         </div>
                                         <div>
                                             <label className={labelCls}>Tipo documento</label>
@@ -1528,9 +1531,13 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                 <UnificarModal
                     recordId={targetId}
                     recordName={data.nombre}
-                    onClose={() => setShowUnificar(false)}
+                    initialChosen={unificarCon}
+                    onClose={() => { setShowUnificar(false); setUnificarCon(null); }}
                     onDone={(id) => {
                         setShowUnificar(false);
+                        setUnificarCon(null);
+                        // Opened from a cédula clash while editing: the form now shows the unified record.
+                        setEditMode(false);
                         setDuplicado(null);
                         setPosibles([]);
                         setMessage('Registros unificados');

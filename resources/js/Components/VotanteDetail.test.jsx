@@ -215,3 +215,101 @@ describe('VotanteDetail: el aviso sigue abierto tras resolver', () => {
         globalThis.fetch = originalFetch;
     });
 });
+
+describe('VotanteDetail cédula of another record on save', () => {
+    const originalFetch = globalThis.fetch;
+    const CLASH = { status: 422, success: false, message: 'Esa cédula ya la tiene Ana Díaz (Lebrija).', duplicado: { id: 'v2', nombre: 'Ana Díaz', municipio: 'Lebrija', puede_unificar: true } };
+
+    beforeEach(() => {
+        page.props = { auth: { user: { campaign: CD, canWrite: true } }, visibleCampaigns: VISIBLE };
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    function renderClash(error, onSaved = vi.fn()) {
+        const showToast = vi.fn();
+        render(
+            <VotanteDetail data={votante('cd')} loading={false} creating={false} onClose={vi.fn()} onSaved={onSaved} onDeleted={vi.fn()}
+                apiFetch={vi.fn().mockRejectedValue(error)} municipios={[]} showToast={showToast} />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        fireEvent.click(screen.getByRole('button', { name: /Guardar/ }));
+        return { showToast, onSaved };
+    }
+
+    it('offers to unify with that record and opens the merge on it, already chosen', async () => {
+        globalThis.fetch = vi.fn((url) => Promise.resolve(new Response(JSON.stringify(url.endsWith('/vista-previa')
+            ? { success: true, caso: 'lideres', cedulas: null, final: { nombre: 'Ana Díaz', cedula: '222', telefonos: [], cargos: [], candidaturas: [] } }
+            : { success: true, message: 'Registros unificados.', caso: 'lideres', id: 'v2' }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+        const { onSaved } = renderClash(CLASH);
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Esa cédula ya la tiene Ana Díaz (Lebrija).¿Es la misma persona?');
+        fireEvent.click(screen.getByRole('button', { name: 'Unificar con Ana Díaz' }));
+
+        expect(screen.getByRole('dialog', { name: 'Unificar con otra persona' })).toHaveTextContent('Unificar con Ana Díaz');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Sí, unificar' })).toBeEnabled());
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/mapa-politico/persona/v1/unificar-con/vista-previa');
+        expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({ con: 'v2', cedula: null });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, unificar' }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalledWith('v2'));
+        expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({ con: 'v2', cedula: null });
+    });
+
+    it('outside the territory only says where the other record is, with no merge offer', async () => {
+        const message = 'Esa cédula ya la tiene otra persona registrada en Lebrija, fuera de tu territorio. Pídele a un administrador que unifique las dos fichas.';
+        const { showToast } = renderClash({ status: 422, success: false, message, duplicado: { puede_unificar: false, fuera_de_territorio: true, municipio: 'Lebrija' } });
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(message);
+        expect(screen.queryByText('¿Es la misma persona?')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Unificar con / })).not.toBeInTheDocument();
+        expect(showToast).not.toHaveBeenCalledWith(message, 'error');
+    });
+
+    it('saves what else was typed under the ficha own cédula before opening the merge', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ success: true, caso: 'lideres', cedulas: null, final: { nombre: 'Ana Díaz', cedula: '222', telefonos: [], cargos: [], candidaturas: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+        const apiFetch = vi.fn().mockRejectedValueOnce(CLASH).mockResolvedValueOnce({ success: true });
+        render(<VotanteDetail data={votante('cd')} loading={false} creating={false} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} apiFetch={apiFetch} municipios={[]} showToast={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Beto Pérez Ruiz' } });
+        fireEvent.click(screen.getByRole('button', { name: /Guardar/ }));
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Unificar con Ana Díaz' }));
+
+        expect(await screen.findByRole('dialog', { name: 'Unificar con otra persona' })).toBeInTheDocument();
+        expect(apiFetch).toHaveBeenCalledTimes(2);
+        expect(apiFetch.mock.calls[1][0]).toBe('/votantes/v1');
+        expect(JSON.parse(apiFetch.mock.calls[1][1].body)).toMatchObject({ nombre: 'Beto Pérez Ruiz', cedula: '222' });
+    });
+
+    it('with nothing else typed opens the merge without saving first', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ success: true, caso: 'lideres', cedulas: null, final: null }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+        renderClash(CLASH);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Unificar con Ana Díaz' }));
+        expect(await screen.findByRole('dialog', { name: 'Unificar con otra persona' })).toBeInTheDocument();
+    });
+
+    it('a failed save of the other changes keeps the merge closed and says why', async () => {
+        globalThis.fetch = vi.fn();
+        const apiFetch = vi.fn().mockRejectedValueOnce(CLASH).mockRejectedValueOnce({ status: 422, message: 'El correo no es válido.' });
+        render(<VotanteDetail data={votante('cd')} loading={false} creating={false} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} apiFetch={apiFetch} municipios={[]} showToast={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Beto Pérez Ruiz' } });
+        fireEvent.click(screen.getByRole('button', { name: /Guardar/ }));
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Unificar con Ana Díaz' }));
+
+        expect(await screen.findByText('No se pudieron guardar tus otros cambios antes de unificar: El correo no es válido.')).toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('any other rejected save is still a toast', async () => {
+        const { showToast } = renderClash({ status: 422, success: false, message: 'Esta persona no está registrada en el sistema.' });
+        await waitFor(() => expect(showToast).toHaveBeenCalledWith('Esta persona no está registrada en el sistema.', 'error'));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+});

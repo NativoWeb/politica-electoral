@@ -326,6 +326,81 @@ class UnifyRecordsTest extends TestCase
         $this->assertSame(2, DB::table('lideres')->count());
     }
 
+    // A save of the ficha that clashes with another record's cédula (Mapa and Votantes): who holds it and whether
+    // "Unificar" may join both, or only where it is when the user cannot see that record.
+    public function test_a_cedula_clash_names_the_other_record_and_offers_to_unify_it(): void
+    {
+        $edited = $this->lider('Didier Moreno', 'lebrija');
+        $other = $this->lider('Didier Alonso Moreno', 'giron', ['cedula' => '1007731678']);
+        $user = $this->user();
+
+        foreach (["/mapa-politico/persona/{$edited}", "/votantes/{$edited}"] as $url) {
+            $this->actingAs($user)->putJson($url, ['nombre' => 'Didier Moreno', 'cedula' => '1.007.731.678'])
+                ->assertStatus(422)
+                ->assertJsonPath('message', 'Esa cédula ya la tiene Didier Alonso Moreno (Girón).')
+                ->assertJsonPath('duplicado', ['id' => $other, 'nombre' => 'Didier Alonso Moreno', 'municipio' => 'Girón', 'puede_unificar' => true]);
+        }
+        $this->assertNull(DB::table('lideres')->where('id', $edited)->value('cedula'));
+        // The offered merge is the one "Unificar con otra persona" makes.
+        $this->unify($user, $edited, $other)->assertOk()->assertJson(['caso' => 'lideres']);
+        $this->assertSame(1, DB::table('lideres')->count());
+    }
+
+    public function test_a_candidate_clashing_with_a_lider_cedula_is_offered_the_link(): void
+    {
+        $person = $this->candidate('DIDIER MORENO', 'asamblea');
+        $lider = $this->lider('Didier Moreno Rey', 'lebrija', ['cedula' => '1007731678']);
+
+        $this->actingAs($this->user())->putJson("/mapa-politico/persona/{$person}", ['nombre' => 'DIDIER MORENO', 'cedula' => '1007731678'])
+            ->assertStatus(422)
+            ->assertJsonPath('duplicado.id', $lider)
+            ->assertJsonPath('duplicado.puede_unificar', true);
+    }
+
+    public function test_a_cedula_held_outside_the_users_territory_only_says_where(): void
+    {
+        $edited = $this->lider('Didier Moreno', 'giron');
+        $this->lider('Persona Oculta', 'lebrija', ['cedula' => '1007731678', 'telefono' => '3001234567']);
+        $user = $this->user(Campaign::DEFAULT_ID, ['view.mapa', 'view.votantes', 'write.data'], [$this->geo['giron']]);
+        $expected = 'Esa cédula ya la tiene otra persona registrada en Lebrija, fuera de tu territorio. Pídele a un administrador que unifique las dos fichas.';
+
+        foreach (["/mapa-politico/persona/{$edited}", "/votantes/{$edited}"] as $url) {
+            $res = $this->actingAs($user)->putJson($url, ['nombre' => 'Didier Moreno', 'cedula' => '1007731678'])
+                ->assertStatus(422)
+                ->assertJsonPath('message', $expected)
+                ->assertJsonPath('duplicado', ['puede_unificar' => false, 'fuera_de_territorio' => true, 'municipio' => 'Lebrija']);
+            $this->assertStringNotContainsString('Oculta', $res->getContent());
+            $this->assertStringNotContainsString('3001234567', $res->getContent());
+        }
+        $this->assertNull(DB::table('lideres')->where('id', $edited)->value('cedula'));
+    }
+
+    public function test_a_group_that_cannot_unite_candidates_sees_the_name_but_no_offer(): void
+    {
+        DB::table('campaigns')->where('id', $this->campX)->update(['ve_resultados_electorales' => true]);
+        $person = $this->candidate('DIDIER MORENO', 'concejoGiron');
+        $lider = $this->lider('Didier Moreno Rey', 'giron', ['cedula' => '1007731678', 'campaign_id' => $this->campX]);
+
+        $this->actingAs($this->user($this->campX))->putJson("/mapa-politico/persona/{$person}", ['cedula' => '1007731678'])
+            ->assertStatus(422)
+            ->assertJsonPath('duplicado.id', $lider)
+            ->assertJsonPath('duplicado.nombre', 'Didier Moreno Rey')
+            ->assertJsonPath('duplicado.puede_unificar', false);
+    }
+
+    public function test_the_superadmin_is_offered_to_unify_whatever_its_territory_field_says(): void
+    {
+        $edited = $this->lider('Didier Moreno', 'giron');
+        $other = $this->lider('Didier Alonso Moreno', 'lebrija', ['cedula' => '1007731678']);
+        $super = $this->user(Campaign::DEFAULT_ID, ['view.mapa', 'view.votantes', 'write.data'], [$this->geo['giron']]);
+        $super->forceFill(['role_id' => Role::firstOrCreate(['code' => 'R01_SUPERADMIN'], ['name' => 'Superadmin', 'level' => 10])->id])->save();
+
+        $this->actingAs($super)->putJson("/mapa-politico/persona/{$edited}", ['nombre' => 'Didier Moreno', 'cedula' => '1007731678'])
+            ->assertStatus(422)
+            ->assertJsonPath('duplicado.id', $other)
+            ->assertJsonPath('duplicado.puede_unificar', true);
+    }
+
     public function test_search_finds_lideres_and_candidates_but_never_the_record_itself(): void
     {
         $self = $this->lider('Sofia Ardila', 'giron', ['telefono' => '3157778899']);

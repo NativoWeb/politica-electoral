@@ -134,6 +134,10 @@ export default function VotanteDetail({
     const canSeeEventos = canSeeEventAttendees(authUser);
     const canSeeOrganizaciones = canSeeEmpresarios(authUser);
     const [showUnificar, setShowUnificar] = useState(false);
+    // A save refused because another record holds the cédula: {message, duplicado}, shown until the user acts.
+    const [clash, setClash] = useState(null);
+    const [unificarCon, setUnificarCon] = useState(null);
+    const cedulaRef = useRef(null);
     // The Electo notice stays open while the ficha reloads after resolving a difference.
     const [avisoAbierto, setAvisoAbierto] = useState(false);
     // Visible record of another campaign (a subcampaign): read-only, only its team may change it.
@@ -161,6 +165,7 @@ export default function VotanteDetail({
                 setForm(buildInitialForm(data));
                 setEditing(false);
                 setAvisoAbierto(false);
+                setClash(null);
                 prevIdRef.current = data.id;
             }
             setLocalContacts(data.contactos || []);
@@ -184,6 +189,7 @@ export default function VotanteDetail({
             return;
         }
         setSaving(true);
+        setClash(null);
         try {
             const payload = { ...form };
             if (typeof payload.votos === 'string') {
@@ -208,10 +214,41 @@ export default function VotanteDetail({
                 : err.status === 403
                     ? forbiddenMessage(err.message, campaignName)
                     : err.message || err.data?.message || 'Error al guardar';
+            if (err.status === 422 && err.duplicado) {
+                setClash({ message: msg, duplicado: err.duplicado });
+                return;
+            }
             showToast(msg, 'error');
         } finally {
             setSaving(false);
         }
+    }
+
+    // "Unificar" from a cédula clash: whatever else was typed is saved first under the ficha's own cédula, so it is
+    // not lost when the ficha reloads after the merge. A failed save keeps the modal closed and shows why.
+    async function unificarDesdeChoque() {
+        const elegido = { id: clash.duplicado.id, nombre: clash.duplicado.nombre };
+        const sinCedula = (f) => JSON.stringify({ ...f, cedula: '' });
+        if (sinCedula(form) !== sinCedula(buildInitialForm(data))) {
+            setSaving(true);
+            try {
+                const payload = { ...form, cedula: data?.cedula ?? '' };
+                if (typeof payload.votos === 'string') {
+                    payload.votos = payload.votos !== '' ? parseInt(payload.votos, 10) : null;
+                }
+                await apiFetch(`/votantes/${data.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+            } catch (err) {
+                const reason = err?.status === 403
+                    ? forbiddenMessage(err.message, campaignName)
+                    : err?.status && err.status < 500 && err.message ? err.message : 'intenta de nuevo.';
+                setClash(c => ({ ...c, error: `No se pudieron guardar tus otros cambios antes de unificar: ${reason}` }));
+                return;
+            } finally {
+                setSaving(false);
+            }
+        }
+        setUnificarCon(elegido);
+        setShowUnificar(true);
     }
 
     async function handleToggle() {
@@ -323,7 +360,7 @@ export default function VotanteDetail({
                     )}
                     {!creating && editing && (
                         <button
-                            onClick={() => { setEditing(false); setForm(buildInitialForm(data)); }}
+                            onClick={() => { setEditing(false); setClash(null); setForm(buildInitialForm(data)); }}
                             className="px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] transition-colors"
                         >
                             Cancelar
@@ -355,6 +392,34 @@ export default function VotanteDetail({
                             onSaved();
                         }}
                     />
+                )}
+                {clash && (
+                    <div role="alert" className="mt-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700">
+                        <p className="text-[14px] font-semibold">{clash.message}</p>
+                        {clash.error && <p className="mt-2 text-[14px] font-semibold">{clash.error}</p>}
+                        {clash.duplicado.puede_unificar && !creating && (
+                            <>
+                                <p className="mt-2 text-[14px] font-bold text-[var(--color-ink)]">¿Es la misma persona?</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={unificarDesdeChoque}
+                                        disabled={saving}
+                                        className="px-5 py-3 bg-[var(--color-primary)] text-white text-[14px] font-bold rounded-lg hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        {saving ? 'Guardando tus cambios...' : `Unificar con ${clash.duplicado.nombre}`}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setClash(null); setTimeout(() => cedulaRef.current?.focus(), 0); }}
+                                        className="px-5 py-3 bg-white border border-[var(--color-line-strong)] text-[14px] font-semibold text-[var(--color-ink)] rounded-lg hover:bg-gray-50"
+                                    >
+                                        Revisar la cédula
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 )}
                 {!creating && !editing && !soloLectura && authUser?.canWrite && (
                     <div className="pt-3">
@@ -389,7 +454,7 @@ export default function VotanteDetail({
                             ) : <p className={readCls}>{etiquetaDe(catalogos, 'tipo_documento', form.tipo_documento) || '-'}</p>}
                         </Field>
                         <Field label="Cedula">
-                            {editing ? <input value={form.cedula} onChange={e => setField('cedula', e.target.value)} className={inputCls} /> : <p className={readCls + ' font-mono'}>{form.cedula || '-'}</p>}
+                            {editing ? <input ref={cedulaRef} value={form.cedula} onChange={e => setField('cedula', e.target.value)} className={inputCls} /> : <p className={readCls + ' font-mono'}>{form.cedula || '-'}</p>}
                         </Field>
                         <Field label="Fecha expedicion">
                             {editing ? <input type="date" value={form.fecha_expedicion_doc} onChange={e => setField('fecha_expedicion_doc', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.fecha_expedicion_doc || '-'}</p>}
@@ -783,9 +848,13 @@ export default function VotanteDetail({
                 <UnificarModal
                     recordId={data.id}
                     recordName={data.nombre}
-                    onClose={() => setShowUnificar(false)}
+                    initialChosen={unificarCon}
+                    onClose={() => { setShowUnificar(false); setUnificarCon(null); }}
                     onDone={(id) => {
                         setShowUnificar(false);
+                        setUnificarCon(null);
+                        // The reloaded record rebuilds the form, also when the same id survives a clash merge.
+                        prevIdRef.current = null;
                         onSaved(id || data.id);
                     }}
                 />

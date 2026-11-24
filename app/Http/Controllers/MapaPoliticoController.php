@@ -8,6 +8,7 @@ use App\Actions\Votantes\AddReferido;
 use App\Actions\Votantes\FindPossibleDuplicates;
 use App\Actions\Votantes\LinkCandidateToLider;
 use App\Actions\Votantes\MergeLideres;
+use App\Actions\Votantes\UnifyRecords;
 use App\Actions\Votantes\UpdateVotante;
 use App\Http\Controllers\Concerns\FiltersByCargo;
 use App\Http\Controllers\Concerns\ScopesTerritory;
@@ -1437,25 +1438,11 @@ class MapaPoliticoController extends Controller
                     ->whereNotIn('id', $excludeIds)
                     ->first();
                 if ($existente) {
-                    $response = ['success' => false, 'message' => $this->duplicateCedulaMessage($cedula, $existente)];
-                    // Same person entered twice: the panel offers to merge it into the record being edited.
-                    $allowed = $this->allowedGeoIds();
-                    $inTerritory = $allowed === null || in_array($existente->geographic_unit_id, $allowed, true);
-                    // A candidate with no lider record yet: the lider holding the cédula may be that same person.
-                    $vincular = ! $currentLider && $inTerritory && $this->campaign()->canEditElectoral()
-                        && $this->candidateRanIn($id, $existente->geographic_unit_id);
-                    if (($currentLider && $currentLider->id === $id && $inTerritory) || $vincular) {
-                        $response['duplicado'] = [
-                            'id' => $existente->id,
-                            'nombre' => $existente->nombre,
-                            'municipio' => $existente->municipio,
-                            'cargo' => $existente->cargo,
-                            'telefono' => $existente->telefono,
-                            'vincular' => $vincular,
-                        ];
-                    }
+                    // Same person entered twice: the panel offers "Unificar" (UnifyRecords) with that record when the
+                    // user may join both; one outside the user's reach only says where it is.
+                    $clash = app(UnifyRecords::class)->cedulaClash($id, $existente);
 
-                    return response()->json($response, 422);
+                    return response()->json(['success' => false] + $clash, 422);
                 }
             }
         }
@@ -1911,11 +1898,6 @@ class MapaPoliticoController extends Controller
         DB::transaction(fn () => app(LinkCandidateToLider::class)->link($person, $lider));
 
         return response()->json(['success' => true, 'message' => 'Registros unificados.', 'lider' => ['id' => $lider->id]]);
-    }
-
-    private function candidateRanIn(string $personId, ?string $geoId): bool
-    {
-        return app(LinkCandidateToLider::class)->ranIn($personId, $geoId);
     }
 
     public function addReferido(Request $request, string $id, AddReferido $addReferido)

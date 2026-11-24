@@ -751,7 +751,7 @@ class TerritoryScopeTest extends TestCase
         $this->actingAs($this->campo)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '111'])
             ->assertStatus(422)
             ->assertJsonPath('duplicado.id', $this->liderA)
-            ->assertJsonPath('duplicado.vincular', true);
+            ->assertJsonPath('duplicado.puede_unificar', true);
 
         $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderA])
             ->assertOk()
@@ -768,10 +768,13 @@ class TerritoryScopeTest extends TestCase
         $personId = $this->candidateWithoutLider($this->munA, 'Ana T');
         $other = $this->candidateWithoutLider($this->munB, 'Beto T');
 
-        // Lider B is outside the user's territory: no merge offer, and linking is refused.
-        $this->actingAs($this->campo)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '222'])
+        // Lider B is outside the user's territory: no merge offer, only where it is, and linking is refused.
+        $res = $this->actingAs($this->campo)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '222'])
             ->assertStatus(422)
-            ->assertJsonMissingPath('duplicado');
+            ->assertJsonPath('duplicado.puede_unificar', false)
+            ->assertJsonPath('duplicado.fuera_de_territorio', true)
+            ->assertJsonMissingPath('duplicado.id');
+        $this->assertStringNotContainsString('Beto', $res->getContent());
         $this->actingAs($this->campo)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderB])
             ->assertForbidden();
         // The candidate never ran where lider A is.
@@ -882,7 +885,7 @@ class TerritoryScopeTest extends TestCase
         $this->actingAs($this->admin)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Ana T', 'cedula' => '111'])
             ->assertStatus(422)
             ->assertJsonPath('duplicado.id', $this->liderA)
-            ->assertJsonPath('duplicado.vincular', true);
+            ->assertJsonPath('duplicado.puede_unificar', true);
         $this->actingAs($this->admin)->postJson("/mapa-politico/persona/{$personId}/unificar", ['duplicado_id' => $this->liderA])
             ->assertOk();
 

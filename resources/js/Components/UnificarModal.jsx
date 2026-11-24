@@ -32,12 +32,13 @@ function Row({ label, children }) {
 
 // "Unificar con otra persona": search a lider of the campaign or a candidate, see how the ficha will look and confirm.
 // onDone(id) gets the record that remains, which the ficha then opens.
-export default function UnificarModal({ recordId, recordName, onClose, onDone }) {
+// initialChosen ({id, nombre}): the record is already known (a cédula clash on save), so it opens on its preview.
+export default function UnificarModal({ recordId, recordName, onClose, onDone, initialChosen = null }) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
     const [searching, setSearching] = useState(false);
     const [searchError, setSearchError] = useState('');
-    const [chosen, setChosen] = useState(null);
+    const [chosen, setChosen] = useState(initialChosen);
     const [preview, setPreview] = useState(null);
     const [previewError, setPreviewError] = useState('');
     const [loadingPreview, setLoadingPreview] = useState(false);
@@ -99,6 +100,10 @@ export default function UnificarModal({ recordId, recordName, onClose, onDone })
             setLoadingPreview(false);
         }
     }
+
+    useEffect(() => {
+        if (initialChosen) loadPreview(initialChosen);
+    }, []);
 
     function choose(other) {
         setChosen(other);
