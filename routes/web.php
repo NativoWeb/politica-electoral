@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\WhatsAppController;
 use App\Http\Controllers\Admin\WhatsAppTemplateController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\CampanaTableroController;
 use App\Http\Controllers\CargoCategoryController;
 use App\Http\Controllers\ComparadorController;
 use App\Http\Controllers\ComunaController;
@@ -111,6 +112,10 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
         Route::get('/mapa-politico/seccion', [MapaPoliticoController::class, 'seccion'])->name('mapa-politico.seccion');
         Route::get('/mapa-politico/persona/{id}', [MapaPoliticoController::class, 'persona'])->name('mapa-politico.persona')->middleware('person.resolve');
         Route::get('/mapa-politico/persona/{id}/posibles-duplicados', [MapaPoliticoController::class, 'posiblesDuplicados'])->name('mapa-politico.persona.duplicados')->middleware('person.resolve');
+    });
+
+    // Polygons only (no fichas): the map and the campaign's board (Tablero) draw them.
+    Route::middleware('permission:view.mapa|view.campanas|manage.campanas')->group(function () {
         Route::get('/api/geo/municipios.geojson', [GeoController::class, 'municipios'])->name('geo.municipios');
         Route::get('/api/geo/comunas.geojson', [GeoController::class, 'comunas'])->name('geo.comunas');
     });
@@ -189,6 +194,11 @@ Route::middleware(['auth', 'password.changed', 'audit'])->group(function () {
             Route::get('/', [ElectoralCampaignController::class, 'index'])->name('index');
             Route::get('/{id}', [ElectoralCampaignController::class, 'show'])->name('show')->whereUuid('id');
             Route::get('/{id}/historial', [ElectoralCampaignController::class, 'history'])->name('historial')->whereUuid('id');
+            Route::get('/{id}/tablero', [CampanaTableroController::class, 'show'])->name('tablero')->whereUuid('id');
+            Route::get('/{id}/tablero/territorio/{unitId}', [CampanaTableroController::class, 'territorio'])->name('tablero.territorio')
+                ->whereUuid('id')->whereUuid('unitId');
+            Route::get('/{id}/tablero/exportar.xlsx', [CampanaTableroController::class, 'excel'])->name('tablero.excel')->whereUuid('id');
+            Route::get('/{id}/tablero/exportar.pdf', [CampanaTableroController::class, 'pdf'])->name('tablero.pdf')->whereUuid('id');
         });
     });
 

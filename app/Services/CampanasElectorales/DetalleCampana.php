@@ -108,7 +108,8 @@ class DetalleCampana
             }
             $unidad = $avance['unidades'][$f['id']] ?? ['votantes' => 0, 'lideres' => 0, 'por_origen' => null];
             $row['avance'] = ['votantes' => $unidad['votantes'], 'lideres' => $unidad['lideres']];
-            $row['avance_por_origen'] = $unidad['por_origen'];
+            // k = 5 like the Tablero: 1 to 4 by one origin go out as null.
+            $row['avance_por_origen'] = $unidad['por_origen'] === null ? null : array_map(fn ($n) => TableroCampana::ocultar((int) $n), $unidad['por_origen']);
             $row['sin_comuna'] = $avance['sin_comuna'][$f['id']] ?? (isset($hijas[$f['id']]) ? ['votantes' => 0, 'lideres' => 0] : null);
             $out[] = $row;
         }

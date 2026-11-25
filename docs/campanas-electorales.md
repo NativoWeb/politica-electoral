@@ -231,7 +231,7 @@ territorio de una campaña con metas.
   escrita si la hay, si no con los votos sugeridos.
 - `sin_comuna`: solo en municipios que tienen comunas (fichas sin comuna asignada). Las comunas más `sin_comuna`
   suman el `avance.votantes` del municipio.
-- `avance_por_origen`: los votantes de la unidad que tienen comuna, por cómo se encontró (`auto` = barrio, `texto` =
+- `avance_por_origen` (cifras de 1 a 4 → `null`, k = 5 como el Tablero): los votantes de la unidad que tienen comuna, por cómo se encontró (`auto` = barrio, `texto` =
   «COMUNA N» escrito, `direccion` = fase B, `puesto` = puesto de votación, `manual`; docs/geografia.md). La pantalla
   muestra «incluye N por puesto de votación».
 - `totales`: suma de los municipios (meta propia o suma de comunas); `totales.sugerencia` igual que `sugerencia`.
@@ -287,3 +287,188 @@ Acciones: `electoral_campaign.created`, `.updated`, `.archived`, `.reactivated`,
   `counters.es_lider` ni `es_lider` en las filas.
 - Reportes (Personas): filtro «Marcados como líder»; en la columna Marcas de cada persona, «Es líder».
 - Unificar fichas: si cualquiera de las dos es líder, la que queda es líder.
+
+
+# Fase 5: Tablero de la campaña
+
+Sin migraciones; detrás del mismo `feature:campanas`. Servicio `App\Services\CampanasElectorales\TableroCampana`
+(reutiliza `AvanceCampana::calcular` + una consulta agrupada por día). Constantes en `config/campanas_electorales.php`,
+clave `tablero` (no en el Centro de configuración).
+
+## ADR-F5 — decisiones
+
+| # | Decisión | Por qué |
+|---|----------|---------|
+| F5-1 | El tablero se calcula al vuelo (sin tablas nuevas) con caché de 5 min. | 122.848 fichas: la consulta agrupada tarda ~190 ms; no hace falta materializar. |
+| F5-2 | Clave de caché `campanas:tablero:v1:{id}:{huella}:{sha1(municipios permitidos o "todos")}`. La huella es sha1 de `updated_at`, estado, fecha, factores y alcance de la campaña **más el contenido de sus metas** (unidad y los tres valores). | Con solo `max(updated_at)`, borrar una meta o dos cambios en el mismo segundo reusarían cifras viejas; leer las metas es una consulta de pocas filas. El acceso (`ElectoralCampaignAccess::find`) se valida **antes** de leer la caché, y lo que depende de quién mira (`campana`, `soloLectura`, `can`) se arma fuera de ella. Las fichas nuevas aparecen a los 5 min o con `?actualizar=1`. |
+| F5-3 | Nunca se usan las sugerencias: la meta es la escrita o la calculada desde la meta de votos. Ninguna respuesta del tablero trae la clave `sugerencia`. | El tablero mide contra lo que la campaña se propuso. |
+| F5-4 | k = 5: las cifras de 1 a 4 salen `null` («menos de 5») en el desglose por origen de una comuna, en **todas** las semanas (de la campaña y de un territorio, también `antes`) y en esas celdas de los archivos. Los registrados y líderes contra la meta por territorio son exactos. | No señalar a pocas personas; los totales contra la meta son el dato de trabajo. La evolución de la campaña también lleva k para que el Excel sea igual al JSON, y porque una JAL es un solo territorio. |
+| F5-5 | Totales: `registrados` cuenta todas las fichas de los territorios visibles; `pct` e `indice` del total se calculan solo con los territorios que tienen esa meta (`registrados_con_meta`), con totales (no promedio). `falta` es la **suma de lo que falta en cada territorio** (un territorio que pasó su meta no cubre a otro), y el ritmo usa esa suma (QA 2026-11-25, BUG-08). | Si no, las fichas de los territorios sin meta inflarían el avance (122.000 fichas contra 1.000 de meta), y los excedentes taparían lo que falta («Faltan 36» cuando por territorio faltan 68). |
+| F5-9 | Un municipio con metas en sus comunas mide contra esa meta **solo las fichas de las comunas que tienen esa meta**; las fichas sin comuna y las de comunas sin meta van aparte (`sin_comuna`, `otras_comunas`). La tarjeta total sigue la misma regla (QA 2026-11-25, BUG-02). | Con el total del municipio, la Alcaldía salía «Meta cumplida» con la Comuna 3 en 0 de 30. |
+| F5-10 | k = 5 también en el `avance_por_origen` del Detalle de F4 («incluye N por puesto de votación»), para que Detalle y Tablero digan lo mismo (BUG-06). | Mismo criterio de privacidad en las dos pantallas. |
+| F5-6 | Semanas de lunes a domingo en hora de Bogotá (UTC−5), desde el lunes 2025-09-22. Lo anterior va a `antes`. | La carga de Electo fue el 2025-09-18. |
+| F5-7 | El mapa usa los GeoJSON existentes; su permiso pasa a `view.mapa`, `view.campanas` o `manage.campanas`. Los colores se ponen en el cliente por `id`. | Ya tienen caché de 24 h + ETag, y nginx de producción comprime `application/geo+json` (`/etc/nginx/conf.d/gzip-electoral.conf`, revisado el 2026-11-25). |
+| F5-8 | Exportes por `DescargaGuard` (acciones `campanas.tablero.excel` / `campanas.tablero.pdf`): auditoría antes del primer byte, 5 por minuto, una a la vez. No llevan datos personales, así que no exigen `export.datos_personales`. | El mismo control que el resto de descargas. |
+
+## Fórmulas
+
+- **Universo**: las fichas de F4 (grupo dueño sin subgrupos, `is_active`, no fallecidas), solo de los territorios que
+  el usuario ve.
+- **Meta efectiva**: `MV` = `votantes_meta`; si no hay, `round(votos_meta × factor_registro)` con
+  `meta_calculada: true`; si tampoco, null. `ML` = `lideres_meta`; si no, `ceil(votos_meta / votos_por_lider)` con
+  `meta_calculada: true`; si no, null. Un municipio con metas en sus comunas: su meta es la suma de las metas efectivas
+  de las comunas; contra ella cuentan solo las fichas de las comunas con esa meta, y su `falta` es la suma de lo que
+  falta en cada una de esas comunas. Las fichas sin comuna y las de comunas sin esa meta salen aparte en `sin_comuna` y
+  `otras_comunas`.
+- `pct = registrados / meta` (sin tope, 4 decimales; `null` si la meta es null o 0); `falta = max(meta − registrados, 0)`.
+  Una meta de 0 cuenta como cumplida en el índice.
+- **Índice** (0–100, entero): con las dos metas `round(100 × (0,6·min(pV,1) + 0,4·min(pL,1)))`; con una sola
+  `round(100 × min(p,1))`; sin metas `null`.
+- **Estado**: `sin_meta` (MV y ML null) → `insuficiente` (comuna o corregimiento cuyo municipio tiene menos del 60 % de
+  sus fichas con comuna; un municipio nunca lo es; un municipio sin fichas no vuelve insuficientes a sus comunas) → `ok`.
+- **Tramos** (0–4) por medida: `0` = 0–24, `1` = 25–49, `2` = 50–74, `3` = 75–99, `4` = 100 o más (el % entero hacia
+  abajo); `null` si la medida es null.
+- **Ranking**: entre los territorios de la capa del mapa (los municipios; las comunas en una campaña de un solo
+  municipio con comunas) con estado `ok`, índice, y `MV ≥ 20` o `ML ≥ 3`. «Van mejor»: los 5 de mayor índice;
+  «Necesitan apoyo»: los 5 de menor. Empate: más `falta` de votantes primero, luego el nombre. Con 10 o menos, una sola
+  lista (`una_lista: true`, todos en `mejores` y `por_apoyar` vacío).
+
+## Rutas del tablero
+
+Todas con `auth` + `feature:campanas` + `permission:view.campanas|manage.campanas` + `ElectoralCampaignAccess::find`
+(404 si el grupo no es visible o la campaña no cruza el territorio del usuario). Sin permiso: 403 `{message}` en JSON,
+una visita normal vuelve a `/`.
+
+| Método y ruta | Qué hace |
+|---------------|----------|
+| `GET /campanas-electorales/{id}/tablero` (`?actualizar=1`) | Inertia `CampanasElectorales/Tablero` (props = `data`) o JSON `{success: true, data}`. `?actualizar=1` salta la caché: 6 por minuto por usuario, la 7.ª → 429 `{success: false, message}`. |
+| `GET /campanas-electorales/{id}/tablero/territorio/{unitId}` | JSON `{success: true, data}` con el detalle de un territorio (404 si no es de la campaña o el usuario no lo ve). |
+| `GET /campanas-electorales/{id}/tablero/exportar.xlsx` | Excel (hojas Resumen, Territorios, Evolución). |
+| `GET /campanas-electorales/{id}/tablero/exportar.pdf` | PDF (encabezado, 3 tarjetas, ranking, tabla con estado; sin mapa). |
+| `GET /api/geo/municipios.geojson`, `GET /api/geo/comunas.geojson?municipio=68001` | Los de siempre; ahora con `view.mapa`, `view.campanas` o `manage.campanas`. |
+
+Exportes: 429 `{message}` con «Pediste varias descargas seguidas…» (la 6.ª en un minuto) o «Ya estamos preparando una
+descarga…» (dos a la vez, `motivo: en_curso`). Son GET para que funcionen en la PWA del iPhone.
+
+## Contrato `data` del tablero
+
+```json
+{
+  "campana": "objeto campana (igual que en Lista y Detalle)",
+  "soloLectura": null,
+  "can": {"edit": true},
+  "generado_at": "2026-11-25T10:00:00-05:00",
+  "formula": {"texto": "El índice va de 0 a 100: el 60 % sale del avance en votantes registrados y el 40 % del avance en líderes. Pasar la meta no suma más.",
+              "peso_votantes": 0.6, "peso_lideres": 0.4},
+  "umbrales": {"k": 5, "cobertura_comuna_min": 0.6, "ranking_min_votantes": 20, "ranking_min_lideres": 3, "pocos_registros": 50},
+  "totales": {
+    "votantes": {"registrados": 270, "registrados_con_meta": 270, "meta": 300, "meta_calculada": true, "pct": 0.9, "falta": 30},
+    "lideres":  {"registrados": 5, "registrados_con_meta": 5, "meta": 14, "meta_calculada": true, "pct": 0.3571, "falta": 9},
+    "indice": 68,
+    "territorios": {"total": 87, "con_meta": 2, "sin_meta": 85, "insuficientes": 0}
+  },
+  "territorios": [
+    {
+      "id": "uuid", "nombre": "Girón", "tipo": "municipality", "padre_id": null, "codigo": "68307",
+      "votantes": {"registrados": 50, "meta": 100, "meta_calculada": false, "pct": 0.5, "falta": 50},
+      "lideres":  {"registrados": 5, "meta": 10, "meta_calculada": false, "pct": 0.5, "falta": 5},
+      "indice": 50,
+      "tramo": {"indice": 2, "votantes": 2, "lideres": 2},
+      "estado": "ok", "motivo": null
+    },
+    {
+      "id": "uuid", "nombre": "Bucaramanga", "tipo": "municipality", "padre_id": null, "codigo": "68001",
+      "votantes": {"registrados": 30, "meta": 100, "meta_calculada": false, "pct": 0.3, "falta": 70},
+      "lideres": {"registrados": 0, "meta": null, "meta_calculada": false, "pct": null, "falta": null},
+      "indice": 30, "tramo": {"indice": 1, "votantes": 1, "lideres": null},
+      "estado": "ok", "motivo": null,
+      "cobertura_comuna": {"con": 50, "total": 100},
+      "sin_comuna": {"votantes": 50, "lideres": null},
+      "otras_comunas": {"votantes": 20, "lideres": null}
+    },
+    {
+      "id": "uuid", "nombre": "Comuna 1 - Norte", "tipo": "comuna", "padre_id": "uuid de Bucaramanga", "codigo": "68001-C01",
+      "votantes": {"registrados": 40, "meta": 100, "meta_calculada": false, "pct": 0.4, "falta": 60},
+      "lideres": {"registrados": 0, "meta": null, "meta_calculada": false, "pct": null, "falta": null},
+      "indice": 40, "tramo": {"indice": 1, "votantes": 1, "lideres": null},
+      "estado": "insuficiente", "motivo": "Solo 50 de 100 fichas de Bucaramanga (50 %) tienen comuna",
+      "por_origen": {"auto": 30, "texto": null, "direccion": 0, "puesto": 7, "manual": null}
+    }
+  ],
+  "ranking": {"mejores": ["uuid"], "por_apoyar": ["uuid"], "una_lista": false,
+              "nota": "Las metas muy pequeñas no entran al ranking"},
+  "evolucion": {
+    "desde": "2025-09-22", "semanas_defecto": 26,
+    "antes": 90394,
+    "antes_texto": "90.394 ya estaban registrados antes del 22 sep 2025 (carga inicial del sistema anterior)",
+    "masiva_texto": "Incluye un día con más de 300 registros (posible carga de archivo)",
+    "semanas": [{"inicio": "2025-09-22", "nuevos": 812, "masiva": true}, {"inicio": "2025-09-29", "nuevos": null, "masiva": false}],
+    "promedio_4": 150,
+    "ritmo_necesario": {"semanas": 48, "por_semana": 20,
+                        "texto": "Faltan 48 semanas para el 31 oct 2027: hay que registrar 20 por semana. Las últimas 4 semanas: 150 por semana."}
+  },
+  "avisos": [{"tipo": "archivada | territorio_usuario | sin_metas | sin_lideres | cobertura_comuna", "texto": "…"}],
+  "mapa": {"capa": "municipios | comunas | null", "con_comunas": [{"id": "uuid", "codigo": "68001", "nombre": "Bucaramanga"}],
+           "sin_poligono": ["Nombre"], "texto": null}
+}
+```
+
+- `territorios`: las filas que el usuario ve, en el orden de la tabla de metas (cada municipio y debajo sus comunas).
+  Una usuaria con territorio solo recibe sus municipios y sus comunas, y los totales son solo de ellos.
+- `cobertura_comuna` solo en municipios con comunas; `por_origen` solo en comunas y corregimientos (con k).
+- `sin_comuna` y `otras_comunas` (`{votantes, lideres}`) solo en municipios cuya meta sale de sus comunas: fichas sin
+  comuna y fichas de comunas sin esa meta, que **no** cuentan en `registrados`. Por medida, `registrados + sin_comuna +
+  otras_comunas` = todas las fichas del municipio; en una medida sin meta valen `null` y `registrados` es el total.
+  `totales.*.registrados` sí las suma (todas las fichas).
+- `totales.territorios`: `total`, `con_meta` y `sin_meta` cuentan los territorios de primer nivel (municipios, o la
+  comuna sola en una JAL); `insuficientes` cuenta comunas y corregimientos.
+- `evolucion.semanas`: todas las semanas desde `desde` hasta la actual, también las de 0 (la pantalla muestra por
+  defecto las últimas `semanas_defecto`; «Desde el inicio» muestra todas). `nuevos` y `antes` con k. `masiva` = la
+  semana tiene un día (hora de Bogotá) con más de 300 fichas nuevas. `promedio_4` = promedio redondeado de las 4 semanas
+  completas anteriores a la actual, con las cifras exactas. `ritmo_necesario` es null sin `election_date`, sin meta de
+  votantes o con la elección ya pasada; `semanas = ceil(días hasta la elección / 7)`, `por_semana = ceil(falta / semanas)`.
+  Con `falta = 0`: `por_semana = 0` y `texto` = «La meta de votantes ya se cumplió.».
+- `avisos` (en este orden, solo los que aplican):
+  - `archivada`: «Campaña archivada: el tablero muestra los datos de hoy.»
+  - `territorio_usuario`: «Ves solo tus municipios: Girón, Lebrija.»
+  - `sin_metas` (unos territorios con meta y otros sin): «75 de 87 territorios no tienen meta: aparecen en gris.»
+  - `sin_lideres` (ninguna ficha del universo es líder): «Aún no hay fichas marcadas como líder. Márcalas con la
+    casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.»
+  - `cobertura_comuna` (uno por municipio bajo el 60 % con comunas visibles): «Solo 1.948 de 37.055 fichas de
+    Bucaramanga (5 %) tienen comuna: las comunas se ven rayadas hasta que haya más datos.»
+  - Sin ninguna meta (`totales.territorios.con_meta = 0`) no hay aviso: la pantalla muestra el estado vacío «Esta
+    campaña aún no tiene metas…» y el botón [Ir a las metas] solo con `can.edit`.
+- `mapa.capa`: `municipios` con dos o más municipios visibles; `comunas` con un solo municipio visible que tiene comunas
+  (Alcaldía de Bucaramanga); `null` en una JAL o un municipio sin comunas, y entonces `texto` = «Esta campaña es de un
+  solo territorio: mira el avance arriba.». `con_comunas`: los municipios visibles con comunas (para «Ver comunas de X»
+  se pide `/api/geo/comunas.geojson?municipio={codigo}`). `sin_poligono`: nombres de los territorios de la capa sin
+  polígono en la base (la pantalla dice «Sin mapa: X (N fichas)» con las cifras de `territorios`).
+
+### Detalle de un territorio — `GET /{id}/tablero/territorio/{unitId}`
+
+```json
+{"success": true, "data": {
+  "territorio": "el mismo objeto de territorios[]",
+  "semanas": [{"inicio": "2026-11-09", "nuevos": 12, "masiva": false}],
+  "antes": null,
+  "pocos_registros": false,
+  "pocos_registros_texto": "Muy pocos registros para ver la evolución",
+  "por_puesto_texto": "Incluye 12 por puesto de votación",
+  "comunas": ["uuid"]
+}}
+```
+
+`semanas` (desde 2025-09-22 hasta la actual) y `antes` con k; `pocos_registros` = el territorio tiene menos de 50
+fichas (la pantalla no dibuja semanas). `por_puesto_texto` solo en comunas con `por_origen.puesto` mayor que 0 (null en
+otro caso). `comunas`: ids de sus comunas visibles (vacío si no tiene).
+
+### Archivos
+
+- Excel `tablero-<campaña>.xlsx`: **Resumen** (campaña, fecha y hora de Bogotá, totales, índice, fórmula),
+  **Territorios** (Municipio, Comuna, Meta votantes, Registrados, %, Faltan, Meta líderes, Líderes, %, Faltan, Índice,
+  Estado, Meta calculada), **Evolución** (Semana, Fichas nuevas, Carga masiva). Las celdas de 1 a 4 dicen «menos de
+  5». Fuentes al pie. Las cifras son las del JSON.
+- PDF `tablero-<campaña>.pdf`: encabezado institucional, las 3 tarjetas, «Van mejor» / «Necesitan apoyo» y la tabla con
+  el estado. Sin mapa.
+
+Reversa de la fase: revertir el commit (no hay migraciones ni datos nuevos; la caché vence sola en 5 min).

@@ -19,6 +19,8 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Tests\Concerns\BuildsEventosScenario;
 use Tests\TestCase;
 
@@ -742,6 +744,9 @@ class EventImportTest extends TestCase
         $this->assertSame(0, DB::table('event_attendees')->count());
     }
 
+    // In its own process: the peak is the import's, not what the earlier tests of the suite left in memory.
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_two_thousand_rows_fit_in_time_and_memory(): void
     {
         $rows = [];
@@ -759,9 +764,9 @@ class EventImportTest extends TestCase
 
         $seconds = microtime(true) - $start;
         $peakMb = memory_get_peak_usage(true) / 1048576;
-        fwrite(STDERR, sprintf("\n[2000 filas SQLite] subir+revisar+confirmar: %.1f s, pico de memoria %.0f MB\n", $seconds, $peakMb));
+        $medida = sprintf('[2000 filas SQLite] subir+revisar+confirmar: %.1f s, pico de memoria %.0f MB', $seconds, $peakMb);
         $this->assertSame(2000, DB::table('event_attendees')->count());
-        $this->assertLessThan(200, $peakMb);
-        $this->assertLessThan(90, $seconds);
+        $this->assertLessThan(200, $peakMb, $medida);
+        $this->assertLessThan(90, $seconds, $medida);
     }
 }

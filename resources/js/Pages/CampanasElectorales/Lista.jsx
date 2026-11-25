@@ -3,7 +3,7 @@ import { Head } from '@inertiajs/react';
 import AppLayout from '@/Layouts/AppLayout';
 import { AvisoError, Boton, focoCls } from '@/Components/Reportes/ui';
 import { Estado, IconoMas, LinkBoton } from '@/Components/CampanasElectorales/ui';
-import { BASE, listarCampanas, mensajeDe, normalizarLista, numero, plural } from '@/lib/campanas';
+import { BASE, listarCampanas, mensajeDe, normalizarLista, numero, plural, urlTablero } from '@/lib/campanas';
 
 function TarjetaCampana({ c }) {
     const quien = [c.candidatoNombre, c.partidoNombre].filter(Boolean).join(' · ');
@@ -24,9 +24,14 @@ function TarjetaCampana({ c }) {
                     <p className="mt-1 text-base font-semibold text-ink-soft">Grupo político: {c.grupoNombre} · Solo lectura</p>
                 )}
             </div>
-            <LinkBoton variante="secundario" href={`${BASE}/${c.id}`} className="w-full sm:w-auto" aria-label={`Ver campaña ${c.nombre}`}>
-                Ver campaña
-            </LinkBoton>
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <LinkBoton href={urlTablero(c.id)} className="w-full sm:w-auto" aria-label={`Ver tablero de ${c.nombre}`}>
+                    Ver tablero
+                </LinkBoton>
+                <LinkBoton variante="secundario" href={`${BASE}/${c.id}`} className="w-full sm:w-auto" aria-label={`Ver campaña ${c.nombre}`}>
+                    Ver campaña
+                </LinkBoton>
+            </div>
         </li>
     );
 }

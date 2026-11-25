@@ -27,6 +27,15 @@ export function Estado({ archivada }) {
     );
 }
 
+// The swatch of a territory in the tablero (same paint as the map): solid, striped or white with a dotted border.
+export function Muestra({ clase, color, className = 'w-6 h-6' }) {
+    if (clase === 'insuficiente') {
+        return <span aria-hidden="true" className={`inline-block flex-shrink-0 rounded-sm border border-line-strong ${className}`} style={{ background: 'repeating-linear-gradient(45deg, #e5e7eb 0 4px, #9ca3af 4px 6px)' }} />;
+    }
+    if (clase === 'fuera') return <span aria-hidden="true" className={`inline-block flex-shrink-0 rounded-sm border-2 border-dashed border-line-strong bg-white ${className}`} />;
+    return <span aria-hidden="true" className={`inline-block flex-shrink-0 rounded-sm ${className}`} style={{ background: color }} />;
+}
+
 export function FranjaSoloLectura({ children }) {
     return (
         <div role="note" className="flex items-start gap-3 p-4 rounded-md border-2 border-line-strong bg-bg text-lg text-ink">

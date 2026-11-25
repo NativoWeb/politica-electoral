@@ -11,7 +11,7 @@ import { showGlobalToast } from '@/lib/api';
 import {
     BASE, CAMPOS_META, LOTE_MAXIMO, TEXTO_SALIR, archivarCampana, borradorDe, cambiosDe, erroresDe, erroresDeMetas,
     guardarMetas, mensajeDe, mezclarDetalle, normalizarDetalle, numero, reactivarCampana, sugerenciaDe, totales,
-    usarSugerido, verCampana,
+    urlTablero, usarSugerido, verCampana,
 } from '@/lib/campanas';
 
 // Goals of a save refused for an expired session, kept in this tab until the page is back (sessionStorage may fail:
@@ -236,13 +236,12 @@ export default function CampanaDetalle(props) {
                             {[campana.territorioResumen, campana.grupoNombre && `Grupo político: ${campana.grupoNombre}`].filter(Boolean).join(' · ')}
                         </p>
                     </div>
-                    {(can.editar || puedeArchivar || puedeReactivar) && (
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            {can.editar && <LinkBoton variante="secundario" href={`${BASE}/${id}/editar`}>Editar</LinkBoton>}
-                            {puedeArchivar && <Boton variante="secundario" onClick={() => setConfirmar('archivar')}>Archivar</Boton>}
-                            {puedeReactivar && <Boton variante="secundario" onClick={() => setConfirmar('reactivar')}>Reactivar</Boton>}
-                        </div>
-                    )}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <LinkBoton href={urlTablero(id)}>Ver tablero</LinkBoton>
+                        {can.editar && <LinkBoton variante="secundario" href={`${BASE}/${id}/editar`}>Editar</LinkBoton>}
+                        {puedeArchivar && <Boton variante="secundario" onClick={() => setConfirmar('archivar')}>Archivar</Boton>}
+                        {puedeReactivar && <Boton variante="secundario" onClick={() => setConfirmar('reactivar')}>Reactivar</Boton>}
+                    </div>
                 </header>
 
                 <div className="mt-6 space-y-4">

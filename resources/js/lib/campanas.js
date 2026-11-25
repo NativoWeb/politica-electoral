@@ -140,7 +140,8 @@ function filaPlana(r) {
         avance: { votantes: num(r.avance?.votantes) ?? 0, lideres: num(r.avance?.lideres) ?? 0 },
         sinComuna: r.sin_comuna ? { votantes: num(r.sin_comuna.votantes) ?? 0, lideres: num(r.sin_comuna.lideres) ?? 0 } : null,
         // Votantes whose comuna came from their polling station (docs/geografia.md): "incluye N por puesto de votación".
-        porPuesto: num(r.avance_por_origen?.puesto) ?? 0,
+        // null = 1 to 4, hidden by the server (k = 5): «incluye menos de 5 por puesto de votación».
+        porPuesto: r.avance_por_origen && Object.prototype.hasOwnProperty.call(r.avance_por_origen, 'puesto') ? num(r.avance_por_origen.puesto) : 0,
         hijos: [],
     };
 }
@@ -558,4 +559,329 @@ export async function importarMetas(id, archivo) {
     }
     const mensaje = res.status === 422 ? texto(body.message) || 'No se cargó nada.' : mensajeDe({ status: res.status, body }, 'No se cargó nada. Intenta de nuevo.');
     return { ok: false, status: res.status, mensaje, filas: filas.filter(f => f !== mensaje) };
+}
+
+/* ── Tablero (fase 5): GET /{id}/tablero, /tablero/territorio/{unitId}, /tablero/exportar.{xlsx,pdf} ── */
+
+export const MEDIDAS = [
+    { clave: 'indice', etiqueta: 'Índice' },
+    { clave: 'votantes', etiqueta: 'Votantes' },
+    { clave: 'lideres', etiqueta: 'Líderes' },
+];
+
+// Light to dark, one hue: tramo 0 = 0–24 … tramo 4 = 100 or more («Meta cumplida»).
+export const COLORES_TRAMO = ['#8fb3df', '#6596d0', '#3d74bb', '#1d5394', '#002f5c'];
+export const COLOR_SIN_META = '#e5e7eb';
+export const COLOR_RAYAS = '#9ca3af';
+export const PATRON_RAYAS = 'tablero-rayas-insuficiente';
+export const MINIMO_EVOLUCION = 50;
+export const SEMANAS_POR_DEFECTO = 26;
+
+export const TEXTO_FORMULA = 'El índice va de 0 a 100: el 60 % sale del avance en votantes registrados y el 40 % del avance en líderes. Pasar la meta no suma más.';
+export const TEXTO_RANKING = 'Las metas muy pequeñas no entran al ranking.';
+export const TEXTO_UN_TERRITORIO = 'Esta campaña es de un solo territorio: mira el avance arriba.';
+export const TEXTO_ERROR_MAPA = 'No pudimos cargar el mapa. La tabla de abajo tiene los mismos datos.';
+export const TEXTO_SIN_METAS = 'Esta campaña aún no tiene metas. Escríbelas en la campaña para ver el avance.';
+export const TEXTO_POCOS = 'Muy pocos registros para ver la evolución';
+export const TEXTO_MASIVA = 'Incluye un día con más de 300 registros (posible carga de archivo)';
+export const TEXTO_MENOS_DE_5 = 'menos de 5';
+// The tablero is read-only: nothing is left on screen to keep (TEXTO_SESION is for the goals grid).
+export const TEXTO_SESION_TABLERO = 'Tu sesión venció. Recarga la página para volver a entrar.';
+
+// «1 votante» / «2 votantes»; «Falta 1» / «Faltan 2».
+const UNIDADES = { votantes: ['votante', 'votantes'], lideres: ['líder', 'líderes'], fichas: ['ficha', 'fichas'], semanas: ['semana', 'semanas'], territorios: ['territorio', 'territorios'] };
+export const unidad = (n, clave) => (Number(n) === 1 ? UNIDADES[clave][0] : UNIDADES[clave][1]);
+export const cuantos = (n, clave) => `${numero(n)} ${unidad(n, clave)}`;
+export const falta = (n) => (Number(n) === 1 ? 'Falta' : 'Faltan');
+
+export function mensajeTablero(res, porDefecto) {
+    if (res.status === 401 || res.status === 419) return TEXTO_SESION_TABLERO;
+    return (res.status === 429 && res.body?.message) || mensajeDe(res, porDefecto);
+}
+
+// «Además hay N fichas sin comuna y M en comunas sin meta: no cuentan para la meta.» Counts 1–4 come as null
+// («menos de 5»); a 0 part is left out; nothing when both are 0 or the municipio has no goals in its comunas.
+export function textoFueraDeMeta(t) {
+    const partes = [];
+    const parte = (n, resto) => {
+        if (n === undefined || n === 0) return;
+        partes.push({ n, resto });
+    };
+    parte(t.sinComuna, 'sin comuna');
+    parte(t.otrasComunas, 'en comunas sin meta');
+    if (!partes.length) return '';
+    const cifra = (n) => (n === null ? TEXTO_MENOS_DE_5 : numero(n));
+    const [a, b] = partes;
+    const primera = `${cifra(a.n)} ${a.n === 1 ? 'ficha' : 'fichas'} ${a.resto}`;
+    return b
+        ? `Además hay ${primera} y ${cifra(b.n)} ${b.resto}: no cuentan para la meta.`
+        : `Además hay ${primera}: no cuentan para la meta.`;
+}
+// The same words as the Excel and the PDF (CampanaTableroController::ESTADOS).
+export const TEXTO_INSUFICIENTE = 'Pocas fichas con comuna';
+
+const AVISOS_POR_DEFECTO = {
+    sin_lideres: 'Aún no hay fichas marcadas como líder. Márcalas con la casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.',
+    archivada: 'Campaña archivada: el tablero muestra los datos de hoy.',
+};
+
+const ETIQUETAS_TRAMO = ['0 a 24 %', '25 a 49 %', '50 a 74 %', '75 a 99 %', 'Meta cumplida'];
+const ETIQUETAS_TRAMO_INDICE = ['0 a 24', '25 a 49', '50 a 74', '75 a 99', 'Meta cumplida'];
+export const etiquetaTramo = (tramo, medida) => (medida === 'indice' ? ETIQUETAS_TRAMO_INDICE : ETIQUETAS_TRAMO)[tramo] ?? '';
+
+// 0–100 (or more) → 0..4; null stays null.
+export function tramoDe(valor) {
+    if (valor === null || valor === undefined || Number.isNaN(Number(valor))) return null;
+    const v = Number(valor);
+    if (v >= 100) return 4;
+    if (v >= 75) return 3;
+    if (v >= 50) return 2;
+    if (v >= 25) return 1;
+    return 0;
+}
+
+// pct comes as a ratio (0.5 = 50 %), with no cap.
+export const porcentaje = (pct) => (pct === null || pct === undefined ? '' : `${numero(Math.round(Number(pct) * 100))} %`);
+
+function medidaDe(m) {
+    const registrados = num(m?.registrados) ?? 0;
+    const meta = num(m?.meta);
+    return {
+        registrados,
+        // Totals: pct and falta only count the territories with that goal (registrados_con_meta).
+        conMeta: num(m?.registrados_con_meta) ?? registrados,
+        meta,
+        metaCalculada: meta !== null && !!m?.meta_calculada,
+        pct: meta === null ? null : num(m?.pct),
+        // Always the server's: for the totals and for a municipio with goals in its comunas it is a sum by territory
+        // (F5-9), not meta − registrados.
+        falta: meta === null ? null : num(m?.falta),
+    };
+}
+
+const ESTADOS = ['sin_meta', 'insuficiente', 'ok'];
+const cuentaFuera = (v) => {
+    if (v === undefined) return undefined;
+    if (v && typeof v === 'object') return num(v.votantes);
+    return num(v);
+};
+const tramoDePct = (pct) => tramoDe(pct === null ? null : pct * 100);
+
+function territorioDe(r) {
+    const votantes = medidaDe(r.votantes);
+    const lideres = medidaDe(r.lideres);
+    const indice = num(r.indice);
+    const tramo = r.tramo ?? {};
+    const origen = r.por_origen;
+    return {
+        id: r.id,
+        nombre: texto(r.nombre),
+        tipo: r.tipo ?? 'municipality',
+        padreId: r.padre_id ?? null,
+        codigo: texto(r.codigo),
+        votantes,
+        lideres,
+        indice,
+        tramo: {
+            indice: num(tramo.indice) ?? tramoDe(indice),
+            votantes: num(tramo.votantes) ?? tramoDePct(votantes.pct),
+            lideres: num(tramo.lideres) ?? tramoDePct(lideres.pct),
+        },
+        estado: ESTADOS.includes(r.estado) ? r.estado : (votantes.meta === null && lideres.meta === null ? 'sin_meta' : 'ok'),
+        motivo: texto(r.motivo),
+        // Municipios with goals in their comunas: fichas outside those goals (undefined = not sent, null = 1 to 4).
+        sinComuna: cuentaFuera(r.sin_comuna),
+        otrasComunas: cuentaFuera(r.otras_comunas),
+        cobertura: r.cobertura_comuna ? { con: num(r.cobertura_comuna.con) ?? 0, total: num(r.cobertura_comuna.total) ?? 0 } : null,
+        // Only comunas carry it; each count may be null (1 to 4, hidden).
+        porOrigen: origen && typeof origen === 'object'
+            ? { auto: num(origen.auto), texto: num(origen.texto), puesto: num(origen.puesto), manual: num(origen.manual) }
+            : null,
+    };
+}
+
+const semanaDe = (s) => ({ inicio: texto(s?.inicio).slice(0, 10), nuevos: num(s?.nuevos), masiva: !!s?.masiva });
+
+const idsDe = (lista) => (Array.isArray(lista) ? lista.map(x => (x && typeof x === 'object' ? x.id : x)).filter(Boolean) : []);
+
+// «Bogota (2 fichas)»: the name from mapa.sin_poligono, the count from its row in territorios.
+// Every ficha of a territory: in a municipio with goals in its comunas, registrados only counts those comunas (F5-9)
+// and the rest comes in sin_comuna / otras_comunas. null when one of them is hidden (1 to 4).
+export function fichasDe(t) {
+    const extra = [t.sinComuna, t.otrasComunas].filter(v => v !== undefined);
+    if (extra.some(v => v === null)) return null;
+    return t.votantes.registrados + extra.reduce((s, v) => s + v, 0);
+}
+
+function sinPoligonoDe(s, territorios) {
+    const nombre = texto(s && typeof s === 'object' ? s.nombre : s);
+    const fila = territorios.find(t => t.nombre === nombre);
+    const fichas = num(s?.fichas) ?? (fila ? fichasDe(fila) : null);
+    return fichas === null ? nombre : `${nombre} (${plural(fichas, 'ficha', 'fichas')})`;
+}
+
+// The tablero's data (Inertia props or the JSON data). can.edit, when sent, decides «Ir a las metas».
+export function normalizarTablero(raw = {}) {
+    const d = raw ?? {};
+    const territorios = (Array.isArray(d.territorios) ? d.territorios : []).map(territorioDe);
+    const porId = Object.fromEntries(territorios.map(t => [t.id, t]));
+    const t = d.totales ?? {};
+    const ev = d.evolucion ?? {};
+    const ritmo = ev.ritmo_necesario;
+    const mapa = d.mapa ?? {};
+    const cuenta = (estado) => territorios.filter(x => x.estado === estado).length;
+    return {
+        campana: normalizarCampana(d.campana),
+        soloLectura: !!d.soloLectura,
+        puedeEditar: !!(d.can?.edit ?? d.can?.editar),
+        generadoAt: d.generado_at ?? null,
+        formula: texto(d.formula?.texto) || TEXTO_FORMULA,
+        k: num(d.umbrales?.k) ?? 5,
+        pocosRegistros: num(d.umbrales?.pocos_registros) ?? MINIMO_EVOLUCION,
+        totales: {
+            votantes: medidaDe(t.votantes),
+            lideres: medidaDe(t.lideres),
+            indice: num(t.indice),
+            territorios: {
+                total: num(t.territorios?.total) ?? territorios.length,
+                conMeta: num(t.territorios?.con_meta) ?? territorios.length - cuenta('sin_meta'),
+                sinMeta: num(t.territorios?.sin_meta) ?? cuenta('sin_meta'),
+                insuficientes: num(t.territorios?.insuficientes) ?? cuenta('insuficiente'),
+            },
+        },
+        territorios,
+        porId,
+        ranking: {
+            mejores: idsDe(d.ranking?.mejores).filter(id => porId[id]),
+            porApoyar: idsDe(d.ranking?.por_apoyar).filter(id => porId[id]),
+            unaLista: typeof d.ranking?.una_lista === 'boolean' ? d.ranking.una_lista : null,
+            nota: texto(d.ranking?.nota),
+        },
+        evolucion: {
+            desde: ev.desde ?? null,
+            semanasDefecto: num(ev.semanas_defecto) ?? SEMANAS_POR_DEFECTO,
+            antes: num(ev.antes),
+            antesTexto: texto(ev.antes_texto),
+            masivaTexto: texto(ev.masiva_texto) || TEXTO_MASIVA,
+            semanas: (Array.isArray(ev.semanas) ? ev.semanas : []).map(semanaDe),
+            promedio4: num(ev.promedio_4),
+            ritmo: ritmo && typeof ritmo === 'object' && num(ritmo.semanas) !== null
+                ? { semanas: num(ritmo.semanas), porSemana: num(ritmo.por_semana), texto: texto(ritmo.texto) }
+                : null,
+        },
+        avisos: (Array.isArray(d.avisos) ? d.avisos : [])
+            .map(a => ({ tipo: texto(a?.tipo), texto: texto(a?.texto) || AVISOS_POR_DEFECTO[a?.tipo] || '' }))
+            .filter(a => a.texto),
+        mapa: {
+            capa: ['municipios', 'comunas'].includes(mapa.capa) ? mapa.capa : null,
+            texto: texto(mapa.texto) || TEXTO_UN_TERRITORIO,
+            conComunas: (Array.isArray(mapa.con_comunas) ? mapa.con_comunas : []).map(c => ({ id: c.id, codigo: texto(c.codigo), nombre: texto(c.nombre) })),
+            sinPoligono: (Array.isArray(mapa.sin_poligono) ? mapa.sin_poligono : []).map(s => sinPoligonoDe(s, territorios)).filter(Boolean),
+        },
+    };
+}
+
+export const sinMetas = (tablero) => tablero.totales.territorios.conMeta === 0
+    && tablero.totales.votantes.meta === null && tablero.totales.lideres.meta === null;
+
+// How a territory is painted for one measure. A territory outside the campaign (or the user's territory) is 'fuera'.
+export function pinturaDe(territorio, medida) {
+    if (!territorio) return { clase: 'fuera', tramo: null };
+    if (territorio.estado === 'insuficiente') return { clase: 'insuficiente', tramo: null };
+    const tramo = territorio.tramo[medida];
+    if (territorio.estado === 'sin_meta' || tramo === null || tramo === undefined) return { clase: 'sin_meta', tramo: null };
+    return { clase: 'tramo', tramo };
+}
+
+export function colorDe(pintura) {
+    if (pintura.clase === 'tramo') return COLORES_TRAMO[pintura.tramo];
+    if (pintura.clase === 'insuficiente') return `url(#${PATRON_RAYAS})`;
+    if (pintura.clase === 'sin_meta') return COLOR_SIN_META;
+    return '#ffffff';
+}
+
+// The legend counts only what the map draws, in a fixed order.
+export function leyendaDe(dibujados, medida) {
+    const tramos = [0, 0, 0, 0, 0];
+    let sinMeta = 0;
+    let insuficiente = 0;
+    dibujados.forEach(t => {
+        const p = pinturaDe(t, medida);
+        if (p.clase === 'tramo') tramos[p.tramo] += 1;
+        else if (p.clase === 'sin_meta') sinMeta += 1;
+        else if (p.clase === 'insuficiente') insuficiente += 1;
+    });
+    return [
+        ...tramos.map((cuantos, tramo) => ({ clave: `t${tramo}`, etiqueta: etiquetaTramo(tramo, medida), clase: 'tramo', tramo, cuantos })),
+        { clave: 'sin_meta', etiqueta: 'Sin meta', clase: 'sin_meta', tramo: null, cuantos: sinMeta },
+        { clave: 'insuficiente', etiqueta: TEXTO_INSUFICIENTE, clase: 'insuficiente', tramo: null, cuantos: insuficiente },
+    ];
+}
+
+export function textoEstado(t) {
+    if (t.estado === 'sin_meta') return 'Sin meta';
+    if (t.estado === 'insuficiente') return TEXTO_INSUFICIENTE;
+    return 'Con meta';
+}
+
+export const ORDENES = [
+    { clave: 'falta', etiqueta: 'Lo que falta' },
+    { clave: 'indice', etiqueta: 'Índice' },
+    { clave: 'nombre', etiqueta: 'Nombre' },
+];
+
+const porNombre = (a, b) => a.nombre.localeCompare(b.nombre, 'es');
+
+// Lo que falta: most missing voters first, then leaders (no goal at the end); Índice: highest first.
+export function ordenarTerritorios(lista, orden) {
+    const copia = [...lista];
+    if (orden === 'nombre') return copia.sort(porNombre);
+    if (orden === 'indice') return copia.sort((a, b) => ((b.indice ?? -1) - (a.indice ?? -1)) || porNombre(a, b));
+    return copia.sort((a, b) => ((b.votantes.falta ?? -1) - (a.votantes.falta ?? -1))
+        || ((b.lideres.falta ?? -1) - (a.lideres.falta ?? -1)) || porNombre(a, b));
+}
+
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// '2026-11-16' → '16 nov' (as written: no time zone shift); conAnio → '16 nov 2026'.
+export function fechaCorta(iso, conAnio = false) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
+    if (!m) return '';
+    return `${Number(m[3])} ${MESES_CORTOS[Number(m[2]) - 1]}${conAnio ? ` ${m[1]}` : ''}`;
+}
+
+export const textoSemana = (s) => `Semana del ${fechaCorta(s.inicio)}: ${s.nuevos === null ? TEXTO_MENOS_DE_5 : numero(s.nuevos)} ${s.nuevos === 1 ? 'ficha nueva' : 'fichas nuevas'}`;
+
+export function horaDe(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
+}
+
+export const urlTablero = (id) => ruta(id, '/tablero');
+export const urlExportarTablero = (id, formato) => ruta(id, `/tablero/exportar.${formato === 'pdf' ? 'pdf' : 'xlsx'}`);
+
+export async function verTablero(id, { actualizar = false, signal } = {}) {
+    const res = await pedir(`${urlTablero(id)}${actualizar ? '?actualizar=1' : ''}`, { signal });
+    return res.ok ? { ...res, tablero: normalizarTablero(datos(res)) } : res;
+}
+
+// One territory: its row again plus its weeks (counts 1–4 come as null).
+export async function verTerritorioTablero(id, unitId, { signal } = {}) {
+    const res = await pedir(ruta(id, `/tablero/territorio/${encodeURIComponent(unitId)}`), { signal });
+    if (!res.ok) return res;
+    const d = datos(res);
+    const fila = d.territorio && typeof d.territorio === 'object' ? d.territorio : (d.id ? d : null);
+    const semanas = d.semanas ?? d.evolucion?.semanas ?? fila?.semanas;
+    return {
+        ...res,
+        territorio: fila ? territorioDe(fila) : null,
+        semanas: (Array.isArray(semanas) ? semanas : []).map(semanaDe),
+        antes: num(d.antes),
+        pocosRegistros: typeof d.pocos_registros === 'boolean' ? d.pocos_registros : null,
+        pocosTexto: texto(d.pocos_registros_texto) || TEXTO_POCOS,
+        porPuestoTexto: texto(d.por_puesto_texto),
+        comunas: idsDe(d.comunas),
+    };
 }

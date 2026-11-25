@@ -282,16 +282,22 @@ class CampanasMetasTest extends TestCase
         $d = $this->detalle($c);
         $c1 = $this->fila($d, $this->comuna1);
         $this->assertSame(['votantes' => 3, 'lideres' => 1], $c1['avance']);
-        $this->assertSame(['auto' => 1, 'texto' => 0, 'direccion' => 0, 'puesto' => 2, 'manual' => 0], $c1['avance_por_origen']);
-        $this->assertSame(1, $this->fila($d, $this->comuna2)['avance_por_origen']['texto']);
-        $this->assertSame(1, $this->fila($d, $this->corregimiento1)['avance_por_origen']['manual']);
+        // k = 5 like the Tablero: 1 to 4 by one origin go out as null ("menos de 5"), 0 stays 0.
+        $this->assertSame(['auto' => null, 'texto' => 0, 'direccion' => 0, 'puesto' => null, 'manual' => 0], $c1['avance_por_origen']);
+        $this->assertNull($this->fila($d, $this->comuna2)['avance_por_origen']['texto']);
+        $this->assertNull($this->fila($d, $this->corregimiento1)['avance_por_origen']['manual']);
 
         $bga = $this->fila($d, $this->bucaramanga);
         $this->assertSame(['votantes' => 7, 'lideres' => 2], $bga['avance']);
         $this->assertSame(['votantes' => 2, 'lideres' => 1], $bga['sin_comuna']);
-        $this->assertSame(2, $bga['avance_por_origen']['puesto']);
+        $this->assertNull($bga['avance_por_origen']['puesto']);
         $comunas = array_filter($d['filas'], fn ($f) => $f['padre_id'] === $this->bucaramanga);
         $this->assertSame($bga['avance']['votantes'], array_sum(array_map(fn ($f) => $f['avance']['votantes'], $comunas)) + $bga['sin_comuna']['votantes']);
+
+        foreach (range(1, 4) as $i) {
+            $this->ficha($this->cd, $this->bucaramanga, ['comuna_id' => $this->comuna1, 'comuna_source' => 'puesto']);
+        }
+        $this->assertSame(6, $this->fila($this->detalle($c), $this->comuna1)['avance_por_origen']['puesto'], 'From 5 on, the exact count');
     }
 
     // ---------------------------------------------------------------- batch

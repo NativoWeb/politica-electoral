@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Boton, IconoChevron, focoCls } from '@/Components/Reportes/ui';
 import { FUENTE_PUESTOS } from '@/lib/comunas';
-import { CAMPOS_META, contarComunas, modoMunicipio, numero, plural, sugerenciaDe, validarMeta, valorMunicipio } from '@/lib/campanas';
+import { CAMPOS_META, TEXTO_MENOS_DE_5, contarComunas, modoMunicipio, numero, plural, sugerenciaDe, validarMeta, valorMunicipio } from '@/lib/campanas';
 
 // One territory of the goals grid. A single DOM for every width: a card on the phone, a table row from lg up
 // (the column titles live in the page header row; here each cell carries its own label, visible on the phone).
@@ -80,8 +80,8 @@ function Avance({ fila }) {
                 <p className="text-base text-ink tabular-nums">
                     Votantes {numero(fila.avance.votantes)} · Líderes {numero(fila.avance.lideres)}
                 </p>
-                {fila.porPuesto > 0 && (
-                    <p className="text-sm text-ink-soft tabular-nums">incluye {numero(fila.porPuesto)} por puesto de votación</p>
+                {(fila.porPuesto === null || fila.porPuesto > 0) && (
+                    <p className="text-sm text-ink-soft tabular-nums">incluye {fila.porPuesto === null ? TEXTO_MENOS_DE_5 : numero(fila.porPuesto)} por puesto de votación</p>
                 )}
             </div>
         </div>

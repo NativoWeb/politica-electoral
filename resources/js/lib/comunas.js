@@ -16,7 +16,7 @@ export const comunaOrigen = (source) => COMUNA_ORIGEN[source] ?? null;
 export const FUENTE_PUESTOS = 'Fuente: Registraduría – Divipole 2023 (datos.gov.co), CC BY-SA 4.0.';
 
 // Some territory of the goals (or one of its comunas) counts fichas whose comuna came from the puesto de votación.
-export const usaPuestos = (filas = []) => filas.some(f => f.porPuesto > 0 || usaPuestos(f.hijos ?? []));
+export const usaPuestos = (filas = []) => filas.some(f => f.porPuesto === null || f.porPuesto > 0 || usaPuestos(f.hijos ?? []));
 
 // [label, comunas] groups for a <select>: comunas first, then corregimientos.
 export function gruposComunas(comunas = []) {
