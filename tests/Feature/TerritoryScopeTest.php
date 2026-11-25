@@ -901,4 +901,63 @@ class TerritoryScopeTest extends TestCase
 
         $this->assertSame(0, DB::table('candidacy_endorsements')->count());
     }
+
+    // A candidate of a departmental contest (Asamblea) with votes in some municipios and no lider ficha. Saving one
+    // creates its lider through a PostgreSQL-only query: that path is in DepartmentalCandidateTerritoryPostgresTest.
+    private function asambleaCandidate(string $name, array $votesIn): string
+    {
+        $dept = $this->geo('department', 'Santander');
+        DB::table('geographic_units')->where('id', $this->provincia)->update(['parent_id' => $dept]);
+        $personId = $this->candidateWithoutLider($dept, $name);
+        $candidacyId = DB::table('candidacies')->where('person_id', $personId)->value('id');
+        foreach ($votesIn as $geoId) {
+            DB::table('electoral_results')->insert([
+                'id' => (string) Str::uuid(), 'candidacy_id' => $candidacyId, 'geographic_unit_id' => $geoId,
+                'metric_type' => 'votes', 'value' => 10,
+            ]);
+        }
+
+        return $personId;
+    }
+
+    private function scopedUser(string $email, array $scope, array $permissions = ['view.mapa', 'view.votantes', 'write.data']): User
+    {
+        return User::create([
+            'name' => $email, 'email' => $email, 'password' => 'secret123',
+            'role_id' => $this->campo->role_id, 'territory_scope' => $scope, 'permissions' => $permissions,
+        ]);
+    }
+
+    public function test_a_user_whose_municipio_gave_the_candidate_no_votes_cannot_see_or_edit_it(): void
+    {
+        $personId = $this->asambleaCandidate('Didier Moreno', [$this->munA]);
+        $munC = $this->geo('municipality', 'Rionegro', $this->provincia);
+        $user = $this->scopedUser('otro@test.local', [$munC]);
+
+        $this->actingAs($user)->getJson("/mapa-politico/persona/{$personId}")->assertForbidden();
+        $this->actingAs($user)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Didier Moreno', 'municipio_id' => $munC])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('lideres', ['nombre' => 'Didier Moreno']);
+    }
+
+    public function test_a_lider_cannot_be_moved_to_a_municipio_outside_the_users_territory(): void
+    {
+        $this->actingAs($this->campo)->putJson("/mapa-politico/persona/{$this->liderA}", ['municipio_id' => $this->munB])
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Ese municipio está fuera de tu territorio.');
+
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'geographic_unit_id' => $this->munA, 'municipio' => 'Girón']);
+    }
+
+    public function test_a_user_without_write_data_still_cannot_edit_a_departmental_candidate(): void
+    {
+        $personId = $this->asambleaCandidate('Didier Moreno', [$this->munA, $this->munB]);
+        $lector = $this->scopedUser('lector@test.local', [$this->munA, $this->munB], ['view.mapa', 'view.votantes']);
+
+        $this->actingAs($lector)->putJson("/mapa-politico/persona/{$personId}", ['nombre' => 'Didier Moreno', 'municipio_id' => $this->munA])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('lideres', ['nombre' => 'Didier Moreno']);
+    }
 }

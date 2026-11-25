@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class MapaPoliticoController extends Controller
@@ -1510,7 +1511,8 @@ class MapaPoliticoController extends Controller
 
                     // #14: Create lider only when user explicitly edits — with correct municipio
                     if (! $lider) {
-                        $this->authorizeGeo($geoId);
+                        $geoId = $this->newFichaGeoId($data, $geoId);
+                        $munName = $geoId ? (string) DB::table('geographic_units')->where('id', $geoId)->value('canonical_name') : '';
                         $provName = $geoId ? DB::table('geographic_units as g')
                             ->join('geographic_units as prov', 'g.parent_id', '=', 'prov.id')
                             ->where('g.id', $geoId)->value('prov.canonical_name') : '';
@@ -1542,7 +1544,8 @@ class MapaPoliticoController extends Controller
                             'updated_at' => now(),
                         ] + (array_key_exists('es_lider', $data) ? ['es_lider' => $data['es_lider']] : []));
                         app(ComunaAssigner::class)->refreshRow('lideres', $newLiderId);
-                        // Don't return — continue to update candidacy endorsement below
+                        // The rest of the form (extended fields) is applied below as on any later save.
+                        $lider = DB::table('lideres')->where('id', $newLiderId)->first();
                     }
                 }
             }
@@ -1583,7 +1586,7 @@ class MapaPoliticoController extends Controller
                     $geo = $geoId ? DB::table('geographic_units')->where('id', $geoId)->first() : null;
                 }
                 if ($geo && $geo->id !== $lider->geographic_unit_id) {
-                    $this->authorizeGeo($geo->id);
+                    $this->authorizeDestinationGeo($geo->id);
                     $updateData['geographic_unit_id'] = $geo->id;
                     $updateData['municipio'] = $geo->canonical_name;
                     $provName = DB::table('geographic_units')->where('id', $geo->parent_id)->value('canonical_name');
@@ -1692,6 +1695,28 @@ class MapaPoliticoController extends Controller
         }
 
         return back()->with('success', 'Datos actualizados.');
+    }
+
+    // The municipio of the lider created for an electoral person: the one chosen in the form, else where the person ran
+    // ($contestGeoId). A user with a territory needs a municipio of it: a departmental contest (Asamblea) gives none.
+    private function newFichaGeoId(array $data, ?string $contestGeoId): ?string
+    {
+        $chosen = null;
+        if (! empty($data['municipio_id'])) {
+            $chosen = DB::table('geographic_units')->where('type', 'municipality')->where('id', $data['municipio_id'])->value('id');
+        } elseif (! empty($data['municipio'])) {
+            $chosen = self::municipioIdByName($data['municipio']);
+        }
+        $geoId = $chosen ?? $contestGeoId;
+        if ($this->allowedGeoIds() === null) {
+            return $geoId;
+        }
+        if (! $geoId) {
+            throw ValidationException::withMessages(['municipio_id' => 'Elige el municipio de la ficha (uno de tu territorio).']);
+        }
+        $this->authorizeDestinationGeo($geoId);
+
+        return $geoId;
     }
 
     // The lideres row(s) of a ficha (a lider id, or an electoral person, merged ones by their survivor, and its own lider

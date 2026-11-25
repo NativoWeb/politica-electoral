@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Support\Cedula;
 use App\Support\CurrentCampaign;
+use App\Support\GeoTerritory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -75,9 +76,39 @@ trait ScopesTerritory
         return request()->user()?->allowedGeoIds();
     }
 
+    // What a contest's geographic_unit_id is compared with: the user's municipios plus every department all of whose
+    // municipios are among them (a departmental contest, Asamblea or Gobernación, is then in the territory).
+    protected function allowedContestGeoIds(): ?array
+    {
+        $allowed = $this->allowedGeoIds();
+        if ($allowed === null || $allowed === []) {
+            return $allowed;
+        }
+        $departments = DB::table('geographic_units')
+            ->whereIn('id', collect($allowed)->flatMap(fn ($id) => GeoTerritory::selfAndAncestors($id))->unique()->values()->all())
+            ->where('type', 'department')
+            ->pluck('id');
+        $covered = $departments->filter(fn ($dept) => DB::table('geographic_units')
+            ->whereIn('id', GeoTerritory::selfAndDescendants($dept))
+            ->where('type', 'municipality')
+            ->whereNotIn('id', $allowed)
+            ->doesntExist());
+
+        return array_values(array_unique(array_merge($allowed, $covered->all())));
+    }
+
     protected function denyOutsideTerritory(): never
     {
         abort(403, 'Este registro está fuera de tu territorio.');
+    }
+
+    // Where a ficha is created or moved to: a municipio of the user's territory.
+    protected function authorizeDestinationGeo(?string $geoId): void
+    {
+        $allowed = $this->allowedGeoIds();
+        if ($allowed !== null && (! $geoId || ! in_array($geoId, $allowed, true))) {
+            abort(403, 'Ese municipio está fuera de tu territorio.');
+        }
     }
 
     protected function authorizeGeo(?string $geoId): void
@@ -124,7 +155,7 @@ trait ScopesTerritory
         $inTerritory = DB::table('candidacies as c')
             ->join('contests as con', 'c.contest_id', '=', 'con.id')
             ->where('c.person_id', $id)
-            ->where(fn ($q) => $q->whereIn('con.geographic_unit_id', $allowed)
+            ->where(fn ($q) => $q->whereIn('con.geographic_unit_id', $this->allowedContestGeoIds())
                 ->orWhereExists(fn ($r) => $r->from('electoral_results as er')
                     ->whereColumn('er.candidacy_id', 'c.id')
                     ->whereIn('er.geographic_unit_id', $allowed)))

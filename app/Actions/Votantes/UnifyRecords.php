@@ -304,13 +304,14 @@ class UnifyRecords
     private function territoryPersons($query)
     {
         $allowed = $this->allowedGeoIds();
+        $contestGeoIds = $this->allowedContestGeoIds();
 
-        return $query->whereExists(function ($c) use ($allowed) {
+        return $query->whereExists(function ($c) use ($allowed, $contestGeoIds) {
             $c->from('candidacies as c')
                 ->join('contests as con', 'c.contest_id', '=', 'con.id')
                 ->whereColumn('c.person_id', 'p.id');
             if ($allowed !== null) {
-                $c->where(fn ($q) => $q->whereIn('con.geographic_unit_id', $allowed)
+                $c->where(fn ($q) => $q->whereIn('con.geographic_unit_id', $contestGeoIds)
                     ->orWhereExists(fn ($r) => $r->from('electoral_results as er')
                         ->whereColumn('er.candidacy_id', 'c.id')
                         ->whereIn('er.geographic_unit_id', $allowed)));
