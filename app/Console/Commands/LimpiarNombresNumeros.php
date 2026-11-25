@@ -12,11 +12,13 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-// Cleans the fichas whose name carries a number at its start or end: the ficha's own cédula is removed from the name;
-// a valid celular is removed and kept (in telefono when the ficha has none, else as a contact). Anything else (short
-// digits, another number, digits in the middle, a name that would be left empty) is not touched and is listed by id and
-// shape only. The name is saved through UpdateVotante (same normalization, rename of the linked electoral person,
-// clearCompleted). Every change goes to limpieza_cambios under one batch (lote) that --revertir undoes.
+// Cleans the fichas whose name carries digits. First pass: a number at the start or end that is the ficha's own cédula
+// is removed; a valid celular is removed and kept (in telefono when the ficha has none, else as a contact). Second pass,
+// for the rest (short digits, another number, digits in the middle...): the digits, URLs, e-mails and loose symbols leave
+// the name and what is left is kept when it has 2 letters or more («P3REZ» → «PREZ» is accepted: the old name stays in
+// the log); a name with nothing left (only numbers or symbols) inactivates the ficha, never deletes it. Names are saved
+// through UpdateVotante (same normalization, rename of the linked electoral person, clearCompleted). Every change goes to
+// limpieza_cambios under one batch (lote) that --revertir undoes; the old name there keeps any number removed.
 class LimpiarNombresNumeros extends Command
 {
     protected $signature = 'data:limpiar-nombres-numeros
@@ -34,6 +36,12 @@ class LimpiarNombresNumeros extends Command
     private const NUM = '\d(?:[\d.\s\'\-]*\d)?';
 
     private const ACCIONES = ['cedula_quitada', 'celular_a_telefono', 'celular_a_contactos', 'celular_ya_registrado'];
+
+    private const SEGUNDA = ['nombre_depurado', 'numero_largo_quitado', 'inactivada'];
+
+    public const INACTIVADA = 'Inactivada: el nombre era solo números';
+
+    public const MIN_LETRAS = 2;
 
     public const MOTIVOS = [
         'digitos_cortos' => 'Dígitos cortos (error de digitación)',
@@ -55,7 +63,8 @@ class LimpiarNombresNumeros extends Command
 
         $dryRun = (bool) $this->option('dry-run');
         $this->lote = null;
-        $counts = array_fill_keys(['revisadas', 'limpiadas', ...self::ACCIONES, 'persona_renombrada', 'persona_ambigua', ...array_keys(self::MOTIVOS)], 0);
+        $counts = array_fill_keys(['revisadas', 'limpiadas', ...self::ACCIONES, ...self::SEGUNDA, 'persona_renombrada', 'persona_ambigua',
+            ...array_keys(self::MOTIVOS)], 0);
         $revisar = [];
 
         DB::beginTransaction();
@@ -65,14 +74,15 @@ class LimpiarNombresNumeros extends Command
             }
 
             NombreFicha::whereConNumeros(DB::table('lideres'))
-                ->select(['id', 'nombre', 'cedula', 'telefono', 'campaign_id', 'geographic_unit_id'])
+                ->select(['id', 'nombre', 'cedula', 'telefono', 'campaign_id', 'geographic_unit_id', 'is_active'])
                 ->chunkById(self::PAGE, function ($rows) use ($dryRun, $updater, &$counts, &$revisar) {
                     foreach ($rows as $row) {
                         $counts['revisadas']++;
                         $plan = self::clasificar((string) $row->nombre, $row->cedula);
                         if ($plan['motivo'] !== null) {
                             $counts[$plan['motivo']]++;
-                            $revisar[] = [$row->id, self::MOTIVOS[$plan['motivo']], NombreFicha::patron($row->nombre)];
+                            $resultado = $this->segundaPasada($row, $dryRun, $updater, $counts);
+                            $revisar[] = [$row->id, self::MOTIVOS[$plan['motivo']], NombreFicha::patron($row->nombre), $resultado];
 
                             continue;
                         }
@@ -162,13 +172,106 @@ class LimpiarNombresNumeros extends Command
         return ['nombre' => $resto, 'numeros' => $numeros, 'motivo' => null];
     }
 
+    // The name without digits, URLs, e-mails nor loose symbols, spaces collapsed; null when fewer than 2 letters are left.
+    // A dotted word is only a domain with a known ending or a port/path («MA.ELENA» stays a name).
+    public static function depurar(string $nombre): ?string
+    {
+        $s = preg_replace('~\S*(?:https?://|://|www\.)\S*~iu', ' ', $nombre);
+        $s = preg_replace('/\S+@\S+/u', ' ', $s);
+        $s = preg_replace('~(?<![\p{L}\d])[\p{L}\d\-]+(?:\.[\p{L}\d\-]+)*\.(?:com|co|org|net|gov|edu|io|info|me|app)(?:\.[a-z]{2})?(?![\p{L}\d])(?::\d+)?(?:/\S*)?~iu', ' ', $s);
+        $s = preg_replace('~(?<![\p{L}\d])[\p{L}\d\-]+(?:\.[\p{L}\d\-]+)+(?::\d+|/\S*)~u', ' ', $s);
+        $s = preg_replace('/[0-9]+/', '', $s);
+        // Labels left without their number («JUAN PEREZ CC», «ANA TEL: RUIZ»), only as whole words («MARCEL» stays).
+        $s = preg_replace('/(?<!\p{L})'.self::LABEL.'[:.]?(?!\p{L})/iu', ' ', $s);
+        if (substr_count($s, '(') !== substr_count($s, ')')) {
+            $s = str_replace(['(', ')'], ' ', $s);
+        }
+        $s = preg_replace('~(?<=^|\s)[:/#.,;\-_()+@]+(?=\s|$)~u', ' ', $s);
+        // Parentheses are not trimmed: a balanced nickname «(LA MONA)» stays; loose ones went above.
+        $s = UpdateVotante::normalizeName(trim(UpdateVotante::normalizeName($s), " \t:/#.,;-_+@"));
+
+        return preg_match_all('/\p{L}/u', $s) >= self::MIN_LETRAS ? $s : null;
+    }
+
+    // For what the first pass leaves: returns what was (or would be) done, for the report.
+    private function segundaPasada(object $row, bool $dryRun, UpdateVotante $updater, array &$counts): string
+    {
+        $limpio = self::depurar((string) $row->nombre);
+        if ($limpio === null) {
+            $counts['inactivada']++;
+            if (! $dryRun && (bool) $row->is_active) {
+                $this->lote ??= (string) Str::uuid();
+                DB::table('lideres')->where('id', $row->id)->update(['is_active' => false, 'updated_at' => now()]);
+                $this->registrar('lideres', $row->id, $row->id, 'is_active', '1', '0');
+            }
+
+            return self::INACTIVADA;
+        }
+
+        $counts['nombre_depurado']++;
+        [$numeros, $otroLargo] = self::numerosDentro((string) $row->nombre, $row->cedula);
+        if ($otroLargo) {
+            // Not saved in any field: the log keeps it inside the old name.
+            $counts['numero_largo_quitado']++;
+        }
+        $data = ['nombre' => $limpio];
+        $contactos = $this->ubicarNumeros($row, $numeros, $data, $counts);
+        $this->guardar($row, $data, $contactos, $dryRun, $updater, $counts);
+
+        return 'Nombre: '.NombreFicha::patron($limpio);
+    }
+
+    // The numbers anywhere in the name that are the ficha's own cédula or a celular (as clasificar() reads them), and
+    // whether another long number was there. A group like «2 3001234567» is also read word by word.
+    public static function numerosDentro(string $nombre, ?string $cedula): array
+    {
+        $cedulaKey = Normalizer::cedulaKey($cedula);
+        $numeros = [];
+        $otroLargo = false;
+        preg_match_all('/\+?'.self::NUM.'/u', $nombre, $grupos);
+        foreach ($grupos[0] as $grupo) {
+            $piezas = [$grupo, ...preg_split('/\s+/', trim($grupo))];
+            $hallado = null;
+            foreach (array_unique($piezas) as $pieza) {
+                $digits = preg_replace('/\D/', '', $pieza);
+                $phone = Normalizer::phone($digits);
+                if (strlen($digits) < self::MIN_DIGITOS) {
+                    continue;
+                }
+                if ($cedulaKey !== null && ltrim($digits, '0') === $cedulaKey) {
+                    $hallado = ['tipo' => 'cedula', 'valor' => $digits];
+                } elseif ($phone !== null && Normalizer::isMobile($phone)) {
+                    $hallado = ['tipo' => 'celular', 'valor' => $phone];
+                }
+                if ($hallado) {
+                    break;
+                }
+            }
+            if ($hallado) {
+                $numeros[] = $hallado;
+            } elseif (max(array_map(fn ($p) => strlen(preg_replace('/\D/', '', $p)), $piezas)) >= self::MIN_DIGITOS) {
+                $otroLargo = true;
+            }
+        }
+
+        return [$numeros, $otroLargo];
+    }
+
     private function aplicar(object $row, array $plan, bool $dryRun, UpdateVotante $updater, array &$counts): void
     {
         $data = ['nombre' => $plan['nombre']];
+        $contactos = $this->ubicarNumeros($row, $plan['numeros'], $data, $counts);
+        $this->guardar($row, $data, $contactos, $dryRun, $updater, $counts);
+    }
+
+    // Where each number of the name goes: the cédula only leaves the name; a celular goes to telefono when the ficha has
+    // none, else to the contacts unless it is already there. Returns the contacts to add.
+    private function ubicarNumeros(object $row, array $numeros, array &$data, array &$counts): array
+    {
         $telefono = $row->telefono !== null && trim($row->telefono) !== '' ? $row->telefono : null;
         $telefonoKey = Normalizer::phone($telefono);
         $contactos = [];
-        foreach ($plan['numeros'] as $n) {
+        foreach ($numeros as $n) {
             if ($n['tipo'] === 'cedula') {
                 $counts['cedula_quitada']++;
             } elseif ($telefono === null && ! isset($data['telefono'])) {
@@ -181,6 +284,12 @@ class LimpiarNombresNumeros extends Command
                 $counts['celular_a_contactos']++;
             }
         }
+
+        return array_keys($contactos);
+    }
+
+    private function guardar(object $row, array $data, array $contactos, bool $dryRun, UpdateVotante $updater, array &$counts): void
+    {
         if ($dryRun) {
             // What the real run would do with the linked electoral person (UpdateVotante renames only a single one).
             $vinculadas = count($updater->linkedPersonIds($row));
@@ -197,7 +306,7 @@ class LimpiarNombresNumeros extends Command
             $persona = DB::table('persons')->where('id', $personas->first())->first(['id', 'full_name']);
         }
 
-        foreach (array_keys($contactos) as $valor) {
+        foreach ($contactos as $valor) {
             $contacto = $lider->contactos()->create(['tipo' => 'celular', 'valor' => $valor, 'principal' => false, 'estado' => 'activo']);
             $this->registrar('lider_contactos', $contacto->id, $row->id, 'contacto', null, $valor);
         }
@@ -306,15 +415,19 @@ class LimpiarNombresNumeros extends Command
         if (! $fila) {
             return 'no_existen';
         }
-        if ($fila->{$columna} === $c->antes) {
+        $booleano = $columna === 'is_active';
+        $actual = $booleano ? ((bool) $fila->is_active ? '1' : '0') : $fila->{$columna};
+        if ($actual === $c->antes) {
             return 'ya_restaurados';
         }
-        if ($fila->{$columna} !== $c->despues) {
+        if ($actual !== $c->despues) {
             return 'omitidos';
         }
         if (! $dryRun) {
             if ($c->tabla === 'persons') {
                 UpdateVotante::renamePerson($c->registro_id, (string) $c->antes);
+            } elseif ($booleano) {
+                DB::table($c->tabla)->where('id', $c->registro_id)->update([$columna => $c->antes === '1', 'updated_at' => now()]);
             } else {
                 DB::table($c->tabla)->where('id', $c->registro_id)->where($columna, $c->despues)
                     ->update([$columna => $c->antes, 'updated_at' => now()]);
@@ -334,11 +447,14 @@ class LimpiarNombresNumeros extends Command
             ['Celular que ya estaba registrado (solo se quitó del nombre)', $counts['celular_ya_registrado']],
             ['Persona electoral vinculada renombrada', $counts['persona_renombrada']],
             ['Persona electoral no renombrada (varias con ese nombre)', $counts['persona_ambigua']],
-            ...array_map(fn ($m, $label) => ["No se tocó: {$label}", $counts[$m]], array_keys(self::MOTIVOS), self::MOTIVOS),
+            ...array_map(fn ($m, $label) => ["Segunda pasada, detectado: {$label}", $counts[$m]], array_keys(self::MOTIVOS), self::MOTIVOS),
+            ['Segunda pasada: nombre depurado (quedan letras)', $counts['nombre_depurado']],
+            ['  de ellos, con un número largo quitado (queda en la bitácora)', $counts['numero_largo_quitado']],
+            [self::INACTIVADA, $counts['inactivada']],
         ]);
         if ($revisar !== []) {
-            $this->line('Para revisar a mano (sin datos personales: A = letras, 9 = dígitos):');
-            $this->table(['Ficha (id)', 'Motivo', 'Patrón'], $revisar);
+            $this->line('Segunda pasada, para revisar (sin datos personales: A = letras, 9 = dígitos):');
+            $this->table(['Ficha (id)', 'Detectado', 'Patrón', 'Resultado'], $revisar);
         }
     }
 }

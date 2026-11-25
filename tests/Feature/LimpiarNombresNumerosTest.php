@@ -108,34 +108,126 @@ class LimpiarNombresNumerosTest extends TestCase
         $this->assertSame(0, DB::table('lider_contactos')->where('lider_id', $mismoTelefono)->count());
     }
 
-    public function test_everything_else_is_left_as_it_is_and_listed_without_personal_data(): void
+    public function test_the_second_pass_strips_digits_and_urls_and_inactivates_names_with_nothing_left(): void
     {
         $casos = [
             'otro' => $this->ficha('JORGE MORA 7654321', '1098765431'),
-            'corto' => $this->ficha('ELENA PRADA2', null),
+            'corto' => $this->ficha('ANA MARIA1', null),
             'medio' => $this->ficha('RAUL 1098765432 VEGA', '1098765432'),
             'vacio' => $this->ficha('1098765433', '1098765433'),
             'solo' => $this->ficha('15', null),
             'quedan' => $this->ficha('LINA 2 SOSA 3001234567', null),
+            'url' => $this->ficha('LUZ DARY PINTO http://wa.link.co.x:8080', null),
+            'letra' => $this->ficha('P3REZ', null),
         ];
-        $antes = DB::table('lideres')->orderBy('id')->get();
 
         $salida = $this->correr();
 
-        $this->assertEquals($antes, DB::table('lideres')->orderBy('id')->get());
-        $this->assertSame(0, DB::table('limpieza_cambios')->count());
-        $this->assertSame(0, DB::table('audit_logs')->count(), 'No change, no batch: nothing to audit.');
-        $this->assertStringContainsString('Sin cambios: no se creó lote.', $salida);
+        $this->assertSame('JORGE MORA', $this->nombre($casos['otro']));
+        $this->assertSame('1098765431', DB::table('lideres')->where('id', $casos['otro'])->value('cedula'), 'The other number goes to no field.');
+        $this->assertSame('JORGE MORA 7654321', DB::table('limpieza_cambios')->where('lider_id', $casos['otro'])->where('campo', 'nombre')->value('antes'),
+            'The removed number is kept in the log.');
+        $this->assertSame('ANA MARIA', $this->nombre($casos['corto']));
+        $this->assertSame('RAUL VEGA', $this->nombre($casos['medio']));
+        $this->assertSame('1098765432', DB::table('lideres')->where('id', $casos['medio'])->value('cedula'));
+        $this->assertSame('LINA SOSA', $this->nombre($casos['quedan']));
+        $this->assertSame('3001234567', DB::table('lideres')->where('id', $casos['quedan'])->value('telefono'), 'A celular in the second pass is kept too.');
+        $this->assertSame('LUZ DARY PINTO', $this->nombre($casos['url']));
+        // Accepted on purpose: a digit inside a word is dropped and the word stays («PREZ»); the old name is in the log.
+        $this->assertSame('PREZ', $this->nombre($casos['letra']));
+
+        foreach (['vacio', 'solo'] as $caso) {
+            $fila = DB::table('lideres')->where('id', $casos[$caso])->first();
+            $this->assertFalse((bool) $fila->is_active, "{$caso}: inactivated, not deleted");
+        }
+        $this->assertSame('15', $this->nombre($casos['solo']));
+        $this->assertSame(2, DB::table('limpieza_cambios')->where('campo', 'is_active')->count());
+
+        $this->assertStringContainsString(LimpiarNombresNumeros::INACTIVADA, $salida);
+        $this->assertMatchesRegularExpression('/nombre depurado \(quedan letras\)\s*\|\s*6\s*\|/', $salida);
+        $this->assertMatchesRegularExpression('/'.LimpiarNombresNumeros::INACTIVADA.'\s*\|\s*2\s*\|/', $salida);
         foreach ($casos as $id) {
             $this->assertStringContainsString($id, $salida);
         }
-        foreach (array_values(LimpiarNombresNumeros::MOTIVOS) as $motivo) {
-            $this->assertStringContainsString($motivo, $salida);
-        }
-        $this->assertStringContainsString('A A9', $salida);
-        foreach (['JORGE', 'ELENA', 'RAUL', 'SOSA', '7654321', '1098765432', '1098765433', '3001234567'] as $dato) {
+        foreach (['JORGE', 'MARIA', 'RAUL', 'SOSA', 'LUZ', 'PREZ', '7654321', '1098765432', '1098765433', '3001234567', 'wa.link'] as $dato) {
             $this->assertStringNotContainsString($dato, $salida);
         }
+        $this->assertStringNotContainsString('No se tocó', $salida);
+
+        $audit = json_decode(DB::table('audit_logs')->where('action', 'data.limpiar_nombres_numeros')->value('metadata'), true)['resumen'];
+        $this->assertSame([6, 2], [$audit['nombre_depurado'], $audit['inactivada']]);
+        $this->assertSame([1, 1, 1], [$audit['numero_largo_quitado'], $audit['cedula_quitada'], $audit['celular_a_telefono']]);
+    }
+
+    public function test_the_second_pass_keeps_a_celular_in_the_middle_and_drops_the_labels(): void
+    {
+        $contacto = $this->ficha('LUZ CEL 3107654321 MARINA 2', null, '3159998888');
+        $repetido = $this->ficha('ANA TEL: 315 999 8888 RUIZ 4', null, '3159998888');
+        $cedula = $this->ficha('MARIA C.C 63.525.141 GOMEZ 7', '63525141');
+        $rotulo = $this->ficha('JUAN PEREZ CC 12', null);
+        $parentesis = $this->ficha('LUZ-MARINA (CEL 3', null);
+
+        $this->correr();
+
+        $this->assertSame('LUZ MARINA', $this->nombre($contacto));
+        $this->assertSame('3159998888', DB::table('lideres')->where('id', $contacto)->value('telefono'));
+        $this->assertSame(['3107654321'], DB::table('lider_contactos')->where('lider_id', $contacto)->pluck('valor')->all());
+        $this->assertSame('ANA RUIZ', $this->nombre($repetido));
+        $this->assertSame(0, DB::table('lider_contactos')->where('lider_id', $repetido)->count(), 'Already its telefono.');
+        $this->assertSame('MARIA GOMEZ', $this->nombre($cedula));
+        $this->assertSame('JUAN PEREZ', $this->nombre($rotulo));
+        $this->assertSame('LUZ-MARINA', $this->nombre($parentesis));
+
+        $this->correr(['--revertir' => $this->lote()]);
+        $this->assertSame('LUZ CEL 3107654321 MARINA 2', $this->nombre($contacto));
+        $this->assertSame(0, DB::table('lider_contactos')->where('lider_id', $contacto)->count());
+    }
+
+    public function test_revertir_restores_the_second_pass_name_and_is_active(): void
+    {
+        $depurada = $this->ficha('ANA MARIA1', null);
+        $inactiva = $this->ficha('15', null);
+        $yaInactiva = $this->ficha('16', null, null, ['is_active' => false]);
+
+        $this->correr();
+        $this->assertSame(1, DB::table('limpieza_cambios')->where('campo', 'is_active')->count(), 'An already inactive ficha is not logged.');
+        $this->correr(['--revertir' => $this->lote()]);
+
+        $this->assertSame('ANA MARIA1', $this->nombre($depurada));
+        $this->assertTrue((bool) DB::table('lideres')->where('id', $inactiva)->value('is_active'));
+        $this->assertFalse((bool) DB::table('lideres')->where('id', $yaInactiva)->value('is_active'));
+    }
+
+    public function test_dry_run_reports_the_second_pass_without_writing(): void
+    {
+        $this->ficha('ANA MARIA1', null);
+        $this->ficha('15', null);
+        $antes = DB::table('lideres')->orderBy('id')->get();
+
+        $salida = $this->correr(['--dry-run' => true]);
+
+        $this->assertEquals($antes, DB::table('lideres')->orderBy('id')->get());
+        $this->assertSame(0, DB::table('limpieza_cambios')->count());
+        $this->assertMatchesRegularExpression('/nombre depurado \(quedan letras\)\s*\|\s*1\s*\|/', $salida);
+        $this->assertMatchesRegularExpression('/'.LimpiarNombresNumeros::INACTIVADA.'\s*\|\s*1\s*\|/', $salida);
+    }
+
+    public function test_depurar(): void
+    {
+        $this->assertSame('ANA MARIA', LimpiarNombresNumeros::depurar('ANA MARIA1'));
+        $this->assertSame('PREZ', LimpiarNombresNumeros::depurar('P3REZ'));
+        $this->assertSame('CECILIA (LA MONA)', LimpiarNombresNumeros::depurar('CECILIA (LA MONA) 2'));
+        $this->assertSame('LUZ-MARINA', LimpiarNombresNumeros::depurar('LUZ-MARINA 5 (CEL)'));
+        $this->assertSame('MA.ELENA ROJAS', LimpiarNombresNumeros::depurar('MA.ELENA ROJAS 12'), 'A dotted name is not a domain.');
+        $this->assertSame('ANA', LimpiarNombresNumeros::depurar('ANA www.ana.com ana@correo.co'));
+        $this->assertSame('ANA PEREZ', LimpiarNombresNumeros::depurar('ANA # 12 : PEREZ / 3'));
+        $this->assertNull(LimpiarNombresNumeros::depurar('15 - 3'));
+        $this->assertNull(LimpiarNombresNumeros::depurar('A 15'), 'One letter is not a name.');
+        foreach (['JUAN PEREZ CC' => 'JUAN PEREZ', 'ANA TEL: RUIZ' => 'ANA RUIZ', 'MARIA C.C' => 'MARIA', 'LUZ CEL' => 'LUZ',
+            'LUZ-MARINA (CEL' => 'LUZ-MARINA', 'ROSA CÉDULA: 12 PAEZ' => 'ROSA PAEZ', 'MARCEL TELLO (2)' => 'MARCEL TELLO'] as $in => $out) {
+            $this->assertSame($out, LimpiarNombresNumeros::depurar($in), $in);
+        }
+        $this->assertNull(LimpiarNombresNumeros::depurar('CEL 300'), 'Only a label: nothing left.');
     }
 
     public function test_dry_run_writes_nothing(): void

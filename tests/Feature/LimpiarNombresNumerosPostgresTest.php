@@ -52,6 +52,7 @@ class LimpiarNombresNumerosPostgresTest extends TestCase
         $conCedula = $this->ficha("PGLIMPIA ANA {$cedula}", $cedula);
         $conCelular = $this->ficha('PGLIMPIA BETO 3001234567', null, '3159998888');
         $corto = $this->ficha('PGLIMPIA CIRO2');
+        $solo = $this->ficha('9'.random_int(10, 99));
 
         $this->assertSame(0, Artisan::call('data:limpiar-nombres-numeros', ['--dry-run' => true]));
         $this->assertStringContainsString('DRY-RUN', Artisan::output());
@@ -64,13 +65,16 @@ class LimpiarNombresNumerosPostgresTest extends TestCase
         $this->assertSame('PGLIMPIA ANA', DB::table('lideres')->where('id', $conCedula)->value('nombre'));
         $this->assertSame('PGLIMPIA BETO', DB::table('lideres')->where('id', $conCelular)->value('nombre'));
         $this->assertSame('3001234567', DB::table('lider_contactos')->where('lider_id', $conCelular)->value('valor'));
-        $this->assertSame('PGLIMPIA CIRO2', DB::table('lideres')->where('id', $corto)->value('nombre'));
+        $this->assertSame('PGLIMPIA CIRO', DB::table('lideres')->where('id', $corto)->value('nombre'));
+        $this->assertFalse((bool) DB::table('lideres')->where('id', $solo)->value('is_active'));
 
         $lote = DB::table('limpieza_cambios')->where('lider_id', $conCedula)->value('lote');
         $this->assertSame(0, Artisan::call('data:limpiar-nombres-numeros', ['--revertir' => $lote]));
         $this->assertSame("PGLIMPIA ANA {$cedula}", DB::table('lideres')->where('id', $conCedula)->value('nombre'));
         $this->assertSame('PGLIMPIA BETO 3001234567', DB::table('lideres')->where('id', $conCelular)->value('nombre'));
         $this->assertSame(0, DB::table('lider_contactos')->where('lider_id', $conCelular)->count());
+        $this->assertSame('PGLIMPIA CIRO2', DB::table('lideres')->where('id', $corto)->value('nombre'));
+        $this->assertTrue((bool) DB::table('lideres')->where('id', $solo)->value('is_active'));
     }
 
     public function test_the_like_clause_matches_the_postgresql_regex(): void
