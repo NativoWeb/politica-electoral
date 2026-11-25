@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PersonaSearch, { inputCls } from '@/Components/Empresarios/PersonaSearch';
 import { failure, request } from '@/lib/actas';
+import { errorNombre } from '@/lib/nombreFicha';
 
 const EMPTY = { lider_id: null, nombre: '', cedula: '', telefono: '', municipio: '', rol: 'afiliado', nota: '' };
 
@@ -26,6 +27,7 @@ export default function MiembrosTab({ org, editable, roles = [], onChanged }) {
 
     async function add(e) {
         e.preventDefault();
+        if (!draft.lider_id && errorNombre(draft.nombre)) return;
         const body = draft.lider_id ? { lider_id: draft.lider_id, rol: draft.rol, nota: draft.nota || null }
             : { nombre: draft.nombre, cedula: draft.cedula || null, telefono: draft.telefono || null, municipio: draft.municipio || null, rol: draft.rol, nota: draft.nota || null };
         if (await send(`/empresarios/${org.id}/miembros`, 'POST', body, 'Miembro agregado.')) setDraft(null);
@@ -90,7 +92,11 @@ export default function MiembrosTab({ org, editable, roles = [], onChanged }) {
                     <p className="text-[15px] font-bold">{draft.lider_id ? `${draft.nombre} (ya está en Votantes)` : 'Persona nueva: se crea su ficha en Votantes al guardar (si la cédula ya está, se vincula).'}</p>
                     {!draft.lider_id && (
                         <div className="grid sm:grid-cols-2 gap-2">
-                            <label className="block text-[14px] font-semibold">Nombre<input className={inputCls} value={draft.nombre} maxLength={200} required onChange={e => setDraft(d => ({ ...d, nombre: e.target.value }))} /></label>
+                            <div>
+                                <label className="block text-[14px] font-semibold">Nombre<input className={inputCls} value={draft.nombre} maxLength={200} required onChange={e => setDraft(d => ({ ...d, nombre: e.target.value }))}
+                                    aria-invalid={errorNombre(draft.nombre) ? true : undefined} aria-describedby={errorNombre(draft.nombre) ? 'nuevo-miembro-nombre-error' : undefined} /></label>
+                                {errorNombre(draft.nombre) && <p id="nuevo-miembro-nombre-error" role="alert" className="mt-1 text-[13px] font-semibold text-red-700">{errorNombre(draft.nombre)}</p>}
+                            </div>
                             <label className="block text-[14px] font-semibold">Cédula (si la tiene)<input className={inputCls} value={draft.cedula} maxLength={20} inputMode="numeric" onChange={e => setDraft(d => ({ ...d, cedula: e.target.value }))} /></label>
                             <label className="block text-[14px] font-semibold">Celular<input className={inputCls} value={draft.telefono} maxLength={60} inputMode="tel" onChange={e => setDraft(d => ({ ...d, telefono: e.target.value }))} /></label>
                             <label className="block text-[14px] font-semibold">Municipio<input className={inputCls} value={draft.municipio} maxLength={120} onChange={e => setDraft(d => ({ ...d, municipio: e.target.value }))} /></label>

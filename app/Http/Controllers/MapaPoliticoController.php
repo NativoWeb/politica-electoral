@@ -16,6 +16,7 @@ use App\Models\Campaign;
 use App\Models\Lider;
 use App\Models\Person;
 use App\Models\PoliticalOrganization;
+use App\Rules\NombreSinNumeros;
 use App\Rules\OpcionDeCatalogo;
 use App\Services\CachedQueries;
 use App\Services\Configuracion\Ajuste;
@@ -991,7 +992,7 @@ class MapaPoliticoController extends Controller
     public function storeLider(Request $request)
     {
         $data = $request->validate(OpcionDeCatalogo::enReglas([
-            'nombre' => 'required|string|max:255',
+            'nombre' => ['required', 'string', 'max:255', new NombreSinNumeros],
             'municipio_id' => 'required|uuid|exists:geographic_units,id',
             'cargo' => 'nullable|string|max:255',
             'tipos' => 'nullable|array',
@@ -1357,7 +1358,8 @@ class MapaPoliticoController extends Controller
         $canEditElectoral = $this->campaign()->canEditElectoral();
 
         $data = $request->validate(OpcionDeCatalogo::enReglas([
-            'nombre' => 'sometimes|required|string|max:255',
+            'nombre' => ['sometimes', 'required', 'string', 'max:255', new NombreSinNumeros(
+                DB::table('lideres')->where('id', $id)->value('nombre') ?? DB::table('persons')->where('id', $id)->value('full_name'))],
             'telefono' => 'nullable|string|max:20',
             'email' => 'nullable|string|max:255',
             'cargo' => 'nullable|string|max:100',

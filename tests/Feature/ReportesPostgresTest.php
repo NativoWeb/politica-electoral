@@ -203,6 +203,8 @@ class ReportesPostgresTest extends TestCase
         $c = $this->ficha('Paridad C', ['gran_elector' => true, 'verificado' => true, 'migracion_flags' => json_encode(['sin_municipio' => true])]);
         $this->ficha('Paridad D', ['militante' => true, 'nivel_confianza' => 'confirmado', 'campaign_id' => $this->subgrupo]);
         $this->ficha('Paridad inactiva', ['gran_elector' => true, 'is_active' => false, 'fallecido' => true]);
+        $this->ficha('Paridad E 3001234567');
+        $this->ficha('Paridad F7', ['campaign_id' => $this->otro]);
         $this->asistio($a, $evento);
         $this->asistio($c, $evento);
         $this->asistio($b, $this->evento('Otro evento'));
@@ -216,6 +218,7 @@ class ReportesPostgresTest extends TestCase
             [['por_completar' => ['cualquiera']], 'por_completar=cualquiera'],
             [['por_completar' => ['municipio']], 'por_completar=municipio'],
             [['por_completar' => ['diferencias']], 'diferencias=1'],
+            [['nombre_con_numeros' => true], 'nombre_con_numeros=1'],
             [['evento' => [$evento]], 'evento='.$evento],
             [['eventos_min' => 1], 'asistentes_eventos=1'],
             [[], ''],
@@ -225,6 +228,13 @@ class ReportesPostgresTest extends TestCase
             $this->assertSame($votantes, $this->conteo($this->admin, $filtros), 'Filtro '.json_encode($filtros));
             $this->assertGreaterThan(0, $votantes, 'Filtro sin datos '.json_encode($filtros));
         }
+
+        // Only the visible grupo político: the ficha with digits of another grupo is not counted.
+        $conDigitos = DB::table('lideres')->whereIn('campaign_id', [$this->grupo, $this->subgrupo])->whereRaw("nombre ~ '[0-9]'")
+            ->where('is_active', true)->count();
+        $this->assertSame(1, $conDigitos);
+        $this->assertSame($conDigitos, $this->conteo($this->admin, ['nombre_con_numeros' => true]));
+        $this->assertSame(0, $this->conteo($this->deSubgrupo, ['nombre_con_numeros' => true]));
 
         // "Tienen personas referidas" is the Votantes counter con_referidos.
         DB::table('lideres')->where('id', $a)->update(['cedula' => '91000001']);

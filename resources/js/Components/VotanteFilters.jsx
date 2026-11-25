@@ -90,6 +90,7 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
     useEffect(() => { setPorCompletar(filters.por_completar || ''); }, [filters.por_completar]);
     const [diferencias, setDiferencias] = useState(isOn(filters.diferencias));
     const [importadosInactivos, setImportadosInactivos] = useState(filters.importados_inactivos || '');
+    const [nombreConNumeros, setNombreConNumeros] = useState(isOn(filters.nombre_con_numeros));
     const campaign = useCampaign();
     // Every nivel, also the switched off ones: old fichas may still have them.
     const nivelOptions = [{ value: '', label: 'Todos' }, ...catalogoDe(useCatalogos(), 'nivel_confianza').map(o => ({ value: o.valor, label: o.etiqueta }))];
@@ -145,6 +146,7 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
             ...(porCompletar ? { por_completar: porCompletar } : {}),
             ...(diferencias ? { diferencias: '1' } : {}),
             ...(importadosInactivos ? { importados_inactivos: importadosInactivos } : {}),
+            ...(nombreConNumeros ? { nombre_con_numeros: '1' } : {}),
             ...overrides,
         };
         onApply(vals);
@@ -169,6 +171,7 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
         setPorCompletar('');
         setDiferencias(false);
         setImportadosInactivos('');
+        setNombreConNumeros(false);
         setOpen(false);
         onClear();
     }
@@ -181,7 +184,7 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
 
     // What the URL filters by (the search has its own box), for the badge of the folded Filtros button.
     const activeCount = ['municipio', 'comuna', 'partido', 'nivel_confianza', 'campana', 'evento', 'asistentes_eventos', 'por_completar',
-        'importados_inactivos', 'diferencias', 'verificado', 'gran_elector', 'con_referidos', 'es_lider', 'militante'].filter(k => filters[k]).length
+        'importados_inactivos', 'diferencias', 'nombre_con_numeros', 'verificado', 'gran_elector', 'con_referidos', 'es_lider', 'militante'].filter(k => filters[k]).length
         + (filters.estado && filters.estado !== 'activos' ? 1 : 0);
 
     return (
@@ -356,6 +359,10 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
                     <label className={checkLabelCls}>
                         <input type="checkbox" checked={diferencias} onChange={e => setDiferencias(e.target.checked)} className={checkCls} />
                         <span className={checkTextCls}>Diferencias con Electo</span>
+                    </label>
+                    <label className={checkLabelCls}>
+                        <input type="checkbox" checked={nombreConNumeros} onChange={e => setNombreConNumeros(e.target.checked)} className={checkCls} />
+                        <span className={checkTextCls}>Nombre con números</span>
                     </label>
                     <label className={checkLabelCls}>
                         <input type="checkbox" checked={verificado} onChange={e => setVerificado(e.target.checked)} className={checkCls} />

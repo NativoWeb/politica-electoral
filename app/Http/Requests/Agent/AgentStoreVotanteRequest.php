@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Agent;
 
+use App\Rules\NombreSinNumeros;
 use App\Rules\OpcionDeCatalogo;
 
 class AgentStoreVotanteRequest extends AgentFormRequest
@@ -9,7 +10,7 @@ class AgentStoreVotanteRequest extends AgentFormRequest
     public function rules(): array
     {
         return [
-            'nombre' => ['required', 'string', 'max:255'],
+            'nombre' => ['required', 'string', 'max:255', new NombreSinNumeros],
             'municipio_id' => ['required', 'uuid', 'exists:geographic_units,id'],
             'cedula' => ['nullable', 'string', 'max:20'],
             'cargo' => ['nullable', 'string', 'max:255'],

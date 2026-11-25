@@ -5,6 +5,7 @@ namespace App\Http\Requests\Eventos;
 use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\CampaignEvent;
 use App\Models\EventAttendee;
+use App\Rules\NombreSinNumeros;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Validator;
@@ -57,6 +58,10 @@ class AttendeeUpdateRequest extends FormRequest
             }
         }
         $rules['nota'] = ['nullable', 'string', 'max:255'];
+        // An old name with digits sent back unchanged does not block correcting the attendee's other fields.
+        foreach (['nombres', 'apellidos'] as $field) {
+            $rules[$field] = [...array_filter($rules[$field], fn ($r) => ! $r instanceof NombreSinNumeros), new NombreSinNumeros($this->attendee?->{$field})];
+        }
 
         return $rules;
     }

@@ -11,12 +11,14 @@ use App\Http\Controllers\Concerns\ScopesTerritory;
 use App\Models\Lider;
 use App\Models\LiderContacto;
 use App\Models\LiderInfoPolitica;
+use App\Rules\NombreSinNumeros;
 use App\Rules\OpcionDeCatalogo;
 use App\Services\CachedQueries;
 use App\Services\Eventos\EventScope;
 use App\Services\Geo\ComunaCatalog;
 use App\Support\EsLider;
 use App\Support\MigracionFlags;
+use App\Support\NombreFicha;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +137,10 @@ class VotanteController extends Controller
             $query->where('lideres.es_lider', true);
         }
 
+        if (filter_var($request->input('nombre_con_numeros'), FILTER_VALIDATE_BOOLEAN)) {
+            NombreFicha::whereConNumeros($query, 'lideres.nombre');
+        }
+
         return $query;
     }
 
@@ -176,6 +182,7 @@ class VotanteController extends Controller
             'filters' => array_merge(
                 $request->only(['search', 'municipio', 'comuna', 'partido', 'nivel_confianza', 'verificado', 'gran_elector', 'militante', 'estado',
                     'por_completar', 'diferencias', 'importados_inactivos']),
+                filter_var($request->input('nombre_con_numeros'), FILTER_VALIDATE_BOOLEAN) ? ['nombre_con_numeros' => '1'] : [],
                 $esLider && filter_var($request->input('es_lider'), FILTER_VALIDATE_BOOLEAN) ? ['es_lider' => '1'] : [],
                 filter_var($request->input('con_referidos'), FILTER_VALIDATE_BOOLEAN) ? ['con_referidos' => '1'] : [],
                 $campana ? ['campana' => $campana] : [],
@@ -347,7 +354,7 @@ class VotanteController extends Controller
     public function store(Request $request, CreateVotante $createVotante)
     {
         $data = $request->validate(OpcionDeCatalogo::enReglas([
-            'nombre' => 'required|string|max:255',
+            'nombre' => ['required', 'string', 'max:255', new NombreSinNumeros],
             'municipio_id' => 'required|uuid|exists:geographic_units,id',
             'cargo' => 'nullable|string|max:255',
             'tipo' => 'nullable|string|max:255',
@@ -406,7 +413,7 @@ class VotanteController extends Controller
         }
 
         $data = $request->validate(OpcionDeCatalogo::enReglas([
-            'nombre' => 'nullable|string|max:255',
+            'nombre' => ['nullable', 'string', 'max:255', new NombreSinNumeros($this->scopeToTerritory($this->visibleLideres())->where('id', $id)->value('nombre'))],
             'cargo' => 'nullable|string|max:255',
             'tipo' => 'nullable|string|max:255',
             'telefono' => 'nullable|string|max:20',

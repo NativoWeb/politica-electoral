@@ -94,9 +94,12 @@ class EventImportTest extends TestCase
 
     private function person(int $i, array $overrides = []): array
     {
+        // Names with letters only: a name with digits is a row error (App\Rules\NombreSinNumeros).
+        $letras = strtr((string) $i, '0123456789', 'abcdefghij');
+
         return array_merge([
-            'nombres' => "Persona{$i}",
-            'apellidos' => "Apellido{$i} Prueba",
+            'nombres' => "Persona{$letras}",
+            'apellidos' => "Apellido{$letras} Prueba",
             'cedula' => (string) (1090000000 + $i),
             'celular' => '300'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
             'fijo' => null,
@@ -506,7 +509,7 @@ class EventImportTest extends TestCase
         $this->assertTrue($logs->contains('action', 'PATCH eventos.importar.fila'));
         $this->assertTrue($logs->contains('action', 'EVENTO_IMPORTACION_CONFIRMADA'));
         $all = $logs->pluck('metadata')->implode(' ');
-        foreach (['1098000999', '1090000001', 'Persona Dos', 'Persona2', 'Apellido'] as $secret) {
+        foreach (['1098000999', '1090000001', 'Persona Dos', 'Personac', 'Apellido'] as $secret) {
             $this->assertStringNotContainsString($secret, $all);
         }
         $this->assertTrue($logs->where('action', 'PATCH eventos.importar.fila')

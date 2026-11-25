@@ -2,7 +2,11 @@
 
 namespace App\Http\Requests\Eventos;
 
+use App\Rules\NombreSinNumeros;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 // Body of POST /eventos/{id}/actas and PUT /eventos/{id}/actas/{acta} (docs/eventos-api.md §14).
 class ActaRequest extends FormRequest
@@ -26,7 +30,7 @@ class ActaRequest extends FormRequest
             'desarrollo.*.texto' => ['nullable', 'string', 'max:20000'],
             'participantes' => ['nullable', 'array', 'max:300'],
             'participantes.*.id' => ['nullable', 'uuid'],
-            'participantes.*.nombre' => ['required', 'string', 'max:200'],
+            'participantes.*.nombre' => ['required', 'string', 'max:200', $this->nombreDeFicha(...)],
             'participantes.*.perfil' => ['nullable', 'string', 'max:200'],
             'participantes.*.municipio' => ['nullable', 'string', 'max:120'],
             'participantes.*.telefono' => ['nullable', 'string', 'max:60'],
@@ -46,6 +50,23 @@ class ActaRequest extends FormRequest
             'compromisos.*.responsables.*.sugerencia_rechazada' => ['nullable', 'uuid'],
             'cierre' => ['nullable', 'string', 'max:2000'],
         ];
+    }
+
+    // A participant typed by hand becomes a ficha when the acta is confirmed, so its name follows the ficha's rule. One
+    // linked to a ficha or to an attendee, or a saved row sent back with its name unchanged, is not checked again.
+    public function nombreDeFicha(string $attribute, mixed $value, Closure $fail): void
+    {
+        $participante = $this->input('participantes.'.(explode('.', $attribute)[1] ?? ''));
+        if (! is_array($participante) || filled($participante['lider_id'] ?? null) || filled($participante['attendee_id'] ?? null)) {
+            return;
+        }
+        $id = $participante['id'] ?? null;
+        // Only a row of this same acta counts as «saved»: an id of another acta does not skip the rule.
+        $acta = $this->route('acta');
+        $actual = is_string($id) && Str::isUuid($id) && is_string($acta) && Str::isUuid($acta)
+            ? DB::table('event_acta_participantes')->where('id', $id)->where('acta_id', $acta)->value('nombre')
+            : null;
+        (new NombreSinNumeros($actual))->validate($attribute, $value, $fail);
     }
 
     public function messages(): array

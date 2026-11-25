@@ -149,6 +149,20 @@ class EmpresariosTest extends TestCase
         $this->assertSame(2, DB::table('organizaciones')->where('nit', '890903938')->count());
     }
 
+    public function test_a_member_typed_by_hand_cannot_have_digits_in_the_name(): void
+    {
+        $id = $this->createOrg();
+        $before = DB::table('lideres')->count();
+
+        $this->actingAs($this->manager)->postJson("/empresarios/{$id}/miembros", ['nombre' => '1098000222', 'rol' => 'socio'])
+            ->assertStatus(422)->assertJsonPath('errors.nombre.0', 'El nombre no puede tener números: si es la cédula o el teléfono, escríbelo en su campo.');
+        $this->assertSame($before, DB::table('lideres')->count());
+
+        // An existing ficha is linked by its id: the typed name is not used.
+        $existing = $this->lider(Campaign::DEFAULT_ID, 'Pedro Socio', '1098000111');
+        $this->actingAs($this->manager)->postJson("/empresarios/{$id}/miembros", ['lider_id' => $existing, 'nombre' => 'Pedro 2', 'rol' => 'socio'])->assertCreated();
+    }
+
     public function test_members_link_existing_ficha_or_create_one_and_show_in_the_persona_ficha(): void
     {
         $id = $this->createOrg();

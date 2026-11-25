@@ -214,6 +214,18 @@ class EventActaTest extends TestCase
         $this->assertSame(2, DB::table('audit_logs')->where('action', 'EVENTO_ACTA_DESCARGADA')->count());
     }
 
+    public function test_a_participant_typed_by_hand_cannot_have_digits_in_the_name(): void
+    {
+        $nuevo = ['nombre' => 'Persona Nueva 3112223344', 'perfil' => 'Edil', 'municipio' => 'Girón'];
+        $this->store($this->payload(['participantes' => [$nuevo]]))
+            ->assertStatus(422)->assertJsonPath('errors', ['participantes.0.nombre' => ['El nombre no puede tener números: si es la cédula o el teléfono, escríbelo en su campo.']]);
+        $this->assertSame(0, DB::table('event_actas')->count());
+
+        // Linked to an existing ficha, the name is that ficha's: it is not checked again.
+        $ficha = $this->lider(Campaign::DEFAULT_ID, 'FICHA VIEJA 2', '1098111222');
+        $this->store($this->payload(['participantes' => [['nombre' => 'FICHA VIEJA 2', 'lider_id' => $ficha]]]))->assertCreated();
+    }
+
     public function test_participants_are_linked_or_created_and_all_become_attendees_once(): void
     {
         $byCedula = $this->lider(Campaign::DEFAULT_ID, 'Carlos Cedula Ruiz', '91000111', ['telefono' => '3150000000']);

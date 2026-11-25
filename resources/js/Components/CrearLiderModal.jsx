@@ -10,6 +10,7 @@ import { TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES } from '@/lib/mapaP
 import CatalogoOptions from '@/Components/CatalogoOptions';
 import CasillaEsLider from '@/Components/CampanasElectorales/CasillaEsLider';
 import { moduloLideresActivo } from '@/lib/campanas';
+import { errorNombre } from '@/lib/nombreFicha';
 
 function VoiceButton({ onResult, label }) {
     const [listening, setListening] = useState(false);
@@ -117,6 +118,8 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
     function submit(e) {
         e.preventDefault();
         if (!form.nombre.trim()) { setErrors({ nombre: 'El nombre es obligatorio' }); return; }
+        const nombreInvalido = errorNombre(form.nombre);
+        if (nombreInvalido) { setErrors({ nombre: nombreInvalido }); return; }
         if (!form.municipio_id) { setErrors({ municipio_id: 'Selecciona un municipio' }); return; }
         if (saving) return;
 
@@ -200,9 +203,10 @@ export default function CrearLiderModal({ open, onClose, municipios: pageMunicip
                         <div>
                             <label className={labelCls}>Nombre completo *</label>
                             <div className="flex gap-2">
-                                <input className={fieldCls} value={form.nombre} onChange={e => set('nombre', e.target.value)} required placeholder="Nombre del lider" />
+                                <input className={fieldCls} value={form.nombre} {...errorProps(errors, 'nombre')} onChange={e => set('nombre', e.target.value)} required placeholder="Nombre del lider" />
                                 <VoiceButton label="nombre" onResult={t => set('nombre', t)} />
                             </div>
+                            <FieldError field="nombre" error={errors.nombre} />
                         </div>
 
                         {/* Provincia + Municipio */}

@@ -1270,7 +1270,7 @@ class CampaignIsolationTest extends TestCase
         foreach ([Campaign::DEFAULT_ID, null] as $i => $grupo) {
             $this->actingAs($super)->postJson('/grupo-politico/vista', ['campaign_id' => $grupo])->assertOk();
             $this->actingAs($super)->get('/votantes')->assertInertia(fn (AssertableInertia $page) => $page->where('grupoVista.createBlocked', null));
-            $this->actingAs($super)->postJson('/votantes', ['nombre' => "Nueva En Vista {$i}", 'cedula' => "700{$i}2", 'municipio_id' => $this->mun])->assertSuccessful();
+            $this->actingAs($super)->postJson('/votantes', ['nombre' => 'Nueva En Vista '.['A', 'B'][$i], 'cedula' => "700{$i}2", 'municipio_id' => $this->mun])->assertSuccessful();
         }
         $this->assertSame(2, DB::table('lideres')->where('nombre', 'like', 'Nueva En Vista%')->where('campaign_id', Campaign::DEFAULT_ID)->count());
     }

@@ -1,5 +1,7 @@
 // Shared logic of the Eventos especiales module (contract in docs/eventos-api.md).
 
+import { NOMBRE_CON_NUMEROS, tieneNumeros } from '@/lib/nombreFicha';
+
 export const TZ = 'America/Bogota';
 
 export const EVENT_STATUS = {
@@ -245,6 +247,9 @@ export function attendeeClientErrors(data) {
     const required = { nombres: 'Escriba los nombres.', apellidos: 'Escriba los apellidos.', cedula: 'Escriba la cédula.', celular: 'Escriba el celular.', barrio: 'Escriba el barrio.' };
     Object.entries(required).forEach(([field, message]) => {
         if (!String(data[field] ?? '').trim()) errors[field] = message;
+    });
+    ['nombres', 'apellidos'].forEach(field => {
+        if (!errors[field] && tieneNumeros(data[field])) errors[field] = NOMBRE_CON_NUMEROS;
     });
     const cedula = String(data.cedula ?? '').replace(/\D/g, '');
     if (!errors.cedula && (cedula.length < 5 || cedula.length > 12)) errors.cedula = 'La cédula debe tener entre 5 y 12 números.';

@@ -3,6 +3,7 @@
 namespace App\Services\Eventos;
 
 use App\Http\Requests\Eventos\AttendeeInput;
+use App\Rules\NombreSinNumeros;
 use App\Support\Cedula;
 use Illuminate\Support\Facades\Validator;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
@@ -64,8 +65,8 @@ class ImportRowValidator
         $input['municipio'] = $mapped['municipio'] ?? null;
         $input['liderazgo'] = $mapped['liderazgo'] ?? null;
         $rules = [
-            'nombres' => ['required', 'string', 'max:100'],
-            'apellidos' => ['nullable', 'string', 'max:100'],
+            'nombres' => ['required', 'string', 'max:100', new NombreSinNumeros],
+            'apellidos' => ['nullable', 'string', 'max:100', new NombreSinNumeros],
             'cedula' => ['nullable', 'string', 'regex:/^\d{5,10}$/'],
             'direccion' => ['nullable', 'string', 'max:255'],
             'barrio' => ['nullable', 'string', 'max:120'],

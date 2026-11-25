@@ -17,6 +17,7 @@ import { useAllMunicipios } from '@/lib/useAllMunicipios';
 import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 import CatalogoOptions from '@/Components/CatalogoOptions';
 import { etiquetaDe, useCatalogos } from '@/lib/catalogos';
+import { errorDeCampo, errorNombre } from '@/lib/nombreFicha';
 
 const inputCls = "w-full border border-[var(--color-line)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-primary)] bg-white";
 const readCls = "text-[13px] text-[var(--color-ink)] py-1";
@@ -136,6 +137,7 @@ export default function VotanteDetail({
     const [showUnificar, setShowUnificar] = useState(false);
     // A save refused because another record holds the cédula: {message, duplicado}, shown until the user acts.
     const [clash, setClash] = useState(null);
+    const [nombreError, setNombreError] = useState('');
     const [unificarCon, setUnificarCon] = useState(null);
     const cedulaRef = useRef(null);
     // The Electo notice stays open while the ficha reloads after resolving a difference.
@@ -152,6 +154,7 @@ export default function VotanteDetail({
     useEscapeKey(() => (confirmDelete ? setConfirmDelete(false) : onClose()), rootRef);
 
     useEffect(() => {
+        setNombreError('');
         if (creating) {
             setForm(buildInitialForm(null));
             setEditing(true);
@@ -182,6 +185,12 @@ export default function VotanteDetail({
     async function handleSave() {
         if (!form.nombre.trim()) {
             showToast('El nombre es requerido', 'error');
+            return;
+        }
+        const nombreInvalido = errorNombre(form.nombre, creating ? null : (data?.nombre ?? null));
+        setNombreError(nombreInvalido || '');
+        if (nombreInvalido) {
+            showToast(nombreInvalido, 'error');
             return;
         }
         if (creating && !form.municipio_id) {
@@ -215,6 +224,9 @@ export default function VotanteDetail({
                 : err.status === 403
                     ? forbiddenMessage(err.message, campaignName)
                     : err.message || err.data?.message || 'Error al guardar';
+            if (err.status === 422 && errorDeCampo(err, 'nombre')) {
+                setNombreError(errorDeCampo(err, 'nombre'));
+            }
             if (err.status === 422 && err.duplicado) {
                 setClash({ message: msg, duplicado: err.duplicado });
                 return;
@@ -434,7 +446,13 @@ export default function VotanteDetail({
                     <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2">
                             <Field label="Nombre completo">
-                                {editing ? <input value={form.nombre} onChange={e => setField('nombre', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.nombre || '-'}</p>}
+                                {editing ? (
+                                    <>
+                                        <input value={form.nombre} onChange={e => { setField('nombre', e.target.value); setNombreError(''); }} className={inputCls}
+                                            aria-invalid={nombreError ? true : undefined} aria-describedby={nombreError ? 'votante-nombre-error' : undefined} />
+                                        {nombreError && <p id="votante-nombre-error" role="alert" className="mt-1 text-[12px] font-semibold text-red-600">{nombreError}</p>}
+                                    </>
+                                ) : <p className={readCls}>{form.nombre || '-'}</p>}
                             </Field>
                         </div>
                         <div className="col-span-2">

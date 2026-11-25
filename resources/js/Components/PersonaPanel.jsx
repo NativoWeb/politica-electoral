@@ -24,6 +24,7 @@ import { canSeeEventAttendees } from '@/lib/eventosIntegracion';
 import { TIPO_OPTIONS, ASISTENTES_EVENTO, CARGOS_DISPONIBLES } from '@/lib/mapaPoliticoConstants';
 import CatalogoOptions from '@/Components/CatalogoOptions';
 import { badgeStyle, colorDe, etiquetaDe, useCatalogos } from '@/lib/catalogos';
+import { errorDeCampo, errorNombre } from '@/lib/nombreFicha';
 
 function useConfirm() {
     const [state, setState] = useState({ open: false, title: '', message: '', onConfirm: null, danger: false });
@@ -146,6 +147,7 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
     const [message, setMessage] = useState('');
     // The message currently shown as an error; any later message (e.g. "Nexo agregado") is shown normally.
     const [errorMessage, setErrorMessage] = useState('');
+    const [nombreError, setNombreError] = useState('');
     // Another lider holding the cédula being saved: probably the same person entered twice.
     const [duplicado, setDuplicado] = useState(null);
     const [merging, setMerging] = useState(false);
@@ -231,6 +233,12 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
     }, [personId]);
 
     function savePersona() {
+        const nombreInvalido = errorNombre(form.nombre, data?.nombre ?? null);
+        setNombreError(nombreInvalido || '');
+        if (nombreInvalido) {
+            showGlobalToast(nombreInvalido, 'error');
+            return;
+        }
         setSaving(true);
         setMessage('');
         setErrorMessage('');
@@ -253,6 +261,7 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                 } else if (r.status === 422) {
                     err.userMessage = firstError || body.message || body.error;
                     err.duplicado = body.duplicado || null;
+                    err.nombreError = errorDeCampo(body, 'nombre');
                 }
                 throw err;
             })
@@ -268,6 +277,7 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
             })
             .catch(async (err) => {
                 if (err?.userMessage) {
+                    if (err.nombreError) setNombreError(err.nombreError);
                     setMessage(err.userMessage);
                     setErrorMessage(err.userMessage);
                     if (err.duplicado) {
@@ -791,7 +801,9 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                                 <div className="space-y-4">
                                     <div>
                                         <label className={labelCls}>Nombres y apellidos</label>
-                                        <input className={fieldCls} value={f('nombre')} onChange={e => set('nombre', e.target.value)} placeholder="Nombres y apellidos completos" maxLength={255} />
+                                        <input className={fieldCls} value={f('nombre')} onChange={e => { set('nombre', e.target.value); setNombreError(''); }} placeholder="Nombres y apellidos completos" maxLength={255}
+                                            aria-invalid={nombreError ? true : undefined} aria-describedby={nombreError ? 'persona-nombre-error' : undefined} />
+                                        {nombreError && <p id="persona-nombre-error" role="alert" className="mt-1 text-[13px] font-semibold text-red-600">{nombreError}</p>}
                                     </div>
                                     <div>
                                         <label className={labelCls}>Observaciones</label>

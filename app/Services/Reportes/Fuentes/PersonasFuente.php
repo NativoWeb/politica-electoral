@@ -17,6 +17,7 @@ use App\Services\Reportes\ReporteService;
 use App\Services\Reportes\ReportSpec;
 use App\Support\EsLider;
 use App\Support\MigracionFlags;
+use App\Support\NombreFicha;
 use App\Support\Provincias;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -172,6 +173,8 @@ class PersonasFuente implements Fuente
         if (self::tieneColumna('origen')) {
             $completar[] = new Filtro('origen', 'Origen', 'chips', self::lista($eventos ? self::ORIGENES : array_diff_key(self::ORIGENES, ['evento' => true])));
         }
+        $completar[] = new Filtro('nombre_con_numeros', 'Nombre con números', 'casilla', multiple: false,
+            ayuda: 'Fichas con una cédula, un teléfono u otro número escrito en el nombre.');
         if ($completar) {
             $grupos[] = $this->grupo('por_completar', 'Datos por completar', $completar);
         }
@@ -348,6 +351,7 @@ class PersonasFuente implements Fuente
         if (self::tieneColumna('migracion_flags')) {
             $out['por_completar'] = self::enLista($filtros['por_completar'] ?? null, self::porCompletar());
         }
+        $out['nombre_con_numeros'] = ($filtros['nombre_con_numeros'] ?? null) === true ? true : null;
         if (self::tieneColumna('origen')) {
             $out['origen'] = self::enLista($filtros['origen'] ?? null, $eventos ? self::ORIGENES : array_diff_key(self::ORIGENES, ['evento' => true]));
         }
@@ -463,6 +467,10 @@ class PersonasFuente implements Fuente
                     $w->orWhere(fn ($x) => MigracionFlags::applyFilters($x, $valor === 'diferencias' ? ['diferencias' => true] : ['por_completar' => $valor]));
                 }
             });
+        }
+        if (isset($f['nombre_con_numeros'])) {
+            // The very same clause as the Votantes filter.
+            NombreFicha::whereConNumeros($q, 'lideres.nombre');
         }
         if (isset($f['origen'])) {
             $q->where(function ($w) use ($f) {
@@ -785,6 +793,9 @@ class PersonasFuente implements Fuente
         }
         if (isset($f['por_completar'])) {
             $partes[] = 'Por completar: '.mb_strtolower($nombres($f['por_completar'], self::porCompletar()));
+        }
+        if (isset($f['nombre_con_numeros'])) {
+            $partes[] = 'Nombre con números';
         }
         if (isset($f['origen'])) {
             $partes[] = $nombres($f['origen'], self::ORIGENES);

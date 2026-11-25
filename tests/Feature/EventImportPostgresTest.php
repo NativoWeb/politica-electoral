@@ -74,7 +74,8 @@ class EventImportPostgresTest extends TestCase
         for ($i = 1; $i <= $count; $i++) {
             $n = $i + $offset;
             $r = $i + 1;
-            $sheet->setCellValueExplicit("A{$r}", "Zzimport{$n}", DataType::TYPE_STRING);
+            // Letters only: a name with digits is refused (App\Rules\NombreSinNumeros).
+            $sheet->setCellValueExplicit("A{$r}", 'Zzimport'.strtr((string) $n, '0123456789', 'abcdefghij'), DataType::TYPE_STRING);
             $sheet->setCellValueExplicit("B{$r}", 'Prueba Ñandú', DataType::TYPE_STRING);
             $sheet->setCellValue("C{$r}", 1190000000 + $n);
             $sheet->setCellValueExplicit("D{$r}", '3'.str_pad((string) $n, 9, '0', STR_PAD_LEFT), DataType::TYPE_STRING);

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Empresarios;
 
+use App\Rules\NombreSinNumeros;
 use App\Rules\OpcionDeCatalogo;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,9 @@ class MiembroRequest extends FormRequest
 
         return [
             'lider_id' => ['nullable', 'uuid'],
-            'nombre' => [$creating ? 'required_without:lider_id' : 'nullable', 'nullable', 'string', 'max:200'],
+            // A person typed by hand gets a ficha: its name follows the ficha's rule. With lider_id the name is not used.
+            'nombre' => [$creating ? 'required_without:lider_id' : 'nullable', 'nullable', 'string', 'max:200',
+                ...($this->filled('lider_id') ? [] : [new NombreSinNumeros])],
             'cedula' => ['nullable', 'string', 'max:20', 'regex:/^[\d.\s]{5,20}$/'],
             'telefono' => ['nullable', 'string', 'max:60'],
             'municipio' => ['nullable', 'string', 'max:120'],

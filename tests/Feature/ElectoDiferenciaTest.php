@@ -136,6 +136,23 @@ class ElectoDiferenciaTest extends TestCase
         $this->assertSame([false], array_values(array_unique(array_column($diferencias, 'usar_electo'))));
     }
 
+    public function test_an_electo_name_with_digits_is_not_offered_nor_accepted(): void
+    {
+        $id = $this->ficha(['nombre' => 'FRANKLIN ORTIZ 3001234567']);
+
+        $diferencias = $this->actingAs($this->user)->getJson("/votantes/{$id}")->json('data.migracion.diferencias');
+        $this->assertSame([['nombre', false]], array_map(fn ($d) => [$d['campo'], $d['usar_electo']], $diferencias));
+
+        $this->resolver($id, 'nombre', 'electo')->assertStatus(422)
+            ->assertJson(['success' => false, 'message' => 'El valor de Electo no es válido para este campo.']);
+        $this->assertSame('FRANKLIN ORTIS', DB::table('lideres')->where('id', $id)->value('nombre'));
+        $this->assertSame(['nombre' => 'FRANKLIN ORTIZ 3001234567'], $this->flags($id)['contradicciones']);
+
+        // «Dejar el de aquí» still resolves it.
+        $this->resolver($id, 'nombre', 'aqui')->assertOk();
+        $this->assertNull($this->flags($id));
+    }
+
     public function test_municipio_and_autorizacion_are_only_kept_here(): void
     {
         $id = $this->ficha(['municipio' => 'Lebrija', 'autoriza_datos' => false], ['autoriza_datos' => true]);

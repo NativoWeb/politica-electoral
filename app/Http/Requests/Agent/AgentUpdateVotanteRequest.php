@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Agent;
 
+use App\Rules\NombreSinNumeros;
 use Illuminate\Contracts\Validation\Validator;
 
 class AgentUpdateVotanteRequest extends AgentFormRequest
@@ -11,7 +12,7 @@ class AgentUpdateVotanteRequest extends AgentFormRequest
     {
         $rules = AgentVotanteRules::editable();
         if ($this->user()?->role?->code !== 'R09_CAMPO') {
-            $rules['nombre'] = ['sometimes', 'string', 'min:3', 'max:150'];
+            $rules['nombre'] = ['sometimes', 'string', 'min:3', 'max:150', new NombreSinNumeros];
         }
 
         return $rules;

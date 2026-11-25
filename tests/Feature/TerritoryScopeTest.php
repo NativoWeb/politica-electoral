@@ -299,11 +299,11 @@ class TerritoryScopeTest extends TestCase
             ->postJson('/votantes', ['nombre' => 'Intruso', 'municipio_id' => $this->munB])
             ->assertForbidden();
         $this->actingAs($this->campo)
-            ->postJson('/mapa-politico/crear-lider', ['nombre' => 'Intruso 2', 'municipio_id' => $this->munB])
+            ->postJson('/mapa-politico/crear-lider', ['nombre' => 'Intruso Dos', 'municipio_id' => $this->munB])
             ->assertForbidden();
 
         $this->assertDatabaseMissing('lideres', ['nombre' => 'Intruso']);
-        $this->assertDatabaseMissing('lideres', ['nombre' => 'Intruso 2']);
+        $this->assertDatabaseMissing('lideres', ['nombre' => 'Intruso Dos']);
     }
 
     public function test_scoped_user_can_view_update_and_create_inside_territory(): void

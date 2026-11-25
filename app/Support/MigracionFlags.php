@@ -206,7 +206,8 @@ class MigracionFlags
         $electo = trim((string) $electo);
 
         return match ($campo) {
-            'nombre' => ($nombre = UpdateVotante::normalizeName($electo)) !== '' && mb_strlen($nombre) <= 255 ? $nombre : null,
+            'nombre' => ($nombre = UpdateVotante::normalizeName($electo)) !== '' && mb_strlen($nombre) <= 255
+                && ! NombreFicha::tieneNumeros($nombre) ? $nombre : null,
             'fecha_nacimiento', 'fecha_expedicion_doc' => self::fecha($electo),
             'tipo_documento', 'genero', 'estado_civil' => self::opcion($campo, $electo),
             'telefono' => Normalizer::phone($electo),

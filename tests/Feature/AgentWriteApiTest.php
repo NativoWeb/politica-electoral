@@ -817,6 +817,21 @@ class AgentWriteApiTest extends TestCase
         $this->assertSame(0, DB::table('audit_logs')->count());
     }
 
+    public function test_the_agent_refuses_digits_in_the_name_on_create_and_rename(): void
+    {
+        $mensaje = 'El nombre no puede tener números: si es la cédula o el teléfono, escríbelo en su campo.';
+        $r02 = $this->linkedUser('R02_ADMIN_FUNCIONAL', '+573004440000', [$this->munA], ['view.votantes', 'write.data']);
+        $token = $this->tokenFor($r02);
+
+        $this->agent('POST', '/api/agent/v1/votantes', ['nombre' => 'Carla Mena 3001234567', 'municipio_id' => $this->munA], $token)
+            ->assertStatus(422)->assertJsonPath('errors.nombre.0', $mensaje);
+        $this->agent('PATCH', "/api/agent/v1/votantes/{$this->liderA}", ['nombre' => '1098765432 Ana'], $token)
+            ->assertStatus(422)->assertJsonPath('errors.nombre.0', $mensaje);
+
+        $this->assertDatabaseMissing('lideres', ['nombre' => 'Carla Mena 3001234567']);
+        $this->assertDatabaseHas('lideres', ['id' => $this->liderA, 'nombre' => 'Ana Territorio A']);
+    }
+
     private function candidateNamed(string $nombre, string $geoId): string
     {
         $personId = (string) Str::uuid();

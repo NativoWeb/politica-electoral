@@ -67,7 +67,7 @@ class VotanteRenamePostgresTest extends TestCase
             ->assertOk()
             ->assertJsonPath('cedula', $cedula);
 
-        $nuevo = 'Zzq Renombrado '.Str::upper(Str::random(6));
+        $nuevo = 'Zzq Renombrado '.Str::upper(Str::password(6, numbers: false, symbols: false));
         $token = $user->createToken(AgentIdentityService::TOKEN_NAME, ['agent'], now()->addMinutes(15))->plainTextToken;
         $uri = "/api/agent/v1/votantes/{$liderId}";
         $raw = json_encode(['nombre' => $nuevo]);

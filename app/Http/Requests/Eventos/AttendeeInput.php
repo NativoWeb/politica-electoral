@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Eventos;
 
+use App\Rules\NombreSinNumeros;
 use App\Services\Configuracion\Ajuste;
 use App\Support\Cedula;
 use Illuminate\Support\Str;
@@ -73,8 +74,8 @@ class AttendeeInput
     {
         return [
             'client_uuid' => ['required', 'uuid'],
-            'nombres' => ['required', 'string', 'max:100'],
-            'apellidos' => ['required', 'string', 'max:100'],
+            'nombres' => ['required', 'string', 'max:100', new NombreSinNumeros],
+            'apellidos' => ['required', 'string', 'max:100', new NombreSinNumeros],
             'cedula' => ['required', 'string', 'regex:/^\d{5,12}$/'],
             'celular' => ['required', 'string', 'regex:/^3\d{9}$/'],
             'barrio' => ['required', 'string', 'max:120'],
