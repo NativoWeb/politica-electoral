@@ -129,9 +129,13 @@ class CampanasTableroPostgresTest extends TestCase
         config(['cache.default' => 'database']);
         $cd = (string) DB::table('political_organizations')->where('canonical_name', 'Centro Democrático')->value('id');
         $comunas = DB::table('geographic_units')->where('type', 'comuna')->where('parent_id', $this->bucaramanga)->pluck('id')->all();
-        // 122.000 fichas over every municipio and 430 days, 5 % leaders; a third of Bucaramanga's with a comuna.
-        DB::statement("INSERT INTO lideres (id, nombre, municipio, tipo, campaign_id, geographic_unit_id, comuna_id, is_active, fallecido, es_lider, created_at, updated_at)
-            SELECT uuid_generate_v4(), 'PERF TABLERO '||g, '', 'votante', ?, (?::uuid[])[1 + (g % ?)], NULL, true, false, g % 20 = 0,
+        // 122.000 fichas over every municipio and 430 days, 6 % leaders (by cargo, tipo or the box, App\Support\EsLider)
+        // among cargos that look alike; a third of Bucaramanga's with a comuna.
+        DB::statement("INSERT INTO lideres (id, nombre, municipio, cargo, tipo, campaign_id, geographic_unit_id, comuna_id, is_active, fallecido, es_lider, created_at, updated_at)
+            SELECT uuid_generate_v4(), 'PERF TABLERO '||g, '',
+                   CASE WHEN g % 20 = 0 THEN (ARRAY['Líder', 'LIDER COLONIAL', 'Lider', 'Líder, Candidato Alcaldía 2027', NULL])[1 + (g / 20) % 5]
+                        ELSE (ARRAY['Directorio Municipal', 'Liderazgo juvenil', NULL, 'Concejal'])[1 + g % 4] END,
+                   CASE WHEN g % 100 = 1 THEN 'nuevo_lider' ELSE 'votante' END, ?, (?::uuid[])[1 + (g % ?)], NULL, true, false, g % 100 = 80,
                    timestamp '2025-09-18 12:00:00' + (g % 430) * interval '1 day', now()
             FROM generate_series(1, 122000) AS g", [Campaign::DEFAULT_ID, '{'.implode(',', $this->municipios).'}', count($this->municipios)]);
         DB::statement("UPDATE lideres SET comuna_id = (?::uuid[])[1 + (abs(hashtext(id::text)) % ?)] WHERE nombre LIKE 'PERF TABLERO %' AND geographic_unit_id = ? AND abs(hashtext(id::text)) % 3 = 0",
@@ -158,6 +162,7 @@ class CampanasTableroPostgresTest extends TestCase
         $this->assertLessThan(200, $conMs, "Con caché: {$conMs} ms");
         $this->assertSame($sin['totales'], $con['totales']);
         $this->assertGreaterThanOrEqual(122000, $sin['totales']['votantes']['registrados']);
+        $this->assertGreaterThanOrEqual(6100 + 1220, $sin['totales']['lideres']['registrados']);
         $this->assertSame(40, $sin['totales']['territorios']['con_meta']);
         $this->assertSame('municipios', $sin['mapa']['capa']);
         $semanas = array_sum(array_filter(array_column($sin['evolucion']['semanas'], 'nuevos')));

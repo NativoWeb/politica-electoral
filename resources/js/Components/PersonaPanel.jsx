@@ -1531,6 +1531,7 @@ export default function PersonaPanel({ personId, onClose, onSaved, cargosPorTipo
                                         checked={editMode ? (form.es_lider ?? !!data.es_lider) : !!data.es_lider}
                                         disabled={!editMode}
                                         onChange={value => set('es_lider', value)}
+                                        porCargo={!!data.es_lider_por_cargo}
                                     />
                                 )}
                             </div>

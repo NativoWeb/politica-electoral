@@ -621,7 +621,7 @@ export function textoFueraDeMeta(t) {
 export const TEXTO_INSUFICIENTE = 'Pocas fichas con comuna';
 
 const AVISOS_POR_DEFECTO = {
-    sin_lideres: 'Aún no hay fichas marcadas como líder. Márcalas con la casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.',
+    sin_lideres: 'Aún no hay fichas con cargo Líder en este territorio. Escribe «Líder» en el cargo de la ficha o marca la casilla "Es líder". Mientras tanto, el índice llega como máximo a 60.',
     archivada: 'Campaña archivada: el tablero muestra los datos de hoy.',
 };
 

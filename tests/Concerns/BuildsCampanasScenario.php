@@ -193,8 +193,9 @@ trait BuildsCampanasScenario
         ]);
     }
 
+    // A plain votante: without the cargo «Líder» of lider(), so it counts as a leader only when the test says so.
     protected function ficha(string $campaignId, string $geo, array $extra = []): string
     {
-        return $this->lider($campaignId, 'Ficha '.Str::random(6), null, $extra + ['geographic_unit_id' => $geo, 'is_active' => true]);
+        return $this->lider($campaignId, 'Ficha '.Str::random(6), null, $extra + ['geographic_unit_id' => $geo, 'is_active' => true, 'cargo' => null]);
     }
 }

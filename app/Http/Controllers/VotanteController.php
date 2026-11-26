@@ -134,7 +134,7 @@ class VotanteController extends Controller
         }
 
         if ($cardFilters && EsLider::activo($request->user()) && filter_var($request->input('es_lider'), FILTER_VALIDATE_BOOLEAN)) {
-            $query->where('lideres.es_lider', true);
+            EsLider::where($query);
         }
 
         if (filter_var($request->input('nombre_con_numeros'), FILTER_VALIDATE_BOOLEAN)) {
@@ -176,7 +176,7 @@ class VotanteController extends Controller
                 'total' => $total,
                 'gran_elector' => $granElectorCount,
                 'con_referidos' => $conReferidos,
-            ] + ($esLider ? ['es_lider' => (clone $counterBase)->where('lideres.es_lider', true)->count()] : []),
+            ] + ($esLider ? ['es_lider' => EsLider::where(clone $counterBase)->count()] : []),
             'municipios' => $municipios,
             'comunasPorMunicipio' => $comunasPorMunicipio,
             'filters' => array_merge(
@@ -266,7 +266,8 @@ class VotanteController extends Controller
             return response()->json(['success' => false, 'message' => 'No encontrado.'], 404);
         }
         $this->authorizeLiderRow($lider);
-        if (! EsLider::activo()) {
+        $esLider = EsLider::activo();
+        if (! $esLider) {
             $lider->makeHidden('es_lider');
         }
 
@@ -307,7 +308,7 @@ class VotanteController extends Controller
                 'nexos' => $nexos,
                 'referidos' => $referidos,
                 'referidos_count' => $referidosCount,
-            ], app(ComunaCatalog::class)->fichaPayload($lider->geographic_unit_id, $lider->comuna_id, $lider->comuna_source)),
+            ], $esLider ? [EsLider::CAMPO_POR_CARGO => ! $lider->fallecido && EsLider::porCargo($lider->tipo, $lider->cargo)] : [], app(ComunaCatalog::class)->fichaPayload($lider->geographic_unit_id, $lider->comuna_id, $lider->comuna_source)),
         ]);
     }
 

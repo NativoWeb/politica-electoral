@@ -17,7 +17,7 @@ class TableroCampana
 {
     public const FORMULA = 'El índice va de 0 a 100: el 60 % sale del avance en votantes registrados y el 40 % del avance en líderes. Pasar la meta no suma más.';
 
-    public const SIN_LIDERES = 'Aún no hay fichas marcadas como líder. Márcalas con la casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.';
+    public const SIN_LIDERES = 'Aún no hay fichas con cargo Líder en este territorio. Escribe «Líder» en el cargo de la ficha o marca la casilla "Es líder". Mientras tanto, el índice llega como máximo a 60.';
 
     public const ARCHIVADA = 'Campaña archivada: el tablero muestra los datos de hoy.';
 
@@ -95,7 +95,7 @@ class TableroCampana
             sort($allowed);
         }
 
-        return "campanas:tablero:v1:{$c->id}:{$huella}:".sha1($allowed === null ? 'todos' : implode('|', $allowed));
+        return "campanas:tablero:v2:{$c->id}:{$huella}:".sha1($allowed === null ? 'todos' : implode('|', $allowed));
     }
 
     private function ttl(): int

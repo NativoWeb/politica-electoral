@@ -216,11 +216,11 @@ export default function Votantes({ votantes, counters, municipios, comunasPorMun
                     {campanasActivas && (
                         <KpiCard
                             icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7l7-4z" /></svg>}
-                            label="Marcados como líder"
+                            label="Líderes"
                             value={counters.es_lider ?? 0}
                             pressed={esLiderOn}
                             onClick={() => applyCard({ es_lider: esLiderOn ? null : '1' })}
-                            hint={esLiderOn ? 'Quitar el filtro Marcados como líder' : 'Ver solo los marcados como líder'}
+                            hint={esLiderOn ? 'Quitar el filtro Líderes' : 'Ver solo los líderes (cargo Líder o casilla Es líder)'}
                         />
                     )}
                 </div>

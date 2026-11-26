@@ -421,7 +421,12 @@ class PersonasFuente implements Fuente
         if (isset($f['marcas'])) {
             $q->where(function ($w) use ($f) {
                 foreach ($f['marcas'] as $marca) {
-                    $w->orWhere("lideres.{$marca}", true);
+                    if ($marca === EsLider::CAMPO) {
+                        [$sql, $bindings] = EsLider::sql();
+                        $w->orWhereRaw($sql, $bindings);
+                    } else {
+                        $w->orWhere("lideres.{$marca}", true);
+                    }
                 }
             });
         }
@@ -611,7 +616,7 @@ class PersonasFuente implements Fuente
             'puesto_votacion' => ['puesto_votacion'], 'mesa_votacion' => ['mesa_votacion'], 'municipio_votacion' => ['municipio_votacion'],
             'genero' => ['genero'], 'edad' => ['fecha_nacimiento'], 'fecha_nacimiento' => ['fecha_nacimiento'], 'profesion' => ['profesion'],
             'escolaridad' => ['escolaridad'], 'estado_civil' => ['estado_civil'], 'tipo' => ['tipo'], 'cargo' => ['cargo'],
-            'partido' => ['partido'], 'nivel_confianza' => ['nivel_confianza'], 'marcas' => array_keys(self::marcasDisponibles()), 'votos' => ['votos'],
+            'partido' => ['partido'], 'nivel_confianza' => ['nivel_confianza'], 'marcas' => array_keys(self::MARCAS), 'votos' => ['votos'],
             'referente' => ['referente_nombre', 'referente_apellido', 'referente_documento'], 'referente_documento' => ['referente_documento'],
             'autoriza_datos' => ['autoriza_datos'], 'origen' => ['origen', 'tipo'], 'por_completar' => ['migracion_flags'],
             'comuna_origen' => ['comuna_source'],
@@ -625,6 +630,11 @@ class PersonasFuente implements Fuente
             }
         }
         $q->select(array_values(array_unique($select)));
+        // «Es líder» in Marcas is the rule (cargo, tipo or the box), not the box alone.
+        if (isset($cols['marcas']) && isset(self::marcasDisponibles()[EsLider::CAMPO])) {
+            [$sql, $bindings] = EsLider::sql();
+            $q->selectRaw("CASE WHEN {$sql} THEN 1 ELSE 0 END AS ".EsLider::CAMPO, $bindings);
+        }
 
         // Municipio and provincia from the ficha's geographic unit («Giron» and «Girón» typed by hand are one municipio);
         // the stored text only when the ficha has no unit.
@@ -1106,7 +1116,7 @@ class PersonasFuente implements Fuente
         return $tipo === null ? null : (self::TIPOS[$tipo] ?? Str::ucfirst(str_replace('_', ' ', $tipo)));
     }
 
-    // The marks of the catalog: "Marcados como líder" only while Campañas electorales is on for the user.
+    // The marks of the catalog: "Líderes" (App\Support\EsLider) only while Campañas electorales is on for the user.
     private static function marcasDisponibles(): array
     {
         return EsLider::activo() && self::tieneColumna(EsLider::CAMPO)

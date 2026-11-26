@@ -83,6 +83,21 @@ describe('«Es líder» in the Mapa ficha (PersonaPanel)', () => {
         expect(puts()[0].es_lider).toBe(true);
     });
 
+    it('a ficha that counts by its cargo shows the box ticked and locked, and saving sends no es_lider', async () => {
+        mockFetch(persona({ es_lider: false, es_lider_por_cargo: true }));
+        render(<PersonaPanel personId="l1" onClose={vi.fn()} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+        fireEvent.click(screen.getByRole('button', { name: /Opciones/i }));
+        const casilla = screen.getByLabelText(/Es líder \(cuenta para las metas\)/);
+        expect(casilla).toBeChecked();
+        expect(casilla).toBeDisabled();
+        expect(screen.getByText('Cuenta como líder por su cargo')).toBeInTheDocument();
+        fireEvent.click(casilla);
+        fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+        await waitFor(() => expect(puts()).toHaveLength(1));
+        expect(puts()[0]).not.toHaveProperty('es_lider');
+    });
+
     it('outside edit mode the box only shows the value', async () => {
         mockFetch(persona({ es_lider: true }));
         render(<PersonaPanel personId="l1" onClose={vi.fn()} />);
@@ -127,6 +142,23 @@ describe('«Es líder» in the Votantes ficha (VotanteDetail)', () => {
         expect(JSON.parse(apiFetch.mock.calls[1][1].body).es_lider).toBe(false);
     });
 
+    it('counts by its cargo: ticked, locked, with the reason; otherwise the box works as before', () => {
+        renderDetail(votante({ es_lider: false, es_lider_por_cargo: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        abrirOpciones();
+        const casilla = screen.getByLabelText(/Es líder \(cuenta para las metas\)/);
+        expect(casilla).toBeChecked();
+        expect(casilla).toBeDisabled();
+        expect(screen.getByText('Cuenta como líder por su cargo')).toBeInTheDocument();
+        cleanup();
+
+        renderDetail(votante({ es_lider: false, es_lider_por_cargo: false }));
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+        abrirOpciones();
+        expect(screen.getByLabelText(ETIQUETA)).not.toBeDisabled();
+        expect(screen.queryByText('Cuenta como líder por su cargo')).not.toBeInTheDocument();
+    });
+
     it('creating a votante with the module on offers the box', () => {
         renderDetail(null, { creating: true, campanasActivas: true });
         abrirOpciones();
@@ -134,7 +166,7 @@ describe('«Es líder» in the Votantes ficha (VotanteDetail)', () => {
     });
 });
 
-describe('«Marcados como líder» filter (VotanteFilters)', () => {
+describe('«Líderes» filter (VotanteFilters)', () => {
     function renderFilters(props) {
         const onApply = vi.fn();
         render(<VotanteFilters filters={{}} municipios={[]} onApply={onApply} onClear={vi.fn()} {...props} />);
@@ -144,13 +176,13 @@ describe('«Marcados como líder» filter (VotanteFilters)', () => {
 
     it('only with the module on, and it filters with es_lider=1', () => {
         const onApply = renderFilters({ campanasActivas: true });
-        fireEvent.click(screen.getByLabelText('Marcados como líder'));
+        fireEvent.click(screen.getByLabelText('Líderes'));
         fireEvent.click(screen.getByRole('button', { name: /^Aplicar/ }));
         expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ es_lider: '1' }));
     });
 
     it('module off: no filter', () => {
         renderFilters({ campanasActivas: false });
-        expect(screen.queryByLabelText('Marcados como líder')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Líderes')).not.toBeInTheDocument();
     });
 });

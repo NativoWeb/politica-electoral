@@ -78,7 +78,7 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
     // The KPI cards change these two from outside the bar: the checkboxes follow the URL.
     useEffect(() => { setGranElector(isOn(filters.gran_elector)); }, [filters.gran_elector]);
     useEffect(() => { setConReferidos(isOn(filters.con_referidos)); }, [filters.con_referidos]);
-    // «Marcados como líder» (Campañas electorales module): also a KPI card.
+    // «Líderes» (Campañas electorales module, App\Support\EsLider): also a KPI card.
     const [esLider, setEsLider] = useState(isOn(filters.es_lider));
     useEffect(() => { setEsLider(isOn(filters.es_lider)); }, [filters.es_lider]);
     const [militante, setMilitante] = useState(isOn(filters.militante));
@@ -379,7 +379,7 @@ export default function VotanteFilters({ filters, municipios, comunasPorMunicipi
                     {campanasActivas && (
                         <label className={checkLabelCls}>
                             <input type="checkbox" checked={esLider} onChange={e => setEsLider(e.target.checked)} className={checkCls} />
-                            <span className={checkTextCls}>Marcados como líder</span>
+                            <span className={checkTextCls}>Líderes</span>
                         </label>
                     )}
                     <label className={checkLabelCls}>

@@ -765,6 +765,7 @@ export default function VotanteDetail({
                             checked={form.es_lider ?? !!data?.es_lider}
                             disabled={!editing}
                             onChange={value => setField('es_lider', value)}
+                            porCargo={!creating && !!data?.es_lider_por_cargo}
                         />
                     )}
                 </Accordion>

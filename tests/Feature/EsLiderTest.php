@@ -152,10 +152,10 @@ class EsLiderTest extends TestCase
             return $opciones;
         };
 
-        $this->assertSame('Marcados como líder', $marcas()['es_lider'] ?? null);
+        $this->assertSame('Líderes', $marcas()['es_lider'] ?? null);
         $this->actingAs($user)->postJson('/reportes/personas/conteo', ['spec' => $spec])->assertOk()->assertExactJson(['success' => true, 'total' => 1]);
         $filas = $this->actingAs($user)->postJson('/reportes/personas/lista', ['spec' => $spec, 'pagina' => 1])->assertOk()->json('filas');
-        $this->assertSame('Es líder', $filas[0]['celdas']['marcas'] ?? null, 'One person reads "Es líder", the filter "Marcados como líder"');
+        $this->assertSame('Es líder', $filas[0]['celdas']['marcas'] ?? null, 'One person reads "Es líder", the filter "Líderes"');
 
         $this->flag(false);
         $this->assertArrayNotHasKey('es_lider', $marcas());

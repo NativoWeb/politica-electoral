@@ -95,7 +95,7 @@ export function tableroData(over = {}) {
         },
         avisos: [
             { tipo: 'sin_metas', texto: '3 de 5 territorios no tienen meta: aparecen en gris.' },
-            { tipo: 'sin_lideres', texto: 'Aún no hay fichas marcadas como líder. Márcalas con la casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.' },
+            { tipo: 'sin_lideres', texto: 'Aún no hay fichas con cargo Líder en este territorio. Escribe «Líder» en el cargo de la ficha o marca la casilla "Es líder". Mientras tanto, el índice llega como máximo a 60.' },
             { tipo: 'cobertura_comuna', texto: 'Solo 50 de 100 fichas de Bucaramanga (50 %) tienen comuna: las comunas se ven rayadas hasta que haya más datos.' },
         ],
         mapa: { capa: 'municipios', con_comunas: [{ id: IDS.bga, codigo: '68001', nombre: 'Bucaramanga' }], sin_poligono: ['Bogota'], texto: null },

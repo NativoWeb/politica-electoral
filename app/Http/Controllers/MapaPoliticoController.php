@@ -1312,6 +1312,7 @@ class MapaPoliticoController extends Controller
             $response['gran_elector'] = $liderModel->gran_elector;
             if (EsLider::activo()) {
                 $response['es_lider'] = (bool) $liderModel->es_lider;
+                $response[EsLider::CAMPO_POR_CARGO] = ! $liderModel->fallecido && EsLider::porCargo($liderModel->tipo, $liderModel->cargo);
             }
             $response['nivel_confianza'] = $liderModel->nivel_confianza;
             $response['convenio'] = $liderModel->convenio;

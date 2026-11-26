@@ -14,7 +14,7 @@ ni se guarda.
 | `electoral_campaigns` | Una campaña por grupo dueño (`campaign_id`, lo pone el servidor). Cargo, año, candidato (ficha electoral o texto), partido, alcance (`department`, `municipality`, `comuna`), factores de sugerencia y estado `active`/`archived`. Nombre único (sin mayúsculas) entre las activas del grupo. No se borran. |
 | `electoral_campaign_territories` | Las unidades del alcance: el departamento, los municipios o la comuna/corregimiento. |
 | `electoral_campaign_goals` | Meta por unidad (municipio, comuna o corregimiento): `votos_meta`, `lideres_meta`, `votantes_meta` (enteros ≥ 0 o null). Un municipio lleva meta propia **o** metas en sus comunas, nunca ambas. |
-| `lideres.es_lider` | Casilla manual «Es líder (cuenta para las metas)». Nadie se marca solo. Independiente del tipo `directorio` y del cargo «Líder». |
+| `lideres.es_lider` | Casilla manual «Es líder (cuenta para las metas)», para quien no tiene el cargo «Líder». Quién cuenta como líder: ver «Quién cuenta como líder». |
 
 Reversa: `php artisan migrate:rollback --step=2` (quita las tres tablas y la columna `es_lider` con sus índices).
 
@@ -67,8 +67,31 @@ Factores por campaña (por defecto y límites en `config/campanas_electorales.ph
 ## Avance
 
 Solo fichas del grupo dueño (sin subgrupos), activas y no fallecidas: **votantes** = fichas en el territorio
-(municipio por `geographic_unit_id`, comuna por `comuna_id`); **líderes** = las mismas con `es_lider`. En un municipio
-con comunas se añade «Sin comuna asignada: N fichas».
+(municipio por `geographic_unit_id`, comuna por `comuna_id`); **líderes** = las mismas que cuentan como líder (abajo).
+En un municipio con comunas se añade «Sin comuna asignada: N fichas».
+
+### Quién cuenta como líder (decisión de Marly, 2026-11-26)
+
+En producción nadie tenía la casilla `es_lider` marcada, pero las fichas ya decían en el cargo que eran líderes. Cuenta
+como líder una ficha **no fallecida** que cumpla una de estas:
+
+1. Su `cargo` tiene la palabra **«líder»**, con o sin tilde y en cualquier mayúscula, como palabra suelta (antes y
+   después: inicio o fin del texto, espacio, coma, punto, punto y coma, dos puntos, guion, barra, paréntesis o
+   comillas). Cuentan «Líder», «LIDER», «Lider», «LIDER COLONIAL», «Líder, Candidato Directorio 2027, Directorio
+   Municipal», «Coordinador/Líder». **No** cuentan «Directorio Municipal», «Concejal», «Juventudes», «Liderazgo
+   juvenil», «Lideresa», «Líderes comunitarios» ni «COLIDER» (otra palabra, aunque la contenga).
+2. Su `tipo` es `lider` o `nuevo_lider` (el tipo `directorio` no basta: cuenta si su cargo dice «Líder»).
+3. La casilla `es_lider` está marcada (queda para marcar a alguien sin ese cargo).
+
+Una sola definición: `App\Support\EsLider::sql()` (expresión SQL con bindings, igual en PostgreSQL y SQLite: reemplaza
+«Í»/«í» por «i» antes de `lower()`, porque el `lower()` de SQLite no baja letras con tilde) y `EsLider::de()` /
+`EsLider::porCargo()` para una ficha en PHP. La usan el avance (F4), el tablero y sus exportes (F5), la tarjeta y el
+filtro «Líderes» de Votantes (`?es_lider=1`, también su exporte) y la marca «Líderes» / «Es líder» de Reportes. Activa
+o no la decide cada pantalla (el tablero y Reportes por defecto solo activas; Votantes según su filtro de estado).
+
+En la ficha (Votantes y Mapa Político) el servidor manda además `es_lider_por_cargo` (solo con el módulo encendido):
+si es true, la casilla se ve marcada y bloqueada con «Cuenta como líder por su cargo», y no se guarda `es_lider` por
+eso. Si se quita «Líder» del cargo, la ficha deja de contar salvo que tenga la casilla.
 
 ## Rutas
 
@@ -281,11 +304,12 @@ Acciones: `electoral_campaign.created`, `.updated`, `.archived`, `.reactivated`,
 - `GET /votantes/{id}` y `GET /mapa-politico/persona/{id}` devuelven `es_lider` solo con el módulo encendido.
 - Prop compartida `features.esLider` (todas las páginas): true si el módulo está encendido para el usuario, sin exigir
   permiso de campañas; los formularios de fichas (CrearLiderModal, PersonaPanel, Votantes) muestran la casilla con ella.
-- Filtro de Votantes: `?es_lider=1`, una tarjeta más como «Gran elector» (prop `filters.es_lider`; contador
+- `GET /votantes/{id}` y `GET /mapa-politico/persona/{id}` devuelven también `es_lider_por_cargo` (cargo o tipo).
+- Filtro de Votantes: `?es_lider=1`, una tarjeta «Líderes» como «Gran elector» (cuenta con `EsLider`; prop `filters.es_lider`; contador
   `counters.es_lider` sobre la misma base que las otras tarjetas, sin contar el filtro de tarjeta). La prop
   `campanasActivas` (boolean) dice si mostrar la casilla, la tarjeta y el filtro; con el módulo apagado no llega
   `counters.es_lider` ni `es_lider` en las filas.
-- Reportes (Personas): filtro «Marcados como líder»; en la columna Marcas de cada persona, «Es líder».
+- Reportes (Personas): filtro «Líderes» (en Marcas); en la columna Marcas de cada persona, «Es líder». Ambos con `EsLider`.
 - Unificar fichas: si cualquiera de las dos es líder, la que queda es líder.
 
 
@@ -300,7 +324,7 @@ clave `tablero` (no en el Centro de configuración).
 | # | Decisión | Por qué |
 |---|----------|---------|
 | F5-1 | El tablero se calcula al vuelo (sin tablas nuevas) con caché de 5 min. | 122.848 fichas: la consulta agrupada tarda ~190 ms; no hace falta materializar. |
-| F5-2 | Clave de caché `campanas:tablero:v1:{id}:{huella}:{sha1(municipios permitidos o "todos")}`. La huella es sha1 de `updated_at`, estado, fecha, factores y alcance de la campaña **más el contenido de sus metas** (unidad y los tres valores). | Con solo `max(updated_at)`, borrar una meta o dos cambios en el mismo segundo reusarían cifras viejas; leer las metas es una consulta de pocas filas. El acceso (`ElectoralCampaignAccess::find`) se valida **antes** de leer la caché, y lo que depende de quién mira (`campana`, `soloLectura`, `can`) se arma fuera de ella. Las fichas nuevas aparecen a los 5 min o con `?actualizar=1`. |
+| F5-2 | Clave de caché `campanas:tablero:v2:{id}:{huella}:{sha1(municipios permitidos o "todos")}`. La huella es sha1 de `updated_at`, estado, fecha, factores y alcance de la campaña **más el contenido de sus metas** (unidad y los tres valores). | Con solo `max(updated_at)`, borrar una meta o dos cambios en el mismo segundo reusarían cifras viejas; leer las metas es una consulta de pocas filas. El acceso (`ElectoralCampaignAccess::find`) se valida **antes** de leer la caché, y lo que depende de quién mira (`campana`, `soloLectura`, `can`) se arma fuera de ella. Las fichas nuevas aparecen a los 5 min o con `?actualizar=1`. `v2` desde 2026-11-26: cambió quién cuenta como líder y las cifras guardadas con `v1` no se reusan. |
 | F5-3 | Nunca se usan las sugerencias: la meta es la escrita o la calculada desde la meta de votos. Ninguna respuesta del tablero trae la clave `sugerencia`. | El tablero mide contra lo que la campaña se propuso. |
 | F5-4 | k = 5: las cifras de 1 a 4 salen `null` («menos de 5») en el desglose por origen de una comuna, en **todas** las semanas (de la campaña y de un territorio, también `antes`) y en esas celdas de los archivos. Los registrados y líderes contra la meta por territorio son exactos. | No señalar a pocas personas; los totales contra la meta son el dato de trabajo. La evolución de la campaña también lleva k para que el Excel sea igual al JSON, y porque una JAL es un solo territorio. |
 | F5-5 | Totales: `registrados` cuenta todas las fichas de los territorios visibles; `pct` e `indice` del total se calculan solo con los territorios que tienen esa meta (`registrados_con_meta`), con totales (no promedio). `falta` es la **suma de lo que falta en cada territorio** (un territorio que pasó su meta no cubre a otro), y el ritmo usa esa suma (QA 2026-11-25, BUG-08). | Si no, las fichas de los territorios sin meta inflarían el avance (122.000 fichas contra 1.000 de meta), y los excedentes taparían lo que falta («Faltan 36» cuando por territorio faltan 68). |
@@ -432,8 +456,9 @@ descarga…» (dos a la vez, `motivo: en_curso`). Son GET para que funcionen en 
   - `archivada`: «Campaña archivada: el tablero muestra los datos de hoy.»
   - `territorio_usuario`: «Ves solo tus municipios: Girón, Lebrija.»
   - `sin_metas` (unos territorios con meta y otros sin): «75 de 87 territorios no tienen meta: aparecen en gris.»
-  - `sin_lideres` (ninguna ficha del universo es líder): «Aún no hay fichas marcadas como líder. Márcalas con la
-    casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.»
+  - `sin_lideres` (ninguna ficha del universo cuenta como líder): «Aún no hay fichas con cargo Líder en este
+    territorio. Escribe «Líder» en el cargo de la ficha o marca la casilla "Es líder". Mientras tanto, el índice llega
+    como máximo a 60.»
   - `cobertura_comuna` (uno por municipio bajo el 30 % con comunas visibles): «Solo 1.948 de 37.055 fichas de
     Bucaramanga (5 %) tienen comuna: las comunas se ven rayadas hasta que haya más datos.»
   - Sin ninguna meta (`totales.territorios.con_meta = 0`) no hay aviso: la pantalla muestra el estado vacío «Esta
