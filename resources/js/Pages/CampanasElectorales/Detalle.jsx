@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/Layouts/AppLayout';
-import { AvisoError, Boton, Dialogo, Girando, IconoAlerta } from '@/Components/Reportes/ui';
-import { Estado, FranjaSoloLectura, IconoReloj, LinkBoton } from '@/Components/CampanasElectorales/ui';
+import {
+    AvisoError, Boton, Dialogo, Estado, FranjaSoloLectura, Girando, IconoAlerta, IconoReloj, LinkBoton, tarjetaCls, tituloPaginaCls, tituloSeccionCls,
+} from '@/Components/CampanasElectorales/ui';
 import FilaMeta, { COLUMNAS, FuentePuestos } from '@/Components/CampanasElectorales/FilaMeta';
 import { usaPuestos } from '@/lib/comunas';
 import ExcelMetas from '@/Components/CampanasElectorales/ExcelMetas';
@@ -220,23 +221,23 @@ export default function CampanaDetalle(props) {
     return (
         <AppLayout title={campana.nombre || 'Campaña electoral'}>
             <Head title={campana.nombre || 'Campaña electoral'} />
-            <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-6 lg:pt-8 pb-16 text-lg text-ink">
-                <LinkBoton variante="secundario" href={BASE} className="min-h-12 px-4 text-base border-transparent">← Campañas electorales</LinkBoton>
+            <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-4 lg:pt-6 pb-10 text-[15px] text-ink">
+                <LinkBoton variante="secundario" href={BASE} className="-ml-2 px-2 text-[13px] border-transparent">← Campañas electorales</LinkBoton>
 
-                <header className="mt-4 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+                <header className="mt-2 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
                     <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-3">
-                            <h1 className="font-heading text-4xl font-bold text-primary text-balance break-words">{campana.nombre}</h1>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className={tituloPaginaCls}>{campana.nombre}</h1>
                             <Estado archivada={campana.archivada} />
                         </div>
-                        <p className="mt-2 text-lg text-ink">
+                        <p className="mt-1 text-sm text-ink">
                             {campana.cargoEtiqueta} {campana.anio}{quien ? <span className="text-ink-soft"> — {quien}</span> : null}
                         </p>
-                        <p className="text-base text-ink-soft">
+                        <p className="text-[13px] text-ink-soft">
                             {[campana.territorioResumen, campana.grupoNombre && `Grupo político: ${campana.grupoNombre}`].filter(Boolean).join(' · ')}
                         </p>
                     </div>
-                    <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex flex-col sm:flex-row gap-2">
                         <LinkBoton href={urlTablero(id)}>Ver tablero</LinkBoton>
                         {can.editar && <LinkBoton variante="secundario" href={`${BASE}/${id}/editar`}>Editar</LinkBoton>}
                         {puedeArchivar && <Boton variante="secundario" onClick={() => setConfirmar('archivar')}>Archivar</Boton>}
@@ -244,11 +245,11 @@ export default function CampanaDetalle(props) {
                     </div>
                 </header>
 
-                <div className="mt-6 space-y-4">
+                <div className="mt-4 space-y-3">
                     {soloLectura && <FranjaSoloLectura>{detalle.motivoSoloLectura || motivoPorDefecto(campana)}</FranjaSoloLectura>}
                     {(soloLectura || filas.length === 0) && aviso?.tipo === 'error' && <AvisoError>{aviso.texto}</AvisoError>}
-                    {detalle.avisoSugerencias && <p role="note" className="p-4 rounded-md border-2 border-line-strong bg-panel text-lg">{detalle.avisoSugerencias}</p>}
-                    <div className="flex flex-col lg:flex-row lg:items-start gap-3">
+                    {detalle.avisoSugerencias && <p role="note" className="p-3 rounded-md border border-line-strong bg-panel text-sm">{detalle.avisoSugerencias}</p>}
+                    <div className="flex flex-col lg:flex-row lg:items-start gap-2">
                         <div className="flex-1">
                             <ExcelMetas
                                 campanaId={id}
@@ -263,18 +264,18 @@ export default function CampanaDetalle(props) {
                     </div>
                 </div>
 
-                <section aria-labelledby="titulo-metas" className="mt-8">
-                    <h2 id="titulo-metas" className="font-heading text-2xl font-bold text-ink">Metas por territorio</h2>
+                <section aria-labelledby="titulo-metas" className="mt-5">
+                    <h2 id="titulo-metas" className={tituloSeccionCls}>Metas por territorio</h2>
                     {filas.length === 0 ? (
-                        <p className="mt-4 p-6 rounded-lg bg-panel border-2 border-line">No hay territorios para mostrar en esta campaña.</p>
+                        <p className={`mt-3 p-5 text-sm ${tarjetaCls}`}>No hay territorios para mostrar en esta campaña.</p>
                     ) : (
-                        <div className="mt-4 lg:bg-panel lg:border-2 lg:border-line lg:rounded-lg">
-                            <div aria-hidden="true" className={`hidden ${COLUMNAS} px-4 py-3 border-b-2 border-line text-base font-semibold text-ink-soft`}>
+                        <div className="mt-3 lg:bg-panel lg:border lg:border-line lg:rounded-lg">
+                            <div aria-hidden="true" className={`hidden ${COLUMNAS} px-4 py-2 border-b border-line text-xs font-bold uppercase tracking-wider text-ink-soft`}>
                                 <span>Territorio</span>
                                 {CAMPOS_META.map(c => <span key={c.clave}>{c.etiqueta}</span>)}
                                 <span>Avance</span>
                             </div>
-                            <ul className="space-y-4 lg:space-y-0" aria-label="Territorios">
+                            <ul className="space-y-3 lg:space-y-0" aria-label="Territorios">
                                 {filas.map(f => (
                                     <FilaMeta
                                         key={f.id}
@@ -290,20 +291,20 @@ export default function CampanaDetalle(props) {
                                     />
                                 ))}
                             </ul>
-                            <div aria-label="Totales" role="group" className="mt-4 lg:mt-0 p-4 sm:p-5 lg:px-4 lg:py-4 rounded-lg lg:rounded-none bg-panel border-2 border-primary lg:border-0 lg:border-t-2">
-                                <div className={`space-y-2 lg:space-y-0 ${COLUMNAS}`}>
-                                    <p className="font-heading text-xl font-bold text-primary">Totales</p>
+                            <div aria-label="Totales" role="group" className="mt-3 lg:mt-0 p-4 lg:px-4 lg:py-3 rounded-lg lg:rounded-none bg-panel border border-primary lg:border-0 lg:border-t-2">
+                                <div className={`space-y-1.5 lg:space-y-0 ${COLUMNAS}`}>
+                                    <p className="font-heading text-base font-bold text-primary">Totales</p>
                                     {CAMPOS_META.map(c => (
-                                        <p key={c.clave} className="flex justify-between lg:block text-lg font-bold tabular-nums">
+                                        <p key={c.clave} className="flex justify-between lg:block text-[15px] font-bold tabular-nums">
                                             <span className="font-normal text-ink-soft lg:sr-only">{c.etiqueta}</span>{numero(suma[c.clave])}
                                         </p>
                                     ))}
-                                    <p className="flex justify-between gap-3 lg:block text-base tabular-nums">
-                                        <span className="text-lg text-ink-soft lg:sr-only">Avance</span>
+                                    <p className="flex justify-between gap-3 lg:block text-sm tabular-nums">
+                                        <span className="text-ink-soft lg:sr-only">Avance</span>
                                         <span>Votantes {numero(detalle.totalAvance.votantes ?? suma.avanceVotantes)} · Líderes {numero(detalle.totalAvance.lideres ?? suma.avanceLideres)}</span>
                                     </p>
                                 </div>
-                                {detalle.totalSugerido?.texto && <p className="mt-3 text-base text-ink-soft">Para toda la campaña: {detalle.totalSugerido.texto}</p>}
+                                {detalle.totalSugerido?.texto && <p className="mt-2 text-[13px] text-ink-soft">Para toda la campaña: {detalle.totalSugerido.texto}</p>}
                                 {usaPuestos(filas) && <FuentePuestos />}
                             </div>
                         </div>
@@ -312,15 +313,15 @@ export default function CampanaDetalle(props) {
 
 
                 {!soloLectura && filas.length > 0 && (
-                    <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 z-20 mt-6 -mx-4 lg:mx-0 px-4 py-3 bg-panel border-t-2 lg:border-2 border-line-strong lg:rounded-t-lg shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
+                    <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 z-20 mt-4 -mx-4 lg:mx-0 px-4 py-2.5 bg-panel border-t lg:border border-line-strong lg:rounded-t-lg shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
                         {aviso?.tipo === 'error' && (
-                            <p role="alert" className="mb-3 flex items-start gap-2 p-3 rounded-md border-2 border-danger bg-danger-light text-lg font-semibold text-ink">
-                                <IconoAlerta className="w-6 h-6 flex-shrink-0 text-danger" />{aviso.texto}
+                            <p role="alert" className="mb-2 flex items-start gap-2 p-2.5 rounded-md border border-danger bg-danger-light text-sm font-semibold text-ink">
+                                <IconoAlerta className="w-5 h-5 flex-shrink-0 text-danger" />{aviso.texto}
                             </p>
                         )}
-                        {aviso?.tipo === 'info' && <p className="mb-3 p-3 rounded-md border-2 border-line-strong bg-bg text-lg">{aviso.texto}</p>}
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                            <p className="flex-1 text-lg tabular-nums" role="status">
+                        {aviso?.tipo === 'info' && <p className="mb-2 p-2.5 rounded-md border border-line-strong bg-bg text-sm">{aviso.texto}</p>}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <p className="flex-1 text-sm tabular-nums" role="status">
                                 {aviso?.tipo === 'ok' && !hayCambios
                                     ? <strong className="font-semibold text-ink">Metas guardadas</strong>
                                     : hayCambios
@@ -329,7 +330,7 @@ export default function CampanaDetalle(props) {
                             </p>
                             {hayCambios && <Boton variante="suave" onClick={descartar} disabled={guardando}>Descartar</Boton>}
                             <Boton onClick={guardar} disabled={guardando} aria-busy={guardando || undefined}>
-                                {guardando ? <><Girando className="w-5 h-5" />Guardando…</> : 'Guardar cambios'}
+                                {guardando ? <><Girando className="w-4 h-4" />Guardando…</> : 'Guardar cambios'}
                             </Boton>
                         </div>
                     </div>
@@ -342,7 +343,7 @@ export default function CampanaDetalle(props) {
                     onVolver={() => !accionEnCurso && setConfirmar(null)}
                     acciones={<>
                         <Boton onClick={confirmarAccion} disabled={accionEnCurso}>
-                            {accionEnCurso ? <><Girando className="w-5 h-5" />Un momento…</> : (confirmar === 'archivar' ? 'Sí, archivar' : 'Sí, reactivar')}
+                            {accionEnCurso ? <><Girando className="w-4 h-4" />Un momento…</> : (confirmar === 'archivar' ? 'Sí, archivar' : 'Sí, reactivar')}
                         </Boton>
                         <Boton variante="secundario" autoFocus onClick={() => setConfirmar(null)} disabled={accionEnCurso}>No, volver</Boton>
                     </>}

@@ -11,7 +11,7 @@ export function BarraAvance({ pct, etiqueta, grande = false }) {
             aria-valuemax={100}
             aria-valuenow={pct === null || pct === undefined ? undefined : Math.round(Number(pct) * 100)}
             aria-valuetext={pct === null || pct === undefined ? 'Sin meta' : porcentaje(pct)}
-            className={`w-full rounded-full bg-line overflow-hidden ${grande ? 'h-4' : 'h-3'}`}
+            className={`w-full rounded-full bg-line overflow-hidden ${grande ? 'h-2.5' : 'h-2'}`}
         >
             <div className={`h-full rounded-full ${ancho >= 100 ? 'bg-primary-dark' : 'bg-primary'}`} style={{ width: `${ancho}%` }} />
         </div>
@@ -25,17 +25,17 @@ export function Avance({ titulo, medida, unidad, grande = false }) {
     return (
         <div>
             <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <span className={`${grande ? 'text-lg' : 'text-base'} font-semibold text-ink-soft`}>{titulo}</span>
-                {meta !== null && <span className="text-lg font-semibold text-ink tabular-nums">{porcentaje(pct)}</span>}
+                <span className="text-sm font-semibold text-ink-soft">{titulo}</span>
+                {meta !== null && <span className="text-sm font-semibold text-ink tabular-nums">{porcentaje(pct)}</span>}
             </p>
-            <p className={`mt-1 tabular-nums text-ink ${grande ? 'font-heading text-3xl font-bold' : 'text-lg font-semibold'}`}>
+            <p className={`mt-0.5 tabular-nums text-ink ${grande ? 'font-heading text-2xl font-bold' : 'text-[15px] font-semibold'}`}>
                 {numero(contados)}
                 {meta !== null
-                    ? <span className={`${grande ? 'text-xl' : 'text-lg'} font-normal text-ink-soft`}> de {numero(meta)}</span>
-                    : <span className="text-lg font-normal text-ink-soft"> registrados</span>}
+                    ? <span className={`${grande ? 'text-base' : 'text-sm'} font-normal text-ink-soft`}> de {numero(meta)}</span>
+                    : <span className="text-sm font-normal text-ink-soft"> registrados</span>}
             </p>
-            <div className="mt-3"><BarraAvance pct={meta === null ? null : pct} etiqueta={`${titulo}: avance`} grande={grande} /></div>
-            <p className="mt-2 text-base text-ink-soft tabular-nums">
+            <div className="mt-2"><BarraAvance pct={meta === null ? null : pct} etiqueta={`${titulo}: avance`} grande={grande} /></div>
+            <p className="mt-1.5 text-[13px] text-ink-soft tabular-nums">
                 {meta === null && 'Sin meta'}
                 {meta !== null && falta > 0 && <>{textoFalta(falta)} <strong className="font-semibold text-ink">{cuantos(falta, unidad)}</strong></>}
                 {meta !== null && falta === 0 && <strong className="font-semibold text-ink">Meta cumplida</strong>}
@@ -48,7 +48,7 @@ export function Avance({ titulo, medida, unidad, grande = false }) {
 
 export function TarjetaAvance({ titulo, medida, unidad }) {
     return (
-        <section aria-label={titulo} className="bg-panel border-2 border-line rounded-lg p-5 sm:p-6">
+        <section aria-label={titulo} className="h-full bg-panel border border-line rounded-lg p-4">
             <Avance titulo={titulo} medida={medida} unidad={unidad} grande />
         </section>
     );
@@ -64,15 +64,15 @@ function fraseIndice(indice, totales) {
 
 export function TarjetaIndice({ indice, totales }) {
     return (
-        <section aria-label="Índice de avance" className="bg-primary text-white rounded-lg p-5 sm:p-6 border-2 border-primary">
-            <p className="text-lg font-semibold text-white/85">Índice de avance</p>
-            <p className="mt-1 font-heading text-3xl font-bold tabular-nums">
-                {indice === null ? '—' : numero(indice)}<span className="text-xl font-normal text-white/85"> de 100</span>
+        <section aria-label="Índice de avance" className="h-full bg-primary text-white rounded-lg p-4 border border-primary">
+            <p className="text-sm font-semibold text-white/85">Índice de avance</p>
+            <p className="mt-0.5 font-heading text-2xl font-bold tabular-nums">
+                {indice === null ? '—' : numero(indice)}<span className="text-base font-normal text-white/85"> de 100</span>
             </p>
-            <div className="mt-3 h-4 w-full rounded-full bg-white/20 overflow-hidden" aria-hidden="true">
+            <div className="mt-2 h-2.5 w-full rounded-full bg-white/20 overflow-hidden" aria-hidden="true">
                 <div className="h-full rounded-full bg-white" style={{ width: `${Math.min(indice ?? 0, 100)}%` }} />
             </div>
-            <p className="mt-2 text-base text-white/90 text-pretty">{fraseIndice(indice, totales)}</p>
+            <p className="mt-1.5 text-[13px] text-white/90 text-pretty">{fraseIndice(indice, totales)}</p>
         </section>
     );
 }

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Boton, Chip } from '@/Components/Reportes/ui';
-import { Muestra } from '@/Components/CampanasElectorales/ui';
+import { Boton, Chip, Muestra, tarjetaCls, tituloSeccionCls } from '@/Components/CampanasElectorales/ui';
 import {
     COLOR_RAYAS, COLOR_SIN_META, MEDIDAS, PATRON_RAYAS, TEXTO_ERROR_MAPA, TEXTO_INSUFICIENTE, TEXTO_SESION_TABLERO, TEXTO_UN_TERRITORIO, colorDe, cuantos, leyendaDe, numero,
     pinturaDe, porcentaje,
@@ -76,17 +75,17 @@ export function PatronRayas() {
 
 function BanderaGirando() {
     return (
-        <div className="flex flex-col items-center gap-4">
-            <div className="relative w-16 h-16">
+        <div className="flex flex-col items-center gap-3">
+            <div className="relative w-12 h-12">
                 <div className="absolute inset-0 rounded-full border-[5px] border-line" />
                 <div className="absolute inset-0 rounded-full border-[5px] border-transparent border-t-primary border-r-accent animate-spin motion-reduce:animate-none" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-7 h-5 rounded-[3px] overflow-hidden flex flex-col">
+                    <div className="w-5 h-3.5 rounded-[2px] overflow-hidden flex flex-col">
                         <span className="flex-[2] bg-[#FCD116]" /><span className="flex-1 bg-[#003893]" /><span className="flex-1 bg-[#CE1126]" />
                     </div>
                 </div>
             </div>
-            <p className="text-lg font-semibold text-ink">Cargando mapa…</p>
+            <p className="text-sm font-semibold text-ink">Cargando mapa…</p>
         </div>
     );
 }
@@ -95,17 +94,17 @@ function Leyenda({ entradas, fuera, medida }) {
     const titulo = MEDIDAS.find(m => m.clave === medida)?.etiqueta ?? '';
     return (
         <div>
-            <h3 className="text-base font-semibold text-ink-soft">{medida === 'indice' ? 'Índice (de 0 a 100)' : `${titulo}: % de la meta`}</h3>
-            <ul aria-label="Leyenda del mapa" className="mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-2">
+            <h3 className="text-[13px] font-semibold text-ink-soft">{medida === 'indice' ? 'Índice (de 0 a 100)' : `${titulo}: % de la meta`}</h3>
+            <ul aria-label="Leyenda del mapa" className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-5 gap-y-1">
                 {entradas.map(e => (
-                    <li key={e.clave} data-leyenda={e.clave} className="flex items-center gap-3 text-base text-ink">
+                    <li key={e.clave} data-leyenda={e.clave} className="flex items-center gap-2 text-[13px] text-ink">
                         <Muestra clase={e.clase} color={e.clase === 'tramo' ? colorDe(e) : COLOR_SIN_META} />
                         <span className="flex-1">{e.etiqueta}</span>
                         <span className="font-semibold tabular-nums" aria-label={cuantos(e.cuantos, 'territorios')}>{numero(e.cuantos)}</span>
                     </li>
                 ))}
                 {fuera > 0 && (
-                    <li data-leyenda="fuera" className="flex items-center gap-3 text-base text-ink-soft">
+                    <li data-leyenda="fuera" className="flex items-center gap-2 text-[13px] text-ink-soft">
                         <Muestra clase="fuera" />
                         <span className="flex-1">Fuera de la campaña o de tus municipios</span>
                         <span className="font-semibold tabular-nums" aria-label={cuantos(fuera, 'territorios')}>{numero(fuera)}</span>
@@ -180,27 +179,27 @@ export default function MapaCalor({ tablero, medida, onMedida, municipioComunas 
 
     if (!mapa.capa) {
         return (
-            <section aria-labelledby="titulo-mapa" className="bg-panel border-2 border-line rounded-lg p-5 sm:p-6">
-                <h2 id="titulo-mapa" className="font-heading text-2xl font-bold text-ink">Mapa</h2>
-                <p className="mt-2 text-lg text-ink">{mapa.texto || TEXTO_UN_TERRITORIO}</p>
+            <section aria-labelledby="titulo-mapa" className={`${tarjetaCls} p-4`}>
+                <h2 id="titulo-mapa" className={tituloSeccionCls}>Mapa</h2>
+                <p className="mt-1 text-sm text-ink">{mapa.texto || TEXTO_UN_TERRITORIO}</p>
             </section>
         );
     }
 
     return (
-        <section aria-labelledby="titulo-mapa" className="bg-panel border-2 border-line rounded-lg p-4 sm:p-6">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <h2 id="titulo-mapa" className="font-heading text-2xl font-bold text-ink">
+        <section aria-labelledby="titulo-mapa" className={`${tarjetaCls} p-4`}>
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <h2 id="titulo-mapa" className={tituloSeccionCls}>
                     {municipioComunas ? `Comunas de ${municipioComunas.nombre}` : 'Mapa del avance'}
                 </h2>
                 <div role="group" aria-labelledby="colorear-por" className="flex flex-wrap items-center gap-2">
-                    <span id="colorear-por" className="text-lg text-ink-soft mr-1">Colorear por:</span>
+                    <span id="colorear-por" className="text-sm text-ink-soft mr-1">Colorear por:</span>
                     {MEDIDAS.map(m => <Chip key={m.clave} activo={medida === m.clave} onClick={() => onMedida(m.clave)}>{m.etiqueta}</Chip>)}
                 </div>
             </div>
 
             {(municipioComunas || comunasDisponibles.length > 0) && (
-                <div className="mt-4 flex flex-wrap gap-3">
+                <div className="mt-3 flex flex-wrap gap-2">
                     {municipioComunas && <Boton variante="secundario" onClick={onVolverMunicipios}>← Volver a los municipios</Boton>}
                     {comunasDisponibles.map(m => (
                         <Boton key={m.id} variante="secundario" onClick={() => onVerComunas(m)}>Ver comunas de {m.nombre}</Boton>
@@ -208,17 +207,17 @@ export default function MapaCalor({ tablero, medida, onMedida, municipioComunas 
                 </div>
             )}
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-3 space-y-3">
                 <div
-                    className="tablero-mapa relative h-[320px] sm:h-[420px] lg:h-[480px] rounded-md border-2 border-line bg-white overflow-hidden"
+                    className="tablero-mapa relative h-[300px] sm:h-[380px] lg:h-[420px] rounded-md border border-line bg-white overflow-hidden"
                     aria-label="Mapa del avance por territorio. La tabla de abajo tiene los mismos datos."
                     role="region"
                     aria-busy={estado.cargando || undefined}
                 >
                     {estado.cargando && <div className="absolute inset-0 flex items-center justify-center"><BanderaGirando /></div>}
                     {estado.error && (
-                        <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                            <p className="text-lg text-ink text-pretty max-w-md">{estado.error}</p>
+                        <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-5 text-center">
+                            <p className="text-sm text-ink text-pretty max-w-md">{estado.error}</p>
                             <Boton variante="secundario" onClick={reintentar}>Reintentar</Boton>
                         </div>
                     )}
@@ -239,18 +238,18 @@ export default function MapaCalor({ tablero, medida, onMedida, municipioComunas 
                         </MapContainer>
                     )}
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                     {estado.data && <Leyenda entradas={leyenda} fuera={fuera} medida={medida} />}
-                    <p className="text-base text-ink-soft">Toca un territorio para ver su detalle.</p>
+                    <p className="text-[13px] text-ink-soft">Toca un territorio para ver su detalle.</p>
                 </div>
             </div>
 
             {mapa.sinPoligono.length > 0 && !municipioComunas && (
-                <p className="mt-4 text-base text-ink">
+                <p className="mt-3 text-[13px] text-ink">
                     <strong className="font-semibold">Sin mapa:</strong> {mapa.sinPoligono.join(', ')}
                 </p>
             )}
-            <div className="mt-3 space-y-1 text-base text-ink-soft">
+            <div className="mt-2 space-y-0.5 text-xs text-ink-soft">
                 <p>{capa === 'comunas' ? FUENTE_AMB : FUENTE_DANE}</p>
                 {usaPuestos && <p>{FUENTE_PUESTOS}</p>}
             </div>

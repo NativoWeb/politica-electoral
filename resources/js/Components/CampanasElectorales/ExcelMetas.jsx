@@ -1,10 +1,9 @@
 import { useRef, useState } from 'react';
-import { AvisoError, Girando, IconoDescarga, focoCls } from '@/Components/Reportes/ui';
-import { IconoSubir } from '@/Components/CampanasElectorales/ui';
+import { AvisoError, Girando, IconoDescarga, IconoSubir, botonDescargaCls } from '@/Components/CampanasElectorales/ui';
 import EnlaceDescarga from '@/Components/EnlaceDescarga';
 import { importarMetas, plural, urlPlantilla, validarExcel } from '@/lib/campanas';
 
-const botonCls = `inline-flex items-center justify-center gap-2 min-h-14 px-5 text-lg font-semibold rounded-md bg-panel text-primary border-2 border-primary hover:bg-primary/5 active:scale-[0.98] transition-[background-color,transform] duration-150 ${focoCls}`;
+const botonCls = botonDescargaCls;
 
 // Template download and goal upload. The upload is all or nothing on the server: one bad row and nothing is saved,
 // with the list of rows to fix. With unsaved changes on screen the upload waits (it would mix both).
@@ -41,30 +40,30 @@ export default function ExcelMetas({ campanaId, nombre, puedeDescargar = true, p
     }
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+        <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                 {puedeDescargar && (
                     <EnlaceDescarga href={urlPlantilla(campanaId)} nombre={`metas-${nombre}`} className={botonCls}>
-                        <IconoDescarga />Descargar plantilla Excel
+                        <IconoDescarga className="w-4 h-4" />Descargar plantilla Excel
                     </EnlaceDescarga>
                 )}
                 {puedeCargar && (
                     <>
                         <button type="button" onClick={abrir} disabled={cargando} aria-busy={cargando || undefined} className={`${botonCls} disabled:opacity-60`}>
-                            {cargando ? <><Girando className="w-5 h-5" />Cargando…</> : <><IconoSubir />Cargar metas desde Excel</>}
+                            {cargando ? <><Girando className="w-4 h-4" />Cargando…</> : <><IconoSubir />Cargar metas desde Excel</>}
                         </button>
                         <input ref={input} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={alElegir} data-testid="excel-metas" />
                     </>
                 )}
             </div>
             <div aria-live="polite">
-                {resultado?.ok && <p role="status" className="p-4 rounded-md border-2 border-good bg-good-light text-lg font-semibold text-ink">{resultado.mensaje}</p>}
+                {resultado?.ok && <p role="status" className="p-3 rounded-md border border-good bg-good-light text-sm font-semibold text-ink">{resultado.mensaje}</p>}
                 {resultado && !resultado.ok && (
                     <AvisoError>
                         <span>
                             {resultado.mensaje}
                             {resultado.filas.length > 0 && (
-                                <ul className="mt-2 list-disc pl-6 space-y-1 max-h-64 overflow-y-auto">
+                                <ul className="mt-1 list-disc pl-5 space-y-0.5 max-h-64 overflow-y-auto">
                                     {resultado.filas.map((f, i) => <li key={i}>{f}</li>)}
                                 </ul>
                             )}

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/Layouts/AppLayout';
 import EnlaceDescarga from '@/Components/EnlaceDescarga';
-import { Boton, Girando, IconoAlerta, IconoChevron, IconoDescarga, focoCls } from '@/Components/Reportes/ui';
-import { Estado, LinkBoton } from '@/Components/CampanasElectorales/ui';
+import {
+    Boton, Estado, Girando, IconoAlerta, IconoChevron, IconoDescarga, LinkBoton, botonDescargaCls, focoCls, tactilCls, tarjetaCls, tituloPaginaCls,
+    tituloSeccionCls,
+} from '@/Components/CampanasElectorales/ui';
 import { TarjetaAvance, TarjetaIndice } from '@/Components/CampanasElectorales/TarjetaAvance';
 import MapaCalor, { PatronRayas } from '@/Components/CampanasElectorales/MapaCalor';
 import RankingTerritorios from '@/Components/CampanasElectorales/RankingTerritorios';
@@ -18,9 +20,8 @@ import {
 
 const ES_COMUNA = (t) => t.tipo === 'comuna' || t.tipo === 'corregimiento';
 const AVISOS_INFORMATIVOS = ['territorio_usuario', 'archivada'];
-const botonDescargaCls = `inline-flex items-center justify-center gap-2 min-h-14 px-6 text-lg font-semibold rounded-md bg-panel text-primary border-2 border-primary hover:bg-primary/5 ${focoCls}`;
 
-const IconoInfo = ({ className = 'w-6 h-6' }) => (
+const IconoInfo = ({ className = 'w-5 h-5' }) => (
     <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
         <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 11v5M12 8h.01" />
     </svg>
@@ -29,12 +30,12 @@ const IconoInfo = ({ className = 'w-6 h-6' }) => (
 function Avisos({ avisos }) {
     if (!avisos.length) return null;
     return (
-        <ul aria-label="Avisos" className="space-y-3">
+        <ul aria-label="Avisos" className="space-y-2">
             {avisos.map(a => {
                 const info = AVISOS_INFORMATIVOS.includes(a.tipo);
                 return (
-                    <li key={`${a.tipo}:${a.texto}`} data-aviso={a.tipo} className={`flex items-start gap-3 p-4 rounded-md border-2 text-lg text-ink ${info ? 'border-line-strong bg-panel' : 'border-accent bg-[#FFF8D6]'}`}>
-                        {info ? <IconoInfo className="w-6 h-6 flex-shrink-0 mt-0.5 text-ink-soft" /> : <IconoAlerta className="w-6 h-6 flex-shrink-0 mt-0.5 text-ink" />}
+                    <li key={`${a.tipo}:${a.texto}`} data-aviso={a.tipo} className={`flex items-start gap-2 p-3 rounded-md border text-sm text-ink ${info ? 'border-line-strong bg-panel' : 'border-accent bg-[#FFF8D6]'}`}>
+                        {info ? <IconoInfo className="w-5 h-5 flex-shrink-0 text-ink-soft" /> : <IconoAlerta className="w-5 h-5 flex-shrink-0 text-ink" />}
                         <span className="text-pretty">{a.texto}</span>
                     </li>
                 );
@@ -45,12 +46,12 @@ function Avisos({ avisos }) {
 
 function ComoSeCalcula({ formula }) {
     return (
-        <details className="group bg-panel border-2 border-line rounded-lg">
-            <summary className={`min-h-14 px-5 flex items-center justify-between gap-3 cursor-pointer list-none text-lg font-semibold text-ink rounded-lg ${focoCls}`}>
+        <details className={`group ${tarjetaCls}`}>
+            <summary className={`${tactilCls} px-4 flex items-center justify-between gap-3 cursor-pointer list-none text-sm font-semibold text-ink rounded-lg ${focoCls}`}>
                 Cómo se calcula
-                <IconoChevron className="w-6 h-6 group-open:rotate-180 transition-transform duration-200" />
+                <IconoChevron className="w-4 h-4 group-open:rotate-180 transition-transform duration-200" />
             </summary>
-            <div className="px-5 pb-5 space-y-3 text-lg text-ink text-pretty">
+            <div className="px-4 pb-4 space-y-2 text-sm text-ink text-pretty">
                 <p>{formula}</p>
                 <p>Los colores del mapa van por tramos: {[0, 1, 2, 3].map(t => etiquetaTramo(t, 'votantes')).join(', ')} y {etiquetaTramo(4, 'votantes').toLowerCase()} (100 % o más). Un territorio sin meta se ve gris; uno rayado tiene pocas fichas con comuna todavía.</p>
                 <p>Si la campaña solo tiene votos meta, la meta de votantes y la de líderes salen de los factores de la campaña.</p>
@@ -140,46 +141,46 @@ export default function CampanaTablero(props) {
         <AppLayout title={`Tablero · ${nombre}`}>
             <Head title={`Tablero · ${nombre}`} />
             <PatronRayas />
-            <div className="max-w-7xl mx-auto px-4 lg:px-8 pt-6 lg:pt-8 pb-16 text-lg text-ink">
-                <LinkBoton variante="secundario" href={`${BASE}/${id}`} className="min-h-12 px-4 text-base border-transparent">← Volver a la campaña</LinkBoton>
+            <div className="max-w-7xl mx-auto px-4 lg:px-6 pt-4 lg:pt-6 pb-10 text-[15px] text-ink">
+                <LinkBoton variante="secundario" href={`${BASE}/${id}`} className="-ml-2 px-2 text-[13px] border-transparent">← Volver a la campaña</LinkBoton>
 
-                <header className="mt-4 flex flex-col gap-4">
+                <header className="mt-2 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-lg font-semibold text-ink-soft">Tablero</p>
-                        <div className="flex flex-wrap items-center gap-3">
-                            <h1 className="font-heading text-4xl font-bold text-primary text-balance break-words">{nombre}</h1>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Tablero</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className={tituloPaginaCls}>{nombre}</h1>
                             <Estado archivada={campana.archivada} />
                         </div>
-                        <p className="mt-2 text-lg text-ink-soft">
+                        <p className="mt-1 text-[13px] text-ink-soft">
                             {[`${campana.cargoEtiqueta} ${campana.anio ?? ''}`.trim(), campana.territorioResumen].filter(Boolean).join(' · ')}
                         </p>
                     </div>
-                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
-                        <p className="text-base text-ink-soft tabular-nums sm:order-last" role="status">{hora ? `Actualizado ${hora}` : ''}</p>
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+                        <p className="text-xs text-ink-soft tabular-nums sm:order-last" role="status">{hora ? `Actualizado ${hora}` : ''}</p>
                         <Boton variante="secundario" onClick={actualizar} disabled={actualizando} aria-busy={actualizando || undefined}>
-                            {actualizando ? <><Girando className="w-5 h-5" />Actualizando…</> : 'Actualizar'}
+                            {actualizando ? <><Girando className="w-4 h-4" />Actualizando…</> : 'Actualizar'}
                         </Boton>
                         {!vacio && (
                             <>
-                                <EnlaceDescarga href={urlExportarTablero(id, 'xlsx')} nombre={`Tablero ${nombre}`} className={botonDescargaCls}><IconoDescarga />Descargar Excel</EnlaceDescarga>
-                                <EnlaceDescarga href={urlExportarTablero(id, 'pdf')} nombre={`Tablero ${nombre}`} className={botonDescargaCls}><IconoDescarga />Descargar PDF</EnlaceDescarga>
+                                <EnlaceDescarga href={urlExportarTablero(id, 'xlsx')} nombre={`Tablero ${nombre}`} className={botonDescargaCls}><IconoDescarga className="w-4 h-4" />Descargar Excel</EnlaceDescarga>
+                                <EnlaceDescarga href={urlExportarTablero(id, 'pdf')} nombre={`Tablero ${nombre}`} className={botonDescargaCls}><IconoDescarga className="w-4 h-4" />Descargar PDF</EnlaceDescarga>
                             </>
                         )}
                     </div>
                 </header>
 
-                {error && <p role="alert" className="mt-4 flex items-start gap-2 p-4 rounded-md border-2 border-danger bg-danger-light text-lg font-semibold"><IconoAlerta className="w-6 h-6 flex-shrink-0 text-danger" />{error}</p>}
+                {error && <p role="alert" className="mt-3 flex items-start gap-2 p-3 rounded-md border border-danger bg-danger-light text-sm font-semibold"><IconoAlerta className="w-5 h-5 flex-shrink-0 text-danger" />{error}</p>}
 
-                <div className="mt-6"><Avisos avisos={tablero.avisos} /></div>
+                <div className="mt-4"><Avisos avisos={tablero.avisos} /></div>
 
                 {vacio ? (
-                    <section className="mt-6 p-6 sm:p-8 rounded-lg bg-panel border-2 border-line">
-                        <h2 className="font-heading text-2xl font-bold text-ink">Aún no hay metas</h2>
-                        <p className="mt-2 text-lg text-ink text-pretty">{TEXTO_SIN_METAS}</p>
-                        {tablero.puedeEditar && <LinkBoton href={`${BASE}/${id}`} className="mt-5 w-full sm:w-auto">Ir a las metas</LinkBoton>}
+                    <section className={`mt-4 p-5 ${tarjetaCls}`}>
+                        <h2 className={tituloSeccionCls}>Aún no hay metas</h2>
+                        <p className="mt-1 text-sm text-ink text-pretty">{TEXTO_SIN_METAS}</p>
+                        {tablero.puedeEditar && <LinkBoton href={`${BASE}/${id}`} className="mt-3 w-full sm:w-auto">Ir a las metas</LinkBoton>}
                     </section>
                 ) : (
-                    <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
                         <div className="lg:col-span-4"><TarjetaAvance titulo="Votantes registrados" medida={totales.votantes} unidad="votantes" /></div>
                         <div className="lg:col-span-4"><TarjetaAvance titulo="Líderes" medida={totales.lideres} unidad="lideres" /></div>
                         <div className="lg:col-span-4"><TarjetaIndice indice={totales.indice} totales={totales} /></div>
@@ -211,7 +212,7 @@ export default function CampanaTablero(props) {
                     </div>
                 )}
 
-                <div className="mt-6"><ComoSeCalcula formula={tablero.formula} /></div>
+                <div className="mt-4"><ComoSeCalcula formula={tablero.formula} /></div>
             </div>
 
             {elegido && (

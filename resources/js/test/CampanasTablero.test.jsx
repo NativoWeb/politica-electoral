@@ -479,7 +479,7 @@ describe('Contrato F5-9 / F5-10', () => {
 });
 
 describe('Tablero en el teléfono', () => {
-    it('the table becomes cards, the detail is a bottom sheet that closes swiping down, every button is at least 48 px', async () => {
+    it('the table becomes cards, the detail is a bottom sheet that closes swiping down, every button is at least 44 px (min-h-11 / h-11 on a phone)', async () => {
         porPantalla(true);
         render(<Tablero {...tableroData()} />);
         expect(screen.queryByRole('table', { name: 'Todos los territorios' })).toBeNull();
@@ -495,7 +495,7 @@ describe('Tablero en el teléfono', () => {
         fireEvent.touchEnd(asa, { changedTouches: [{ clientY: 260 }] });
         await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-        const chicos = screen.getAllByRole('button').filter(b => !b.dataset.testid && !/min-h-(12|14)|h-12|w-12/.test(b.className));
+        const chicos = screen.getAllByRole('button').filter(b => !b.dataset.testid && !/(^|\s)(min-h-11|h-11)(\s|$)/.test(b.className));
         expect(chicos.map(b => b.textContent)).toEqual([]);
     });
 
