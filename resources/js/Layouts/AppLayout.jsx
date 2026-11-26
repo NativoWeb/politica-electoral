@@ -713,7 +713,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
             </div>
 
             {/* ══ Bottom Tab Bar — mobile only, BIG for elderly users ══ */}
-            <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
+            <nav data-barra-inferior className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#002244] safe-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
                 <div className="flex items-stretch h-[72px]">
                     {tabItems.map((item) => {
                         const isActive = url === item.href || (item.href !== '/' && url.startsWith(item.href));

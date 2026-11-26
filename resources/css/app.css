@@ -60,3 +60,68 @@
     line-height: 48px;
     font-size: 26px;
 }
+
+/* ============ ACCESIBILIDAD (Components/BotonAccesibilidad.jsx, lib/accesibilidad.js) ============ */
+/* Tamaño del texto: the build multiplies every px/rem font-size and line-height by --a11y-texto (lib/escalaTexto.js). */
+html { --a11y-texto: 1; }
+html[data-a11y-texto="90"] { --a11y-texto: 0.9; }
+html[data-a11y-texto="110"] { --a11y-texto: 1.1; }
+html[data-a11y-texto="125"] { --a11y-texto: 1.25; }
+html[data-a11y-texto="140"] { --a11y-texto: 1.4; }
+html[data-a11y-texto="150"] { --a11y-texto: 1.5; }
+body { font-size: 1rem; }
+
+/* Alto contraste: darker text, visible borders, no faint grey grounds, keeps the navy palette. */
+html[data-a11y-contraste] {
+    --color-bg: #FFFFFF;
+    --color-ink: #0A0A1A;
+    --color-ink-soft: #1A1A2E;
+    --color-ink-faint: #2E2E48;
+    --color-line: #6E6E86;
+    --color-line-strong: #3A3A52;
+    --color-primary-light: #003B71;
+}
+html[data-a11y-contraste] body { background: #FFFFFF !important; }
+html[data-a11y-contraste] :is(.text-gray-200, .text-gray-300, .text-gray-400, .text-gray-500, .text-gray-600, .text-slate-500, .text-slate-600) { color: #1F2937; }
+html[data-a11y-contraste] :is(.text-gray-700, .text-gray-800, .text-slate-700) { color: #0A0A1A; }
+html[data-a11y-contraste] :is(.border-gray-50, .border-gray-100, .border-gray-200, .border-gray-300, .border-slate-200) { border-color: #6E6E86; }
+html[data-a11y-contraste] .divide-gray-100 > :not(:last-child) { border-color: #6E6E86; }
+html[data-a11y-contraste] :is(.bg-gray-50, .bg-slate-50) { background-color: #FFFFFF; }
+html[data-a11y-contraste] :is(.bg-gray-100, .bg-slate-100) { background-color: #E4E6EB; }
+html[data-a11y-contraste] [class*="text-white/"] { color: #FFFFFF; }
+html[data-a11y-contraste] [class*="border-white/"] { border-color: rgb(255 255 255 / 0.85); }
+html[data-a11y-contraste] ::placeholder { color: #4A4A68; opacity: 1; }
+html[data-a11y-contraste] :focus-visible {
+    outline: 3px solid var(--color-accent) !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 6px var(--color-primary-dark) !important;
+}
+
+/* Reducir animaciones: on by choice, or by the system setting unless the user turned it off. */
+html[data-a11y-animaciones="reducidas"] *,
+html[data-a11y-animaciones="reducidas"] *::before,
+html[data-a11y-animaciones="reducidas"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    html:not([data-a11y-animaciones="normales"]) *,
+    html:not([data-a11y-animaciones="normales"]) *::before,
+    html:not([data-a11y-animaciones="normales"]) *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0s !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Subrayar enlaces: every link and every button styled as one. */
+html[data-a11y-enlaces] :is(a[href], [role="link"], button[class*="hover:underline"]) {
+    text-decoration-line: underline !important;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.2em;
+}

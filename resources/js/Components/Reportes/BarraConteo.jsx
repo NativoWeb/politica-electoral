@@ -11,7 +11,7 @@ export default function BarraConteo({ estado, total, mensajeError, nota = '', ul
     const cero = estado === 'ok' && total === 0;
 
     return (
-        <div className="fixed left-0 right-0 bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 lg:left-[200px] z-30 bg-panel border-t-2 border-line-strong shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
+        <div data-barra-inferior className="fixed left-0 right-0 bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 lg:left-[200px] z-30 bg-panel border-t-2 border-line-strong shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
             <div className="max-w-5xl mx-auto px-4 lg:px-8 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0" aria-live="polite" aria-atomic="true">
                     {error ? (

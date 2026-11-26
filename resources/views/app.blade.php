@@ -15,6 +15,19 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/img/icon-192.png">
     <title inertia>Inteligencia Electoral Santander</title>
 
+    {{-- Accessibility preferences before the first paint: inline copy of aplicarPreferencias (resources/js/lib/accesibilidad.js). --}}
+    <script id="a11y-inicial">
+        (function () {
+            try {
+                var p = JSON.parse(localStorage.getItem('a11y-preferencias') || '{}') || {}, h = document.documentElement;
+                if ([90, 110, 125, 140, 150].indexOf(p.texto) !== -1) h.setAttribute('data-a11y-texto', String(p.texto));
+                if (p.contraste === true) h.setAttribute('data-a11y-contraste', '');
+                if (typeof p.reducirAnimaciones === 'boolean') h.setAttribute('data-a11y-animaciones', p.reducirAnimaciones ? 'reducidas' : 'normales');
+                if (p.enlaces === true) h.setAttribute('data-a11y-enlaces', '');
+            } catch (e) { /* storage blocked or corrupt: the default look */ }
+        })();
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">

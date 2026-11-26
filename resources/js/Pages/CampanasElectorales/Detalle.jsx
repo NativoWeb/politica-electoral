@@ -313,7 +313,7 @@ export default function CampanaDetalle(props) {
 
 
                 {!soloLectura && filas.length > 0 && (
-                    <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 z-20 mt-4 -mx-4 lg:mx-0 px-4 py-2.5 bg-panel border-t lg:border border-line-strong lg:rounded-t-lg shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
+                    <div data-barra-inferior className="sticky bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 z-20 mt-4 -mx-4 lg:mx-0 px-4 py-2.5 bg-panel border-t lg:border border-line-strong lg:rounded-t-lg shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
                         {aviso?.tipo === 'error' && (
                             <p role="alert" className="mb-2 flex items-start gap-2 p-2.5 rounded-md border border-danger bg-danger-light text-sm font-semibold text-ink">
                                 <IconoAlerta className="w-5 h-5 flex-shrink-0 text-danger" />{aviso.texto}

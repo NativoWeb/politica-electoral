@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { isLogoutPendingFor, readPendingLogout, syncServiceWorkerSession } from './lib/swSession';
 import { finishPendingLogout, handleLogoutNetworkError, PENDING_LOGOUT_TIMEOUT_MS, resetPendingLogoutAttempts, withTimeout } from './lib/logout';
 import { FullScreenSpinner } from './Components/Spinner';
+import BotonAccesibilidad from './Components/BotonAccesibilidad';
 import { setUploadedPartyLogos } from './lib/electoral';
 
 let currentUser = null;
@@ -80,7 +81,7 @@ createInertiaApp({
         const root = createRoot(el);
         const mount = () => {
             syncServiceWorkerSession(currentUser);
-            root.render(<App {...props} />);
+            root.render(<><App {...props} /><BotonAccesibilidad /></>);
         };
 
         if (!currentUser) resetPendingLogoutAttempts();

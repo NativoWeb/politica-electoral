@@ -403,7 +403,7 @@ export default function Show({ evento, asistentes, kpis, filters, tipos, provinc
             </div>
 
             {selected.size > 0 && editable && (
-                <div className="fixed left-0 right-0 bottom-[72px] lg:bottom-0 lg:left-[200px] z-30 bg-white border-t-2 border-[var(--color-primary)] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] px-4 py-3 safe-bottom">
+                <div data-barra-inferior className="fixed left-0 right-0 bottom-[72px] lg:bottom-0 lg:left-[200px] z-30 bg-white border-t-2 border-[var(--color-primary)] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] px-4 py-3 safe-bottom">
                     <div className="flex flex-wrap items-center gap-2">
                         <p className="text-[15px] font-bold text-[var(--color-ink)] mr-auto" aria-live="polite">{selected.size === 1 ? '1 seleccionado' : `${selected.size} seleccionados`}</p>
                         <button type="button" disabled={busy} onClick={() => askBulk('delete')} className="min-h-[48px] px-4 py-2.5 rounded-xl border-2 border-red-300 bg-white text-[15px] font-bold text-red-700 disabled:opacity-50">Eliminar</button>
