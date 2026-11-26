@@ -475,6 +475,9 @@ export default function VotanteDetail({
                         <Field label="Cedula">
                             {editing ? <input ref={cedulaRef} value={form.cedula} onChange={e => setField('cedula', e.target.value)} className={inputCls} /> : <p className={readCls + ' font-mono'}>{form.cedula || '-'}</p>}
                         </Field>
+                        <Field label="Telefono">
+                            {editing ? <input value={form.telefono} onChange={e => setField('telefono', e.target.value)} className={inputCls} placeholder="3001234567" /> : <p className={readCls}>{form.telefono || '-'}</p>}
+                        </Field>
                         <Field label="Fecha expedicion">
                             {editing ? <input type="date" value={form.fecha_expedicion_doc} onChange={e => setField('fecha_expedicion_doc', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.fecha_expedicion_doc || '-'}</p>}
                         </Field>
@@ -685,9 +688,6 @@ export default function VotanteDetail({
                 {/* Redes Sociales */}
                 <Accordion title="Redes Sociales">
                     <div className="space-y-3">
-                        <Field label="Telefono">
-                            {editing ? <input value={form.telefono} onChange={e => setField('telefono', e.target.value)} className={inputCls} placeholder="3001234567" /> : <p className={readCls}>{form.telefono || '-'}</p>}
-                        </Field>
                         <Field label="Email">
                             {editing ? <input type="email" value={form.email} onChange={e => setField('email', e.target.value)} className={inputCls} /> : <p className={readCls}>{form.email || '-'}</p>}
                         </Field>
