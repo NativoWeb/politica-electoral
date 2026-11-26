@@ -15,15 +15,15 @@ export default function ChipGroup({ etiqueta, opciones, valor, multiple = true, 
 
     return (
         <div role="group" aria-labelledby={`${id}-t`} aria-describedby={ayuda ? `${id}-a` : undefined}>
-            <p id={`${id}-t`} className="text-lg font-semibold text-ink mb-3">{etiqueta}</p>
-            <div className="flex flex-wrap gap-3">
+            <p id={`${id}-t`} className="text-[15px] font-semibold text-ink mb-2">{etiqueta}</p>
+            <div className="flex flex-wrap gap-2">
                 {opciones.map(o => (
                     <Chip key={o.valor} activo={multiple ? seleccion.some(x => mismoValor(x, o.valor)) : seleccion !== null && seleccion !== undefined && mismoValor(seleccion, o.valor)} onClick={() => tocar(o.valor)}>
                         {o.etiqueta}
                     </Chip>
                 ))}
             </div>
-            {ayuda && <p id={`${id}-a`} className="mt-3 text-base text-ink-soft">{ayuda}</p>}
+            {ayuda && <p id={`${id}-a`} className="mt-2 text-[13px] text-ink-soft">{ayuda}</p>}
         </div>
     );
 }

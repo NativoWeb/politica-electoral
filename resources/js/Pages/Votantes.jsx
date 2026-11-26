@@ -32,6 +32,9 @@ async function apiFetch(url, options = {}) {
 
 // A KPI card is also a filter button: pressed, the table shows only its rows. Its number does not change when it is
 // pressed: the server counts the cards on the filters without the card filters.
+// The text block is min-content wide and the row wraps: when the number or a word of the label does not fit next to the
+// icon (a phone, big text), it drops under the icon instead of spilling out of the card. Its em min-width grows with the
+// text size, so the cards of a row switch together instead of one by one.
 function KpiCard({ icon, label, value, accent, pressed, onClick, hint }) {
     return (
         <button
@@ -39,22 +42,24 @@ function KpiCard({ icon, label, value, accent, pressed, onClick, hint }) {
             onClick={onClick}
             aria-pressed={pressed}
             title={hint}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 min-h-[72px] rounded-xl border-2 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 ${
+            className={`w-full min-w-0 text-left flex flex-wrap items-center gap-x-3 gap-y-2 p-3 sm:px-4 min-h-[72px] rounded-xl border-2 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 ${
                 pressed
                     ? 'bg-blue-50 border-[var(--color-primary)]'
                     : `bg-white border-[var(--color-line)] hover:border-[var(--color-primary)]/50 ${accent ? 'ring-1 ring-amber-200' : ''}`
             }`}
         >
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${accent ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-[var(--color-primary)]'}`}>
+            <div className={`relative w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${accent ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-[var(--color-primary)]'}`}>
                 {icon}
+                {pressed && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center ring-2 ring-white">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    </span>
+                )}
             </div>
-            <div className="min-w-0">
-                <p className="text-[22px] lg:text-[26px] font-extrabold text-[var(--color-ink)] leading-none">{(value ?? 0).toLocaleString('es-CO')}</p>
-                <p className={`text-[13px] font-semibold uppercase tracking-wider mt-0.5 ${pressed ? 'text-[var(--color-primary)]' : 'text-[var(--color-ink-faint)]'}`}>{label}</p>
+            <div className="w-min min-w-[5.75em] max-w-full flex-1 text-[13px]">
+                <p className="text-[20px] sm:text-[22px] xl:text-[26px] font-extrabold text-[var(--color-ink)] leading-none whitespace-nowrap tabular-nums">{(value ?? 0).toLocaleString('es-CO')}</p>
+                <p className={`text-[12px] sm:text-[13px] font-semibold uppercase tracking-wide sm:tracking-wider leading-tight break-words mt-1 ${pressed ? 'text-[var(--color-primary)]' : 'text-[var(--color-ink-faint)]'}`}>{label}</p>
             </div>
-            {pressed && (
-                <svg className="w-5 h-5 ml-auto text-[var(--color-primary)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-            )}
         </button>
     );
 }

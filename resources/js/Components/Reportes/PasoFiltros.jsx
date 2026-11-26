@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { conFiltro, mismoPeriodo, periodosDe, resumenFiltros, sinChip, unidadDe, validarFechas, validarRango } from '@/lib/reportes';
 import ChipGroup from './ChipGroup';
 import BuscadorOpciones from './BuscadorOpciones';
-import { Chip, IconoChevron, IconoX, focoCls } from './ui';
+import { Chip, IconoChevron, IconoX, focoCls, tactilCls } from './ui';
 
 const RANGOS_EDAD = [
     { etiqueta: '18 a 25', desde: 18, hasta: 25 },
@@ -14,27 +14,27 @@ const RANGOS_EDAD = [
 function Seccion({ titulo, abierto, onAlternar, elegidos, children }) {
     const id = useId();
     return (
-        <section className="border-b-2 border-line last:border-b-0">
+        <section className="border-b border-line last:border-b-0">
             <h3>
                 <button
                     type="button"
                     aria-expanded={abierto}
                     aria-controls={`${id}-c`}
                     onClick={onAlternar}
-                    className={`w-full min-h-16 flex items-center justify-between gap-4 px-5 py-4 text-left ${focoCls}`}
+                    className={`w-full min-h-12 flex items-center justify-between gap-3 px-4 py-2.5 text-left ${focoCls}`}
                 >
-                    <span className="font-heading text-xl font-bold text-ink">{titulo}</span>
-                    <span className="flex items-center gap-3">
+                    <span className="min-w-0 font-heading text-base font-bold text-ink break-words">{titulo}</span>
+                    <span className="flex items-center gap-2 flex-shrink-0">
                         {elegidos > 0 && (
-                            <span className="text-base font-semibold text-primary bg-primary/10 rounded-full px-3 py-1">
+                            <span className="text-[13px] font-semibold text-primary bg-primary/10 rounded-full px-2.5 py-0.5">
                                 {elegidos} {elegidos === 1 ? 'elegido' : 'elegidos'}
                             </span>
                         )}
-                        <IconoChevron abierto={abierto} className="w-6 h-6 text-ink-soft" />
+                        <IconoChevron abierto={abierto} className="w-5 h-5 text-ink-soft" />
                     </span>
                 </button>
             </h3>
-            <div id={`${id}-c`} hidden={!abierto} className="px-5 pb-6 space-y-7">
+            <div id={`${id}-c`} hidden={!abierto} className="px-4 pb-4 space-y-5">
                 {children}
             </div>
         </section>
@@ -82,11 +82,11 @@ function Rango({ filtro, valor, onCambiar }) {
         aplicar(r);
     }
 
-    const inputCls = `w-24 min-h-14 px-3 text-lg text-center rounded-md border-2 bg-bg text-ink focus:border-primary ${focoCls}`;
+    const inputCls = `w-20 ${tactilCls} px-2 text-[15px] text-center rounded-md border bg-bg text-ink focus:border-primary ${focoCls}`;
     return (
         <div role="group" aria-labelledby={`${id}-t`}>
-            <p id={`${id}-t`} className="text-lg font-semibold text-ink mb-3">{filtro.etiqueta}</p>
-            <div className="flex flex-wrap gap-3">
+            <p id={`${id}-t`} className="text-[15px] font-semibold text-ink mb-2">{filtro.etiqueta}</p>
+            <div className="flex flex-wrap gap-2">
                 {rangos.map(x => {
                     const activo = actual.desde === (x.desde ?? null) && actual.hasta === (x.hasta ?? null);
                     return (
@@ -96,7 +96,7 @@ function Rango({ filtro, valor, onCambiar }) {
                     );
                 })}
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-lg text-ink">
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[15px] text-ink">
                 <span>Otra: desde</span>
                 <label className="sr-only" htmlFor={`${id}-d`}>{filtro.etiqueta} desde</label>
                 <input id={`${id}-d`} inputMode="numeric" value={desde} onChange={e => escribir('desde', e.target.value)}
@@ -110,11 +110,11 @@ function Rango({ filtro, valor, onCambiar }) {
                 <span>{unidad}</span>
             </div>
             {error && (
-                <p id={`${id}-e`} role="alert" className="mt-3 text-lg text-danger font-semibold">
+                <p id={`${id}-e`} role="alert" className="mt-2 text-sm text-danger font-semibold">
                     {error} Mientras tanto no se filtra por {filtro.etiqueta.toLowerCase()}.
                 </p>
             )}
-            {filtro.ayuda && <p className="mt-3 text-base text-ink-soft">{filtro.ayuda}</p>}
+            {filtro.ayuda && <p className="mt-2 text-[13px] text-ink-soft">{filtro.ayuda}</p>}
         </div>
     );
 }
@@ -165,10 +165,10 @@ function Fechas({ filtro, valor, onCambiar }) {
         aplicar(r);
     }
 
-    const inputCls = `w-full sm:w-56 min-h-14 px-4 text-lg rounded-md border-2 bg-bg text-ink focus:border-primary ${focoCls}`;
+    const inputCls = `w-full sm:w-48 ${tactilCls} px-3 text-[15px] rounded-md border bg-bg text-ink focus:border-primary ${focoCls}`;
     const caja = (campo, texto, v) => (
         <div>
-            <label htmlFor={`${id}-${campo}`} className="block text-lg text-ink mb-2">
+            <label htmlFor={`${id}-${campo}`} className="block text-sm text-ink mb-1">
                 {texto}<span className="sr-only"> ({filtro.etiqueta})</span>
             </label>
             <input
@@ -185,23 +185,23 @@ function Fechas({ filtro, valor, onCambiar }) {
 
     return (
         <div role="group" aria-labelledby={`${id}-t`}>
-            <p id={`${id}-t`} className="text-lg font-semibold text-ink mb-3">{filtro.etiqueta}</p>
-            <div className="flex flex-wrap gap-3">
+            <p id={`${id}-t`} className="text-[15px] font-semibold text-ink mb-2">{filtro.etiqueta}</p>
+            <div className="flex flex-wrap gap-2">
                 {periodos.map(p => {
                     const activo = mismoPeriodo(p.valor, actual);
                     return <Chip key={p.etiqueta} activo={activo} onClick={() => elegir(p, activo)}>{p.etiqueta}</Chip>;
                 })}
             </div>
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-end gap-4">
+            <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
                 {caja('desde', 'Desde', desde)}
                 {caja('hasta', 'Hasta', hasta)}
             </div>
             {error && (
-                <p id={`${id}-e`} role="alert" className="mt-3 text-lg text-danger font-semibold">
+                <p id={`${id}-e`} role="alert" className="mt-2 text-sm text-danger font-semibold">
                     {error} Mientras tanto no se filtra por {filtro.etiqueta.toLowerCase()}.
                 </p>
             )}
-            {filtro.ayuda && <p className="mt-3 text-base text-ink-soft">{filtro.ayuda}</p>}
+            {filtro.ayuda && <p className="mt-2 text-[13px] text-ink-soft">{filtro.ayuda}</p>}
         </div>
     );
 }
@@ -210,7 +210,7 @@ function Interruptor({ filtro, valor, onCambiar }) {
     return (
         <div>
             <Chip activo={!!valor} onClick={() => onCambiar(!valor)}>{filtro.etiqueta}</Chip>
-            {filtro.ayuda && <p className="mt-3 text-base text-ink-soft">{filtro.ayuda}</p>}
+            {filtro.ayuda && <p className="mt-2 text-[13px] text-ink-soft">{filtro.ayuda}</p>}
         </div>
     );
 }
@@ -285,15 +285,15 @@ export default function PasoFiltros({ fuente, filtros, etiquetas, onFiltros }) {
 
     return (
         <div>
-            <h2 className="font-heading text-3xl font-bold text-ink text-balance">{pregunta}</h2>
+            <h2 className="font-heading text-xl font-bold text-ink text-balance">{pregunta}</h2>
 
-            <div className="mt-5 p-5 rounded-lg bg-panel border-2 border-line">
+            <div className="mt-4 p-4 rounded-lg bg-panel border border-line">
                 {chips.length === 0 ? (
-                    <p className="text-lg text-ink">Estás viendo {u.a}<strong>{u.todas}</strong>. Elige abajo para quedarte con {u.femenino ? 'algunas' : 'algunos'}.</p>
+                    <p className="text-[15px] text-ink">Estás viendo {u.a}<strong>{u.todas}</strong>. Elige abajo para quedarte con {u.femenino ? 'algunas' : 'algunos'}.</p>
                 ) : (
                     <>
-                        <p className="text-lg font-semibold text-ink mb-3">Estás viendo:</p>
-                        <ul className="flex flex-wrap gap-3" aria-label="Filtros elegidos">
+                        <p className="text-[15px] font-semibold text-ink mb-2">Estás viendo:</p>
+                        <ul className="flex flex-wrap gap-2" aria-label="Filtros elegidos">
                             {chips.map(c => (
                                 <li key={c.id}>
                                     <Chip activo onClick={() => onFiltros(sinChip(filtros, c), {})} aria-label={`Quitar ${c.texto}`}>
@@ -303,16 +303,16 @@ export default function PasoFiltros({ fuente, filtros, etiquetas, onFiltros }) {
                                 </li>
                             ))}
                         </ul>
-                        <button type="button" onClick={() => onFiltros({}, {})} className={`mt-4 min-h-12 px-2 text-lg font-semibold text-primary underline underline-offset-4 rounded ${focoCls}`}>
+                        <button type="button" onClick={() => onFiltros({}, {})} className={`mt-3 ${tactilCls} px-1 text-sm font-semibold text-primary underline underline-offset-4 rounded ${focoCls}`}>
                             Quitar todos los filtros
                         </button>
                     </>
                 )}
             </div>
 
-            <p className="mt-4 text-lg text-ink-soft">Si eliges varios, verás {u.a}{u.femenino ? 'las' : 'los'} {u.plural} de cualquiera de ellos.</p>
+            <p className="mt-3 text-sm text-ink-soft">Si eliges varios, verás {u.a}{u.femenino ? 'las' : 'los'} {u.plural} de cualquiera de ellos.</p>
 
-            <div className="mt-4 rounded-lg bg-panel border-2 border-line">
+            <div className="mt-3 rounded-lg bg-panel border border-line">
                 {grupos.map(g => (
                     <Seccion
                         key={g.titulo}

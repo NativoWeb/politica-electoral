@@ -5,13 +5,13 @@ import OrganizacionPanel from '@/Components/Empresarios/OrganizacionPanel';
 import TarjetaPersona, { textoCelda } from './TarjetaPersona';
 import BotonDescarga from './BotonDescarga';
 import FichaPersona from './FichaPersona';
-import { AvisoError, Boton, IconoBuscar, IconoFlecha, IconoX, focoCls } from './ui';
+import { AvisoError, Boton, IconoBuscar, IconoFlecha, IconoX, focoCls, tactilCls } from './ui';
 
 function Esqueleto() {
     return (
-        <div aria-hidden="true" className="space-y-3">
+        <div aria-hidden="true" className="space-y-2">
             {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="h-14 rounded-md bg-line animate-pulse motion-reduce:animate-none" />
+                <div key={i} className="h-11 rounded-md bg-line animate-pulse motion-reduce:animate-none" />
             ))}
         </div>
     );
@@ -23,12 +23,12 @@ function Paginacion({ pagina, total, porPagina, onPagina }) {
     const desde = (pagina - 1) * porPagina + 1;
     const hasta = Math.min(total, pagina * porPagina);
     return (
-        <nav aria-label="Páginas de la lista" className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+        <nav aria-label="Páginas de la lista" className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <Boton variante="secundario" onClick={() => onPagina(pagina - 1)} disabled={pagina <= 1}>
                 <IconoFlecha direccion="izquierda" />
                 Anteriores
             </Boton>
-            <p className="text-lg text-ink text-center">
+            <p className="text-sm text-ink text-center">
                 <span className="font-semibold">Página {numero(pagina)} de {numero(paginas)}</span>
                 <span className="block text-ink-soft">Mostrando {numero(desde)} a {numero(hasta)} de {numero(total)}</span>
             </p>
@@ -132,23 +132,23 @@ export default function ListaReporte({
 
     return (
         <div>
-            <h2 className="font-heading text-3xl font-bold text-ink">Tu lista</h2>
-            <p className="mt-2 text-xl text-ink" aria-live="polite">
+            <h2 className="font-heading text-xl font-bold text-ink">Tu lista</h2>
+            <p className="mt-1 text-base text-ink break-words" aria-live="polite">
                 <strong className="tabular-nums">{total === null ? 'Cargando…' : cantidad(total, u)}</strong>
                 {chips.map(c => <span key={c.id}> · {c.texto}</span>)}
             </p>
-            {nota && <p className="mt-1 text-base text-ink-soft">{nota}</p>}
-            <div className="mt-4 flex flex-wrap gap-3">
+            {nota && <p className="mt-0.5 text-[13px] text-ink-soft">{nota}</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
                 <Boton variante="secundario" onClick={() => onCambiarPaso(2)}>{textoCambiar}</Boton>
                 <Boton variante="secundario" onClick={() => onCambiarPaso(3)}>Cambiar datos</Boton>
             </div>
 
-            <div className="mt-6 p-5 rounded-lg bg-panel border-2 border-line grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-5 items-end">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="mt-4 p-4 rounded-lg bg-panel border border-line grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label htmlFor={`${id}-q`} className="block text-lg font-semibold text-ink mb-2">Buscar en esta lista</label>
+                        <label htmlFor={`${id}-q`} className="block text-sm font-semibold text-ink mb-1">Buscar en esta lista</label>
                         <div className="relative">
-                            <IconoBuscar className="w-6 h-6 absolute left-4 top-1/2 -translate-y-1/2 text-ink-soft pointer-events-none" />
+                            <IconoBuscar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-soft pointer-events-none" />
                             <input
                                 ref={caja}
                                 id={`${id}-q`}
@@ -159,17 +159,17 @@ export default function ListaReporte({
                                 placeholder={fuente.clave === 'personas' ? 'Nombre o cédula…' : 'Escribe para buscar…'}
                                 autoComplete="off"
                                 enterKeyHint="search"
-                                className={`w-full min-h-14 pl-14 pr-4 text-lg rounded-md border-2 border-line-strong bg-bg text-ink placeholder:text-ink-soft focus:border-primary ${focoCls}`}
+                                className={`w-full ${tactilCls} pl-9 pr-3 text-[15px] rounded-md border border-line-strong bg-bg text-ink placeholder:text-ink-soft focus:border-primary ${focoCls}`}
                             />
                         </div>
                     </div>
                     <div>
-                        <label htmlFor={`${id}-o`} className="block text-lg font-semibold text-ink mb-2">Ordenar por</label>
+                        <label htmlFor={`${id}-o`} className="block text-sm font-semibold text-ink mb-1">Ordenar por</label>
                         <select
                             id={`${id}-o`}
                             value={estado.orden}
                             onChange={e => onOrden(e.target.value)}
-                            className={`w-full min-h-14 px-4 text-lg rounded-md border-2 border-line-strong bg-panel text-ink focus:border-primary ${focoCls}`}
+                            className={`w-full ${tactilCls} px-3 text-[15px] rounded-md border border-line-strong bg-panel text-ink focus:border-primary ${focoCls}`}
                         >
                             {fuente.ordenes.map(o => <option key={o.valor} value={o.valor}>{o.etiqueta}</option>)}
                         </select>
@@ -188,7 +188,7 @@ export default function ListaReporte({
                         base={fuente.etiqueta}
                     />
                     {!puedeDatosPersonales && fuente.columnas.some(c => c.sensible) && (
-                        <p className="mt-1 text-base text-ink-soft max-w-xs">
+                        <p className="mt-1 text-[13px] text-ink-soft max-w-xs">
                             {fuente.clave === 'personas' ? 'Tu descarga no incluye cédula, teléfono ni dirección.' : 'Tu descarga no incluye los datos con candado.'}
                         </p>
                     )}
@@ -196,15 +196,15 @@ export default function ListaReporte({
             </div>
 
             {aviso && (
-                <div role="status" className="mt-5 flex items-start justify-between gap-4 p-5 rounded-md border-2 border-primary bg-primary/5 text-lg text-ink">
+                <div role="status" className="mt-4 flex items-start justify-between gap-3 p-3 rounded-md border border-primary bg-primary/5 text-[15px] text-ink">
                     <span>{aviso}</span>
-                    <button type="button" onClick={() => setAviso('')} aria-label="Cerrar aviso" className={`w-12 h-12 -m-2 flex-shrink-0 flex items-center justify-center rounded-md text-ink-soft hover:bg-primary/10 ${focoCls}`}>
-                        <IconoX className="w-6 h-6" />
+                    <button type="button" onClick={() => setAviso('')} aria-label="Cerrar aviso" className={`w-11 h-11 sm:w-9 sm:h-9 -m-2 sm:-m-1 flex-shrink-0 flex items-center justify-center rounded-md text-ink-soft hover:bg-primary/10 ${focoCls}`}>
+                        <IconoX className="w-5 h-5" />
                     </button>
                 </div>
             )}
 
-            <div ref={inicioLista} className="mt-6 scroll-mt-24" aria-busy={lista.estado === 'cargando'}>
+            <div ref={inicioLista} className="mt-4 scroll-mt-24" aria-busy={lista.estado === 'cargando'}>
                 {lista.estado === 'error' && (
                     <AvisoError accion={<Boton variante="secundario" onClick={lista.reintentar}>Intentar de nuevo</Boton>}>
                         {mensajeError(lista.error, 'lista')}
@@ -214,7 +214,7 @@ export default function ListaReporte({
                 {mostrarEsqueleto && <Esqueleto />}
 
                 {sinDatos && (
-                    <div className="p-6 rounded-lg bg-panel border-2 border-line text-lg text-ink flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="p-4 rounded-lg bg-panel border border-line text-[15px] text-ink flex flex-col sm:flex-row sm:items-center gap-3">
                         {estado.busqueda.trim() ? (
                             <>
                                 <span className="flex-1">{u.ninguna} con «{estado.busqueda.trim()}» en esta lista.</span>
@@ -232,8 +232,8 @@ export default function ListaReporte({
                 {datos && datos.filas.length > 0 && lista.estado !== 'error' && (
                     <div className={lista.estado === 'cargando' && !refrescando ? 'opacity-50 transition-opacity' : ''}>
                         {/* Desktop: table. The whole row does its accion; the first cell is the keyboard target. A row without one is plain text. */}
-                        <div className="hidden lg:block overflow-x-auto rounded-lg border-2 border-line bg-panel">
-                            <table className="w-full text-lg">
+                        <div className="hidden lg:block overflow-x-auto rounded-lg border border-line bg-panel">
+                            <table className="w-full text-sm">
                                 <caption className="sr-only">{mayuscula(u.plural)} de la lista, página {estado.pagina}</caption>
                                 <thead className="bg-bg">
                                     <tr>
@@ -241,9 +241,9 @@ export default function ListaReporte({
                                             const activo = campoOrden === col.clave;
                                             const sort = activo ? (dirOrden === 'desc' ? 'descending' : 'ascending') : undefined;
                                             return (
-                                                <th key={col.clave} scope="col" aria-sort={sort} className="px-4 py-3 text-left font-semibold text-ink whitespace-nowrap">
+                                                <th key={col.clave} scope="col" aria-sort={sort} className="px-3 py-2 text-left font-semibold text-ink whitespace-nowrap">
                                                     {col.ordenable ? (
-                                                        <button type="button" onClick={() => ordenarPor(col)} className={`min-h-12 inline-flex items-center gap-2 underline-offset-4 hover:underline rounded ${focoCls}`}>
+                                                        <button type="button" onClick={() => ordenarPor(col)} className={`min-h-9 inline-flex items-center gap-1.5 underline-offset-4 hover:underline rounded ${focoCls}`}>
                                                             {col.etiqueta}
                                                             {activo && <span aria-hidden="true">{dirOrden === 'desc' ? '↓' : '↑'}</span>}
                                                         </button>
@@ -257,9 +257,9 @@ export default function ListaReporte({
                                     {datos.filas.map(fila => {
                                         const clicable = accionDe(fila) !== null;
                                         return (
-                                        <tr key={fila.id} onClick={clicable ? () => abrir(fila) : undefined} className={clicable ? 'h-14 cursor-pointer hover:bg-primary/5' : 'h-14'}>
+                                        <tr key={fila.id} onClick={clicable ? () => abrir(fila) : undefined} className={clicable ? 'h-11 cursor-pointer hover:bg-primary/5' : 'h-11'}>
                                             {columnas.map((col, i) => (
-                                                <td key={col.clave} className="px-4 py-2 text-ink align-middle">
+                                                <td key={col.clave} className="px-3 py-1.5 text-ink align-middle">
                                                     {i === 0 && !clicable ? (
                                                         <span className="font-semibold text-ink">{textoCelda(fila.celdas?.[col.clave])}</span>
                                                     ) : i === 0 ? (
@@ -283,7 +283,7 @@ export default function ListaReporte({
                         </div>
 
                         {/* Phone: cards. */}
-                        <ul className="lg:hidden space-y-3">
+                        <ul className="lg:hidden space-y-2">
                             {datos.filas.map(fila => (
                                 <li key={fila.id}>
                                     <TarjetaPersona

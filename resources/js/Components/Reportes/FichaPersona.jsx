@@ -41,14 +41,14 @@ function FichaVotante({ personId, onClose, onSaved, municipios }) {
             <div className="fixed inset-0 z-40 bg-ink/60" onClick={onClose} aria-hidden="true" />
             <div ref={ref} role="dialog" aria-modal="true" aria-label="Ficha de la persona" className="fixed inset-0 lg:left-auto lg:w-[520px] z-50 bg-white overflow-y-auto shadow-2xl">
                 {toast && (
-                    <p role="status" className={`sticky top-0 z-10 px-5 py-3 text-lg font-semibold text-white ${toast.type === 'error' ? 'bg-danger' : 'bg-good'}`}>{toast.message}</p>
+                    <p role="status" className={`sticky top-0 z-10 px-4 py-2.5 text-[15px] font-semibold text-white ${toast.type === 'error' ? 'bg-danger' : 'bg-good'}`}>{toast.message}</p>
                 )}
                 {error ? (
-                    <div className="p-6 space-y-4">
-                        <p role="alert" className="text-lg text-ink">No pudimos abrir la ficha. Revisa tu conexión.</p>
-                        <div className="flex flex-wrap gap-3">
-                            <button type="button" onClick={cargar} className="min-h-14 px-6 text-lg font-semibold rounded-md bg-primary text-white">Intentar de nuevo</button>
-                            <button type="button" onClick={onClose} className="min-h-14 px-6 text-lg font-semibold rounded-md border-2 border-primary text-primary">Cerrar</button>
+                    <div className="p-5 space-y-3">
+                        <p role="alert" className="text-[15px] text-ink">No pudimos abrir la ficha. Revisa tu conexión.</p>
+                        <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={cargar} className="min-h-11 sm:min-h-10 px-4 text-sm font-semibold rounded-md bg-primary text-white">Intentar de nuevo</button>
+                            <button type="button" onClick={onClose} className="min-h-11 sm:min-h-10 px-4 text-sm font-semibold rounded-md border border-primary text-primary">Cerrar</button>
                         </div>
                     </div>
                 ) : (

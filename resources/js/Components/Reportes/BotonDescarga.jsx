@@ -68,20 +68,20 @@ export default function BotonDescarga({ spec, total, tope, topePdf = 0, columnas
 
     return (
         <div>
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col sm:flex-row gap-2">
                 {botonFormato({ formato: 'excel', texto: 'Descargar Excel' })}
                 {botonFormato({ formato: 'pdf', texto: 'Descargar PDF' })}
             </div>
-            <div aria-live="polite" className="mt-3">
+            <div aria-live="polite" className="mt-2 empty:mt-0">
                 {estado.fase === 'ok' && (
-                    <p className="flex items-start gap-2 text-lg font-semibold text-good">
-                        <IconoCheck className="w-6 h-6 flex-shrink-0" />
+                    <p className="flex items-start gap-2 text-sm font-semibold text-good">
+                        <IconoCheck className="w-5 h-5 flex-shrink-0" />
                         <span className="text-ink break-words min-w-0">{estado.mensaje}</span>
                     </p>
                 )}
                 {estado.fase === 'error' && (
-                    <p role="alert" className="flex items-start gap-2 text-lg font-semibold text-ink">
-                        <IconoAlerta className="w-6 h-6 text-danger flex-shrink-0" />
+                    <p role="alert" className="flex items-start gap-2 text-sm font-semibold text-ink">
+                        <IconoAlerta className="w-5 h-5 text-danger flex-shrink-0" />
                         {estado.mensaje}
                     </p>
                 )}

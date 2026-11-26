@@ -15,10 +15,14 @@ import {
 // Step 2 is "A quiénes" for people and "Cuáles" for compromisos or organizations.
 const tituloPaso = (p, unidad) => (p.numero === 2 && unidad ? unidad.quienes : p.titulo);
 
+// Four steps in a row while four 6em boxes fit; with bigger text (or a narrow phone) two by two, never three and one.
+// The em follows «Tamaño del texto», so the switch does too.
+const COLUMNAS_PASOS = 'repeat(auto-fill, minmax(clamp(calc((100% - 1.5rem) / 4 - 1px), calc((24em - 100%) * 999), calc((100% - 0.5rem) / 2 - 1px)), 1fr))';
+
 function Stepper({ paso, hayFuente, onPaso, unidad }) {
     return (
-        <nav aria-label="Pasos del reporte" className="mt-5">
-            <ol className="grid grid-cols-4 gap-2 sm:gap-3">
+        <nav aria-label="Pasos del reporte" className="mt-4">
+            <ol className="grid gap-2 text-[13px]" style={{ gridTemplateColumns: COLUMNAS_PASOS }}>
                 {PASOS.map(p => {
                     const actual = p.numero === paso;
                     const hecho = p.numero < paso;
@@ -30,16 +34,16 @@ function Stepper({ paso, hayFuente, onPaso, unidad }) {
                                 onClick={() => onPaso(p.numero)}
                                 disabled={!disponible}
                                 aria-current={actual ? 'step' : undefined}
-                                className={`w-full h-full min-h-16 flex flex-col sm:flex-row items-center sm:items-center gap-1 sm:gap-3 px-1 sm:px-4 py-2 rounded-lg border-2 text-center sm:text-left transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${focoCls} ${
+                                className={`w-full h-full min-h-12 flex flex-col sm:flex-row items-center sm:items-center gap-1 sm:gap-2 px-1 sm:px-3 py-1.5 rounded-lg border text-center sm:text-left transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${focoCls} ${
                                     actual ? 'border-primary bg-primary text-white' : 'border-line-strong bg-panel text-ink hover:border-primary'
                                 }`}
                             >
-                                <span aria-hidden="true" className={`w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center font-heading text-lg font-bold ${
+                                <span aria-hidden="true" className={`w-7 h-7 flex-shrink-0 rounded-full flex items-center justify-center font-heading text-sm font-bold ${
                                     actual ? 'bg-accent text-primary-dark' : hecho ? 'bg-primary text-white' : 'bg-bg text-ink'
                                 }`}>
                                     {p.numero}
                                 </span>
-                                <span className="text-base sm:text-lg font-semibold leading-tight">
+                                <span className="min-w-0 max-w-full text-[13px] sm:text-sm font-semibold leading-tight">
                                     <span className="sr-only">Paso {p.numero}: </span>{tituloPaso(p, unidad)}
                                 </span>
                             </button>
@@ -185,25 +189,25 @@ export default function ReportesIndex({
     return (
         <AppLayout title="Reportes">
             <Head title="Reportes" />
-            <div className={`max-w-5xl mx-auto px-4 lg:px-8 pt-6 lg:pt-8 ${contando ? 'pb-64 sm:pb-44' : 'pb-16'} text-lg text-ink`}>
+            <div className={`max-w-5xl mx-auto px-4 lg:px-6 pt-4 lg:pt-6 ${contando ? 'pb-48 sm:pb-32' : 'pb-10'} text-[15px] text-ink`}>
                 <header>
-                    <h1 className="font-heading text-4xl font-bold text-primary">Reportes</h1>
-                    <p className="mt-2 text-lg text-ink-soft">
+                    <h1 className="font-heading text-[22px] lg:text-[28px] font-extrabold text-primary leading-tight">Reportes</h1>
+                    <p className="mt-0.5 text-[13px] text-ink-soft">
                         {fuentes.length > 1 ? 'Arma una lista, mírala aquí y descárgala.' : 'Arma una lista de personas, mírala aquí y descárgala.'}
                     </p>
                     {fuentes.length > 0 && <Stepper paso={paso} hayFuente={!!fuente} onPaso={alPaso} unidad={unidad} />}
                 </header>
 
-                <section className="mt-8" aria-labelledby="paso-actual">
+                <section className="mt-5" aria-labelledby="paso-actual">
                     {/* Takes the focus on each step change, so a screen reader says where the user is. */}
                     <p id="paso-actual" ref={titulo} tabIndex={-1} className="sr-only">
                         Paso {paso} de 4: {tituloPaso(PASOS[paso - 1], unidad)}
                     </p>
 
                     {fuentes.length === 0 && (
-                        <div className="p-6 rounded-lg bg-panel border-2 border-line">
-                            <p className="font-heading text-2xl font-bold text-ink">Todavía no tienes listas para armar</p>
-                            <p className="mt-2 text-lg text-ink">Pídele a tu administrador el permiso para ver Votantes o el Mapa Político.</p>
+                        <div className="p-4 rounded-lg bg-panel border border-line">
+                            <p className="font-heading text-lg font-bold text-ink">Todavía no tienes listas para armar</p>
+                            <p className="mt-1 text-[15px] text-ink">Pídele a tu administrador el permiso para ver Votantes o el Mapa Político.</p>
                         </div>
                     )}
 

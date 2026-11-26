@@ -228,6 +228,16 @@ function ExportButtons({ url }) {
     );
 }
 
+// Where a tab label may go to a second line (a <wbr>: no hyphen, the text stays the same for screen readers and
+// tests). Browsers that know Spanish hyphenation (hyphens-auto) may cut elsewhere; break-words is the last resort.
+const TAB_CORTES = { Gobernador: 5, Votantes: 5, Eventos: 4, Empresas: 5, Exportar: 5 };
+
+function TextoTab({ texto }) {
+    const corte = TAB_CORTES[texto];
+    if (!corte) return texto;
+    return <>{texto.slice(0, corte)}<wbr />{texto.slice(corte)}</>;
+}
+
 const SIDEBAR_ITEMS = [
     // electoral: only electoral results, hidden for a grupo político without them (auth.seesElectoralResults).
     { name: 'GOBERNADOR', href: '/gobernador', label: 'Gobernador', permission: 'view.gobernador', electoral: true },
@@ -499,8 +509,13 @@ export default function AppLayout({ children, title, breadcrumb }) {
     const showExportTab = canExport || canReportes;
     const canSeeCompromisos = hasPerm('view.eventos') || hasPerm('manage.eventos') || hasPerm('view.empresarios') || hasPerm('manage.empresarios');
     const tabItems = visibleItems.filter(item => !item.desktopOnly);
-    // Six tabs (with Exportar) at 360px only fit with the smaller label.
-    const tabLabelCls = tabItems.length + (showExportTab ? 1 : 0) > 5 ? 'text-[11px]' : 'text-[12px]';
+    // Six tabs (with Exportar) at 360px only fit with the smaller label. The bar keeps its 72px, so «Tamaño del texto»
+    // grows these labels only up to 1px (the value carries the variable, so lib/escalaTexto leaves it alone); a long
+    // word goes to a second line (TextoTab) instead of being cut with «…».
+    const tabLabelCls = tabItems.length + (showExportTab ? 1 : 0) > 5
+        ? 'text-[min(calc(11px*var(--a11y-texto,1)),12px)]'
+        : 'text-[min(calc(12px*var(--a11y-texto,1)),13px)]';
+    const tabTextoCls = `${tabLabelCls} font-bold leading-[1.1] text-center max-w-full px-0.5 line-clamp-2 hyphens-auto break-words`;
     const [navigating, setNavigating] = useState(false);
     const [exportSheetOpen, setExportSheetOpen] = useState(false);
     const [offlineAlert, setOfflineAlert] = useState(false);
@@ -728,7 +743,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                                 <span className="w-7 h-7 flex items-center justify-center [&>svg]:w-7 [&>svg]:h-7">
                                     {ICONS[item.icon ?? item.name] || ICONS_EXTRA[item.icon ?? item.name]}
                                 </span>
-                                <span className={`${tabLabelCls} font-bold leading-tight text-center max-w-full truncate px-0.5`}>{item.tabLabel ?? item.label}</span>
+                                <span className={tabTextoCls}><TextoTab texto={item.tabLabel ?? item.label} /></span>
                                 {isActive && <span className="w-6 h-[3px] bg-[var(--color-accent)] rounded-full" />}
                             </Link>
                         );
@@ -743,7 +758,7 @@ export default function AppLayout({ children, title, breadcrumb }) {
                         <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <span className={`${tabLabelCls} font-bold leading-tight max-w-full truncate px-0.5`}>Exportar</span>
+                        <span className={tabTextoCls}><TextoTab texto="Exportar" /></span>
                     </button>
                     )}
                 </div>

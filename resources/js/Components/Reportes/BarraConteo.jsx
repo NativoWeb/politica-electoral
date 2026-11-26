@@ -11,26 +11,26 @@ export default function BarraConteo({ estado, total, mensajeError, nota = '', ul
     const cero = estado === 'ok' && total === 0;
 
     return (
-        <div data-barra-inferior className="fixed left-0 right-0 bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 lg:left-[200px] z-30 bg-panel border-t-2 border-line-strong shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
-            <div className="max-w-5xl mx-auto px-4 lg:px-8 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div data-barra-inferior className="fixed left-0 right-0 bottom-[calc(72px+env(safe-area-inset-bottom,0px))] lg:bottom-0 lg:left-[200px] z-30 bg-panel border-t border-line-strong shadow-[0_-8px_24px_rgba(0,27,60,0.12)]">
+            <div className="max-w-5xl mx-auto px-4 lg:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                 <div className="flex-1 min-w-0" aria-live="polite" aria-atomic="true">
                     {error ? (
-                        <p className="text-lg font-semibold text-danger">{mensajeError}</p>
+                        <p className="text-[15px] font-semibold text-danger">{mensajeError}</p>
                     ) : (
-                        <p className="flex items-baseline flex-wrap gap-x-3">
-                            <span className={`font-heading text-3xl font-bold tabular-nums text-ink transition-opacity duration-150 ${contando ? 'opacity-50' : ''}`}>
+                        <p className="flex items-baseline flex-wrap gap-x-2">
+                            <span className={`font-heading text-2xl font-bold tabular-nums text-ink transition-opacity duration-150 ${contando ? 'opacity-50' : ''}`}>
                                 {total === null ? '—' : numero(total)}
                             </span>
-                            <span className="text-lg text-ink">{total === 1 ? unidad.singular : unidad.plural}</span>
+                            <span className="text-[15px] text-ink">{total === 1 ? unidad.singular : unidad.plural}</span>
                             {contando && (
-                                <span className="inline-flex items-center gap-2 text-lg text-ink-soft"><Girando className="w-5 h-5" />Contando…</span>
+                                <span className="inline-flex items-center gap-1.5 text-sm text-ink-soft"><Girando className="w-4 h-4" />Contando…</span>
                             )}
                         </p>
                     )}
-                    {cero && <p className="text-lg text-ink">{unidad.ninguna} cumple todos estos filtros. Prueba quitando uno.</p>}
-                    {nota && !error && <p className="text-base text-ink-soft">{nota}</p>}
+                    {cero && <p className="text-sm text-ink">{unidad.ninguna} cumple todos estos filtros. Prueba quitando uno.</p>}
+                    {nota && !error && <p className="text-[13px] text-ink-soft">{nota}</p>}
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-2">
                     {error && <Boton variante="secundario" onClick={onReintentar}>Intentar de nuevo</Boton>}
                     {cero && ultimoFiltro && (
                         <Boton variante="secundario" onClick={onQuitarUltimo}>Quitar «{ultimoFiltro.texto}»</Boton>

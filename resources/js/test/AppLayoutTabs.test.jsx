@@ -26,12 +26,12 @@ describe('AppLayout mobile tab bar', () => {
     });
     afterEach(() => { cleanup(); globalThis.fetch = original; });
 
-    it('uses the short "Empresas" label and lets every tab shrink and truncate', () => {
+    it('uses the short "Empresas" label and lets every tab shrink and wrap to two lines', () => {
         render(<AppLayout title="t">x</AppLayout>);
         const tab = [...document.querySelectorAll('a')].find(a => a.getAttribute('href') === '/empresarios' && a.textContent.trim() === 'Empresas');
         expect(tab, 'mobile tab with the short label').toBeTruthy();
         expect(tab.className).toContain('min-w-0');
-        expect(tab.querySelector('span.truncate')).toBeTruthy();
+        expect(tab.querySelector('span.line-clamp-2')).toBeTruthy();
         // The desktop sidebar keeps the full name.
         expect(screen.getAllByText('Empresarios').length).toBeGreaterThan(0);
     });
