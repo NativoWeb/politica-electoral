@@ -255,7 +255,7 @@ class EventCompromisoTest extends TestCase
         (require database_path('migrations/2026_11_19_000001_create_centro_configuracion_tables.php'))->up();
         config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.test']);
         Mail::fake();
-        $this->acta($this->event, [$this->compromiso('Vencido CD', now('America/Bogota')->subDays(3)->toDateString())]);
+        $this->acta($this->event, [$this->compromiso('Vencido CD', '2026-11-16')]); // 3 days before the 19th the test travels to (not before today)
         $at = fn (string $time) => $this->travelTo(Carbon::parse("2026-11-19 {$time}", 'America/Bogota'));
 
         $at('06:45');
@@ -286,7 +286,7 @@ class EventCompromisoTest extends TestCase
     public function test_a_scheduled_summary_that_could_not_send_anything_is_retried(): void
     {
         config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.test']);
-        $this->acta($this->event, [$this->compromiso('Vencido CD', now('America/Bogota')->subDays(3)->toDateString())]);
+        $this->acta($this->event, [$this->compromiso('Vencido CD', '2026-11-16')]); // 3 days before the 19th the test travels to (not before today)
         $this->travelTo(Carbon::parse('2026-11-19 07:00', 'America/Bogota'));
         Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP caído'));
 

@@ -31,6 +31,8 @@ class CampanasTableroTest extends TestCase
         $this->setUpCampanas();
         $this->flag(true);
         Carbon::setTestNow(Carbon::parse('2026-11-25 15:00:00', 'UTC'));
+        // The scenario (50 of 100 fichas with comuna) checks the rule at 60 %; the shipped default is in its own test.
+        config(['campanas_electorales.tablero.cobertura_comuna_min' => 0.60]);
 
         $this->c = $this->campana(['name' => 'Gobernación 2027', 'cargo' => 'gobernacion', 'factor_registro' => 1.0, 'votos_por_lider' => 50,
             'election_date' => '2027-10-31']);
@@ -115,6 +117,12 @@ class CampanasTableroTest extends TestCase
         $this->assertNull($c['indice']);
         $this->assertSame(['registrados' => 7, 'meta' => null, 'meta_calculada' => false, 'pct' => null, 'falta' => null], $c['votantes']);
         $this->assertSame(['indice' => null, 'votantes' => null, 'lideres' => null], $c['tramo']);
+    }
+
+    public function test_the_shipped_coverage_minimum_is_30_percent(): void
+    {
+        // Marly, 2026-11-26: comunas count as reliable from 30 % of the municipio's fichas with comuna.
+        $this->assertSame(0.30, (require base_path('config/campanas_electorales.php'))['tablero']['cobertura_comuna_min']);
     }
 
     public function test_comunas_are_insuficiente_under_60_percent_and_ok_at_70(): void

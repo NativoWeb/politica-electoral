@@ -72,7 +72,7 @@ export function tableroData(over = {}) {
         can: { edit: true },
         generado_at: '2026-11-25T10:05:00-05:00',
         formula: { texto: 'El índice va de 0 a 100: el 60 % sale del avance en votantes registrados y el 40 % del avance en líderes. Pasar la meta no suma más.', peso_votantes: 0.6, peso_lideres: 0.4 },
-        umbrales: { k: 5, cobertura_comuna_min: 0.6, ranking_min_votantes: 20, ranking_min_lideres: 3, pocos_registros: 50 },
+        umbrales: { k: 5, cobertura_comuna_min: 0.3, ranking_min_votantes: 20, ranking_min_lideres: 3, pocos_registros: 50 },
         totales: {
             votantes: { registrados: 375, registrados_con_meta: 270, meta: 300, meta_calculada: true, pct: 0.9, falta: 30 },
             lideres: { registrados: 5, registrados_con_meta: 5, meta: 14, meta_calculada: true, pct: 0.3571, falta: 9 },

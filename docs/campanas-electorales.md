@@ -324,7 +324,7 @@ clave `tablero` (no en el Centro de configuración).
   Una meta de 0 cuenta como cumplida en el índice.
 - **Índice** (0–100, entero): con las dos metas `round(100 × (0,6·min(pV,1) + 0,4·min(pL,1)))`; con una sola
   `round(100 × min(p,1))`; sin metas `null`.
-- **Estado**: `sin_meta` (MV y ML null) → `insuficiente` (comuna o corregimiento cuyo municipio tiene menos del 60 % de
+- **Estado**: `sin_meta` (MV y ML null) → `insuficiente` (comuna o corregimiento cuyo municipio tiene menos del 30 % de (Marly, 2026-11-26; antes 60 %)
   sus fichas con comuna; un municipio nunca lo es; un municipio sin fichas no vuelve insuficientes a sus comunas) → `ok`.
 - **Tramos** (0–4) por medida: `0` = 0–24, `1` = 25–49, `2` = 50–74, `3` = 75–99, `4` = 100 o más (el % entero hacia
   abajo); `null` si la medida es null.
@@ -360,7 +360,7 @@ descarga…» (dos a la vez, `motivo: en_curso`). Son GET para que funcionen en 
   "generado_at": "2026-11-25T10:00:00-05:00",
   "formula": {"texto": "El índice va de 0 a 100: el 60 % sale del avance en votantes registrados y el 40 % del avance en líderes. Pasar la meta no suma más.",
               "peso_votantes": 0.6, "peso_lideres": 0.4},
-  "umbrales": {"k": 5, "cobertura_comuna_min": 0.6, "ranking_min_votantes": 20, "ranking_min_lideres": 3, "pocos_registros": 50},
+  "umbrales": {"k": 5, "cobertura_comuna_min": 0.3, "ranking_min_votantes": 20, "ranking_min_lideres": 3, "pocos_registros": 50},
   "totales": {
     "votantes": {"registrados": 270, "registrados_con_meta": 270, "meta": 300, "meta_calculada": true, "pct": 0.9, "falta": 30},
     "lideres":  {"registrados": 5, "registrados_con_meta": 5, "meta": 14, "meta_calculada": true, "pct": 0.3571, "falta": 9},
@@ -434,7 +434,7 @@ descarga…» (dos a la vez, `motivo: en_curso`). Son GET para que funcionen en 
   - `sin_metas` (unos territorios con meta y otros sin): «75 de 87 territorios no tienen meta: aparecen en gris.»
   - `sin_lideres` (ninguna ficha del universo es líder): «Aún no hay fichas marcadas como líder. Márcalas con la
     casilla "Es líder" en la ficha. Mientras tanto, el índice llega como máximo a 60.»
-  - `cobertura_comuna` (uno por municipio bajo el 60 % con comunas visibles): «Solo 1.948 de 37.055 fichas de
+  - `cobertura_comuna` (uno por municipio bajo el 30 % con comunas visibles): «Solo 1.948 de 37.055 fichas de
     Bucaramanga (5 %) tienen comuna: las comunas se ven rayadas hasta que haya más datos.»
   - Sin ninguna meta (`totales.territorios.con_meta = 0`) no hay aviso: la pantalla muestra el estado vacío «Esta
     campaña aún no tiene metas…» y el botón [Ir a las metas] solo con `can.edit`.

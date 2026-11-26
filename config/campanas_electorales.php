@@ -36,7 +36,7 @@ return [
         // Counts from 1 to k-1 go out as null ("menos de 5") in the breakdowns and weeks.
         'k' => 5,
         // Share of a municipio's fichas with a comuna below which its comunas are "insuficiente".
-        'cobertura_comuna_min' => 0.60,
+        'cobertura_comuna_min' => 0.30,
         'ranking' => ['top' => 5, 'min_votantes_meta' => 20, 'min_lideres_meta' => 3, 'una_lista_max' => 10],
         'evolucion' => ['desde' => '2025-09-22', 'semanas_defecto' => 26, 'dia_masivo' => 300, 'zona' => 'America/Bogota'],
         // A territory with fewer fichas has no weekly chart.
